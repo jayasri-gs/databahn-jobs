@@ -1,0 +1,10 @@
+stringkey: db
+numberkey: 10
+boolkey: true
+map:
+  name: Keanu
+  surname: Reeves
+  age: 59
+  bio:
+      job: actor
+      public_figure: true
