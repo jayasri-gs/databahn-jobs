@@ -3,8 +3,8 @@ package cmd
 import (
 	"context"
 	"github.com/databahn-ai/common-utils/utils"
-	"github.com/databahn-ai/databhn-jobs/internal/common"
-	"github.com/databahn-ai/databhn-jobs/internal/insights"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
+	"github.com/databahn-ai/databahn-jobs/internal/insights"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )

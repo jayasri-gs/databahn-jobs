@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"github.com/databahn-ai/databhn-jobs/cmd"
-	"github.com/databahn-ai/databhn-jobs/internal/common"
+	"github.com/databahn-ai/databahn-jobs/cmd"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 )
 
 func main() {
