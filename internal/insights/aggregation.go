@@ -50,6 +50,9 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 			indicesToProcess = append(indicesToProcess, index)
 		}
 	}
+
+	logger.GetLogger().Info("calculated indices to process", zap.Int("index_count", len(indicesToProcess)), zap.Time("before", window))
+
 	var indicesByTenant = make(map[string][]IndexMetadata)
 	for _, index := range indicesToProcess {
 		indicesByTenant[index.TenantId] = append(indicesByTenant[index.TenantId], index)
