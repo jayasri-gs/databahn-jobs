@@ -24,11 +24,11 @@ type OpenSearchCreds struct {
 }
 
 func NewOpenSearchClient(ctx context.Context, conf configuration.ConfigReader) (*opensearch.Client, error) {
-	//secretName := conf.GetString(configuration.OpenSearchSecretName)
-	//_, err := configuration.ReadOpenSearchSecrets(context.Background(), secretName)
-	//if err != nil {
-	//	return nil, err
-	//}
+	secretName := conf.GetString(configuration.OpenSearchSecretName)
+	os, err := configuration.ReadOpenSearchSecrets(context.Background(), secretName)
+	if err != nil {
+		return nil, err
+	}
 	client, err := opensearch.NewClient(opensearch.Config{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -36,9 +36,9 @@ func NewOpenSearchClient(ctx context.Context, conf configuration.ConfigReader) (
 				MinVersion:         tls.VersionTLS12,
 			},
 		},
-		Addresses: []string{"https://localhost:9200"},
-		Username:  "admin",
-		Password:  "admin",
+		Addresses: []string{os.Url},
+		Username:  os.Username,
+		Password:  os.Password,
 	})
 	if err != nil {
 		logger.GetLoggerWithContext(ctx).Error("Failed to create Open search client", zap.Error(err))
