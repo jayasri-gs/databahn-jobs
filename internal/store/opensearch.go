@@ -32,7 +32,7 @@ func NewOpenSearchClient(ctx context.Context, conf configuration.ConfigReader) (
 	client, err := opensearch.NewClient(opensearch.Config{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: false,
 				MinVersion:         tls.VersionTLS12,
 			},
 		},
