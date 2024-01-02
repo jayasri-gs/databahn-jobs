@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"github.com/databahn-ai/databahn-jobs/cmd"
-	"github.com/databahn-ai/databahn-jobs/internal/common"
 )
 
 func main() {
+	job := flag.String("job", "", "job name")
+	flag.Parse()
+
 	ctx := context.Background()
-	cmd.RunJob(ctx, common.INSIGHTS_AGGREGATION)
+	cmd.RunJob(ctx, *job)
 }
