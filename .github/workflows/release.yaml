@@ -1,0 +1,51 @@
+name: Create Release Build
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  push_to_ecr:
+    runs-on: self-hosted
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ASSUME_ROLE_ARN: ${{ secrets.ASSUME_ROLE_ARN }}
+      SERVICE_NAME: sampling-rule-engine
+      IMAGE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials from Test account
+        uses: aws-actions/configure-aws-credentials@master
+        with:
+          role-to-assume: ${{ env.ASSUME_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Display Identity
+        run: aws sts get-caller-identity
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Create ECR repository
+        run: |
+          aws ecr create-repository --repository-name ${{env.SERVICE_NAME}} --region ${{env.AWS_REGION}} || true
+
+      - name: push image to ecr
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ${{env.SERVICE_NAME}}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          docker buildx build --push --platform linux/arm64/v8 -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
