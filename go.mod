@@ -5,11 +5,14 @@ go 1.20
 require (
 	github.com/databahn-ai/common-utils v0.35.0
 	github.com/databahn-ai/go-logging v0.1.0
+	github.com/go-chi/chi/v5 v5.0.11
+	github.com/go-chi/render v1.0.3
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	go.uber.org/zap v1.24.0
 )
 
 require (
+	github.com/ajg/form v1.5.1 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/apex/gateway v1.1.2 // indirect
 	github.com/aws/aws-lambda-go v1.34.1 // indirect

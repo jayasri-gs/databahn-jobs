@@ -25,5 +25,7 @@ func RunJob(ctx context.Context, jobName string) {
 		os.Exit(1)
 	} else {
 		logger.GetLogger().Info("successfully processed job", zap.String("jobName", jobName))
+		logger.GetLogger().Sync()
+		os.Exit(0)
 	}
 }
