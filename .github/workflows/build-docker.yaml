@@ -77,7 +77,7 @@ jobs:
           cd charts-version-control
           TAG="${{ steps.docker_tag.outputs.tag }}"
           echo "updating new tag to $TAG"
-          sed -i "s/tag: \".*\"/tag: \"$TAG\"/" service/$SERVICE_NAME.yaml
+          sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/$SERVICE_NAME.yaml
           git add .
           git commit -m "$TAG for $SERVICE_NAME"
           git push
