@@ -126,7 +126,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc.TenantId = index.TenantId
 			doc.MinTime = int64(bucket.PageMnTime.Value)
 			doc.MaxTime = int64(bucket.PageMxTime.Value)
-			doc.Count = int64(bucket.PageCnt.Value)
+			doc.Count = bucket.PageCnt.Value
 			doc.Timestamp = time.Now().UnixMilli()
 			docs = append(docs, doc)
 		}
@@ -302,13 +302,13 @@ type Response struct {
 }
 
 type Doc struct {
-	Id        string `json:"id"`
-	Key       string `json:"key"`
-	InsightId string `json:"insight_id"`
-	SourceId  string `json:"source_id"`
-	TenantId  string `json:"tenant_id"`
-	MinTime   int64  `json:"min_time"`
-	MaxTime   int64  `json:"max_time"`
-	Count     int64  `json:"count"`
-	Timestamp int64  `json:"timestamp"`
+	Id        string  `json:"id"`
+	Key       string  `json:"key"`
+	InsightId string  `json:"insight_id"`
+	SourceId  string  `json:"source_id"`
+	TenantId  string  `json:"tenant_id"`
+	MinTime   int64   `json:"min_time"`
+	MaxTime   int64   `json:"max_time"`
+	Count     float64 `json:"count"`
+	Timestamp int64   `json:"timestamp"`
 }
