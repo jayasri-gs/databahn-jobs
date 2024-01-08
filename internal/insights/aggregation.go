@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/databahn-ai/common-utils/configuration"
+	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/store"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
@@ -46,7 +47,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 	var indicesToProcess []IndexMetadata
 	window := time.UnixMilli(lastTime)
 	for _, index := range indices {
-		if index.IsBefore(window) {
+		if skipIndexTimeCheck() || index.IsBefore(window) {
 			indicesToProcess = append(indicesToProcess, index)
 		}
 	}
@@ -98,4 +99,8 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 		logger.GetLogger().Info("successful aggregation of insights is done", zap.Int("index_count", len(indicesToProcess)), zap.Int("tenant_count", len(indicesByTenant)))
 	}
 	return nil
+}
+
+func skipIndexTimeCheck() bool {
+	return utils.GetEnvOrDefault("INSIGHTS_AGG_SKIP_INDEX_TIME_CHECK", "false") != "false"
 }
