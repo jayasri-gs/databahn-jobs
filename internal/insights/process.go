@@ -35,10 +35,10 @@ const script = `
       } else {
        ctx._source.count = ctx._source.count + params.count;
       }
-      if (ctx._source.source_ids == null) {
-       ctx._source.source_ids = [];
-      } else if (!ctx._source.source_ids.contains(params.source_id)) { 
-       ctx._source.source_ids.add(params.source_id); 
+      if (ctx._source.source_id == null) {
+       ctx._source.source_id = [];
+      } else if (!ctx._source.source_id.contains(params.source_id)) { 
+       ctx._source.source_id.add(params.source_id); 
       }
       ctx._source.timestamp = params.timestamp;
     ",
@@ -61,7 +61,7 @@ const script = `
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
       "count": {{.Count}},
-      "source_ids": ["{{.SourceId}}"],
+      "source_id": ["{{.SourceId}}"],
       "timestamp": {{.Timestamp}}
     }
 }
