@@ -35,6 +35,11 @@ const script = `
       } else {
        ctx._source.count = ctx._source.count + params.count;
       }
+      if (ctx._source.source_ids == null) {
+       ctx._source.source_ids = [];
+      } else if (!ctx._source.source_ids.contains(params.source_id)) { 
+       ctx._source.source_ids.add(params.source_id); 
+      }
       ctx._source.timestamp = params.timestamp;
     ",
     "lang": "painless",
@@ -56,6 +61,7 @@ const script = `
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
       "count": {{.Count}},
+      "source_ids": ["{{.SourceId}}"],
       "timestamp": {{.Timestamp}}
     }
 }
