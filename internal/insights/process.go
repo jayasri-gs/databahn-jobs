@@ -22,12 +22,10 @@ const script = `
 {
   "script": {
     "source": "
-      if (ctx._source.min_time == null || params.min_time < ctx._source.min_time) { 
-       ctx._source.min_source_id = params.source_id;
+      if (ctx._source.min_time == null || params.min_time < ctx._source.min_time) {
        ctx._source.min_time = params.min_time;
       }
       if (ctx._source.max_time == null || params.max_time > ctx._source.max_time) {
-       ctx._source.max_source_id = params.source_id;
        ctx._source.max_time = params.max_time;
       }
       if (ctx._source.count == null)  {
@@ -35,11 +33,7 @@ const script = `
       } else {
        ctx._source.count = ctx._source.count + params.count;
       }
-      if (ctx._source.source_id == null) {
-       ctx._source.source_id = [];
-      } else if (!ctx._source.source_id.contains(params.source_id)) { 
-       ctx._source.source_id.add(params.source_id); 
-      }
+      ctx._source.source_id = params.source_id; 
       ctx._source.timestamp = params.timestamp;
     ",
     "lang": "painless",
@@ -61,7 +55,7 @@ const script = `
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
       "count": {{.Count}},
-      "source_id": ["{{.SourceId}}"],
+      "source_id": "{{.SourceId}}",
       "timestamp": {{.Timestamp}}
     }
 }
@@ -126,7 +120,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		var docs []Doc
 		for _, bucket := range response.Aggregations.GroupBy.Buckets {
 			doc := Doc{}
-			doc.Id = bucket.Key.Key
+			doc.Id = bucket.Key.Key + bucket.Key.SourceId
 			doc.Key = bucket.Key.Key
 			doc.SourceId = bucket.Key.SourceId
 			doc.TenantId = index.TenantId
@@ -310,7 +304,6 @@ type Response struct {
 type Doc struct {
 	Id        string  `json:"id"`
 	Key       string  `json:"key"`
-	InsightId string  `json:"insight_id"`
 	SourceId  string  `json:"source_id"`
 	TenantId  string  `json:"tenant_id"`
 	MinTime   int64   `json:"min_time"`
