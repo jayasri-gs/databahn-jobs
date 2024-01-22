@@ -100,8 +100,7 @@ func WithDownloaderClientOptions(opts ...func(*s3.Options)) func(*Downloader) {
 // interface.
 //
 // Example:
-//
-//	// Load AWS Config
+// 	// Load AWS Config
 //	cfg, err := config.LoadDefaultConfig(context.TODO())
 //	if err != nil {
 //		panic(err)
@@ -154,7 +153,6 @@ func NewDownloader(c DownloadAPIClient, options ...func(*Downloader)) *Downloade
 // and GC runs.
 //
 // Example:
-//
 //	// pre-allocate in memory buffer, where headObject type is *s3.HeadObjectOutput
 //	buf := make([]byte, int(headObject.ContentLength))
 //	// wrap with aws.WriteAtBuffer
@@ -399,11 +397,7 @@ func (d *downloader) tryDownloadChunk(params *s3.GetObjectInput, w io.Writer) (i
 	}
 	d.setTotalBytes(resp) // Set total if not yet set.
 
-	var src io.Reader = resp.Body
-	if d.cfg.BufferProvider != nil {
-		src = &suppressWriterAt{suppressed: src}
-	}
-	n, err := io.Copy(w, src)
+	n, err := io.Copy(w, resp.Body)
 	resp.Body.Close()
 	if err != nil {
 		return n, &errReadingBody{err: err}
@@ -436,8 +430,8 @@ func (d *downloader) setTotalBytes(resp *s3.GetObjectOutput) {
 	if resp.ContentRange == nil {
 		// ContentRange is nil when the full file contents is provided, and
 		// is not chunked. Use ContentLength instead.
-		if aws.ToInt64(resp.ContentLength) > 0 {
-			d.totalBytes = aws.ToInt64(resp.ContentLength)
+		if resp.ContentLength > 0 {
+			d.totalBytes = resp.ContentLength
 			return
 		}
 	} else {

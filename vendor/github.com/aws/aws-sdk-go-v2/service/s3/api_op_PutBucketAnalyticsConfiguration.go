@@ -4,27 +4,25 @@ package s3
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	s3cust "github.com/aws/aws-sdk-go-v2/service/s3/internal/customizations"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go/middleware"
-	"github.com/aws/smithy-go/ptr"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// This operation is not supported by directory buckets. Sets an analytics
-// configuration for the bucket (specified by the analytics configuration ID). You
-// can have up to 1,000 analytics configurations per bucket. You can choose to have
-// storage class analysis export analysis reports sent to a comma-separated values
-// (CSV) flat file. See the DataExport request element. Reports are updated daily
-// and are based on the object filters that you configure. When selecting data
-// export, you specify a destination bucket and an optional destination prefix
-// where the file is written. You can export the data to a destination bucket in a
-// different account. However, the destination bucket must be in the same Region as
-// the bucket that you are making the PUT analytics configuration to. For more
-// information, see Amazon S3 Analytics – Storage Class Analysis (https://docs.aws.amazon.com/AmazonS3/latest/dev/analytics-storage-class.html)
+// Sets an analytics configuration for the bucket (specified by the analytics
+// configuration ID). You can have up to 1,000 analytics configurations per bucket.
+// You can choose to have storage class analysis export analysis reports sent to a
+// comma-separated values (CSV) flat file. See the DataExport request element.
+// Reports are updated daily and are based on the object filters that you
+// configure. When selecting data export, you specify a destination bucket and an
+// optional destination prefix where the file is written. You can export the data
+// to a destination bucket in a different account. However, the destination bucket
+// must be in the same Region as the bucket that you are making the PUT analytics
+// configuration to. For more information, see Amazon S3 Analytics – Storage Class
+// Analysis (https://docs.aws.amazon.com/AmazonS3/latest/dev/analytics-storage-class.html)
 // . You must create a bucket policy on the destination bucket where the exported
 // file is written to grant permissions to Amazon S3 to write objects to the
 // bucket. For an example policy, see Granting Permissions for Amazon S3 Inventory
@@ -85,17 +83,12 @@ type PutBucketAnalyticsConfigurationInput struct {
 	// This member is required.
 	Id *string
 
-	// The account ID of the expected bucket owner. If the account ID that you provide
-	// does not match the actual owner of the bucket, the request fails with the HTTP
-	// status code 403 Forbidden (access denied).
+	// The account ID of the expected bucket owner. If the bucket is owned by a
+	// different account, the request fails with the HTTP status code 403 Forbidden
+	// (access denied).
 	ExpectedBucketOwner *string
 
 	noSmithyDocumentSerde
-}
-
-func (in *PutBucketAnalyticsConfigurationInput) bindEndpointParams(p *EndpointParameters) {
-	p.Bucket = in.Bucket
-	p.UseS3ExpressControlEndpoint = ptr.Bool(true)
 }
 
 type PutBucketAnalyticsConfigurationOutput struct {
@@ -106,22 +99,12 @@ type PutBucketAnalyticsConfigurationOutput struct {
 }
 
 func (c *Client) addOperationPutBucketAnalyticsConfigurationMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsRestxml_serializeOpPutBucketAnalyticsConfiguration{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsRestxml_deserializeOpPutBucketAnalyticsConfiguration{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "PutBucketAnalyticsConfiguration"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -142,13 +125,16 @@ func (c *Client) addOperationPutBucketAnalyticsConfigurationMiddlewares(stack *m
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -157,10 +143,7 @@ func (c *Client) addOperationPutBucketAnalyticsConfigurationMiddlewares(stack *m
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
-	if err = addPutBucketContextMiddleware(stack); err != nil {
+	if err = swapWithCustomHTTPSignerMiddleware(stack, options); err != nil {
 		return err
 	}
 	if err = addOpPutBucketAnalyticsConfigurationValidationMiddleware(stack); err != nil {
@@ -190,26 +173,14 @@ func (c *Client) addOperationPutBucketAnalyticsConfigurationMiddlewares(stack *m
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
-	if err = addSerializeImmutableHostnameBucketMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
-}
-
-func (v *PutBucketAnalyticsConfigurationInput) bucket() (string, bool) {
-	if v.Bucket == nil {
-		return "", false
-	}
-	return *v.Bucket, true
 }
 
 func newServiceMetadataMiddleware_opPutBucketAnalyticsConfiguration(region string) *awsmiddleware.RegisterServiceMetadata {
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "s3",
 		OperationName: "PutBucketAnalyticsConfiguration",
 	}
 }

@@ -50,10 +50,6 @@ func (m *processARNResource) HandleSerialize(
 ) (
 	out middleware.SerializeOutput, metadata middleware.Metadata, err error,
 ) {
-	if !awsmiddleware.GetRequiresLegacyEndpoints(ctx) {
-		return next.HandleSerialize(ctx, in)
-	}
-
 	// check if arn was provided, if not skip this middleware
 	arnValue, ok := s3shared.GetARNResourceFromContext(ctx)
 	if !ok {

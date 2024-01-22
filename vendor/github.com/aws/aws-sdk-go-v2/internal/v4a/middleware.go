@@ -3,13 +3,13 @@ package v4a
 import (
 	"context"
 	"fmt"
-	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	internalauth "github.com/aws/aws-sdk-go-v2/internal/auth"
-	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"net/http"
 	"time"
+
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // HTTPSigner is SigV4a HTTP signer implementation
@@ -71,23 +71,10 @@ func (s *SignHTTPRequestMiddleware) HandleFinalize(
 		return out, metadata, &SigningError{Err: fmt.Errorf("failed to retrieve credentials: %w", err)}
 	}
 
-	signerOptions := []func(o *SignerOptions){
-		func(o *SignerOptions) {
-			o.Logger = middleware.GetLogger(ctx)
-			o.LogSigning = s.logSigning
-		},
-	}
-
-	// existing DisableURIPathEscaping is equivalent in purpose
-	// to authentication scheme property DisableDoubleEncoding
-	disableDoubleEncoding, overridden := internalauth.GetDisableDoubleEncoding(ctx)
-	if overridden {
-		signerOptions = append(signerOptions, func(o *SignerOptions) {
-			o.DisableURIPathEscaping = disableDoubleEncoding
-		})
-	}
-
-	err = s.signer.SignHTTP(ctx, credentials, req.Request, payloadHash, signingName, []string{signingRegion}, time.Now().UTC(), signerOptions...)
+	err = s.signer.SignHTTP(ctx, credentials, req.Request, payloadHash, signingName, []string{signingRegion}, time.Now().UTC(), func(o *SignerOptions) {
+		o.Logger = middleware.GetLogger(ctx)
+		o.LogSigning = s.logSigning
+	})
 	if err != nil {
 		return out, metadata, &SigningError{Err: fmt.Errorf("failed to sign http request, %w", err)}
 	}

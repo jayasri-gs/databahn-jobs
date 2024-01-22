@@ -69,9 +69,9 @@ func UpdateEndpoint(stack *middleware.Stack, options UpdateEndpointOptions) (err
 	const serializerID = "OperationSerializer"
 
 	// initial arn look up middleware
-	err = stack.Initialize.Insert(&s3shared.ARNLookup{
+	err = stack.Initialize.Add(&s3shared.ARNLookup{
 		GetARNValue: options.Accessor.GetBucketFromInput,
-	}, "legacyEndpointContextSetter", middleware.After)
+	}, middleware.Before)
 	if err != nil {
 		return err
 	}
@@ -141,10 +141,6 @@ func (u *updateEndpoint) HandleSerialize(
 ) (
 	out middleware.SerializeOutput, metadata middleware.Metadata, err error,
 ) {
-	if !awsmiddleware.GetRequiresLegacyEndpoints(ctx) {
-		return next.HandleSerialize(ctx, in)
-	}
-
 	// if arn was processed, skip this middleware
 	if _, ok := s3shared.GetARNResourceFromContext(ctx); ok {
 		return next.HandleSerialize(ctx, in)
