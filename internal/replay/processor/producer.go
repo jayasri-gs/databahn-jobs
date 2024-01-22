@@ -29,10 +29,11 @@ func InitProducer(reqId string, topic string) {
 	kafka.NewKafkaCluster(constants.ClusterName, boostrap)
 	cluster, _ := kafka.GetKafkaCluster(constants.ClusterName)
 	prodExtraParam := map[string]any{
-		"acks":             1,
-		"linger.ms":        1000,
-		"batch.size":       1000000,
-		"compression.type": "snappy",
+		"acks":                       1,
+		"linger.ms":                  1000,
+		"batch.size":                 1000000,
+		"compression.type":           "snappy",
+		"queue.buffering.max.kbytes": 50000,
 	}
 	producer, err := cluster.NewProducer(context.Background(), kafka.ProducerConfig{
 		Name:       constants.DataReplayProducer,
