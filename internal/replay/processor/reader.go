@@ -51,11 +51,12 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 
 	}
 
+	var lineSlice string
 	lineCounter := 0
 	var byteSize int64 = 0
 	for scanner.Scan() {
 		line := scanner.Text()
-
+		lineSlice = lineSlice + "\n" + line
 		byteSize = byteSize + int64(len(line))
 		if offsetSeek > lineCounter {
 			lineCounter++
@@ -64,14 +65,14 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		if offsetSeek == lineCounter {
 			logger.GetLogger().Info("seek to line completed", zap.Int("offset", offsetSeek), zap.Int("lineCounter", lineCounter), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 		}
-		message := kafka.Message{
-			Message: []byte(line),
-		}
-		producer.SendAsync(message, func(err error) {
-			logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
-		})
 
-		if lineCounter%10000 == 0 {
+		if lineCounter%1000 == 0 {
+			message := kafka.Message{
+				Message: []byte(lineSlice),
+			}
+			producer.SendAsync(message, func(err error) {
+				logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
+			})
 			fmt.Println("lineCounter : ", lineCounter)
 			mst.UpdateMetaData(fileName, "", lineCounter, 0, 0, byteSize, "")
 		}
