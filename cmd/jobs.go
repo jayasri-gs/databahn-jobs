@@ -5,17 +5,21 @@ import (
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/insights"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
 )
 
-func RunJob(ctx context.Context, jobName string) {
+func RunJob(ctx context.Context, jobName string, input model.Message) {
 	var err error
 	switch jobName {
 	case common.INSIGHTS_AGGREGATION:
 		parallelism := utils.GetEnvInt("INSIGHTS_PROCESSING_PARALLELISM", 4)
 		err = insights.AggregateInsightsAndStore(ctx, parallelism)
+	case common.DATA_REPLAY:
+		jobcmd.ExecuteReplayJob(input)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
