@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -11,7 +12,12 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists the user import jobs.
+// Lists user import jobs for a user pool. Amazon Cognito evaluates Identity and
+// Access Management (IAM) policies in requests for this API operation. For this
+// operation, you must use IAM credentials to authorize requests, and you must
+// grant yourself the corresponding IAM permission in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) ListUserImportJobs(ctx context.Context, params *ListUserImportJobsInput, optFns ...func(*Options)) (*ListUserImportJobsOutput, error) {
 	if params == nil {
 		params = &ListUserImportJobsInput{}
@@ -33,15 +39,19 @@ type ListUserImportJobsInput struct {
 	// The maximum number of import jobs you want the request to return.
 	//
 	// This member is required.
-	MaxResults int32
+	MaxResults *int32
 
 	// The user pool ID for the user pool that the users are being imported into.
 	//
 	// This member is required.
 	UserPoolId *string
 
-	// An identifier that was returned from the previous call to ListUserImportJobs ,
-	// which can be used to return the next set of import jobs in the list.
+	// This API operation returns a limited number of results. The pagination token is
+	// an identifier that you can present in an additional API request with the same
+	// parameters. When you include the pagination token, Amazon Cognito returns the
+	// next set of items after the current list. Subsequent requests return a new
+	// pagination token. By use of this token, you can paginate through the full list
+	// of items.
 	PaginationToken *string
 
 	noSmithyDocumentSerde
@@ -51,8 +61,10 @@ type ListUserImportJobsInput struct {
 // jobs.
 type ListUserImportJobsOutput struct {
 
-	// An identifier that can be used to return the next set of user import jobs in
-	// the list.
+	// The identifier that Amazon Cognito returned with the previous request to this
+	// operation. When you include a pagination token in your request, Amazon Cognito
+	// returns the next set of items in the list. By use of this token, you can
+	// paginate through the full list of items.
 	PaginationToken *string
 
 	// The user import jobs.
@@ -65,12 +77,22 @@ type ListUserImportJobsOutput struct {
 }
 
 func (c *Client) addOperationListUserImportJobsMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListUserImportJobs{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListUserImportJobs{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ListUserImportJobs"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -91,22 +113,22 @@ func (c *Client) addOperationListUserImportJobsMiddlewares(stack *middleware.Sta
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpListUserImportJobsValidationMiddleware(stack); err != nil {
@@ -127,6 +149,9 @@ func (c *Client) addOperationListUserImportJobsMiddlewares(stack *middleware.Sta
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -134,7 +159,6 @@ func newServiceMetadataMiddleware_opListUserImportJobs(region string) *awsmiddle
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "ListUserImportJobs",
 	}
 }

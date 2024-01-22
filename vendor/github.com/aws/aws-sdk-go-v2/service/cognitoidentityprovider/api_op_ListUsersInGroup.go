@@ -12,8 +12,12 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists the users in the specified group. Calling this action requires developer
-// credentials.
+// Lists the users in the specified group. Amazon Cognito evaluates Identity and
+// Access Management (IAM) policies in requests for this API operation. For this
+// operation, you must use IAM credentials to authorize requests, and you must
+// grant yourself the corresponding IAM permission in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) ListUsersInGroup(ctx context.Context, params *ListUsersInGroupInput, optFns ...func(*Options)) (*ListUsersInGroupOutput, error) {
 	if params == nil {
 		params = &ListUsersInGroupInput{}
@@ -41,7 +45,7 @@ type ListUsersInGroupInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The limit of the request to list users.
+	// The maximum number of users that you want to retrieve before pagination.
 	Limit *int32
 
 	// An identifier that was returned from the previous call to this operation, which
@@ -57,7 +61,7 @@ type ListUsersInGroupOutput struct {
 	// items in the list.
 	NextToken *string
 
-	// The users returned in the request to list users.
+	// A list of users in the group, and their attributes.
 	Users []types.UserType
 
 	// Metadata pertaining to the operation's result.
@@ -67,12 +71,22 @@ type ListUsersInGroupOutput struct {
 }
 
 func (c *Client) addOperationListUsersInGroupMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListUsersInGroup{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListUsersInGroup{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ListUsersInGroup"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -93,22 +107,22 @@ func (c *Client) addOperationListUsersInGroupMiddlewares(stack *middleware.Stack
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpListUsersInGroupValidationMiddleware(stack); err != nil {
@@ -129,6 +143,9 @@ func (c *Client) addOperationListUsersInGroupMiddlewares(stack *middleware.Stack
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -142,7 +159,7 @@ var _ ListUsersInGroupAPIClient = (*Client)(nil)
 
 // ListUsersInGroupPaginatorOptions is the paginator options for ListUsersInGroup
 type ListUsersInGroupPaginatorOptions struct {
-	// The limit of the request to list users.
+	// The maximum number of users that you want to retrieve before pagination.
 	Limit int32
 
 	// Set to true if pagination should stop if the service returns a pagination token
@@ -226,7 +243,6 @@ func newServiceMetadataMiddleware_opListUsersInGroup(region string) *awsmiddlewa
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "ListUsersInGroup",
 	}
 }

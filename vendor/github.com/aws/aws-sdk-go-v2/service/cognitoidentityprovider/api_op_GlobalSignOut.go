@@ -4,15 +4,35 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Signs out users from all devices. It also invalidates all refresh tokens that
-// Amazon Cognito has issued to a user. A user can still use a hosted UI cookie to
-// retrieve new tokens for the duration of the 1-hour cookie validity period.
+// Invalidates the identity, access, and refresh tokens that Amazon Cognito issued
+// to a user. Call this operation when your user signs out of your app. This
+// results in the following behavior.
+//   - Amazon Cognito no longer accepts token-authorized user operations that you
+//     authorize with a signed-out user's access tokens. For more information, see
+//     Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
+//     . Amazon Cognito returns an Access Token has been revoked error when your app
+//     attempts to authorize a user pools API request with a revoked access token that
+//     contains the scope aws.cognito.signin.user.admin .
+//   - Amazon Cognito no longer accepts a signed-out user's ID token in a GetId  (https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_GetId.html)
+//     request to an identity pool with ServerSideTokenCheck enabled for its user
+//     pool IdP configuration in CognitoIdentityProvider (https://docs.aws.amazon.com/cognitoidentity/latest/APIReference/API_CognitoIdentityProvider.html)
+//     .
+//   - Amazon Cognito no longer accepts a signed-out user's refresh tokens in
+//     refresh requests.
+//
+// Other requests might be valid until your user's token expires. Amazon Cognito
+// doesn't evaluate Identity and Access Management (IAM) policies in requests for
+// this API operation. For this operation, you can't use IAM credentials to
+// authorize requests, and you can't grant IAM permissions in policies. For more
+// information about authorization models in Amazon Cognito, see Using the Amazon
+// Cognito native and OIDC APIs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
+// .
 func (c *Client) GlobalSignOut(ctx context.Context, params *GlobalSignOutInput, optFns ...func(*Options)) (*GlobalSignOutOutput, error) {
 	if params == nil {
 		params = &GlobalSignOutInput{}
@@ -49,12 +69,22 @@ type GlobalSignOutOutput struct {
 }
 
 func (c *Client) addOperationGlobalSignOutMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpGlobalSignOut{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpGlobalSignOut{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "GlobalSignOut"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -69,13 +99,7 @@ func (c *Client) addOperationGlobalSignOutMiddlewares(stack *middleware.Stack, o
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
-		return err
-	}
 	if err = addRetryMiddlewares(stack, options); err != nil {
-		return err
-	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
@@ -84,13 +108,16 @@ func (c *Client) addOperationGlobalSignOutMiddlewares(stack *middleware.Stack, o
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpGlobalSignOutValidationMiddleware(stack); err != nil {
@@ -111,6 +138,9 @@ func (c *Client) addOperationGlobalSignOutMiddlewares(stack *middleware.Stack, o
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -118,7 +148,6 @@ func newServiceMetadataMiddleware_opGlobalSignOut(region string) *awsmiddleware.
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "GlobalSignOut",
 	}
 }

@@ -4,8 +4,8 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -13,7 +13,13 @@ import (
 
 // Provides the feedback for an authentication event, whether it was from a valid
 // user or not. This feedback is used for improving the risk evaluation decision
-// for the user pool as part of Amazon Cognito advanced security.
+// for the user pool as part of Amazon Cognito advanced security. Amazon Cognito
+// doesn't evaluate Identity and Access Management (IAM) policies in requests for
+// this API operation. For this operation, you can't use IAM credentials to
+// authorize requests, and you can't grant IAM permissions in policies. For more
+// information about authorization models in Amazon Cognito, see Using the Amazon
+// Cognito native and OIDC APIs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
+// .
 func (c *Client) UpdateAuthEventFeedback(ctx context.Context, params *UpdateAuthEventFeedbackInput, optFns ...func(*Options)) (*UpdateAuthEventFeedbackOutput, error) {
 	if params == nil {
 		params = &UpdateAuthEventFeedbackInput{}
@@ -41,7 +47,11 @@ type UpdateAuthEventFeedbackInput struct {
 	// This member is required.
 	FeedbackToken *string
 
-	// The authentication event feedback value.
+	// The authentication event feedback value. When you provide a FeedbackValue value
+	// of valid , you tell Amazon Cognito that you trust a user session where Amazon
+	// Cognito has evaluated some level of risk. When you provide a FeedbackValue
+	// value of invalid , you tell Amazon Cognito that you don't trust a user session,
+	// or you don't believe that Amazon Cognito evaluated a high-enough risk level.
 	//
 	// This member is required.
 	FeedbackValue types.FeedbackValueType
@@ -51,7 +61,10 @@ type UpdateAuthEventFeedbackInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The user pool username.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -67,12 +80,22 @@ type UpdateAuthEventFeedbackOutput struct {
 }
 
 func (c *Client) addOperationUpdateAuthEventFeedbackMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpUpdateAuthEventFeedback{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpUpdateAuthEventFeedback{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "UpdateAuthEventFeedback"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -87,13 +110,7 @@ func (c *Client) addOperationUpdateAuthEventFeedbackMiddlewares(stack *middlewar
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
-		return err
-	}
 	if err = addRetryMiddlewares(stack, options); err != nil {
-		return err
-	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
@@ -102,13 +119,16 @@ func (c *Client) addOperationUpdateAuthEventFeedbackMiddlewares(stack *middlewar
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpUpdateAuthEventFeedbackValidationMiddleware(stack); err != nil {
@@ -129,6 +149,9 @@ func (c *Client) addOperationUpdateAuthEventFeedbackMiddlewares(stack *middlewar
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -136,7 +159,6 @@ func newServiceMetadataMiddleware_opUpdateAuthEventFeedback(region string) *awsm
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "UpdateAuthEventFeedback",
 	}
 }

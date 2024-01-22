@@ -3315,6 +3315,61 @@ func (m *awsAwsjson11_serializeOpGetIdentityProviderByIdentifier) HandleSerializ
 	return next.HandleSerialize(ctx, in)
 }
 
+type awsAwsjson11_serializeOpGetLogDeliveryConfiguration struct {
+}
+
+func (*awsAwsjson11_serializeOpGetLogDeliveryConfiguration) ID() string {
+	return "OperationSerializer"
+}
+
+func (m *awsAwsjson11_serializeOpGetLogDeliveryConfiguration) HandleSerialize(ctx context.Context, in middleware.SerializeInput, next middleware.SerializeHandler) (
+	out middleware.SerializeOutput, metadata middleware.Metadata, err error,
+) {
+	request, ok := in.Request.(*smithyhttp.Request)
+	if !ok {
+		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown transport type %T", in.Request)}
+	}
+
+	input, ok := in.Parameters.(*GetLogDeliveryConfigurationInput)
+	_ = input
+	if !ok {
+		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown input parameters type %T", in.Parameters)}
+	}
+
+	operationPath := "/"
+	if len(request.Request.URL.Path) == 0 {
+		request.Request.URL.Path = operationPath
+	} else {
+		request.Request.URL.Path = path.Join(request.Request.URL.Path, operationPath)
+		if request.Request.URL.Path != "/" && operationPath[len(operationPath)-1] == '/' {
+			request.Request.URL.Path += "/"
+		}
+	}
+	request.Request.Method = "POST"
+	httpBindingEncoder, err := httpbinding.NewEncoder(request.URL.Path, request.URL.RawQuery, request.Header)
+	if err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+	httpBindingEncoder.SetHeader("Content-Type").String("application/x-amz-json-1.1")
+	httpBindingEncoder.SetHeader("X-Amz-Target").String("AWSCognitoIdentityProviderService.GetLogDeliveryConfiguration")
+
+	jsonEncoder := smithyjson.NewEncoder()
+	if err := awsAwsjson11_serializeOpDocumentGetLogDeliveryConfigurationInput(input, jsonEncoder.Value); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+
+	if request, err = request.SetStream(bytes.NewReader(jsonEncoder.Bytes())); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+
+	if request.Request, err = httpBindingEncoder.Encode(request.Request); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+	in.Request = request
+
+	return next.HandleSerialize(ctx, in)
+}
+
 type awsAwsjson11_serializeOpGetSigningCertificate struct {
 }
 
@@ -4400,6 +4455,61 @@ func (m *awsAwsjson11_serializeOpRevokeToken) HandleSerialize(ctx context.Contex
 
 	jsonEncoder := smithyjson.NewEncoder()
 	if err := awsAwsjson11_serializeOpDocumentRevokeTokenInput(input, jsonEncoder.Value); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+
+	if request, err = request.SetStream(bytes.NewReader(jsonEncoder.Bytes())); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+
+	if request.Request, err = httpBindingEncoder.Encode(request.Request); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+	in.Request = request
+
+	return next.HandleSerialize(ctx, in)
+}
+
+type awsAwsjson11_serializeOpSetLogDeliveryConfiguration struct {
+}
+
+func (*awsAwsjson11_serializeOpSetLogDeliveryConfiguration) ID() string {
+	return "OperationSerializer"
+}
+
+func (m *awsAwsjson11_serializeOpSetLogDeliveryConfiguration) HandleSerialize(ctx context.Context, in middleware.SerializeInput, next middleware.SerializeHandler) (
+	out middleware.SerializeOutput, metadata middleware.Metadata, err error,
+) {
+	request, ok := in.Request.(*smithyhttp.Request)
+	if !ok {
+		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown transport type %T", in.Request)}
+	}
+
+	input, ok := in.Parameters.(*SetLogDeliveryConfigurationInput)
+	_ = input
+	if !ok {
+		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown input parameters type %T", in.Parameters)}
+	}
+
+	operationPath := "/"
+	if len(request.Request.URL.Path) == 0 {
+		request.Request.URL.Path = operationPath
+	} else {
+		request.Request.URL.Path = path.Join(request.Request.URL.Path, operationPath)
+		if request.Request.URL.Path != "/" && operationPath[len(operationPath)-1] == '/' {
+			request.Request.URL.Path += "/"
+		}
+	}
+	request.Request.Method = "POST"
+	httpBindingEncoder, err := httpbinding.NewEncoder(request.URL.Path, request.URL.RawQuery, request.Header)
+	if err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+	httpBindingEncoder.SetHeader("Content-Type").String("application/x-amz-json-1.1")
+	httpBindingEncoder.SetHeader("X-Amz-Target").String("AWSCognitoIdentityProviderService.SetLogDeliveryConfiguration")
+
+	jsonEncoder := smithyjson.NewEncoder()
+	if err := awsAwsjson11_serializeOpDocumentSetLogDeliveryConfigurationInput(input, jsonEncoder.Value); err != nil {
 		return out, metadata, &smithy.SerializationError{Err: err}
 	}
 
@@ -5857,6 +5967,18 @@ func awsAwsjson11_serializeDocumentClientPermissionListType(v []string, value sm
 	return nil
 }
 
+func awsAwsjson11_serializeDocumentCloudWatchLogsConfigurationType(v *types.CloudWatchLogsConfigurationType, value smithyjson.Value) error {
+	object := value.Object()
+	defer object.Close()
+
+	if v.LogGroupArn != nil {
+		ok := object.Key("LogGroupArn")
+		ok.String(*v.LogGroupArn)
+	}
+
+	return nil
+}
+
 func awsAwsjson11_serializeDocumentCompromisedCredentialsActionsType(v *types.CompromisedCredentialsActionsType, value smithyjson.Value) error {
 	object := value.Object()
 	defer object.Close()
@@ -6186,6 +6308,13 @@ func awsAwsjson11_serializeDocumentLambdaConfigType(v *types.LambdaConfigType, v
 		ok.String(*v.PreTokenGeneration)
 	}
 
+	if v.PreTokenGenerationConfig != nil {
+		ok := object.Key("PreTokenGenerationConfig")
+		if err := awsAwsjson11_serializeDocumentPreTokenGenerationVersionConfigType(v.PreTokenGenerationConfig, ok); err != nil {
+			return err
+		}
+	}
+
 	if v.UserMigration != nil {
 		ok := object.Key("UserMigration")
 		ok.String(*v.UserMigration)
@@ -6194,6 +6323,43 @@ func awsAwsjson11_serializeDocumentLambdaConfigType(v *types.LambdaConfigType, v
 	if v.VerifyAuthChallengeResponse != nil {
 		ok := object.Key("VerifyAuthChallengeResponse")
 		ok.String(*v.VerifyAuthChallengeResponse)
+	}
+
+	return nil
+}
+
+func awsAwsjson11_serializeDocumentLogConfigurationListType(v []types.LogConfigurationType, value smithyjson.Value) error {
+	array := value.Array()
+	defer array.Close()
+
+	for i := range v {
+		av := array.Value()
+		if err := awsAwsjson11_serializeDocumentLogConfigurationType(&v[i], av); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func awsAwsjson11_serializeDocumentLogConfigurationType(v *types.LogConfigurationType, value smithyjson.Value) error {
+	object := value.Object()
+	defer object.Close()
+
+	if v.CloudWatchLogsConfiguration != nil {
+		ok := object.Key("CloudWatchLogsConfiguration")
+		if err := awsAwsjson11_serializeDocumentCloudWatchLogsConfigurationType(v.CloudWatchLogsConfiguration, ok); err != nil {
+			return err
+		}
+	}
+
+	if len(v.EventSource) > 0 {
+		ok := object.Key("EventSource")
+		ok.String(string(v.EventSource))
+	}
+
+	if len(v.LogLevel) > 0 {
+		ok := object.Key("LogLevel")
+		ok.String(string(v.LogLevel))
 	}
 
 	return nil
@@ -6359,9 +6525,9 @@ func awsAwsjson11_serializeDocumentPasswordPolicyType(v *types.PasswordPolicyTyp
 	object := value.Object()
 	defer object.Close()
 
-	if v.MinimumLength != 0 {
+	if v.MinimumLength != nil {
 		ok := object.Key("MinimumLength")
-		ok.Integer(v.MinimumLength)
+		ok.Integer(*v.MinimumLength)
 	}
 
 	if v.RequireLowercase {
@@ -6387,6 +6553,23 @@ func awsAwsjson11_serializeDocumentPasswordPolicyType(v *types.PasswordPolicyTyp
 	if v.TemporaryPasswordValidityDays != 0 {
 		ok := object.Key("TemporaryPasswordValidityDays")
 		ok.Integer(v.TemporaryPasswordValidityDays)
+	}
+
+	return nil
+}
+
+func awsAwsjson11_serializeDocumentPreTokenGenerationVersionConfigType(v *types.PreTokenGenerationVersionConfigType, value smithyjson.Value) error {
+	object := value.Object()
+	defer object.Close()
+
+	if v.LambdaArn != nil {
+		ok := object.Key("LambdaArn")
+		ok.String(*v.LambdaArn)
+	}
+
+	if len(v.LambdaVersion) > 0 {
+		ok := object.Key("LambdaVersion")
+		ok.String(string(v.LambdaVersion))
 	}
 
 	return nil
@@ -6447,9 +6630,9 @@ func awsAwsjson11_serializeDocumentRecoveryOptionType(v *types.RecoveryOptionTyp
 		ok.String(string(v.Name))
 	}
 
-	{
+	if v.Priority != nil {
 		ok := object.Key("Priority")
-		ok.Integer(v.Priority)
+		ok.Integer(*v.Priority)
 	}
 
 	return nil
@@ -8582,6 +8765,18 @@ func awsAwsjson11_serializeOpDocumentGetIdentityProviderByIdentifierInput(v *Get
 	return nil
 }
 
+func awsAwsjson11_serializeOpDocumentGetLogDeliveryConfigurationInput(v *GetLogDeliveryConfigurationInput, value smithyjson.Value) error {
+	object := value.Object()
+	defer object.Close()
+
+	if v.UserPoolId != nil {
+		ok := object.Key("UserPoolId")
+		ok.String(*v.UserPoolId)
+	}
+
+	return nil
+}
+
 func awsAwsjson11_serializeOpDocumentGetSigningCertificateInput(v *GetSigningCertificateInput, value smithyjson.Value) error {
 	object := value.Object()
 	defer object.Close()
@@ -8786,9 +8981,9 @@ func awsAwsjson11_serializeOpDocumentListResourceServersInput(v *ListResourceSer
 	object := value.Object()
 	defer object.Close()
 
-	if v.MaxResults != 0 {
+	if v.MaxResults != nil {
 		ok := object.Key("MaxResults")
-		ok.Integer(v.MaxResults)
+		ok.Integer(*v.MaxResults)
 	}
 
 	if v.NextToken != nil {
@@ -8820,9 +9015,9 @@ func awsAwsjson11_serializeOpDocumentListUserImportJobsInput(v *ListUserImportJo
 	object := value.Object()
 	defer object.Close()
 
-	{
+	if v.MaxResults != nil {
 		ok := object.Key("MaxResults")
-		ok.Integer(v.MaxResults)
+		ok.Integer(*v.MaxResults)
 	}
 
 	if v.PaginationToken != nil {
@@ -8842,9 +9037,9 @@ func awsAwsjson11_serializeOpDocumentListUserPoolClientsInput(v *ListUserPoolCli
 	object := value.Object()
 	defer object.Close()
 
-	if v.MaxResults != 0 {
+	if v.MaxResults != nil {
 		ok := object.Key("MaxResults")
-		ok.Integer(v.MaxResults)
+		ok.Integer(*v.MaxResults)
 	}
 
 	if v.NextToken != nil {
@@ -8864,9 +9059,9 @@ func awsAwsjson11_serializeOpDocumentListUserPoolsInput(v *ListUserPoolsInput, v
 	object := value.Object()
 	defer object.Close()
 
-	{
+	if v.MaxResults != nil {
 		ok := object.Key("MaxResults")
-		ok.Integer(v.MaxResults)
+		ok.Integer(*v.MaxResults)
 	}
 
 	if v.NextToken != nil {
@@ -9048,6 +9243,25 @@ func awsAwsjson11_serializeOpDocumentRevokeTokenInput(v *RevokeTokenInput, value
 	if v.Token != nil {
 		ok := object.Key("Token")
 		ok.String(*v.Token)
+	}
+
+	return nil
+}
+
+func awsAwsjson11_serializeOpDocumentSetLogDeliveryConfigurationInput(v *SetLogDeliveryConfigurationInput, value smithyjson.Value) error {
+	object := value.Object()
+	defer object.Close()
+
+	if v.LogConfigurations != nil {
+		ok := object.Key("LogConfigurations")
+		if err := awsAwsjson11_serializeDocumentLogConfigurationListType(v.LogConfigurations, ok); err != nil {
+			return err
+		}
+	}
+
+	if v.UserPoolId != nil {
+		ok := object.Key("UserPoolId")
+		ok.String(*v.UserPoolId)
 	}
 
 	return nil

@@ -4,14 +4,29 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Confirms user registration as an admin without using a confirmation code. Works
-// on any user. Calling this action requires developer credentials.
+// This IAM-authenticated API operation provides a code that Amazon Cognito sent
+// to your user when they signed up in your user pool. After your user enters their
+// code, they confirm ownership of the email address or phone number that they
+// provided, and their user account becomes active. Depending on your user pool
+// configuration, your users will receive their confirmation code in an email or
+// SMS message. Local users who signed up in your user pool are the only type of
+// user who can confirm sign-up with a code. Users who federate through an external
+// identity provider (IdP) have already been confirmed by their IdP.
+// Administrator-created users confirm their accounts when they respond to their
+// invitation email message and choose a password. Amazon Cognito evaluates
+// Identity and Access Management (IAM) policies in requests for this API
+// operation. For this operation, you must use IAM credentials to authorize
+// requests, and you must grant yourself the corresponding IAM permission in a
+// policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminConfirmSignUp(ctx context.Context, params *AdminConfirmSignUpInput, optFns ...func(*Options)) (*AdminConfirmSignUpOutput, error) {
 	if params == nil {
 		params = &AdminConfirmSignUpInput{}
@@ -27,7 +42,7 @@ func (c *Client) AdminConfirmSignUp(ctx context.Context, params *AdminConfirmSig
 	return out, nil
 }
 
-// Represents the request to confirm user registration.
+// Confirm a user's registration as a user pool administrator.
 type AdminConfirmSignUpInput struct {
 
 	// The user pool ID for which you want to confirm user registration.
@@ -35,7 +50,10 @@ type AdminConfirmSignUpInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The user name for which you want to confirm user registration.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -73,12 +91,22 @@ type AdminConfirmSignUpOutput struct {
 }
 
 func (c *Client) addOperationAdminConfirmSignUpMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminConfirmSignUp{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminConfirmSignUp{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminConfirmSignUp"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -99,22 +127,22 @@ func (c *Client) addOperationAdminConfirmSignUpMiddlewares(stack *middleware.Sta
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminConfirmSignUpValidationMiddleware(stack); err != nil {
@@ -135,6 +163,9 @@ func (c *Client) addOperationAdminConfirmSignUpMiddlewares(stack *middleware.Sta
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -142,7 +173,6 @@ func newServiceMetadataMiddleware_opAdminConfirmSignUp(region string) *awsmiddle
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminConfirmSignUp",
 	}
 }

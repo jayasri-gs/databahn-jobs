@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
@@ -11,20 +12,24 @@ import (
 )
 
 // Registers the user in the specified user pool and creates a user name,
-// password, and user attributes. This action might generate an SMS text message.
-// Starting June 1, 2021, US telecom carriers require you to register an
-// origination phone number before you can send SMS messages to US phone numbers.
-// If you use SMS text messages in Amazon Cognito, you must register a phone number
-// with Amazon Pinpoint (https://console.aws.amazon.com/pinpoint/home/) . Amazon
-// Cognito uses the registered number automatically. Otherwise, Amazon Cognito
-// users who must receive SMS messages might not be able to sign up, activate their
-// accounts, or sign in. If you have never used SMS text messages with Amazon
-// Cognito or any other Amazon Web Service, Amazon Simple Notification Service
-// might place your account in the SMS sandbox. In sandbox mode (https://docs.aws.amazon.com/sns/latest/dg/sns-sms-sandbox.html)
+// password, and user attributes. Amazon Cognito doesn't evaluate Identity and
+// Access Management (IAM) policies in requests for this API operation. For this
+// operation, you can't use IAM credentials to authorize requests, and you can't
+// grant IAM permissions in policies. For more information about authorization
+// models in Amazon Cognito, see Using the Amazon Cognito native and OIDC APIs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
+// . This action might generate an SMS text message. Starting June 1, 2021, US
+// telecom carriers require you to register an origination phone number before you
+// can send SMS messages to US phone numbers. If you use SMS text messages in
+// Amazon Cognito, you must register a phone number with Amazon Pinpoint (https://console.aws.amazon.com/pinpoint/home/)
+// . Amazon Cognito uses the registered number automatically. Otherwise, Amazon
+// Cognito users who must receive SMS messages might not be able to sign up,
+// activate their accounts, or sign in. If you have never used SMS text messages
+// with Amazon Cognito or any other Amazon Web Service, Amazon Simple Notification
+// Service might place your account in the SMS sandbox. In sandbox mode (https://docs.aws.amazon.com/sns/latest/dg/sns-sms-sandbox.html)
 // , you can send messages only to verified phone numbers. After you test your app
 // while in the sandbox environment, you can move out of the sandbox and into
 // production. For more information, see SMS message settings for Amazon Cognito
-// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-sms-userpool-settings.html)
+// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-sms-settings.html)
 // in the Amazon Cognito Developer Guide.
 func (c *Client) SignUp(ctx context.Context, params *SignUpInput, optFns ...func(*Options)) (*SignUpOutput, error) {
 	if params == nil {
@@ -54,7 +59,8 @@ type SignUpInput struct {
 	// This member is required.
 	Password *string
 
-	// The user name of the user you want to register.
+	// The username of the user that you want to sign up. The value of this parameter
+	// is typically a username, but can be any alias attribute in your user pool.
 	//
 	// This member is required.
 	Username *string
@@ -99,7 +105,16 @@ type SignUpInput struct {
 	// Amazon Cognito when it makes API requests.
 	UserContextData *types.UserContextDataType
 
-	// The validation data in the request to register a user.
+	// Temporary user attributes that contribute to the outcomes of your pre sign-up
+	// Lambda trigger. This set of key-value pairs are for custom validation of
+	// information that you collect from your users but don't need to retain. Your
+	// Lambda function can analyze this additional data and act on it. Your function
+	// might perform external API operations like logging user attributes and
+	// validation data to Amazon CloudWatch Logs. Validation data might also affect the
+	// response that your function returns to Amazon Cognito, like automatically
+	// confirming the user if they sign up from within your network. For more
+	// information about the pre sign-up Lambda trigger, see Pre sign-up Lambda trigger (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-lambda-pre-sign-up.html)
+	// .
 	ValidationData []types.AttributeType
 
 	noSmithyDocumentSerde
@@ -130,12 +145,22 @@ type SignUpOutput struct {
 }
 
 func (c *Client) addOperationSignUpMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpSignUp{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpSignUp{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "SignUp"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -159,13 +184,16 @@ func (c *Client) addOperationSignUpMiddlewares(stack *middleware.Stack, options 
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpSignUpValidationMiddleware(stack); err != nil {
@@ -184,6 +212,9 @@ func (c *Client) addOperationSignUpMiddlewares(stack *middleware.Stack, options 
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
