@@ -1,6 +1,6 @@
 package constants
 
-const MountLocation string = "/Users/home/DataReplay/temp"
+const MountLocation string = "/opt/databahn/replay/"
 const MountLocationKey string = "MOUNT_LOCATION"
 const DataDir string = "data"
 const MetaDir string = "meta"
