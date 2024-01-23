@@ -5,30 +5,19 @@ import (
 	"flag"
 	"github.com/databahn-ai/databahn-jobs/cmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/render"
-	"net/http"
+	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
 	"strings"
 )
 
 func main() {
+	ctx := context.Background()
 	job := flag.String("job", "", "job name")
 	input := ReadInputData()
 	//flag.Parse()
+	logger.GetLoggerWithContext(ctx).Info("starting job with parameters", zap.Reflect("input", input))
 
-	ctx := context.Background()
-	go cmd.RunJob(ctx, *job, input)
-
-	r := chi.NewRouter()
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		render.Status(r, http.StatusOK)
-		render.PlainText(w, r, "healthy")
-		return
-	})
-	err := http.ListenAndServe(":8080", r)
-	if err != nil {
-		panic(err)
-	}
+	cmd.RunJob(ctx, *job, input)
 }
 
 func ReadInputData() model.Message {
