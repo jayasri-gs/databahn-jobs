@@ -3,12 +3,13 @@ package insights
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
-	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/store"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
@@ -18,7 +19,7 @@ import (
 	"time"
 )
 
-const script = `
+const sightsScript = `
 {
   "script": {
     "source": "
@@ -28,58 +29,57 @@ const script = `
       if (ctx._source.max_time == null || params.max_time > ctx._source.max_time) {
        ctx._source.max_time = params.max_time;
       }
-      if (ctx._source.count == null)  {
-       ctx._source.count = params.count;
-      } else {
-       ctx._source.count = ctx._source.count + params.count;
-      }
       ctx._source.source_id = params.source_id; 
       ctx._source.timestamp = params.timestamp;
     ",
     "lang": "painless",
     "params": {
-      "key": "{{.Key}}",
+      "key1": "{{.Key1}}",
+      "key2": "{{.Key2}}",
       "source_id": "{{.SourceId}}",
       "tenant_id": "{{.TenantId}}",
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
-      "count": {{.Count}},
       "timestamp": {{.Timestamp}}
     }
   },
   "upsert": {
-      "key": "{{.Key}}",
-      "min_source_id": "{{.SourceId}}",
-      "max_source_id": "{{.SourceId}}",
+      "id": "{{.Id}}",
+      "key1": "{{.Key1}}",
+      "key2": "{{.Key2}}",
       "tenant_id": "{{.TenantId}}",
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
-      "count": {{.Count}},
       "source_id": "{{.SourceId}}",
-      "timestamp": {{.Timestamp}}
+      "timestamp": {{.Timestamp}},
+      "reputation": "` + REPUTATION_NORMAL + `"
     }
 }
 `
 
 func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata) error {
-	indexName := common.INSIGHTS_STAGING_INDEX_PREFIX + index.String()
+	indexName := INSIGHTS_STAGING_INDEX_PREFIX + index.String()
 	page := 0
 	count := 0
 	var after *After = nil
-
 	for {
-		sourceKey := Source{}
-		keyTerms := Terms{}
-		keyTerms.Terms.Field = "key"
-		sourceKey.Key = &keyTerms
+		sourceKey1 := Source{}
+		key1Terms := Terms{}
+		key1Terms.Terms.Field = "key1"
+		sourceKey1.Key1 = &key1Terms
+		sourceKey2 := Source{}
+		key2Terms := Terms{}
+		key2Terms.Terms.Field = "key2"
+		sourceKey2.Key2 = &key2Terms
 		sourceSourceId := Source{}
 		sourceTerms := Terms{}
 		sourceTerms.Terms.Field = "source_id"
 		sourceSourceId.SourceId = &sourceTerms
 		request := Request{}
-		request.Aggs.GroupBy.Composite.Size = common.INSIGHTS_READ_BATCH
+		request.Aggs.GroupBy.Composite.Size = INSIGHTS_READ_BATCH
 		request.Aggs.GroupBy.Composite.After = after
-		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey)
+		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey1)
+		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey2)
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceSourceId)
 		request.Aggs.GroupBy.Aggs.PageCnt.Sum.Field = "count"
 		request.Aggs.GroupBy.Aggs.PageMnTime.Min.Field = "min_time"
@@ -120,10 +120,12 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		var docs []Doc
 		for _, bucket := range response.Aggregations.GroupBy.Buckets {
 			doc := Doc{}
-			doc.Id = bucket.Key.Key + bucket.Key.SourceId
-			doc.Key = bucket.Key.Key
+			doc.Key1 = bucket.Key.Key1
+			doc.Key2 = bucket.Key.Key2
+			doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.SourceId)
 			doc.SourceId = bucket.Key.SourceId
 			doc.TenantId = index.TenantId
+			doc.App = index.App
 			doc.MinTime = int64(bucket.PageMnTime.Value)
 			doc.MaxTime = int64(bucket.PageMxTime.Value)
 			doc.Count = bucket.PageCnt.Value
@@ -131,7 +133,12 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			docs = append(docs, doc)
 		}
 
-		err = updateDocs(ctx, cli, index.TenantId, docs)
+		err = upsertSightsDocs(ctx, cli, index.TenantId, index.App, docs)
+		if err != nil {
+			return err
+		}
+
+		err = upsertFrequencyDocs(ctx, cli, &index, docs)
 		if err != nil {
 			return err
 		}
@@ -145,23 +152,19 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 
 }
 
-func updateDocs(ctx context.Context, cli *opensearch.Client, tenantId string, documents []Doc) error {
+func upsertSightsDocs(ctx context.Context, cli *opensearch.Client, tenantId, app string, documents []Doc) error {
 	if len(documents) == 0 {
 		return nil
 	}
-	index := common.INSIGHTS_STORE_INDEX_PREFIX + tenantId
-
+	index := SightIndexNameByApp(app, tenantId)
 	buff := new(bytes.Buffer)
 	for _, doc := range documents {
 		_, err := fmt.Fprintf(buff, "{\"update\": {\"_id\": \"%s\"}}\n", doc.Id)
 		if err != nil {
 			return err
 		}
-
-		if err != nil {
-			return err
-		}
-		j, err := getUpdateRequestBody(&doc)
+		s := doc.Sight()
+		j, err := getUpdateRequestBody(&s)
 		if err != nil {
 			return err
 		}
@@ -173,6 +176,60 @@ func updateDocs(ctx context.Context, cli *opensearch.Client, tenantId string, do
 		Index: index,
 		Body:  buff,
 	}
+	err := performBulkRequest(ctx, cli, &request)
+	if err != nil {
+		return err
+	}
+	logger.GetLogger().Debug("updated documents to es sights", zap.Int("count", len(documents)))
+	return nil
+}
+
+func upsertFrequencyDocs(ctx context.Context, cli *opensearch.Client, index *IndexMetadata, documents []Doc) error {
+	if len(documents) == 0 {
+		return nil
+	}
+	indexName := FrequencyIndexNameByApp(index.App, index.TenantId)
+	buff := new(bytes.Buffer)
+	for _, doc := range documents {
+		f := doc.Frequency()
+		id := buildFrequencyDocId(index, &f)
+		_, err := fmt.Fprintf(buff, "{\"index\": {\"_id\": \"%s\"}}\n", id)
+		if err != nil {
+			return err
+		}
+		j, err := json.Marshal(f)
+		if err != nil {
+			return err
+		}
+		buff.Write(j)
+		buff.Write([]byte("\n"))
+	}
+	request := opensearchapi.BulkRequest{
+		Index: indexName,
+		Body:  buff,
+	}
+	err := performBulkRequest(ctx, cli, &request)
+	if err != nil {
+		return err
+	}
+	logger.GetLogger().Debug("indexed documents to es frequency", zap.Int("count", len(documents)))
+	return nil
+}
+
+func buildFrequencyDocId(index *IndexMetadata, doc *Frequency) string {
+	key := index.String() + doc.Key1 + doc.Key2 + doc.SourceId
+	h := sha256.New()
+	h.Write([]byte(key))
+	id := fmt.Sprintf("%x", h.Sum(nil))
+	return id
+}
+
+func getUpdateRequestBody(doc *Sight) ([]byte, error) {
+	b := strings.ReplaceAll(sightsScript, "\n", " ")
+	return utils.ParseTemplate([]byte(b), doc)
+}
+
+func performBulkRequest(ctx context.Context, cli *opensearch.Client, request *opensearchapi.BulkRequest) error {
 	resp, err := request.Do(ctx, cli)
 	if err != nil {
 		return err
@@ -192,15 +249,9 @@ func updateDocs(ctx context.Context, cli *opensearch.Client, tenantId string, do
 			if bodyJ.Errors {
 				return errors.New(string(bodyBytes))
 			}
-			logger.GetLogger().Debug("updated documents to es", zap.Int("count", len(documents)))
 		}
 	}
 	return nil
-}
-
-func getUpdateRequestBody(doc *Doc) ([]byte, error) {
-	b := strings.ReplaceAll(script, "\n", " ")
-	return utils.ParseTemplate([]byte(b), doc)
 }
 
 type EsResp struct {
@@ -214,12 +265,14 @@ type Terms struct {
 }
 
 type Source struct {
-	Key      *Terms `json:"key,omitempty"`
+	Key1     *Terms `json:"key1,omitempty"`
+	Key2     *Terms `json:"key2,omitempty"`
 	SourceId *Terms `json:"source_id,omitempty"`
 }
 
 type After struct {
-	Key      string `json:"key"`
+	Key1     string `json:"key1"`
+	Key2     string `json:"key2"`
 	SourceId string `json:"source_id"`
 }
 
@@ -253,15 +306,8 @@ type Request struct {
 	} `json:"aggs"`
 }
 
-type ErrorResponse struct {
-	Error struct {
-		Type   string `json:"type"`
-		Reason string `json:"reason"`
-	} `json:"error"`
-}
-
 type Response struct {
-	ErrorResponse
+	store.ErrorResponse
 	Took     int  `json:"took"`
 	TimedOut bool `json:"timed_out"`
 	Shards   struct {
@@ -283,7 +329,8 @@ type Response struct {
 			AfterKey *After `json:"after_key"`
 			Buckets  []struct {
 				Key struct {
-					Key      string `json:"key"`
+					Key1     string `json:"key1"`
+					Key2     string `json:"key2"`
 					SourceId string `json:"source_id"`
 				} `json:"key"`
 				DocCount   int `json:"doc_count"`
@@ -303,11 +350,101 @@ type Response struct {
 
 type Doc struct {
 	Id        string  `json:"id"`
-	Key       string  `json:"key"`
+	Key1      string  `json:"key1"`
+	Key2      string  `json:"key2,omitempty"`
+	App       string  `json:"app"`
+	InsightId string  `json:"insight_id"`
 	SourceId  string  `json:"source_id"`
 	TenantId  string  `json:"tenant_id"`
 	MinTime   int64   `json:"min_time"`
 	MaxTime   int64   `json:"max_time"`
 	Count     float64 `json:"count"`
 	Timestamp int64   `json:"timestamp"`
+}
+
+func (d Doc) Sight() Sight {
+	return Sight{
+		Id:        d.Id,
+		Key1:      d.Key1,
+		Key2:      d.Key2,
+		App:       d.App,
+		SourceId:  d.SourceId,
+		TenantId:  d.TenantId,
+		MinTime:   d.MinTime,
+		MaxTime:   d.MaxTime,
+		Timestamp: d.Timestamp,
+	}
+}
+
+func (d Doc) Frequency() Frequency {
+	eod := util.GetDayEndTimestamp(d.MaxTime)
+	return Frequency{
+		Id:              d.Id,
+		Key1:            d.Key1,
+		Key2:            d.Key2,
+		App:             d.App,
+		SourceId:        d.SourceId,
+		TenantId:        d.TenantId,
+		Count:           d.Count,
+		Timestamp:       d.MaxTime,
+		DayEndTimestamp: eod,
+	}
+}
+
+type Sight struct {
+	Id                  string `json:"id"`
+	Key1                string `json:"key1"`
+	Key2                string `json:"key2,omitempty"`
+	App                 string `json:"app"`
+	SourceId            string `json:"source_id"`
+	TenantId            string `json:"tenant_id"`
+	MinTime             int64  `json:"min_time"`
+	MaxTime             int64  `json:"max_time"`
+	Reputation          string `json:"reputation"`
+	Timestamp           int64  `json:"timestamp"`
+	ReputationUpdatedAt int64  `json:"reputation_updated_at"`
+}
+
+type ReputationUpdateRequest struct {
+	Id             string `json:"id"`
+	Reputation     string `json:"reputation"`
+	SkipReputation string `json:"skip_reputation"`
+	UpdatedAt      int64  `json:"updated_at"`
+}
+
+func (s Sight) History(time int64, reputation string) SilentDeviceHistory {
+	id := fmt.Sprintf("%s:%s:%s:%d", s.Key1, s.Key2, s.SourceId, time)
+	return SilentDeviceHistory{
+		Id:              id,
+		Key1:            s.Key1,
+		Key2:            s.Key2,
+		App:             s.App,
+		SourceId:        s.SourceId,
+		TenantId:        s.TenantId,
+		Reputation:      reputation,
+		DayEndTimestamp: time,
+	}
+}
+
+type SilentDeviceHistory struct {
+	Id              string `json:"id"`
+	Key1            string `json:"key1"`
+	Key2            string `json:"key2,omitempty"`
+	App             string `json:"app"`
+	SourceId        string `json:"source_id"`
+	TenantId        string `json:"tenant_id"`
+	DayEndTimestamp int64  `json:"day_end_timestamp"`
+	Reputation      string `json:"reputation"`
+}
+
+type Frequency struct {
+	Id              string  `json:"id"`
+	Key1            string  `json:"key1"`
+	Key2            string  `json:"key2"`
+	App             string  `json:"app"`
+	SourceId        string  `json:"source_id"`
+	TenantId        string  `json:"tenant_id"`
+	Count           float64 `json:"count"`
+	Timestamp       int64   `json:"timestamp"`
+	DayEndTimestamp int64   `json:"day_end_timestamp"`
 }
