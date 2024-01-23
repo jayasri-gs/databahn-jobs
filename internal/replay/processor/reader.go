@@ -7,7 +7,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
 
-	"fmt"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
@@ -73,9 +72,8 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
 		})
 
-		if lineCounter%1000 == 0 {
-
-			fmt.Println("lineCounter : ", lineCounter)
+		if lineCounter%10000 == 0 {
+			//logger.GetLogger(("lineCounter : ", lineCounter))
 			mst.UpdateMetaData(fileName, "", lineCounter, 0, 0, byteSize, "")
 		}
 		lineCounter++
