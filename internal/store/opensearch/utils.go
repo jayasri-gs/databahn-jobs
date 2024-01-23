@@ -1,50 +1,16 @@
-package store
+package opensearch
 
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/databahn-ai/common-utils/configuration"
-	"io"
-	"net/http"
-	"strings"
-
-	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
-	"go.uber.org/zap"
+	"github.com/pkg/errors"
+	"io"
+	"strings"
 )
-
-type OpenSearchCreds struct {
-	Username string
-	Password string
-}
-
-func NewOpenSearchClient(ctx context.Context, conf configuration.ConfigReader) (*opensearch.Client, error) {
-	secretName := conf.GetString(configuration.OpenSearchSecretName)
-	os, err := configuration.ReadOpenSearchSecrets(context.Background(), secretName)
-	if err != nil {
-		return nil, err
-	}
-	client, err := opensearch.NewClient(opensearch.Config{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: false,
-				MinVersion:         tls.VersionTLS12,
-			},
-		},
-		Addresses: []string{os.Url},
-		Username:  os.Username,
-		Password:  os.Password,
-	})
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("Failed to create Open search client", zap.Error(err))
-	}
-	return client, err
-}
 
 func CatIndices(ctx context.Context, client *opensearch.Client) ([]string, error) {
 	response, err := client.Cat.Indices()

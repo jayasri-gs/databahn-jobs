@@ -3,10 +3,9 @@ package insights
 import (
 	"context"
 	"errors"
-	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
-	"github.com/databahn-ai/databahn-jobs/internal/store"
+	"github.com/databahn-ai/databahn-jobs/internal/store/opensearch"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -18,18 +17,19 @@ import (
 )
 
 func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
-	conf, err := configuration.NewAppConfig()
+	conf := opensearch.GetConf()
+	osClient, err := opensearch.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
 		return err
 	}
-	osClient, err := store.NewOpenSearchClient(ctx, conf)
 	if err != nil {
 		return err
 	}
 	lastWindowTime := time.Now().Add(-time.Minute * common.INSIGHTS_INTERVAL_MINUTES)
 	lastTime, _ := util.FindWindow(lastWindowTime, time.Minute*common.INSIGHTS_INTERVAL_MINUTES)
 
-	indexNames, err := store.CatIndices(ctx, osClient)
+	indexNames, err := opensearch.CatIndices(ctx, osClient)
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 				} else {
 					successCount++
 					logger.GetLogger().Info("successfully aggregated insights", zap.String("index", indexName))
-					err := store.DeleteIndex(ctx, osClient, indexName)
+					err := opensearch.DeleteIndex(ctx, osClient, indexName)
 					if err != nil {
 						logger.GetLogger().Error("failed to delete index", zap.Error(err), zap.String("index", indexName))
 					} else {
