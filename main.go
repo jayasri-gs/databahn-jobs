@@ -15,7 +15,7 @@ func main() {
 	job := flag.String("job", "", "job name")
 	input := ReadInputData()
 	//flag.Parse()
-	logger.GetLoggerWithContext(ctx).Info("starting job with parameters", zap.Reflect("input", input))
+	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
 
 	cmd.RunJob(ctx, *job, input)
 }
