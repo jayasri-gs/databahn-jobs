@@ -173,28 +173,27 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 			tempEodEpoch := agg.Key["day_end_timestamp"].(float64)
 			tempCount := agg.Values[aggFuncName].(float64)
 
-			if tempKey1 != key1 || tempKey2 != key2 || tempSourceId != sourceId {
-				if key1 != "" {
-					reputation, change := decideNoiseLevel(days, counts)
-					if change {
-						request := ReputationUpdateRequest{
-							Id:             InsightId(key1, key2, sourceId),
-							Reputation:     reputation,
-							SkipReputation: REPUTATION_SILENT,
-							UpdatedAt:      time.Now().UnixMilli(),
-						}
-						requests = append(requests, request)
+			if sourceId != "" && (tempKey1 != key1 || tempKey2 != key2 || tempSourceId != sourceId) {
+				reputation, change, zScore := decideNoiseLevel(days, counts)
+				logger.GetLogger().Info("decided noise level", zap.String("key1", key1), zap.String("key2", key2), zap.String("source_id", sourceId),
+					zap.Float64("z_score", zScore), zap.String("reputation", reputation), zap.String("tenant_id", tenantId), zap.Bool("change", change))
+				if change {
+					request := ReputationUpdateRequest{
+						Id:             InsightId(key1, key2, sourceId),
+						Reputation:     reputation,
+						SkipReputation: REPUTATION_SILENT,
+						UpdatedAt:      time.Now().UnixMilli(),
 					}
-					days = nil
-					counts = nil
+					requests = append(requests, request)
 				}
-			} else {
-				key1 = tempKey1
-				key2 = tempKey2
-				sourceId = tempSourceId
-				days = append(days, tempEodEpoch)
-				counts = append(counts, tempCount)
+				days = nil
+				counts = nil
 			}
+			key1 = tempKey1
+			key2 = tempKey2
+			sourceId = tempSourceId
+			days = append(days, tempEodEpoch)
+			counts = append(counts, tempCount)
 		}
 		if len(requests) > 0 {
 			sightIndexName := SightIndexName(tenantId)
@@ -211,7 +210,9 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 	//last batch if any
 	var requests []ReputationUpdateRequest
 	if sourceId != "" && key1 != "" {
-		reputation, change := decideNoiseLevel(days, counts)
+		reputation, change, zScore := decideNoiseLevel(days, counts)
+		logger.GetLogger().Info("decided noise level", zap.String("key1", key1), zap.String("key2", key2), zap.String("source_id", sourceId),
+			zap.Float64("z_score", zScore), zap.String("reputation", reputation), zap.String("tenant_id", tenantId), zap.Bool("change", change))
 		if change {
 			request := ReputationUpdateRequest{
 				Id:             InsightId(key1, key2, sourceId),
@@ -237,7 +238,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 	return nil
 }
 
-func decideNoiseLevel(days []float64, counts []float64) (string, bool) {
+func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64) {
 	newDays, newCounts := sortTwoSlices(days, counts)
 	lastDay := newDays[len(newDays)-1]
 	lastCount := newCounts[len(newCounts)-1]
@@ -246,12 +247,14 @@ func decideNoiseLevel(days []float64, counts []float64) (string, bool) {
 		deviation := util.CalculateStandardDeviation(newCounts, mean)
 		zScore := util.CalculateZScore(lastCount, mean, deviation)
 		if zScore > NOISE_ZSCORE_THRESHOLD {
-			return REPUTATION_NOISY, true
+			return REPUTATION_NOISY, true, zScore
 		} else if zScore < (-1 * NOISE_ZSCORE_THRESHOLD) {
-			return REPUTATION_WHISPERING, true
+			return REPUTATION_WHISPERING, true, zScore
+		} else {
+			return "", false, zScore
 		}
 	}
-	return "", false
+	return "", false, 0
 }
 
 func sortTwoSlices(days []float64, counts []float64) ([]float64, []float64) {
