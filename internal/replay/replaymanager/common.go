@@ -121,13 +121,12 @@ func (mst *MetaDataStore) Flush() {
 
 	mst.Lock()
 
-	out, err := json.Marshal(mst.metaMap)
+	_, err := json.Marshal(mst.metaMap)
 	if err != nil {
 		logger.GetLogger().Error(" Marshalling Error MetaData.json:  ", zap.Error(err))
 		return
 	}
 
-	logger.GetLogger().Info(fmt.Sprintf("Writing MetaData.json:  %s", len(out)))
 	bytesData, _ := json.Marshal(mst.metaMap)
 
 	mst.Unlock()
