@@ -43,7 +43,7 @@ func ReadInputData() model.Message {
 	flag.StringVar(&sampleMessage.AccessKeyID, "accessId", "AKIA3FRFSAVQ7REF25F3", "bucket name")
 	flag.StringVar(&sampleMessage.SecretAccessKey, "secret", "JgboMDEhSwki1TQlVbt9IDjbnGSb71+AaNx+I1tM", "secret ")
 	flag.StringVar(&sampleMessage.Region, "region", "us-east-1", "aws region ")
-	flag.StringVar(&fileName, "fileName", "test1.log.gz,test30.log.gz", "files ")
+	flag.StringVar(&fileName, "fileName", "", "files ")
 	flag.Parse()
 	sampleMessage.FileName = strings.Split(fileName, ",")
 
