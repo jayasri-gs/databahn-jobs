@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
-	"github.com/databahn-ai/databahn-jobs/internal/store"
+	opensearch2 "github.com/databahn-ai/databahn-jobs/internal/store/opensearch"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
@@ -85,7 +85,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		request.Aggs.GroupBy.Aggs.PageMnTime.Min.Field = "min_time"
 		request.Aggs.GroupBy.Aggs.PageMxTime.Max.Field = "max_time"
 
-		resp, err := store.MakeSearchCall(ctx, indexName, request, cli)
+		resp, err := opensearch2.MakeSearchCall(ctx, indexName, request, cli)
 		if err != nil {
 			return err
 		}

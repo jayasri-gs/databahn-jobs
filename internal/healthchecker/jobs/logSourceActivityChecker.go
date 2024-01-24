@@ -101,7 +101,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// raise alert and save it to opensearch
-	err = helper.SaveAlertToOpenSearch(ctx, lsEntityArray, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert)
+	err = helper.SendAlertToControlFlag(ctx, lsEntityArray, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while raid=sing alert for logSource activity check", zap.Error(err))
 		return err

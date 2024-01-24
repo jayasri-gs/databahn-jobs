@@ -50,7 +50,7 @@ func (c *Connection) Connect(ctx context.Context) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(connectString), &gorm.Config{
 		Logger: dbLogger,
 		NamingStrategy: schema.NamingStrategy{
-			TablePrefix:   fmt.Sprintf("%s.", c.SchemaName),
+			TablePrefix:   "db_",
 			SingularTable: true,  // use singular table name, table for `User` would be `user` with this option enabled
 			NoLowerCase:   false, // skip the snake_casing of names
 		},
@@ -155,7 +155,7 @@ func buildMysqlConnectString(c configuration.ConfigReader) (string, string) {
 // buildMysqlConnectString - returns connect string for a mysql db to be used by sqlx.Connect() or
 // sql.Open() using passed parameters
 func buildDBConnectStringWith(dbUsername, dbPassword, dbHost, dbPort, dbName string, dbTimeout string) string {
-	dsn := "host=%s user=%s password=%s dbname=%s port=%s sslmode=disable connect_timeout=%s search_path=%s"
+	dsn := "host=%s user=%s password=%s dbname=%s port=%s sslmode=disable connect_timeout=%s"
 	return fmt.Sprintf(dsn,
 		dbHost,
 		dbUsername,
@@ -163,6 +163,5 @@ func buildDBConnectStringWith(dbUsername, dbPassword, dbHost, dbPort, dbName str
 		dbName,
 		dbPort,
 		dbTimeout,
-		dbName,
 	)
 }

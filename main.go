@@ -4,8 +4,6 @@ import (
 	"context"
 	"flag"
 	"github.com/databahn-ai/databahn-jobs/cmd"
-	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -31,9 +29,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	config.GetAppConfiguration()
-	config.GetDB()
-	jobs.HealthCheckAlertForFleetNode(context.Background())
+	//config.GetAppConfiguration()
+	//config.GetDB()
+	//jobs.AlertForLogSourceInactivity(context.Background())
 }
 
 func ReadInputData() model.Message {

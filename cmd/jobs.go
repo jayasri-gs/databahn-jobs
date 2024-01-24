@@ -21,7 +21,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = insights.AggregateInsightsAndStore(ctx, parallelism)
 	case common.DATA_REPLAY:
 		jobcmd.ExecuteReplayJob(input)
-	case common.EDGE_HEALTH_CHECKER:
+	case common.FLEET_HEALTH_CHECKER:
 		err = jobs.HealthCheckAlertForFleetNode(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER:
 		err = jobs.AlertForLogSourceInactivity(ctx)

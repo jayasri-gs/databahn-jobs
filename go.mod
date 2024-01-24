@@ -8,14 +8,16 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.16
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.15.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.48.0
-	github.com/databahn-ai/common-utils v0.39.0
+	github.com/databahn-ai/common-utils v0.42.0
 	github.com/databahn-ai/db-models v0.53.0
 	github.com/databahn-ai/go-logging v0.1.0
 	github.com/go-chi/chi/v5 v5.0.11
 	github.com/go-chi/render v1.0.3
 	github.com/google/uuid v1.3.1
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
+	github.com/pkg/errors v0.9.1
 	go.uber.org/zap v1.24.0
+	golang.org/x/oauth2 v0.7.0
 	gorm.io/gorm v1.25.2
 )
 
@@ -62,7 +64,6 @@ require (
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.6 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/spf13/afero v1.9.3 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
@@ -77,6 +78,7 @@ require (
 	golang.org/x/net v0.15.0 // indirect
 	golang.org/x/sys v0.12.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230525234030-28d5490b6b19 // indirect
 	google.golang.org/grpc v1.57.2 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect

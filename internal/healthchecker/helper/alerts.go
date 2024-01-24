@@ -1,26 +1,42 @@
 package helper
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha256"
+	"encoding/json"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/store/opensearch"
+	"github.com/databahn-ai/databahn-jobs/internal/auth"
 	"github.com/databahn-ai/db-models/alerts_common"
-	logging "github.com/databahn-ai/go-logging/logger"
+	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+	"io"
+	"net/http"
 	"time"
 )
 
-func SaveAlertToOpenSearch(ctx context.Context, entityArray []alerts_common.AlertEntityObject, title string, message string, functionalityType string, functionality string, severity string) error {
-	var alertDocs []opensearch.AlertDoc
+type Alert struct {
+	Id                      string `json:"id"`
+	Title                   string `json:"title"`
+	Message                 string `json:"message"`
+	CreatedAt               int64  `json:"createdAt"`
+	UpdatedAt               int64  `json:"updatedAt"`
+	FirstObservedAt         int64  `json:"firstObservedAt"`
+	LastObservedAt          int64  `json:"lastObservedAt"`
+	TenantId                string `json:"tenantId"`
+	FunctionalityType       string `json:"functionalityType"`
+	Functionality           string `json:"functionality"`
+	FunctionalityEntityId   string `json:"functionalityEntityId"`
+	FunctionalityEntityName string `json:"functionalityEntityName"`
+	Dismissed               bool   `json:"dismissed"`
+	DismissedAt             int64  `json:"dismissedAt"`
+	DismissedBy             string `json:"dismissedBy"`
+	Criticality             string `json:"criticality"`
+}
+
+func SendAlertToControlFlag(ctx context.Context, entityArray []alerts_common.AlertEntityObject, title string, message string, functionalityType string, functionality string, severity string) error {
+	var alerts []Alert
 	for _, entity := range entityArray {
-		osId := fmt.Sprintf("tenantId=%s&entityId=%s&entityName=%s&functionality=%s&type=%s", entity.EntityTenantUUId, entity.EntityId, entity.EntityName, functionalityType, functionality)
-		// calculate sha for osId
-		sha := sha256.New()
-		sha.Write([]byte(osId))
-		bs := fmt.Sprintf("%x", sha.Sum(nil))
-		temp := opensearch.AlertDoc{
-			Id:                      bs,
+		temp := Alert{
 			Title:                   title,
 			Message:                 message,
 			CreatedAt:               time.Now().UnixMilli(),
@@ -36,19 +52,44 @@ func SaveAlertToOpenSearch(ctx context.Context, entityArray []alerts_common.Aler
 			DismissedBy:             "",
 			Criticality:             severity,
 		}
-		alertDocs = append(alertDocs, temp)
+		alerts = append(alerts, temp)
 	}
-	conf := opensearch.GetConf()
-	client, err := opensearch.NewClient(ctx, conf.Url, conf.Creds())
+	alertBytes, err := json.Marshal(alerts)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
 		return err
 	}
 
-	err = opensearch.SaveAlertToOpenSearch(ctx, alertDocs, opensearch.AlertIndex, client)
+	resp, err := trySendingChangeFlag(ctx, 0, alertBytes, nil)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while saving alert to opensearch", zap.Error(err))
 		return err
 	}
-	return nil
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		logger.GetLogger().Info("successfully sent alert call to control plane")
+		return nil
+	} else {
+		body, _ := io.ReadAll(resp.Body)
+		logger.GetLogger().Error("error while sending alert call to control plane", zap.String("response", string(body)))
+		return fmt.Errorf("[%d] : non success response from data plane", resp.StatusCode)
+	}
+}
+
+func trySendingChangeFlag(ctx context.Context, attempt int, body []byte, err error) (*http.Response, error) {
+	if attempt >= 3 {
+		return nil, err
+	}
+	baseUrl := "https://controller.dev.databahn.app"
+	client, err := auth.GetOAuthHttpClient(ctx)
+	if err != nil {
+		logger.GetLogger().Error("error while getting oauth http client", zap.Error(err))
+		return nil, err
+	}
+	apiUrl := baseUrl + "/v1/change_flag"
+	resp, err := client.Post(apiUrl, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		resp, err = trySendingChangeFlag(ctx, attempt+1, body, err)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
 }
