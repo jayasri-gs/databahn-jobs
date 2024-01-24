@@ -16,11 +16,11 @@ type IndexMetadata struct {
 	Day      int
 	Hour     int
 	TenantId string
-	App      string
+	Type     string
 }
 
 func (m IndexMetadata) String() string {
-	return fmt.Sprintf("%s_%s_%04d_%02d_%02d_%02d_%s", m.Version, m.App, m.Year, m.Month, m.Day, m.Hour, m.TenantId)
+	return fmt.Sprintf("%s_%s_%04d_%02d_%02d_%02d_%s", m.Version, m.Type, m.Year, m.Month, m.Day, m.Hour, m.TenantId)
 }
 
 func (m IndexMetadata) IsBefore(t time.Time) bool {
@@ -61,7 +61,7 @@ func parseIndices(indexNames []string) []IndexMetadata {
 			switch version {
 			case "v1":
 				if len(splitBy) == 7 {
-					app := splitBy[1]
+					tp := splitBy[1]
 					year, err := strconv.ParseInt(splitBy[2], 10, 64)
 					if err != nil {
 						logger.GetLogger().Error("failed to parse index name year", zap.String("indexName", name))
@@ -90,7 +90,7 @@ func parseIndices(indexNames []string) []IndexMetadata {
 						Day:      int(day),
 						Hour:     int(hour),
 						TenantId: tenant,
-						App:      app,
+						Type:     tp,
 					}
 					indices = append(indices, m)
 				} else {

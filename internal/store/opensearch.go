@@ -90,7 +90,7 @@ func MakeSearchCall(ctx context.Context, index string, searchBody interface{}, c
 	if err != nil {
 		return nil, err
 	}
-	logger.GetLogger().Info("request", zap.String("body", string(bodyContent)), zap.String("index", index))
+	logger.GetLogger().Debug("request", zap.String("body", string(bodyContent)), zap.String("index", index))
 	bodyReader := bytes.NewReader(bodyContent)
 	searchRequest := opensearchapi.SearchRequest{
 		Index: []string{index},
@@ -198,27 +198,6 @@ func CompositePaginatedAggregate(ctx context.Context, cli *opensearch.Client, si
 	}
 	return responses, aggResponse.Aggregations.GroupBy.AfterKey, nil
 }
-
-//func convertToMap(data map[string]interface{}) map[string]interface{} {
-//	result := make(map[string]interface{})
-//	for key, value := range data {
-//		switch v := value.(type) {
-//		case string:
-//			result[key] = fmt.Sprintf("%s", value)
-//		case int:
-//			result[key] = fmt.Sprintf("%d", value)
-//		case bool:
-//			result[key] = fmt.Sprintf("%v", value)
-//		case float64:
-//			result[key] = fmt.Sprintf("%s", value)
-//		case map[string]interface{}:
-//			result[key] = convertToMap(v)
-//		default:
-//			result[key] = v
-//		}
-//	}
-//	return result
-//}
 
 func BulkUpsert[T any](ctx context.Context, cli *opensearch.Client, indexName string, documents []T, idExtractor func(T) string) error {
 	if len(documents) == 0 {

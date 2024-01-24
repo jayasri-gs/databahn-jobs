@@ -7,7 +7,7 @@ func InsightId(key1, key2, sourceId string) string {
 }
 
 func SightIndexName(tenantId string) string {
-	return fmt.Sprintf("%s%s_%s_%s", INSIGHTS_STORE_INDEX_PREFIX, APP_DEVICEINVENTORY, AGG_SIGHTS, tenantId)
+	return fmt.Sprintf("%s%s_%s_%s", INSIGHTS_STORE_INDEX_PREFIX, APP_TYPE_SOURCEHOSTNAME, AGG_SIGHTS, tenantId)
 }
 
 func FrequencyIndexNameByApp(appName, tenantId string) string {
@@ -19,5 +19,5 @@ func SightIndexNameByApp(appName, tenantId string) string {
 }
 
 func SilentDeviceInventoryHistoryIndex(tenantId string) string {
-	return fmt.Sprintf("%s%s_%s_%s", INSIGHTS_STORE_INDEX_PREFIX, APP_DEVICEINVENTORY, REPUTATION_HISTORY, tenantId)
+	return fmt.Sprintf("%s%s_%s_%s", INSIGHTS_STORE_INDEX_PREFIX, APP_TYPE_SOURCEHOSTNAME, REPUTATION_HISTORY, tenantId)
 }

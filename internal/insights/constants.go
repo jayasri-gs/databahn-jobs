@@ -6,7 +6,7 @@ const INSIGHTS_READ_BATCH = 500
 const INSIGHTS_STORE_INDEX_PREFIX = "db_insights_"
 
 // app names should not have underscores
-const APP_DEVICEINVENTORY = "deviceinventory"
+const APP_TYPE_SOURCEHOSTNAME = "sourcehostname"
 
 const AGG_SIGHTS = "sights"
 const AGG_FREQUENCY = "frequency"

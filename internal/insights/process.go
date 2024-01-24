@@ -125,7 +125,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.SourceId)
 			doc.SourceId = bucket.Key.SourceId
 			doc.TenantId = index.TenantId
-			doc.App = index.App
+			doc.Type = index.Type
 			doc.MinTime = int64(bucket.PageMnTime.Value)
 			doc.MaxTime = int64(bucket.PageMxTime.Value)
 			doc.Count = bucket.PageCnt.Value
@@ -133,7 +133,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			docs = append(docs, doc)
 		}
 
-		err = upsertSightsDocs(ctx, cli, index.TenantId, index.App, docs)
+		err = upsertSightsDocs(ctx, cli, index.TenantId, index.Type, docs)
 		if err != nil {
 			return err
 		}
@@ -188,7 +188,7 @@ func upsertFrequencyDocs(ctx context.Context, cli *opensearch.Client, index *Ind
 	if len(documents) == 0 {
 		return nil
 	}
-	indexName := FrequencyIndexNameByApp(index.App, index.TenantId)
+	indexName := FrequencyIndexNameByApp(index.Type, index.TenantId)
 	buff := new(bytes.Buffer)
 	for _, doc := range documents {
 		f := doc.Frequency()
@@ -352,7 +352,7 @@ type Doc struct {
 	Id        string  `json:"id"`
 	Key1      string  `json:"key1"`
 	Key2      string  `json:"key2,omitempty"`
-	App       string  `json:"app"`
+	Type      string  `json:"type"`
 	InsightId string  `json:"insight_id"`
 	SourceId  string  `json:"source_id"`
 	TenantId  string  `json:"tenant_id"`
@@ -367,7 +367,7 @@ func (d Doc) Sight() Sight {
 		Id:        d.Id,
 		Key1:      d.Key1,
 		Key2:      d.Key2,
-		App:       d.App,
+		Type:      d.Type,
 		SourceId:  d.SourceId,
 		TenantId:  d.TenantId,
 		MinTime:   d.MinTime,
@@ -382,7 +382,7 @@ func (d Doc) Frequency() Frequency {
 		Id:              d.Id,
 		Key1:            d.Key1,
 		Key2:            d.Key2,
-		App:             d.App,
+		Type:            d.Type,
 		SourceId:        d.SourceId,
 		TenantId:        d.TenantId,
 		Count:           d.Count,
@@ -395,7 +395,7 @@ type Sight struct {
 	Id                  string `json:"id"`
 	Key1                string `json:"key1"`
 	Key2                string `json:"key2,omitempty"`
-	App                 string `json:"app"`
+	Type                string `json:"type"`
 	SourceId            string `json:"source_id"`
 	TenantId            string `json:"tenant_id"`
 	MinTime             int64  `json:"min_time"`
@@ -418,7 +418,7 @@ func (s Sight) History(time int64, reputation string) SilentDeviceHistory {
 		Id:              id,
 		Key1:            s.Key1,
 		Key2:            s.Key2,
-		App:             s.App,
+		Type:            s.Type,
 		SourceId:        s.SourceId,
 		TenantId:        s.TenantId,
 		Reputation:      reputation,
@@ -430,7 +430,7 @@ type SilentDeviceHistory struct {
 	Id              string `json:"id"`
 	Key1            string `json:"key1"`
 	Key2            string `json:"key2,omitempty"`
-	App             string `json:"app"`
+	Type            string `json:"type"`
 	SourceId        string `json:"source_id"`
 	TenantId        string `json:"tenant_id"`
 	DayEndTimestamp int64  `json:"day_end_timestamp"`
@@ -441,7 +441,7 @@ type Frequency struct {
 	Id              string  `json:"id"`
 	Key1            string  `json:"key1"`
 	Key2            string  `json:"key2"`
-	App             string  `json:"app"`
+	Type            string  `json:"type"`
 	SourceId        string  `json:"source_id"`
 	TenantId        string  `json:"tenant_id"`
 	Count           float64 `json:"count"`

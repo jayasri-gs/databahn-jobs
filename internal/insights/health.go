@@ -57,11 +57,11 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 	var sightsIndices []string
 	var frequencyIndices []string
 	for _, index := range indices {
-		sightsIndexPrefix := fmt.Sprintf("%s%s_%s_", INSIGHTS_STORE_INDEX_PREFIX, APP_DEVICEINVENTORY, AGG_SIGHTS)
+		sightsIndexPrefix := fmt.Sprintf("%s%s_%s_", INSIGHTS_STORE_INDEX_PREFIX, APP_TYPE_SOURCEHOSTNAME, AGG_SIGHTS)
 		if strings.HasPrefix(index, sightsIndexPrefix) {
 			sightsIndices = append(sightsIndices, index)
 		}
-		frequencyIndexPrefix := fmt.Sprintf("%s%s_%s_", INSIGHTS_STORE_INDEX_PREFIX, APP_DEVICEINVENTORY, AGG_FREQUENCY)
+		frequencyIndexPrefix := fmt.Sprintf("%s%s_%s_", INSIGHTS_STORE_INDEX_PREFIX, APP_TYPE_SOURCEHOSTNAME, AGG_FREQUENCY)
 		if strings.HasPrefix(index, frequencyIndexPrefix) {
 			frequencyIndices = append(frequencyIndices, index)
 		}
@@ -70,28 +70,28 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 	logger.GetLogger().Info("considering frequency indices", zap.Int("index_count", len(frequencyIndices)))
 	var statuses []HealthJobStatus
 
-	//for _, index := range sightsIndices {
-	//	split := strings.Split(index, "_")
-	//	tenantId := split[len(split)-1]
-	//	_, err := uuid.Parse(tenantId)
-	//	if err != nil {
-	//		logger.GetLogger().Warn("failed to parse tenant id from sights index", zap.String("tenant_id", tenantId), zap.String("index", index), zap.Error(err))
-	//		continue
-	//	}
-	//	statusHealth := HealthJobStatus{
-	//		TenantId: tenantId,
-	//		Action:   "SILENT_MARKING",
-	//	}
-	//	err = calculateDeviceInventoryHealthForTenant(ctx, osClient, tenantId, index, runningFor)
-	//	if err != nil {
-	//		logger.GetLogger().Error("failed to calculate silent device health for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
-	//		statusHealth.Status = STATUS_ERROR
-	//		statusHealth.Error = err
-	//	} else {
-	//		statusHealth.Status = STATUS_SUCCESS
-	//	}
-	//	statuses = append(statuses, statusHealth)
-	//}
+	for _, index := range sightsIndices {
+		split := strings.Split(index, "_")
+		tenantId := split[len(split)-1]
+		_, err := uuid.Parse(tenantId)
+		if err != nil {
+			logger.GetLogger().Warn("failed to parse tenant id from sights index", zap.String("tenant_id", tenantId), zap.String("index", index), zap.Error(err))
+			continue
+		}
+		statusHealth := HealthJobStatus{
+			TenantId: tenantId,
+			Action:   "SILENT_MARKING",
+		}
+		err = calculateDeviceInventoryHealthForTenant(ctx, osClient, tenantId, index, runningFor)
+		if err != nil {
+			logger.GetLogger().Error("failed to calculate silent device health for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
+			statusHealth.Status = STATUS_ERROR
+			statusHealth.Error = err
+		} else {
+			statusHealth.Status = STATUS_SUCCESS
+		}
+		statuses = append(statuses, statusHealth)
+	}
 
 	for _, index := range frequencyIndices {
 		split := strings.Split(index, "_")
