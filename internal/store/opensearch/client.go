@@ -19,7 +19,7 @@ func NewClient(ctx context.Context, host string, creds *Creds) (*opensearch.Clie
 	client, err := opensearch.NewClient(opensearch.Config{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: false,
 				MinVersion:         tls.VersionTLS12,
 			},
 		},

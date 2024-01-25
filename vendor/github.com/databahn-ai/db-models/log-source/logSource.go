@@ -47,6 +47,7 @@ type LogSource struct {
 	CheckPoint                checkpoint.LogSourceCheckPoint `gorm:"foreignKey:LogSourceID;references:ID"`
 	LogSourceConfigs          []config.LogSourceConfig       `gorm:"foreignKey:LogSourceID;references:ID"`
 	FetchMechanism            string                         `gorm:"type:VARCHAR(32)"`
+	Reputation                int                            `validate:"min=0,max=2""`
 }
 
 func (ls *LogSource) Migrate(db *gorm.DB) error {

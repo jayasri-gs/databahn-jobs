@@ -73,29 +73,10 @@ func CreateThresholds(data []statistics.HistogramBucket) (float64, float64) {
 	return silentThreshold, noisyThreshold
 }
 
-func ClassifySources(std, silentThreshold, noisyThreshold float64) int {
-	if std < silentThreshold {
-		return common.SILENT
-	} else if std > noisyThreshold {
-		return common.NOISY
-	} else {
+func ClassifySources(std, stdThreshold float64) int {
+	if std < stdThreshold {
 		return common.WHISPERING
+	} else {
+		return common.NOISY
 	}
 }
-
-//
-//func main() {
-//	// Example data
-//	logData := []float64{1, 2, 3, 4, 2, 2, 3, 4, 1, 1, 3, 4, 1, 2, 4, 4}
-//
-//	// Create thresholds dynamically
-//	silentThreshold, noisyThreshold := createThresholds(logData)
-//
-//	// Classify sources
-//	silent, noisy, whispering := classifySources(logData, silentThreshold, noisyThreshold)
-//
-//	// Display results
-//	fmt.Println("Silent Sources:", silent)
-//	fmt.Println("Noisy Sources:", noisy)
-//	fmt.Println("Whispering Sources:", whispering)
-//}

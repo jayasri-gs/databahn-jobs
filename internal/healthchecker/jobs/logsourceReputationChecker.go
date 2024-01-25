@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/store/opensearch"
@@ -66,7 +67,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	logging.GetLoggerWithContext(ctx).Info("getting histogram all log sources")
 
 	var ls []string
-	err := config.GetDB().Model(&logSource.LogSource{}).Select("id").Find(&ls).Error
+	err := config.GetDB().Model(&logSource.LogSource{}).Select("id").Find(&ls, "reputation != ?", common.SILENT).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
 		return err
@@ -88,13 +89,16 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 			logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 			return err
 		}
-		silentThreshold, noisyThreshold := utils.CreateThresholds(thresholdAggObj.Buckets)
+		//silentThreshold, noisyThreshold := utils.CreateThresholds(thresholdAggObj.Buckets)
 		std := utils.CalculateStdDev(aggObj.Buckets)
-		reputation := utils.ClassifySources(std, silentThreshold, noisyThreshold)
+		stdThreshold := utils.CalculateStdDev(thresholdAggObj.Buckets)
+		reputation := utils.ClassifySources(std, stdThreshold)
 		fmt.Println("reputation", reputation)
-		//err = config.GetDB().Model(&logSource.LogSource{}).Where("id = ? ", lsId).Updates(map[string]interface{}{"reputation": reputation}).Error
-		//logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
-		//return
+		err = config.GetDB().Model(&logSource.LogSource{}).Where("id = ? ", lsId).Updates(map[string]interface{}{"reputation": reputation}).Error
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
+			return err
+		}
 	}
 	return err
 }

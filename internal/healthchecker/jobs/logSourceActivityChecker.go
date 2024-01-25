@@ -98,6 +98,13 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		temp.EntityId = ls.ID
 		temp.EntityTenantUUId = ls.TenantUUID
 		lsEntityArray = append(lsEntityArray, temp)
+
+		// update logsource mark silent
+		err = config.GetDB().Model(&logSource.LogSource{}).Where("id = ? ", ls.ID).Updates(map[string]interface{}{"reputation": common.SILENT}).Error
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
+			return err
+		}
 	}
 
 	// raise alert and save it to opensearch

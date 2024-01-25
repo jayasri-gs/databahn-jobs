@@ -8,7 +8,7 @@ import (
 )
 
 type LogSourceConfig struct {
-	ID          uuid.UUID `gorm:"primarykey;type:uuid;default:uuid_generate_v4()"`
+	ID          uuid.UUID `gorm:"primarykey;type:uuid"`
 	LogSourceID uuid.UUID `gorm:"type:uuid; index"`
 	CreatedBy   string    `gorm:"type:VARCHAR(100)" validate:"required"`
 	CreatedAt   time.Time

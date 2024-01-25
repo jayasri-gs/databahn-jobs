@@ -15,22 +15,26 @@ import (
 )
 
 type Alert struct {
-	Id                      string `json:"id"`
-	Title                   string `json:"title"`
-	Message                 string `json:"message"`
-	CreatedAt               int64  `json:"createdAt"`
-	UpdatedAt               int64  `json:"updatedAt"`
-	FirstObservedAt         int64  `json:"firstObservedAt"`
-	LastObservedAt          int64  `json:"lastObservedAt"`
-	TenantId                string `json:"tenantId"`
-	FunctionalityType       string `json:"functionalityType"`
-	Functionality           string `json:"functionality"`
-	FunctionalityEntityId   string `json:"functionalityEntityId"`
-	FunctionalityEntityName string `json:"functionalityEntityName"`
-	Dismissed               bool   `json:"dismissed"`
-	DismissedAt             int64  `json:"dismissedAt"`
-	DismissedBy             string `json:"dismissedBy"`
-	Criticality             string `json:"criticality"`
+	//Id                      string `json:"id"`
+	Title                   string    `json:"title"`
+	Message                 string    `json:"message"`
+	CreatedAt               time.Time `json:"createdAt"`
+	UpdatedAt               time.Time `json:"updatedAt"`
+	FirstObservedAt         time.Time `json:"firstObservedAt"`
+	LastObservedAt          time.Time `json:"lastObservedAt"`
+	TenantId                string    `json:"tenantId"`
+	FunctionalityType       string    `json:"functionalityType"`
+	Functionality           string    `json:"functionality"`
+	FunctionalityEntityId   string    `json:"functionalityEntityId"`
+	FunctionalityEntityName string    `json:"functionalityEntityName"`
+	Dismissed               bool      `json:"dismissed"`
+	DismissedAt             time.Time `json:"dismissedAt"`
+	DismissedBy             string    `json:"dismissedBy"`
+	Criticality             string    `json:"criticality"`
+}
+
+type AlertRequest struct {
+	Alerts []Alert `json:"alerts"`
 }
 
 func SendAlertToControlFlag(ctx context.Context, entityArray []alerts_common.AlertEntityObject, title string, message string, functionalityType string, functionality string, severity string) error {
@@ -39,10 +43,10 @@ func SendAlertToControlFlag(ctx context.Context, entityArray []alerts_common.Ale
 		temp := Alert{
 			Title:                   title,
 			Message:                 message,
-			CreatedAt:               time.Now().UnixMilli(),
-			UpdatedAt:               time.Now().UnixMilli(),
-			FirstObservedAt:         time.Now().UnixMilli(),
-			LastObservedAt:          time.Now().UnixMilli(),
+			CreatedAt:               time.Now(),
+			UpdatedAt:               time.Now(),
+			FirstObservedAt:         time.Now(),
+			LastObservedAt:          time.Now(),
 			TenantId:                entity.EntityTenantUUId.String(),
 			FunctionalityType:       functionalityType,
 			Functionality:           functionality,
@@ -54,7 +58,9 @@ func SendAlertToControlFlag(ctx context.Context, entityArray []alerts_common.Ale
 		}
 		alerts = append(alerts, temp)
 	}
-	alertBytes, err := json.Marshal(alerts)
+	var alertRequest AlertRequest
+	alertRequest.Alerts = alerts
+	alertBytes, err := json.Marshal(alertRequest)
 	if err != nil {
 		return err
 	}
@@ -83,7 +89,7 @@ func trySendingChangeFlag(ctx context.Context, attempt int, body []byte, err err
 		logger.GetLogger().Error("error while getting oauth http client", zap.Error(err))
 		return nil, err
 	}
-	apiUrl := baseUrl + "/v1/change_flag"
+	apiUrl := baseUrl + "/v1/alerts"
 	resp, err := client.Post(apiUrl, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		resp, err = trySendingChangeFlag(ctx, attempt+1, body, err)

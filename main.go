@@ -18,10 +18,6 @@ func main() {
 	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
 
 	cmd.RunJob(ctx, *job, input)
-
-	//config.GetAppConfiguration()
-	//config.GetDB()
-	//jobs.AlertForLogSourceInactivity(context.Background())
 }
 
 func ReadInputData() model.Message {

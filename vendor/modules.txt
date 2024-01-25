@@ -1,6 +1,3 @@
-# github.com/ajg/form v1.5.1
-## explicit
-github.com/ajg/form
 # github.com/andybalholm/brotli v1.0.4
 ## explicit; go 1.12
 github.com/andybalholm/brotli
@@ -228,7 +225,7 @@ github.com/databahn-ai/common-utils/constants
 github.com/databahn-ai/common-utils/databases
 github.com/databahn-ai/common-utils/kafka
 github.com/databahn-ai/common-utils/utils
-# github.com/databahn-ai/db-models v0.53.0
+# github.com/databahn-ai/db-models v0.56.0
 ## explicit; go 1.19
 github.com/databahn-ai/db-models/alerts_common
 github.com/databahn-ai/db-models/fleet
@@ -243,12 +240,6 @@ github.com/databahn-ai/go-logging/logger/constants
 # github.com/fsnotify/fsnotify v1.6.0
 ## explicit; go 1.16
 github.com/fsnotify/fsnotify
-# github.com/go-chi/chi/v5 v5.0.11
-## explicit; go 1.14
-github.com/go-chi/chi/v5
-# github.com/go-chi/render v1.0.3
-## explicit; go 1.16
-github.com/go-chi/render
 # github.com/go-playground/locales v0.14.1
 ## explicit; go 1.17
 github.com/go-playground/locales
