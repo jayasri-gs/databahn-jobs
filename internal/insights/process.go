@@ -113,7 +113,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		}
 
 		if len(response.Aggregations.GroupBy.Buckets) == 0 {
-			logger.GetLogger().Info("no more documents to process", zap.String("index", indexName))
+			logger.GetLogger().Debug("no more documents to process", zap.String("index", indexName))
 			break
 		}
 
@@ -143,7 +143,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			return err
 		}
 
-		logger.GetLogger().Info("processed documents", zap.String("index", indexName), zap.Int("page", page), zap.Int("count", len(docs)))
+		logger.GetLogger().Debug("processed documents", zap.String("index", indexName), zap.Int("page", page), zap.Int("count", len(docs)))
 	}
 
 	logger.GetLogger().Info("processed all documents", zap.String("index", indexName), zap.Int("total_count", count))
