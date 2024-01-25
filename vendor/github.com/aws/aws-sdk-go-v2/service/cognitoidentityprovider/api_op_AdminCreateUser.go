@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -25,15 +26,19 @@ import (
 // , you can send messages only to verified phone numbers. After you test your app
 // while in the sandbox environment, you can move out of the sandbox and into
 // production. For more information, see SMS message settings for Amazon Cognito
-// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-sms-userpool-settings.html)
+// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-sms-settings.html)
 // in the Amazon Cognito Developer Guide. This message is based on a template that
 // you configured in your call to create or update a user pool. This template
 // includes your custom sign-up instructions and placeholders for user name and
 // temporary password. Alternatively, you can call AdminCreateUser with SUPPRESS
 // for the MessageAction parameter, and Amazon Cognito won't send any email. In
 // either case, the user will be in the FORCE_CHANGE_PASSWORD state until they
-// sign in and change their password. AdminCreateUser requires developer
-// credentials.
+// sign in and change their password. Amazon Cognito evaluates Identity and Access
+// Management (IAM) policies in requests for this API operation. For this
+// operation, you must use IAM credentials to authorize requests, and you must
+// grant yourself the corresponding IAM permission in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminCreateUser(ctx context.Context, params *AdminCreateUserInput, optFns ...func(*Options)) (*AdminCreateUserOutput, error) {
 	if params == nil {
 		params = &AdminCreateUserInput{}
@@ -57,9 +62,16 @@ type AdminCreateUserInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The username for the user. Must be unique within the user pool. Must be a UTF-8
-	// string between 1 and 128 characters. After the user is created, the username
-	// can't be changed.
+	// The value that you want to set as the username sign-in attribute. The following
+	// conditions apply to the username parameter.
+	//   - The username can't be a duplicate of another username in the same user
+	//   pool.
+	//   - You can't change the value of a username after you create it.
+	//   - You can only provide a value if usernames are a valid sign-in attribute for
+	//   your user pool. If your user pool only supports phone numbers or email addresses
+	//   as sign-in attributes, Amazon Cognito automatically generates a username value.
+	//   For more information, see Customizing sign-in attributes (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-attributes.html#user-pool-settings-aliases)
+	//   .
 	//
 	// This member is required.
 	Username *string
@@ -112,9 +124,9 @@ type AdminCreateUserInput struct {
 	// the temporary password in the sign-in page, along with a new password to be used
 	// in all future sign-ins. This parameter isn't required. If you don't specify a
 	// value, Amazon Cognito generates one for you. The temporary password can only be
-	// used until the user account expiration limit that you specified when you created
-	// the user pool. To reset the account after that time limit, you must call
-	// AdminCreateUser again, specifying "RESEND" for the MessageAction parameter.
+	// used until the user account expiration limit that you set for your user pool. To
+	// reset the account after that time limit, you must call AdminCreateUser again
+	// and specify RESEND for the MessageAction parameter.
 	TemporaryPassword *string
 
 	// An array of name-value pairs that contain user attributes and attribute values
@@ -141,14 +153,16 @@ type AdminCreateUserInput struct {
 	//   the DesiredDeliveryMediums parameter.
 	UserAttributes []types.AttributeType
 
-	// The user's validation data. This is an array of name-value pairs that contain
-	// user attributes and attribute values that you can use for custom validation,
-	// such as restricting the types of user accounts that can be registered. For
-	// example, you might choose to allow or disallow user sign-up based on the user's
-	// domain. To configure custom validation, you must create a Pre Sign-up Lambda
-	// trigger for the user pool as described in the Amazon Cognito Developer Guide.
-	// The Lambda trigger receives the validation data and uses it in the validation
-	// process. The user's validation data isn't persisted.
+	// Temporary user attributes that contribute to the outcomes of your pre sign-up
+	// Lambda trigger. This set of key-value pairs are for custom validation of
+	// information that you collect from your users but don't need to retain. Your
+	// Lambda function can analyze this additional data and act on it. Your function
+	// might perform external API operations like logging user attributes and
+	// validation data to Amazon CloudWatch Logs. Validation data might also affect the
+	// response that your function returns to Amazon Cognito, like automatically
+	// confirming the user if they sign up from within your network. For more
+	// information about the pre sign-up Lambda trigger, see Pre sign-up Lambda trigger (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-lambda-pre-sign-up.html)
+	// .
 	ValidationData []types.AttributeType
 
 	noSmithyDocumentSerde
@@ -167,12 +181,22 @@ type AdminCreateUserOutput struct {
 }
 
 func (c *Client) addOperationAdminCreateUserMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminCreateUser{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminCreateUser{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminCreateUser"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -193,22 +217,22 @@ func (c *Client) addOperationAdminCreateUserMiddlewares(stack *middleware.Stack,
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminCreateUserValidationMiddleware(stack); err != nil {
@@ -229,6 +253,9 @@ func (c *Client) addOperationAdminCreateUserMiddlewares(stack *middleware.Stack,
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -236,7 +263,6 @@ func newServiceMetadataMiddleware_opAdminCreateUser(region string) *awsmiddlewar
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminCreateUser",
 	}
 }

@@ -5,12 +5,14 @@ import (
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/insights"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
 )
 
-func RunJob(ctx context.Context, jobName string) {
+func RunJob(ctx context.Context, jobName string, input model.Message) {
 	var err error
 	switch jobName {
 	case common.INSIGHTS_AGGREGATION:
@@ -21,6 +23,8 @@ func RunJob(ctx context.Context, jobName string) {
 		statuses, err2 := insights.CalculateDeviceInventoryHealth(ctx, runFor)
 		err = err2
 		logger.GetLogger().Info("device inventory health calculation completed", zap.String("runFor", runFor), zap.Any("statuses", statuses))
+	case common.DATA_REPLAY:
+		jobcmd.ExecuteReplayJob(input)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}

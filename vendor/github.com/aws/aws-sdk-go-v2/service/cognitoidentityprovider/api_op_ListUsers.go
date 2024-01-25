@@ -12,7 +12,13 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists the users in the Amazon Cognito user pool.
+// Lists users and their basic details in a user pool. Amazon Cognito evaluates
+// Identity and Access Management (IAM) policies in requests for this API
+// operation. For this operation, you must use IAM credentials to authorize
+// requests, and you must grant yourself the corresponding IAM permission in a
+// policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) ListUsers(ctx context.Context, params *ListUsersInput, optFns ...func(*Options)) (*ListUsersOutput, error) {
 	if params == nil {
 		params = &ListUsersInput{}
@@ -36,9 +42,14 @@ type ListUsersInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// An array of strings, where each string is the name of a user attribute to be
-	// returned for each user in the search results. If the array is null, all
-	// attributes are returned.
+	// A JSON array of user attribute names, for example given_name , that you want
+	// Amazon Cognito to include in the response for each user. When you don't provide
+	// an AttributesToGet parameter, Amazon Cognito returns all attributes for each
+	// user. Use AttributesToGet with required attributes in your user pool, or in
+	// conjunction with Filter . Amazon Cognito returns an error if not all users in
+	// the results have set a value for the attribute you request. Attributes that you
+	// can't filter on, including custom attributes, must have a value set in every
+	// user profile before an AttributesToGet parameter returns results.
 	AttributesToGet []string
 
 	// A filter string of the form "AttributeName Filter-Type "AttributeValue"".
@@ -80,8 +91,12 @@ type ListUsersInput struct {
 	// Maximum number of users to be returned.
 	Limit *int32
 
-	// An identifier that was returned from the previous call to this operation, which
-	// can be used to return the next set of items in the list.
+	// This API operation returns a limited number of results. The pagination token is
+	// an identifier that you can present in an additional API request with the same
+	// parameters. When you include the pagination token, Amazon Cognito returns the
+	// next set of items after the current list. Subsequent requests return a new
+	// pagination token. By use of this token, you can paginate through the full list
+	// of items.
 	PaginationToken *string
 
 	noSmithyDocumentSerde
@@ -90,11 +105,19 @@ type ListUsersInput struct {
 // The response from the request to list users.
 type ListUsersOutput struct {
 
-	// An identifier that was returned from the previous call to this operation, which
-	// can be used to return the next set of items in the list.
+	// The identifier that Amazon Cognito returned with the previous request to this
+	// operation. When you include a pagination token in your request, Amazon Cognito
+	// returns the next set of items in the list. By use of this token, you can
+	// paginate through the full list of items.
 	PaginationToken *string
 
-	// The users returned in the request to list users.
+	// A list of the user pool users, and their attributes, that match your query.
+	// Amazon Cognito creates a profile in your user pool for each native user in your
+	// user pool, and each unique user ID from your third-party identity providers
+	// (IdPs). When you link users with the AdminLinkProviderForUser (https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_AdminLinkProviderForUser.html)
+	// API operation, the output of ListUsers displays both the IdP user and the
+	// native user that you linked. You can identify IdP users in the Users object of
+	// this API response by the IdP prefix that Amazon Cognito appends to Username .
 	Users []types.UserType
 
 	// Metadata pertaining to the operation's result.
@@ -104,12 +127,22 @@ type ListUsersOutput struct {
 }
 
 func (c *Client) addOperationListUsersMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListUsers{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListUsers{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ListUsers"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -130,22 +163,22 @@ func (c *Client) addOperationListUsersMiddlewares(stack *middleware.Stack, optio
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpListUsersValidationMiddleware(stack); err != nil {
@@ -164,6 +197,9 @@ func (c *Client) addOperationListUsersMiddlewares(stack *middleware.Stack, optio
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -262,7 +298,6 @@ func newServiceMetadataMiddleware_opListUsers(region string) *awsmiddleware.Regi
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "ListUsers",
 	}
 }

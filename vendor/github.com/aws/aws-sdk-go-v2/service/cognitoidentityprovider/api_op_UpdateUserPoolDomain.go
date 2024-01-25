@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -29,7 +30,12 @@ import (
 // your request, Amazon Cognito requires up to 1 hour to distribute your new
 // certificate to your custom domain. For more information about adding a custom
 // domain to your user pool, see Using Your Own Domain for the Hosted UI (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-add-custom-domain.html)
-// .
+// . Amazon Cognito evaluates Identity and Access Management (IAM) policies in
+// requests for this API operation. For this operation, you must use IAM
+// credentials to authorize requests, and you must grant yourself the corresponding
+// IAM permission in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) UpdateUserPoolDomain(ctx context.Context, params *UpdateUserPoolDomainInput, optFns ...func(*Options)) (*UpdateUserPoolDomainOutput, error) {
 	if params == nil {
 		params = &UpdateUserPoolDomainInput{}
@@ -86,12 +92,22 @@ type UpdateUserPoolDomainOutput struct {
 }
 
 func (c *Client) addOperationUpdateUserPoolDomainMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpUpdateUserPoolDomain{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpUpdateUserPoolDomain{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "UpdateUserPoolDomain"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -112,22 +128,22 @@ func (c *Client) addOperationUpdateUserPoolDomainMiddlewares(stack *middleware.S
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpUpdateUserPoolDomainValidationMiddleware(stack); err != nil {
@@ -148,6 +164,9 @@ func (c *Client) addOperationUpdateUserPoolDomainMiddlewares(stack *middleware.S
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -155,7 +174,6 @@ func newServiceMetadataMiddleware_opUpdateUserPoolDomain(region string) *awsmidd
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "UpdateUserPoolDomain",
 	}
 }

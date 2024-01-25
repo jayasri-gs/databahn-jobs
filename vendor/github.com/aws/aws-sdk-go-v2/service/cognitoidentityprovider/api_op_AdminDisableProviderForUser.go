@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -19,22 +20,26 @@ import (
 // user signs in again, and the user is no longer attached to the previously linked
 // DestinationUser , the user must create a new user account. See
 // AdminLinkProviderForUser (https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_AdminLinkProviderForUser.html)
-// . This action is enabled only for admin access and requires developer
-// credentials. The ProviderName must match the value specified when creating an
-// IdP for the pool. To deactivate a native username + password user, the
-// ProviderName value must be Cognito and the ProviderAttributeName must be
-// Cognito_Subject . The ProviderAttributeValue must be the name that is used in
-// the user pool for the user. The ProviderAttributeName must always be
-// Cognito_Subject for social IdPs. The ProviderAttributeValue must always be the
-// exact subject that was used when the user was originally linked as a source
-// user. For de-linking a SAML identity, there are two scenarios. If the linked
-// identity has not yet been used to sign in, the ProviderAttributeName and
-// ProviderAttributeValue must be the same values that were used for the SourceUser
-// when the identities were originally linked using AdminLinkProviderForUser call.
-// (If the linking was done with ProviderAttributeName set to Cognito_Subject , the
-// same applies here). However, if the user has already signed in, the
-// ProviderAttributeName must be Cognito_Subject and ProviderAttributeValue must
-// be the subject of the SAML assertion.
+// . The ProviderName must match the value specified when creating an IdP for the
+// pool. To deactivate a native username + password user, the ProviderName value
+// must be Cognito and the ProviderAttributeName must be Cognito_Subject . The
+// ProviderAttributeValue must be the name that is used in the user pool for the
+// user. The ProviderAttributeName must always be Cognito_Subject for social IdPs.
+// The ProviderAttributeValue must always be the exact subject that was used when
+// the user was originally linked as a source user. For de-linking a SAML identity,
+// there are two scenarios. If the linked identity has not yet been used to sign
+// in, the ProviderAttributeName and ProviderAttributeValue must be the same
+// values that were used for the SourceUser when the identities were originally
+// linked using AdminLinkProviderForUser call. (If the linking was done with
+// ProviderAttributeName set to Cognito_Subject , the same applies here). However,
+// if the user has already signed in, the ProviderAttributeName must be
+// Cognito_Subject and ProviderAttributeValue must be the subject of the SAML
+// assertion. Amazon Cognito evaluates Identity and Access Management (IAM)
+// policies in requests for this API operation. For this operation, you must use
+// IAM credentials to authorize requests, and you must grant yourself the
+// corresponding IAM permission in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminDisableProviderForUser(ctx context.Context, params *AdminDisableProviderForUserInput, optFns ...func(*Options)) (*AdminDisableProviderForUserOutput, error) {
 	if params == nil {
 		params = &AdminDisableProviderForUserInput{}
@@ -73,12 +78,22 @@ type AdminDisableProviderForUserOutput struct {
 }
 
 func (c *Client) addOperationAdminDisableProviderForUserMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminDisableProviderForUser{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminDisableProviderForUser{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminDisableProviderForUser"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -99,22 +114,22 @@ func (c *Client) addOperationAdminDisableProviderForUserMiddlewares(stack *middl
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminDisableProviderForUserValidationMiddleware(stack); err != nil {
@@ -135,6 +150,9 @@ func (c *Client) addOperationAdminDisableProviderForUserMiddlewares(stack *middl
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -142,7 +160,6 @@ func newServiceMetadataMiddleware_opAdminDisableProviderForUser(region string) *
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminDisableProviderForUser",
 	}
 }

@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -11,7 +12,13 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Adds additional user attributes to the user pool schema.
+// Adds additional user attributes to the user pool schema. Amazon Cognito
+// evaluates Identity and Access Management (IAM) policies in requests for this API
+// operation. For this operation, you must use IAM credentials to authorize
+// requests, and you must grant yourself the corresponding IAM permission in a
+// policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AddCustomAttributes(ctx context.Context, params *AddCustomAttributesInput, optFns ...func(*Options)) (*AddCustomAttributesOutput, error) {
 	if params == nil {
 		params = &AddCustomAttributesInput{}
@@ -53,12 +60,22 @@ type AddCustomAttributesOutput struct {
 }
 
 func (c *Client) addOperationAddCustomAttributesMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAddCustomAttributes{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAddCustomAttributes{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AddCustomAttributes"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -79,22 +96,22 @@ func (c *Client) addOperationAddCustomAttributesMiddlewares(stack *middleware.St
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAddCustomAttributesValidationMiddleware(stack); err != nil {
@@ -115,6 +132,9 @@ func (c *Client) addOperationAddCustomAttributesMiddlewares(stack *middleware.St
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -122,7 +142,6 @@ func newServiceMetadataMiddleware_opAddCustomAttributes(region string) *awsmiddl
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AddCustomAttributes",
 	}
 }

@@ -17,8 +17,8 @@ import (
 // marked for deletion, use the Secrets Manager console. ListSecrets is eventually
 // consistent, however it might not reflect changes from the last five minutes. To
 // get the latest information for a specific secret, use DescribeSecret . To list
-// the versions of a secret, use ListSecretVersionIds . To get the secret value
-// from SecretString or SecretBinary , call GetSecretValue . For information about
+// the versions of a secret, use ListSecretVersionIds . To retrieve the values for
+// the secrets, call BatchGetSecretValue or GetSecretValue . For information about
 // finding secrets in the console, see Find secrets in Secrets Manager (https://docs.aws.amazon.com/secretsmanager/latest/userguide/manage_search-secret.html)
 // . Secrets Manager generates a CloudTrail log entry when you call this action. Do
 // not include sensitive information in request parameters because it might be
@@ -85,12 +85,22 @@ type ListSecretsOutput struct {
 }
 
 func (c *Client) addOperationListSecretsMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListSecrets{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListSecrets{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ListSecrets"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -111,22 +121,22 @@ func (c *Client) addOperationListSecretsMiddlewares(stack *middleware.Stack, opt
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListSecrets(options.Region), middleware.Before); err != nil {
@@ -142,6 +152,9 @@ func (c *Client) addOperationListSecretsMiddlewares(stack *middleware.Stack, opt
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -242,7 +255,6 @@ func newServiceMetadataMiddleware_opListSecrets(region string) *awsmiddleware.Re
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "secretsmanager",
 		OperationName: "ListSecrets",
 	}
 }

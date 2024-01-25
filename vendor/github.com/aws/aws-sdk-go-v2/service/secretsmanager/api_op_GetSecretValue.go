@@ -4,6 +4,7 @@ package secretsmanager
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -12,8 +13,9 @@ import (
 )
 
 // Retrieves the contents of the encrypted fields SecretString or SecretBinary
-// from the specified version of a secret, whichever contains content. We recommend
-// that you cache your secret values by using client-side caching. Caching secrets
+// from the specified version of a secret, whichever contains content. To retrieve
+// the values for a group of secrets, call BatchGetSecretValue . We recommend that
+// you cache your secret values by using client-side caching. Caching secrets
 // improves speed and reduces your costs. For more information, see Cache secrets
 // for your applications (https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets.html)
 // . To retrieve the previous version of a secret, use VersionStage and specify
@@ -85,11 +87,12 @@ type GetSecretValueOutput struct {
 	Name *string
 
 	// The decrypted secret value, if the secret value was originally provided as
-	// binary data in the form of a byte array. The response parameter represents the
-	// binary data as a base64-encoded (https://tools.ietf.org/html/rfc4648#section-4)
-	// string. If the secret was created by using the Secrets Manager console, or if
-	// the secret value was originally provided as a string, then this field is
-	// omitted. The secret value appears in SecretString instead.
+	// binary data in the form of a byte array. When you retrieve a SecretBinary using
+	// the HTTP API, the Python SDK, or the Amazon Web Services CLI, the value is
+	// Base64-encoded. Otherwise, it is not encoded. If the secret was created by using
+	// the Secrets Manager console, or if the secret value was originally provided as a
+	// string, then this field is omitted. The secret value appears in SecretString
+	// instead.
 	SecretBinary []byte
 
 	// The decrypted secret value, if the secret value was originally provided as a
@@ -112,12 +115,22 @@ type GetSecretValueOutput struct {
 }
 
 func (c *Client) addOperationGetSecretValueMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpGetSecretValue{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpGetSecretValue{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "GetSecretValue"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -138,22 +151,22 @@ func (c *Client) addOperationGetSecretValueMiddlewares(stack *middleware.Stack, 
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpGetSecretValueValidationMiddleware(stack); err != nil {
@@ -174,6 +187,9 @@ func (c *Client) addOperationGetSecretValueMiddlewares(stack *middleware.Stack, 
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -181,7 +197,6 @@ func newServiceMetadataMiddleware_opGetSecretValue(region string) *awsmiddleware
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "secretsmanager",
 		OperationName: "GetSecretValue",
 	}
 }

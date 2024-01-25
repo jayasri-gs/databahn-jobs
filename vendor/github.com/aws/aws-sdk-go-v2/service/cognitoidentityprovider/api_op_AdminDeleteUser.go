@@ -4,14 +4,20 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Deletes a user as an administrator. Works on any user. Calling this action
-// requires developer credentials.
+// Deletes a user as an administrator. Works on any user. Amazon Cognito evaluates
+// Identity and Access Management (IAM) policies in requests for this API
+// operation. For this operation, you must use IAM credentials to authorize
+// requests, and you must grant yourself the corresponding IAM permission in a
+// policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminDeleteUser(ctx context.Context, params *AdminDeleteUserInput, optFns ...func(*Options)) (*AdminDeleteUserOutput, error) {
 	if params == nil {
 		params = &AdminDeleteUserInput{}
@@ -35,7 +41,10 @@ type AdminDeleteUserInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The user name of the user you want to delete.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -51,12 +60,22 @@ type AdminDeleteUserOutput struct {
 }
 
 func (c *Client) addOperationAdminDeleteUserMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminDeleteUser{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminDeleteUser{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminDeleteUser"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -77,22 +96,22 @@ func (c *Client) addOperationAdminDeleteUserMiddlewares(stack *middleware.Stack,
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminDeleteUserValidationMiddleware(stack); err != nil {
@@ -113,6 +132,9 @@ func (c *Client) addOperationAdminDeleteUserMiddlewares(stack *middleware.Stack,
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -120,7 +142,6 @@ func newServiceMetadataMiddleware_opAdminDeleteUser(region string) *awsmiddlewar
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminDeleteUser",
 	}
 }

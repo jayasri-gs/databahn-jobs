@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -11,14 +12,10 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Updates the specified user's attributes, including developer attributes, as an
-// administrator. Works on any user. For custom attributes, you must prepend the
-// custom: prefix to the attribute name. In addition to updating user attributes,
-// this API can also be used to mark phone and email as verified. This action might
-// generate an SMS text message. Starting June 1, 2021, US telecom carriers require
-// you to register an origination phone number before you can send SMS messages to
-// US phone numbers. If you use SMS text messages in Amazon Cognito, you must
-// register a phone number with Amazon Pinpoint (https://console.aws.amazon.com/pinpoint/home/)
+// This action might generate an SMS text message. Starting June 1, 2021, US
+// telecom carriers require you to register an origination phone number before you
+// can send SMS messages to US phone numbers. If you use SMS text messages in
+// Amazon Cognito, you must register a phone number with Amazon Pinpoint (https://console.aws.amazon.com/pinpoint/home/)
 // . Amazon Cognito uses the registered number automatically. Otherwise, Amazon
 // Cognito users who must receive SMS messages might not be able to sign up,
 // activate their accounts, or sign in. If you have never used SMS text messages
@@ -27,9 +24,19 @@ import (
 // , you can send messages only to verified phone numbers. After you test your app
 // while in the sandbox environment, you can move out of the sandbox and into
 // production. For more information, see SMS message settings for Amazon Cognito
-// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-sms-userpool-settings.html)
-// in the Amazon Cognito Developer Guide. Calling this action requires developer
-// credentials.
+// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-sms-settings.html)
+// in the Amazon Cognito Developer Guide. Updates the specified user's attributes,
+// including developer attributes, as an administrator. Works on any user. To
+// delete an attribute from your user, submit the attribute in your API request
+// with a blank value. For custom attributes, you must prepend the custom: prefix
+// to the attribute name. In addition to updating user attributes, this API can
+// also be used to mark phone and email as verified. Amazon Cognito evaluates
+// Identity and Access Management (IAM) policies in requests for this API
+// operation. For this operation, you must use IAM credentials to authorize
+// requests, and you must grant yourself the corresponding IAM permission in a
+// policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminUpdateUserAttributes(ctx context.Context, params *AdminUpdateUserAttributesInput, optFns ...func(*Options)) (*AdminUpdateUserAttributesOutput, error) {
 	if params == nil {
 		params = &AdminUpdateUserAttributesInput{}
@@ -70,7 +77,10 @@ type AdminUpdateUserAttributesInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The user name of the user for whom you want to update user attributes.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -110,12 +120,22 @@ type AdminUpdateUserAttributesOutput struct {
 }
 
 func (c *Client) addOperationAdminUpdateUserAttributesMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminUpdateUserAttributes{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminUpdateUserAttributes{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminUpdateUserAttributes"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -136,22 +156,22 @@ func (c *Client) addOperationAdminUpdateUserAttributesMiddlewares(stack *middlew
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminUpdateUserAttributesValidationMiddleware(stack); err != nil {
@@ -172,6 +192,9 @@ func (c *Client) addOperationAdminUpdateUserAttributesMiddlewares(stack *middlew
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -179,7 +202,6 @@ func newServiceMetadataMiddleware_opAdminUpdateUserAttributes(region string) *aw
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminUpdateUserAttributes",
 	}
 }

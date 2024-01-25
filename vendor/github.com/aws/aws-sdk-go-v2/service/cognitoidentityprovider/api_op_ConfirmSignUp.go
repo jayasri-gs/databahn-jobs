@@ -4,13 +4,32 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Confirms registration of a new user.
+// This public API operation provides a code that Amazon Cognito sent to your user
+// when they signed up in your user pool via the SignUp (https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_SignUp.html)
+// API operation. After your user enters their code, they confirm ownership of the
+// email address or phone number that they provided, and their user account becomes
+// active. Depending on your user pool configuration, your users will receive their
+// confirmation code in an email or SMS message. Local users who signed up in your
+// user pool are the only type of user who can confirm sign-up with a code. Users
+// who federate through an external identity provider (IdP) have already been
+// confirmed by their IdP. Administrator-created users, users created with the
+// AdminCreateUser (https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_AdminCreateUser.html)
+// API operation, confirm their accounts when they respond to their invitation
+// email message and choose a password. They do not receive a confirmation code.
+// Instead, they receive a temporary password. Amazon Cognito doesn't evaluate
+// Identity and Access Management (IAM) policies in requests for this API
+// operation. For this operation, you can't use IAM credentials to authorize
+// requests, and you can't grant IAM permissions in policies. For more information
+// about authorization models in Amazon Cognito, see Using the Amazon Cognito
+// native and OIDC APIs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
+// .
 func (c *Client) ConfirmSignUp(ctx context.Context, params *ConfirmSignUpInput, optFns ...func(*Options)) (*ConfirmSignUpOutput, error) {
 	if params == nil {
 		params = &ConfirmSignUpInput{}
@@ -39,7 +58,10 @@ type ConfirmSignUpInput struct {
 	// This member is required.
 	ConfirmationCode *string
 
-	// The user name of the user whose registration you want to confirm.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -100,12 +122,22 @@ type ConfirmSignUpOutput struct {
 }
 
 func (c *Client) addOperationConfirmSignUpMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpConfirmSignUp{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpConfirmSignUp{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ConfirmSignUp"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -129,13 +161,16 @@ func (c *Client) addOperationConfirmSignUpMiddlewares(stack *middleware.Stack, o
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpConfirmSignUpValidationMiddleware(stack); err != nil {
@@ -154,6 +189,9 @@ func (c *Client) addOperationConfirmSignUpMiddlewares(stack *middleware.Stack, o
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil

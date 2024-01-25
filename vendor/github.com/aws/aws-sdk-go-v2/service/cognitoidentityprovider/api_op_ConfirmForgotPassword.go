@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
@@ -11,6 +12,12 @@ import (
 )
 
 // Allows a user to enter a confirmation code to reset a forgotten password.
+// Amazon Cognito doesn't evaluate Identity and Access Management (IAM) policies in
+// requests for this API operation. For this operation, you can't use IAM
+// credentials to authorize requests, and you can't grant IAM permissions in
+// policies. For more information about authorization models in Amazon Cognito, see
+// Using the Amazon Cognito native and OIDC APIs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
+// .
 func (c *Client) ConfirmForgotPassword(ctx context.Context, params *ConfirmForgotPasswordInput, optFns ...func(*Options)) (*ConfirmForgotPasswordOutput, error) {
 	if params == nil {
 		params = &ConfirmForgotPasswordInput{}
@@ -46,8 +53,10 @@ type ConfirmForgotPasswordInput struct {
 	// This member is required.
 	Password *string
 
-	// The user name of the user for whom you want to enter a code to retrieve a
-	// forgotten password.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -79,7 +88,9 @@ type ConfirmForgotPasswordInput struct {
 	ClientMetadata map[string]string
 
 	// A keyed-hash message authentication code (HMAC) calculated using the secret key
-	// of a user pool client and username plus the client ID in the message.
+	// of a user pool client and username plus the client ID in the message. For more
+	// information about SecretHash , see Computing secret hash values (https://docs.aws.amazon.com/cognito/latest/developerguide/signing-up-users-in-your-app.html#cognito-user-pools-computing-secret-hash)
+	// .
 	SecretHash *string
 
 	// Contextual data about your user session, such as the device fingerprint, IP
@@ -101,12 +112,22 @@ type ConfirmForgotPasswordOutput struct {
 }
 
 func (c *Client) addOperationConfirmForgotPasswordMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpConfirmForgotPassword{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpConfirmForgotPassword{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ConfirmForgotPassword"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -130,13 +151,16 @@ func (c *Client) addOperationConfirmForgotPasswordMiddlewares(stack *middleware.
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpConfirmForgotPasswordValidationMiddleware(stack); err != nil {
@@ -155,6 +179,9 @@ func (c *Client) addOperationConfirmForgotPasswordMiddlewares(stack *middleware.
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil

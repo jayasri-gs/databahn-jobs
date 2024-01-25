@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -11,17 +12,9 @@ import (
 )
 
 // Resets the specified user's password in a user pool as an administrator. Works
-// on any user. When a developer calls this API, the current password is
-// invalidated, so it must be changed. If a user tries to sign in after the API is
-// called, the app will get a PasswordResetRequiredException exception back and
-// should direct the user down the flow to reset the password, which is the same as
-// the forgot password flow. In addition, if the user pool has phone verification
-// selected and a verified phone number exists for the user, or if email
-// verification is selected and a verified email exists for the user, calling this
-// API will also result in sending a message to the end user with the code to
-// change their password. This action might generate an SMS text message. Starting
-// June 1, 2021, US telecom carriers require you to register an origination phone
-// number before you can send SMS messages to US phone numbers. If you use SMS text
+// on any user. This action might generate an SMS text message. Starting June 1,
+// 2021, US telecom carriers require you to register an origination phone number
+// before you can send SMS messages to US phone numbers. If you use SMS text
 // messages in Amazon Cognito, you must register a phone number with Amazon
 // Pinpoint (https://console.aws.amazon.com/pinpoint/home/) . Amazon Cognito uses
 // the registered number automatically. Otherwise, Amazon Cognito users who must
@@ -32,9 +25,21 @@ import (
 // , you can send messages only to verified phone numbers. After you test your app
 // while in the sandbox environment, you can move out of the sandbox and into
 // production. For more information, see SMS message settings for Amazon Cognito
-// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-sms-userpool-settings.html)
-// in the Amazon Cognito Developer Guide. Calling this action requires developer
-// credentials.
+// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-sms-settings.html)
+// in the Amazon Cognito Developer Guide. Deactivates a user's password, requiring
+// them to change it. If a user tries to sign in after the API is called, Amazon
+// Cognito responds with a PasswordResetRequiredException error. Your app must
+// then perform the actions that reset your user's password: the forgot-password
+// flow. In addition, if the user pool has phone verification selected and a
+// verified phone number exists for the user, or if email verification is selected
+// and a verified email exists for the user, calling this API will also result in
+// sending a message to the end user with the code to change their password. Amazon
+// Cognito evaluates Identity and Access Management (IAM) policies in requests for
+// this API operation. For this operation, you must use IAM credentials to
+// authorize requests, and you must grant yourself the corresponding IAM permission
+// in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminResetUserPassword(ctx context.Context, params *AdminResetUserPasswordInput, optFns ...func(*Options)) (*AdminResetUserPasswordOutput, error) {
 	if params == nil {
 		params = &AdminResetUserPasswordInput{}
@@ -58,7 +63,10 @@ type AdminResetUserPasswordInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The user name of the user whose password you want to reset.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -98,12 +106,22 @@ type AdminResetUserPasswordOutput struct {
 }
 
 func (c *Client) addOperationAdminResetUserPasswordMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminResetUserPassword{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminResetUserPassword{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminResetUserPassword"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -124,22 +142,22 @@ func (c *Client) addOperationAdminResetUserPasswordMiddlewares(stack *middleware
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminResetUserPasswordValidationMiddleware(stack); err != nil {
@@ -160,6 +178,9 @@ func (c *Client) addOperationAdminResetUserPasswordMiddlewares(stack *middleware
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -167,7 +188,6 @@ func newServiceMetadataMiddleware_opAdminResetUserPassword(region string) *awsmi
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminResetUserPassword",
 	}
 }

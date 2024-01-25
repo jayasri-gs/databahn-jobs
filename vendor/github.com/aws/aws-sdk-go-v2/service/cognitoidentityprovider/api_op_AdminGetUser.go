@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -13,7 +14,12 @@ import (
 )
 
 // Gets the specified user by user name in a user pool as an administrator. Works
-// on any user. Calling this action requires developer credentials.
+// on any user. Amazon Cognito evaluates Identity and Access Management (IAM)
+// policies in requests for this API operation. For this operation, you must use
+// IAM credentials to authorize requests, and you must grant yourself the
+// corresponding IAM permission in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminGetUser(ctx context.Context, params *AdminGetUserInput, optFns ...func(*Options)) (*AdminGetUserOutput, error) {
 	if params == nil {
 		params = &AdminGetUserInput{}
@@ -38,7 +44,10 @@ type AdminGetUserInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The user name of the user you want to retrieve.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -50,7 +59,7 @@ type AdminGetUserInput struct {
 // user as an administrator.
 type AdminGetUserOutput struct {
 
-	// The user name of the user about whom you're receiving information.
+	// The username of the user that you requested.
 	//
 	// This member is required.
 	Username *string
@@ -74,7 +83,8 @@ type AdminGetUserOutput struct {
 	// The date the user was created.
 	UserCreateDate *time.Time
 
-	// The date the user was last modified.
+	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
+	// format, when the item was modified.
 	UserLastModifiedDate *time.Time
 
 	// The MFA options that are activated for the user. The possible values in this
@@ -84,7 +94,6 @@ type AdminGetUserOutput struct {
 	// The user status. Can be one of the following:
 	//   - UNCONFIRMED - User has been created but not confirmed.
 	//   - CONFIRMED - User has been confirmed.
-	//   - ARCHIVED - User is no longer active.
 	//   - UNKNOWN - User status isn't known.
 	//   - RESET_REQUIRED - User is confirmed, but the user must request a code and
 	//   reset their password before they can sign in.
@@ -100,12 +109,22 @@ type AdminGetUserOutput struct {
 }
 
 func (c *Client) addOperationAdminGetUserMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminGetUser{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminGetUser{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminGetUser"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -126,22 +145,22 @@ func (c *Client) addOperationAdminGetUserMiddlewares(stack *middleware.Stack, op
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminGetUserValidationMiddleware(stack); err != nil {
@@ -162,6 +181,9 @@ func (c *Client) addOperationAdminGetUserMiddlewares(stack *middleware.Stack, op
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -169,7 +191,6 @@ func newServiceMetadataMiddleware_opAdminGetUser(region string) *awsmiddleware.R
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminGetUser",
 	}
 }

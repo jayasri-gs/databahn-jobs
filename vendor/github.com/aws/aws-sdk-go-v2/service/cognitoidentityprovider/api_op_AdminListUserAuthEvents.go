@@ -13,7 +13,12 @@ import (
 )
 
 // A history of user activity and any risks detected as part of Amazon Cognito
-// advanced security.
+// advanced security. Amazon Cognito evaluates Identity and Access Management (IAM)
+// policies in requests for this API operation. For this operation, you must use
+// IAM credentials to authorize requests, and you must grant yourself the
+// corresponding IAM permission in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminListUserAuthEvents(ctx context.Context, params *AdminListUserAuthEventsInput, optFns ...func(*Options)) (*AdminListUserAuthEventsOutput, error) {
 	if params == nil {
 		params = &AdminListUserAuthEventsInput{}
@@ -36,7 +41,10 @@ type AdminListUserAuthEventsInput struct {
 	// This member is required.
 	UserPoolId *string
 
-	// The user pool username or an alias.
+	// The username of the user that you want to query or modify. The value of this
+	// parameter is typically your user's username, but it can be any of their alias
+	// attributes. If username isn't an alias attribute in your user pool, you can
+	// also use their sub in this request.
 	//
 	// This member is required.
 	Username *string
@@ -67,12 +75,22 @@ type AdminListUserAuthEventsOutput struct {
 }
 
 func (c *Client) addOperationAdminListUserAuthEventsMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminListUserAuthEvents{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminListUserAuthEvents{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminListUserAuthEvents"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -93,22 +111,22 @@ func (c *Client) addOperationAdminListUserAuthEventsMiddlewares(stack *middlewar
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminListUserAuthEventsValidationMiddleware(stack); err != nil {
@@ -127,6 +145,9 @@ func (c *Client) addOperationAdminListUserAuthEventsMiddlewares(stack *middlewar
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -229,7 +250,6 @@ func newServiceMetadataMiddleware_opAdminListUserAuthEvents(region string) *awsm
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminListUserAuthEvents",
 	}
 }

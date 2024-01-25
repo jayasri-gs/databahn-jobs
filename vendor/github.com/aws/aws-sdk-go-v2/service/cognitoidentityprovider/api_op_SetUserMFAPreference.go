@@ -4,8 +4,8 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -20,7 +20,13 @@ import (
 // MFA during all sign-in attempts unless device tracking is turned on and the
 // device has been trusted. If you want MFA to be applied selectively based on the
 // assessed risk level of sign-in attempts, deactivate MFA for users and turn on
-// Adaptive Authentication for the user pool.
+// Adaptive Authentication for the user pool. Amazon Cognito doesn't evaluate
+// Identity and Access Management (IAM) policies in requests for this API
+// operation. For this operation, you can't use IAM credentials to authorize
+// requests, and you can't grant IAM permissions in policies. For more information
+// about authorization models in Amazon Cognito, see Using the Amazon Cognito
+// native and OIDC APIs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
+// .
 func (c *Client) SetUserMFAPreference(ctx context.Context, params *SetUserMFAPreferenceInput, optFns ...func(*Options)) (*SetUserMFAPreferenceOutput, error) {
 	if params == nil {
 		params = &SetUserMFAPreferenceInput{}
@@ -61,12 +67,22 @@ type SetUserMFAPreferenceOutput struct {
 }
 
 func (c *Client) addOperationSetUserMFAPreferenceMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpSetUserMFAPreference{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpSetUserMFAPreference{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "SetUserMFAPreference"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -81,13 +97,7 @@ func (c *Client) addOperationSetUserMFAPreferenceMiddlewares(stack *middleware.S
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
-		return err
-	}
 	if err = addRetryMiddlewares(stack, options); err != nil {
-		return err
-	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
@@ -96,13 +106,16 @@ func (c *Client) addOperationSetUserMFAPreferenceMiddlewares(stack *middleware.S
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpSetUserMFAPreferenceValidationMiddleware(stack); err != nil {
@@ -123,6 +136,9 @@ func (c *Client) addOperationSetUserMFAPreferenceMiddlewares(stack *middleware.S
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -130,7 +146,6 @@ func newServiceMetadataMiddleware_opSetUserMFAPreference(region string) *awsmidd
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "SetUserMFAPreference",
 	}
 }

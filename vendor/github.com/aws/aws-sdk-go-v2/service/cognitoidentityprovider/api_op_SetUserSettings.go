@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
@@ -13,7 +14,12 @@ import (
 // This action is no longer supported. You can use it to configure only SMS MFA.
 // You can't use it to configure time-based one-time password (TOTP) software token
 // MFA. To configure either type of MFA, use SetUserMFAPreference (https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_SetUserMFAPreference.html)
-// instead.
+// instead. Amazon Cognito doesn't evaluate Identity and Access Management (IAM)
+// policies in requests for this API operation. For this operation, you can't use
+// IAM credentials to authorize requests, and you can't grant IAM permissions in
+// policies. For more information about authorization models in Amazon Cognito, see
+// Using the Amazon Cognito native and OIDC APIs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
+// .
 func (c *Client) SetUserSettings(ctx context.Context, params *SetUserSettingsInput, optFns ...func(*Options)) (*SetUserSettingsOutput, error) {
 	if params == nil {
 		params = &SetUserSettingsInput{}
@@ -56,12 +62,22 @@ type SetUserSettingsOutput struct {
 }
 
 func (c *Client) addOperationSetUserSettingsMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpSetUserSettings{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpSetUserSettings{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "SetUserSettings"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -85,13 +101,16 @@ func (c *Client) addOperationSetUserSettingsMiddlewares(stack *middleware.Stack,
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpSetUserSettingsValidationMiddleware(stack); err != nil {
@@ -110,6 +129,9 @@ func (c *Client) addOperationSetUserSettingsMiddlewares(stack *middleware.Stack,
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil

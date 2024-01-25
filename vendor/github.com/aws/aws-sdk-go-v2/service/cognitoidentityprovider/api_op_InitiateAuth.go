@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
@@ -13,6 +14,11 @@ import (
 // Initiates sign-in for a user in the Amazon Cognito user directory. You can't
 // sign in a user with a federated IdP with InitiateAuth . For more information,
 // see Adding user pool sign-in through a third party (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-identity-federation.html)
+// . Amazon Cognito doesn't evaluate Identity and Access Management (IAM) policies
+// in requests for this API operation. For this operation, you can't use IAM
+// credentials to authorize requests, and you can't grant IAM permissions in
+// policies. For more information about authorization models in Amazon Cognito, see
+// Using the Amazon Cognito native and OIDC APIs (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 // . This action might generate an SMS text message. Starting June 1, 2021, US
 // telecom carriers require you to register an origination phone number before you
 // can send SMS messages to US phone numbers. If you use SMS text messages in
@@ -25,7 +31,7 @@ import (
 // , you can send messages only to verified phone numbers. After you test your app
 // while in the sandbox environment, you can move out of the sandbox and into
 // production. For more information, see SMS message settings for Amazon Cognito
-// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-sms-userpool-settings.html)
+// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-sms-settings.html)
 // in the Amazon Cognito Developer Guide.
 func (c *Client) InitiateAuth(ctx context.Context, params *InitiateAuthInput, optFns ...func(*Options)) (*InitiateAuthOutput, error) {
 	if params == nil {
@@ -80,12 +86,19 @@ type InitiateAuthInput struct {
 	// that you're invoking. The required values depend on the value of AuthFlow :
 	//   - For USER_SRP_AUTH : USERNAME (required), SRP_A (required), SECRET_HASH
 	//   (required if the app client is configured with a client secret), DEVICE_KEY .
+	//   - For USER_PASSWORD_AUTH : USERNAME (required), PASSWORD (required),
+	//   SECRET_HASH (required if the app client is configured with a client secret),
+	//   DEVICE_KEY .
 	//   - For REFRESH_TOKEN_AUTH/REFRESH_TOKEN : REFRESH_TOKEN (required), SECRET_HASH
 	//   (required if the app client is configured with a client secret), DEVICE_KEY .
 	//   - For CUSTOM_AUTH : USERNAME (required), SECRET_HASH (if app client is
 	//   configured with client secret), DEVICE_KEY . To start the authentication flow
 	//   with password verification, include ChallengeName: SRP_A and SRP_A: (The
 	//   SRP_A Value) .
+	// For more information about SECRET_HASH , see Computing secret hash values (https://docs.aws.amazon.com/cognito/latest/developerguide/signing-up-users-in-your-app.html#cognito-user-pools-computing-secret-hash)
+	// . For information about DEVICE_KEY , see Working with user devices in your user
+	// pool (https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-device-tracking.html)
+	// .
 	AuthParameters map[string]string
 
 	// A map of custom key-value pairs that you can provide as input for certain
@@ -110,7 +123,6 @@ type InitiateAuthInput struct {
 	//   - Pre token generation
 	//   - Create auth challenge
 	//   - Define auth challenge
-	//   - Verify auth challenge
 	// For more information, see  Customizing user pool Workflows with Lambda Triggers (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-working-with-aws-lambda-triggers.html)
 	// in the Amazon Cognito Developer Guide. When you use the ClientMetadata
 	// parameter, remember that Amazon Cognito won't do the following:
@@ -142,9 +154,9 @@ type InitiateAuthOutput struct {
 	AuthenticationResult *types.AuthenticationResultType
 
 	// The name of the challenge that you're responding to with this call. This name
-	// is returned in the AdminInitiateAuth response if you must pass another
-	// challenge. Valid values include the following: All of the following challenges
-	// require USERNAME and SECRET_HASH (if applicable) in the parameters.
+	// is returned in the InitiateAuth response if you must pass another challenge.
+	// Valid values include the following: All of the following challenges require
+	// USERNAME and SECRET_HASH (if applicable) in the parameters.
 	//   - SMS_MFA : Next challenge is to supply an SMS_MFA_CODE , delivered via SMS.
 	//   - PASSWORD_VERIFIER : Next challenge is to supply PASSWORD_CLAIM_SIGNATURE ,
 	//   PASSWORD_CLAIM_SECRET_BLOCK , and TIMESTAMP after the client-side SRP
@@ -170,7 +182,7 @@ type InitiateAuthOutput struct {
 	//   additional attributes.
 	//   - MFA_SETUP : For users who are required to setup an MFA factor before they
 	//   can sign in. The MFA types activated for the user pool will be listed in the
-	//   challenge parameters MFA_CAN_SETUP value. To set up software token MFA, use
+	//   challenge parameters MFAS_CAN_SETUP value. To set up software token MFA, use
 	//   the session returned here from InitiateAuth as an input to
 	//   AssociateSoftwareToken . Use the session returned by VerifySoftwareToken as an
 	//   input to RespondToAuthChallenge with challenge name MFA_SETUP to complete
@@ -198,12 +210,22 @@ type InitiateAuthOutput struct {
 }
 
 func (c *Client) addOperationInitiateAuthMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpInitiateAuth{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpInitiateAuth{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "InitiateAuth"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -227,13 +249,16 @@ func (c *Client) addOperationInitiateAuthMiddlewares(stack *middleware.Stack, op
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpInitiateAuthValidationMiddleware(stack); err != nil {
@@ -252,6 +277,9 @@ func (c *Client) addOperationInitiateAuthMiddlewares(stack *middleware.Stack, op
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil

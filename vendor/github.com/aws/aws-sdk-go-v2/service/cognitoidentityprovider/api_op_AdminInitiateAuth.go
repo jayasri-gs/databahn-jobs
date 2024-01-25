@@ -4,6 +4,7 @@ package cognitoidentityprovider
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -24,9 +25,13 @@ import (
 // , you can send messages only to verified phone numbers. After you test your app
 // while in the sandbox environment, you can move out of the sandbox and into
 // production. For more information, see SMS message settings for Amazon Cognito
-// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-sms-userpool-settings.html)
-// in the Amazon Cognito Developer Guide. Calling this action requires developer
-// credentials.
+// user pools (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-sms-settings.html)
+// in the Amazon Cognito Developer Guide. Amazon Cognito evaluates Identity and
+// Access Management (IAM) policies in requests for this API operation. For this
+// operation, you must use IAM credentials to authorize requests, and you must
+// grant yourself the corresponding IAM permission in a policy. Learn more
+//   - Signing Amazon Web Services API Requests (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+//   - Using the Amazon Cognito user pools API and user pool endpoints (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pools-API-operations.html)
 func (c *Client) AdminInitiateAuth(ctx context.Context, params *AdminInitiateAuthInput, optFns ...func(*Options)) (*AdminInitiateAuthOutput, error) {
 	if params == nil {
 		params = &AdminInitiateAuthInput{}
@@ -87,14 +92,19 @@ type AdminInitiateAuthInput struct {
 	// that you're invoking. The required values depend on the value of AuthFlow :
 	//   - For USER_SRP_AUTH : USERNAME (required), SRP_A (required), SECRET_HASH
 	//   (required if the app client is configured with a client secret), DEVICE_KEY .
+	//   - For ADMIN_USER_PASSWORD_AUTH : USERNAME (required), PASSWORD (required),
+	//   SECRET_HASH (required if the app client is configured with a client secret),
+	//   DEVICE_KEY .
 	//   - For REFRESH_TOKEN_AUTH/REFRESH_TOKEN : REFRESH_TOKEN (required), SECRET_HASH
 	//   (required if the app client is configured with a client secret), DEVICE_KEY .
-	//   - For ADMIN_NO_SRP_AUTH : USERNAME (required), SECRET_HASH (if app client is
-	//   configured with client secret), PASSWORD (required), DEVICE_KEY .
 	//   - For CUSTOM_AUTH : USERNAME (required), SECRET_HASH (if app client is
 	//   configured with client secret), DEVICE_KEY . To start the authentication flow
 	//   with password verification, include ChallengeName: SRP_A and SRP_A: (The
 	//   SRP_A Value) .
+	// For more information about SECRET_HASH , see Computing secret hash values (https://docs.aws.amazon.com/cognito/latest/developerguide/signing-up-users-in-your-app.html#cognito-user-pools-computing-secret-hash)
+	// . For information about DEVICE_KEY , see Working with user devices in your user
+	// pool (https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-device-tracking.html)
+	// .
 	AuthParameters map[string]string
 
 	// A map of custom key-value pairs that you can provide as input for certain
@@ -119,7 +129,6 @@ type AdminInitiateAuthInput struct {
 	//   - Pre token generation
 	//   - Create auth challenge
 	//   - Define auth challenge
-	//   - Verify auth challenge
 	// For more information, see  Customizing user pool Workflows with Lambda Triggers (https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-working-with-aws-lambda-triggers.html)
 	// in the Amazon Cognito Developer Guide. When you use the ClientMetadata
 	// parameter, remember that Amazon Cognito won't do the following:
@@ -185,7 +194,7 @@ type AdminInitiateAuthOutput struct {
 	//   value of any additional attributes.
 	//   - MFA_SETUP : For users who are required to set up an MFA factor before they
 	//   can sign in. The MFA types activated for the user pool will be listed in the
-	//   challenge parameters MFA_CAN_SETUP value. To set up software token MFA, use
+	//   challenge parameters MFAS_CAN_SETUP value. To set up software token MFA, use
 	//   the session returned here from InitiateAuth as an input to
 	//   AssociateSoftwareToken , and use the session returned by VerifySoftwareToken
 	//   as an input to RespondToAuthChallenge with challenge name MFA_SETUP to
@@ -219,12 +228,22 @@ type AdminInitiateAuthOutput struct {
 }
 
 func (c *Client) addOperationAdminInitiateAuthMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAdminInitiateAuth{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAdminInitiateAuth{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AdminInitiateAuth"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -245,22 +264,22 @@ func (c *Client) addOperationAdminInitiateAuthMiddlewares(stack *middleware.Stac
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
 	if err = addOpAdminInitiateAuthValidationMiddleware(stack); err != nil {
@@ -281,6 +300,9 @@ func (c *Client) addOperationAdminInitiateAuthMiddlewares(stack *middleware.Stac
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -288,7 +310,6 @@ func newServiceMetadataMiddleware_opAdminInitiateAuth(region string) *awsmiddlew
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "cognito-idp",
 		OperationName: "AdminInitiateAuth",
 	}
 }

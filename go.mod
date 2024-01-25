@@ -3,6 +3,11 @@ module github.com/databahn-ai/databahn-jobs
 go 1.20
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.24.1
+	github.com/aws/aws-sdk-go-v2/config v1.26.5
+	github.com/aws/aws-sdk-go-v2/credentials v1.16.16
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.15.13
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.48.0
 	github.com/databahn-ai/common-utils v0.35.0
 	github.com/databahn-ai/go-logging v0.1.0
 	github.com/go-chi/chi/v5 v5.0.11
@@ -17,28 +22,25 @@ require (
 	github.com/apex/gateway v1.1.2 // indirect
 	github.com/aws/aws-lambda-go v1.34.1 // indirect
 	github.com/aws/aws-sdk-go v1.44.263 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.18.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.10 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.18.27 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.13.26 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.4 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.34 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.28 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.35 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.0.26 // indirect
-	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.22.12 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.9.11 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.29 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.28 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.14.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.36.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.19.10 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssm v1.36.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.12.12 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.14.12 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.19.2 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.5.4 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.14.11 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.2.10 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.5.10 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.7.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.2.10 // indirect
+	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.32.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.10.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.2.10 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.10.10 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.16.10 // indirect
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.26.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.44.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.18.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.21.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.26.7 // indirect
 	github.com/aws/aws-xray-sdk-go v1.8.0 // indirect
-	github.com/aws/smithy-go v1.13.5 // indirect
+	github.com/aws/smithy-go v1.19.0 // indirect
+	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect
