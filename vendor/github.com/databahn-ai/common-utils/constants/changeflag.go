@@ -16,6 +16,10 @@ const (
 	EntityElasticDestination   = "destination_elastic_search"
 	EntitySnowflakeDestination = "destination_snowflake"
 	EntityEventHubDestination  = "destination_event_hub"
+	EntityAzureBlobDestination = "destination_azure_blob"
+	EntityChronicleDestination = "destination_chronicle"
+	EntityDevoDestination      = "destination_devo"
+	EntitySentinelDestination  = "destination_azure_sentinel"
 	EntitySource               = "source"
 	EntityTransformer          = "transformer"
 

@@ -191,6 +191,11 @@ func (p Producer) SendSync(ctx context.Context, message Message) error {
 func (p Producer) SendAsync(message Message, callback func(err error)) {
 	kafkaMessage := adaptMessage(message, p.Config.Topic)
 	err := p.Producer.Produce(kafkaMessage, nil)
+	if kfkErr, ok := err.(kafka.Error); ok && kfkErr.Code() == kafka.ErrQueueFull {
+		flushCount := p.Producer.Flush(1500)
+		logger.GetLogger().Info("kafka local queue full, flushed messages, resending after flush", zap.Int("count", flushCount))
+		err = p.Producer.Produce(kafkaMessage, nil)
+	}
 	if err != nil && callback != nil {
 		callback(err)
 	}
