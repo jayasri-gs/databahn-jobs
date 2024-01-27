@@ -13,6 +13,11 @@ import (
 	"go.uber.org/zap"
 )
 
+type CloudWatchClient struct {
+	Region string
+	Client *cloudwatchlogs.CloudWatchLogs
+}
+
 // GetRecentCWErrorLogs finds the most recent logs stream in logGroup, then searches the most recent
 func GetRecentCWErrorLogs(ctx context.Context, logGroup string, region string, logsToSearch int64) (errorLogs []string, err error) {
 	sess := session.Must(session.NewSession(&aws.Config{
@@ -51,6 +56,40 @@ func GetRecentCWErrorLogs(ctx context.Context, logGroup string, region string, l
 		}
 	}
 	return errorLogs, nil
+}
+
+func NewCloudWatchClient(region string) *CloudWatchClient {
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String(region),
+	}))
+	return &CloudWatchClient{
+		Region: region,
+		Client: cloudwatchlogs.New(sess),
+	}
+}
+
+func (c *CloudWatchClient) Fetch(ctx context.Context, input *cloudwatchlogs.GetLogEventsInput) (*cloudwatchlogs.GetLogEventsOutput, error) {
+	return c.Client.GetLogEventsWithContext(ctx, input)
+}
+
+func (c *CloudWatchClient) FetchWithFilter(ctx context.Context, logGroupName, logStreamName string, startTime *int64) (*cloudwatchlogs.GetLogEventsOutput, error) {
+	input := &cloudwatchlogs.GetLogEventsInput{
+		LogGroupName:  aws.String(logGroupName),
+		LogStreamName: aws.String(logStreamName),
+		StartTime:     startTime,
+		Limit:         aws.Int64(50),
+	}
+	return c.Client.GetLogEventsWithContext(ctx, input)
+}
+
+func (c *CloudWatchClient) FetchWithToken(ctx context.Context, logGroupName, logStreamName, nextToken string) (*cloudwatchlogs.GetLogEventsOutput, error) {
+	input := &cloudwatchlogs.GetLogEventsInput{
+		LogGroupName:  aws.String(logGroupName),
+		LogStreamName: aws.String(logStreamName),
+		NextToken:     aws.String(nextToken),
+		Limit:         aws.Int64(50),
+	}
+	return c.Client.GetLogEventsWithContext(ctx, input)
 }
 
 func getLatestLogStreamName(ctx context.Context, sess *session.Session, logGroupPrefix string) (string, error) {

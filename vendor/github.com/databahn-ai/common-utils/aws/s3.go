@@ -1,6 +1,8 @@
 package aws
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -43,7 +45,44 @@ func DownloadFileFromS3(path string, bucketName string) (text []byte, err error)
 	}
 	return body, nil
 }
+func DownloadGzipFileFromS3(path string, bucketName string) (text []byte, err error) {
+	client, err := getS3Client()
+	logging.Info("downloading s3 file", zap.String("bucket", bucketName))
+	if err != nil {
+		logging.Error("error while starting s3 client", zap.Error(err))
+		return nil, err
+	}
 
+	getFile := &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(path),
+	}
+	ctx := context.Background()
+
+	resp, err := client.GetObject(ctx, getFile)
+	if err != nil {
+		logging.Error("error while pulling data.", zap.Error(err))
+		return nil, err
+	}
+
+	// decode gzip
+	reader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		logging.Error("Error creating gzip reader", zap.Error(err))
+		return nil, err
+	}
+	defer reader.Close()
+
+	// Read the decompressed data
+	var decompressedData bytes.Buffer
+	_, err = io.Copy(&decompressedData, reader)
+	if err != nil {
+		logging.Error("Error decompressing data", zap.Error(err))
+		return nil, err
+	}
+	return decompressedData.Bytes(), nil
+
+}
 func UploadFileToS3(ctx context.Context, request *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
 	client, err := getS3Client()
 	logging.Info("uploading s3 file", zap.Any("bucket", request.Bucket))
@@ -84,4 +123,14 @@ func CreatePresignedLink(bucketName string, path string) (*v4.PresignedHTTPReque
 
 	fmt.Printf("Presigned URL For object: %s\n", presignResult.URL)
 	return presignResult, err
+}
+
+func ListObjects(ctx context.Context, req *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	client, err := getS3Client()
+	if err != nil {
+		logging.Error("error while starting s3 client", zap.Error(err))
+		return nil, err
+	}
+	return client.ListObjectsV2(ctx, req)
+
 }
