@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.16
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.15.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.48.0
-	github.com/databahn-ai/common-utils v0.45.0
+	github.com/databahn-ai/common-utils v0.46.0
 	github.com/databahn-ai/go-logging v0.1.0
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	go.uber.org/zap v1.24.0

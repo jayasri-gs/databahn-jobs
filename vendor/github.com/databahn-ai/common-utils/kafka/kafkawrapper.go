@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"runtime"
 	"time"
@@ -134,20 +135,29 @@ func (c Cluster) NewProducer(ctx context.Context, config ProducerConfig) (*Produ
 		return nil, err
 	}
 
-	go func() {
+	go func(name string) {
 		for e := range producer.Events() {
 			switch ev := e.(type) {
 			case *kafka.Message:
 				if ev.TopicPartition.Error != nil {
 					logger.GetLoggerWithContext(ctx).Error("Failed to send to Kafka topic", zap.Error(ev.TopicPartition.Error),
-						zap.String("producerName", config.Name), zap.String("Topic", config.Topic))
+						zap.String("producerName", name), zap.String("Topic", config.Topic))
 				}
 			case kafka.Error:
 				logger.GetLoggerWithContext(ctx).Error("Failed to send to Kafka cluster", zap.Error(ev),
-					zap.String("producerName", config.Name), zap.String("Topic", config.Topic))
+					zap.String("producerName", name), zap.String("Topic", config.Topic))
+			case *kafka.Stats:
+				var stats map[string]interface{}
+				err := json.Unmarshal([]byte(e.String()), &stats)
+				if err == nil {
+					logger.GetLogger().Info("kafka producer stats", zap.String("producerName", name),
+						zap.Any("msg_max", stats["msg_max"]), zap.Any("msg_size", stats["msg_size"]), zap.Any("msg_cnt", stats["msg_cnt"]))
+				} else {
+					logger.GetLogger().Error("failed to parse kafka stats", zap.Error(err))
+				}
 			}
 		}
-	}()
+	}(config.Name)
 
 	return &Producer{
 		Producer: producer,
@@ -190,14 +200,27 @@ func (p Producer) SendSync(ctx context.Context, message Message) error {
 
 func (p Producer) SendAsync(message Message, callback func(err error)) {
 	kafkaMessage := adaptMessage(message, p.Config.Topic)
-	err := p.Producer.Produce(kafkaMessage, nil)
-	if kfkErr, ok := err.(kafka.Error); ok && kfkErr.Code() == kafka.ErrQueueFull {
-		flushCount := p.Producer.Flush(1500)
-		logger.GetLogger().Info("kafka local queue full, flushed messages, resending after flush", zap.Int("count", flushCount))
-		err = p.Producer.Produce(kafkaMessage, nil)
-	}
+	err := p.retrySending(kafkaMessage, 0, 1000)
 	if err != nil && callback != nil {
 		callback(err)
+	}
+}
+
+func (p Producer) retrySending(message *kafka.Message, retry int, flushTime int) error {
+	if retry == 3 {
+		return p.Producer.Produce(message, nil)
+	}
+	err := p.Producer.Produce(message, nil)
+	if err == nil {
+		return nil
+	}
+	if kfkErr, ok := err.(kafka.Error); ok && kfkErr.Code() == kafka.ErrQueueFull {
+		flushCount := p.Producer.Flush(flushTime)
+		logger.GetLogger().Info("kafka local queue full, flushed messages, resending after flush", zap.Int("count", flushCount),
+			zap.Int("retry", retry), zap.Int("flushTime", flushTime))
+		return p.retrySending(message, retry+1, flushTime+1000)
+	} else {
+		return err
 	}
 }
 
