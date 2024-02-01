@@ -3,8 +3,11 @@ package processor
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
+	"encoding/json"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
 
 	"github.com/databahn-ai/go-logging/logger"
@@ -83,4 +86,40 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	replaymanager.CleanUpFile(filePath)
 
 	return nil, ""
+}
+
+func ProduceStatus(mst *replaymanager.MetaDataStore) {
+	dataReplayStatusProducer := GetProducer("reqId", constants.StatsTopic)
+
+	var statusList []model.Status
+
+	for _, val := range mst.GetMetaMap() {
+		filepath.Join(val.Prefix, val.FileName)
+
+		status := model.Status{
+			FileName:    val.FileName,
+			RequestId:   val.RequestId,
+			Status:      val.Status,
+			FileSize:    val.FileSize,
+			FilePath:    filepath.Join(val.Prefix, val.FileName),
+			CurrentSize: val.CurrentSize,
+			ErrorMsg:    val.ErrorMsg,
+			StartTime:   val.Time,
+			EndTime:     val.EndTime,
+			Percentage:  0.0,
+		}
+		statusList = append(statusList, status)
+	}
+
+	val, _ := json.Marshal(statusList)
+	message := kafka.Message{
+		Message: val,
+	}
+	err := dataReplayStatusProducer.SendSync(context.Background(), message)
+	if err != nil {
+		logger.GetLogger().Error("error while publishing status to kafka", zap.Error(err))
+		return
+	}
+	logger.GetLogger().Info(" publishing status to kafka")
+
 }

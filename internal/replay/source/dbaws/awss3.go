@@ -21,7 +21,6 @@ import (
 	"go.uber.org/zap"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
 func createAwsConnection(input model.Message) (*s3.Client, error) {
@@ -130,7 +129,7 @@ func downloadFileFromS3(s3Client *s3.Client, input model.Message, fileName strin
 //The download manager gets the data in parts and writes them to a buffer until complete
 //the data has been downloaded.
 
-func S3FileDownloader(input model.Message, wg *sync.WaitGroup, threadId int, mst *replaymanager.MetaDataStore, fileName string, metaValue model.MetaDataValue) (error, string) {
+func S3FileDownloader(input model.Message, threadId int, mst *replaymanager.MetaDataStore, fileName string, metaValue model.MetaDataValue) (error, string) {
 
 	if metaValue.Retry >= constants.MaxRetry {
 		logger.GetLogger().Info(fmt.Sprintf("max retries exceeded skipping file {%d}", threadId), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
