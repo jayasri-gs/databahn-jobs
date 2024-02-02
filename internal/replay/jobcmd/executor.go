@@ -25,6 +25,7 @@ func ExecuteReplayJob(input model.Message) {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
+	input.Destination = "db.raw.cloud"
 	_, exit, code := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 	if exit {
 		logger.GetLogger().Info("shutdown started  with error code", zap.Int("code", code))
