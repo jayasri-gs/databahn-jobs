@@ -68,7 +68,8 @@ func getOrCreateS3Connection(input model.Message) (*s3.Client, error) {
 func downloadFileFromS3(s3Client *s3.Client, input model.Message, fileName string, mst *replaymanager.MetaDataStore, threadId int) error {
 
 	logger.GetLogger().Info("download Started.")
-	fullPath := filepath.Join(input.BucketPrefix, fileName)
+	metaMap := mst.GetMetaMap()[fileName]
+	fullPath := filepath.Join(metaMap.Prefix, fileName)
 
 	objectKey := fullPath
 	bucketName := input.BucketName
