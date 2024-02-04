@@ -59,7 +59,6 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	lineCounter := 0
 	var byteSize int64 = 0
 
-	header := getHeader(req)
 	for scanner.Scan() {
 		line := scanner.Text()
 		//lineSlice = lineSlice + "\n" + line
@@ -71,10 +70,9 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		if offsetSeek == lineCounter {
 			logger.GetLogger().Info("seek to line completed", zap.Int("offset", offsetSeek), zap.Int("lineCounter", lineCounter), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 		}
-
 		message := kafka.Message{
 			Message: []byte(line),
-			Headers: header,
+			Headers: GetHeader(req),
 		}
 		producer.SendAsync(message, func(err error) {
 			logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
@@ -129,7 +127,7 @@ func ProduceStatus(mst *replaymanager.MetaDataStore) {
 
 }
 
-func getHeader(request model.Message) []kafka.Header {
+func GetHeader(request model.Message) []kafka.Header {
 
 	headers := make([]kafka.Header, 12)
 	headers[0] = kafka.Header{Key: "db_device_type", Value: []byte(request.DeviceType)}

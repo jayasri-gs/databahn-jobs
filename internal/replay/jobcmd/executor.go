@@ -38,8 +38,7 @@ func ExecuteReplayJob(input model.Message) {
 	start := time.Now()
 	Process(input, mst)
 	elapsed := time.Since(start)
-	logger.GetLogger().Info("Execution Time Taken  %s", zap.Duration("time", elapsed))
-	mst.UpdateGlobalStatus()
+	logger.GetLogger().Info("Execution Time Taken ", zap.Duration("time", elapsed))
 }
 
 func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
@@ -81,8 +80,12 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	}
 	logger.GetLogger().Info("waiting for threads to complete ")
 	wg.Wait()
+	logger.GetLogger().Info("input message : ", zap.Reflect("Input data : ", inputReq))
+	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetMetaMap()))
+	logger.GetLogger().Info("Headers ", zap.Reflect("Headers ", processor.GetHeader(inputReq)))
 	processor.ProduceStatus(mst)
 	logger.GetLogger().Info("threads jobs are completed ")
+	mst.UpdateGlobalStatus()
 
 }
 
