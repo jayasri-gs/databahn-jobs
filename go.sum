@@ -931,12 +931,10 @@ github.com/d2g/dhcp4 v0.0.0-20170904100407-a1d1b6c41b1c/go.mod h1:Ct2BUK8SB0YC1S
 github.com/d2g/dhcp4client v1.0.0/go.mod h1:j0hNfjhrt2SxUOw55nL0ATM/z4Yt3t2Kd1mW34z5W5s=
 github.com/d2g/dhcp4server v0.0.0-20181031114812-7d4a0a7f59a5/go.mod h1:Eo87+Kg/IX2hfWJfwxMzLyuSZyxSoAug2nGa1G2QAi8=
 github.com/d2g/hardwareaddr v0.0.0-20190221164911-e7d9fbe030e4/go.mod h1:bMl4RjIciD2oAxI7DmWRx6gbeqrkoLqv3MV0vzNad+I=
-github.com/databahn-ai/common-utils v0.42.0 h1:klqUjsYdlAmZzkIY9Oh8OXXtUZUwbbgFmpm6uJWsoSQ=
-github.com/databahn-ai/common-utils v0.42.0/go.mod h1:nhbnPMW7jUDftq5yYwnqvDzUaMrPgMZssIbbYF42QNA=
-github.com/databahn-ai/db-models v0.56.0 h1:cG7kVbSUVjNVZI39vAGS5dO32MT2x6qXHT7fsUBl9v0=
-github.com/databahn-ai/db-models v0.56.0/go.mod h1:3YodXejr52yGnZDwpgkqdBWpm9egvTIOG8zK5ANqMrY=
 github.com/databahn-ai/common-utils v0.46.0 h1:MWcJChyNiRsbDsnzDa2ppXKSgWGcb77TpJJQC7R3onc=
 github.com/databahn-ai/common-utils v0.46.0/go.mod h1:nhbnPMW7jUDftq5yYwnqvDzUaMrPgMZssIbbYF42QNA=
+github.com/databahn-ai/db-models v0.56.0 h1:cG7kVbSUVjNVZI39vAGS5dO32MT2x6qXHT7fsUBl9v0=
+github.com/databahn-ai/db-models v0.56.0/go.mod h1:3YodXejr52yGnZDwpgkqdBWpm9egvTIOG8zK5ANqMrY=
 github.com/databahn-ai/go-logging v0.1.0 h1:g0AwXMfnu0hmeSXLL94JKom+F6cQgVJM868qEkn5OX4=
 github.com/databahn-ai/go-logging v0.1.0/go.mod h1:WmraOL1ID0rVOPkabDlhSocvzIGDmQVkAzo1Mttdoyc=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -1546,7 +1544,6 @@ github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af/go.mod h1:XWv6So
 github.com/rogpeppe/fastuuid v1.2.0/go.mod h1:jVj6XXZzXRy/MSR5jhDC/2q6DgLz+nrA6LYCDYWNEvQ=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.6.1/go.mod h1:xXDCJY+GAPziupqXw64V24skbSoqbTEfhy4qGm1nDQc=
-github.com/rogpeppe/go-internal v1.8.0/go.mod h1:WmiCO8CzOY8rg0OYDC4/i/2WRWAB6poM+XZ2dLUbcbE=
 github.com/rogpeppe/go-internal v1.9.0 h1:73kH8U+JUqXU8lRuOHeVHaa/SZPifC7BkcraZVejAe8=
 github.com/rogpeppe/go-internal v1.9.0/go.mod h1:WtVeX8xhTBvf0smdhujwtBcq4Qrzq/fJaraNFVN+nFs=
 github.com/russross/blackfriday/v2 v2.0.1/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=

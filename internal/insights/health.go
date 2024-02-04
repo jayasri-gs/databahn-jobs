@@ -3,10 +3,10 @@ package insights
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/common-utils/configuration"
-	"github.com/databahn-ai/databahn-jobs/internal/store"
+	opensearch2 "github.com/databahn-ai/databahn-jobs/internal/store/opensearch"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
+	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
@@ -42,15 +42,17 @@ type HealthJobStatus struct {
 }
 
 func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]HealthJobStatus, error) {
-	conf, err := configuration.NewAppConfig()
+	conf := opensearch2.GetConf()
+	//conf.Url = "https://localhost:9201"
+	client, err := opensearch2.NewClient(ctx, conf.Url, conf.Creds())
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics opensearch2", zap.Error(err))
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
-	osClient, err := store.NewOpenSearchClient(ctx, conf)
-	if err != nil {
-		return nil, err
-	}
-	indices, err := store.CatIndices(ctx, osClient)
+	indices, err := opensearch2.CatIndices(ctx, client)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +84,7 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 			TenantId: tenantId,
 			Action:   "SILENT_MARKING",
 		}
-		err = calculateDeviceInventoryHealthForTenant(ctx, osClient, tenantId, index, runningFor)
+		err = calculateDeviceInventoryHealthForTenant(ctx, client, tenantId, index, runningFor)
 		if err != nil {
 			logger.GetLogger().Error("failed to calculate silent device health for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
 			statusHealth.Status = STATUS_ERROR
@@ -106,7 +108,7 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 			TenantId: tenantId,
 			Action:   "NOISE_MARKING",
 		}
-		err = calculateNoiseOfDevices(ctx, osClient, tenantId, index, runningFor)
+		err = calculateNoiseOfDevices(ctx, client, tenantId, index, runningFor)
 		if err != nil {
 			logger.GetLogger().Error("failed to calculate noise of device for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
 			statusNoise.Status = STATUS_ERROR
@@ -149,14 +151,14 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 	query := fmt.Sprintf("day_end_timestamp:<=%d AND day_end_timestamp:>%d", beforeTime, afterTime)
 	groupBy := []string{"key1.keyword", "key2.keyword", "source_id", "day_end_timestamp"}
 	aggFuncName := "sum_count"
-	functions := []store.AggregationFunction{{Function: "sum", Field: "count", Name: aggFuncName}}
+	functions := []opensearch2.AggregationFunction{{Function: "sum", Field: "count", Name: aggFuncName}}
 	var after map[string]any
 	var key1, key2, sourceId string
 	var counts []float64
 	var days []float64
 
 	for {
-		aggregate, newAfter, err := store.CompositePaginatedAggregate(ctx, client, INSIGHTS_READ_BATCH, frequencyIndexName, query, groupBy, functions, after)
+		aggregate, newAfter, err := opensearch2.CompositePaginatedAggregate(ctx, client, INSIGHTS_READ_BATCH, frequencyIndexName, query, groupBy, functions, after)
 		if err != nil {
 			logger.GetLogger().Error("failed to paginate through aggregated device inventory frequency", zap.String("index", frequencyIndexName), zap.String("tenant", tenantId), zap.Error(err))
 			return err
@@ -197,7 +199,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 		}
 		if len(requests) > 0 {
 			sightIndexName := SightIndexName(tenantId)
-			err = store.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, requests, func(s ReputationUpdateRequest) string {
+			err = opensearch2.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, requests, func(s ReputationUpdateRequest) string {
 				return s.Id
 			})
 			if err != nil {
@@ -226,7 +228,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 
 	if len(requests) > 0 {
 		sightIndexName := SightIndexName(tenantId)
-		err := store.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, requests, func(s ReputationUpdateRequest) string {
+		err := opensearch2.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, requests, func(s ReputationUpdateRequest) string {
 			return s.Id
 		})
 		if err != nil {
@@ -271,7 +273,7 @@ func sortTwoSlices(days []float64, counts []float64) ([]float64, []float64) {
 
 func markDevicesSilent(ctx context.Context, client *opensearch.Client, tenantId string, sightIndexName string, before int64) error {
 	query := fmt.Sprintf("max_time:<%d", before)
-	sort := []store.Sort{{
+	sort := []opensearch2.Sort{{
 		Field: "key1.keyword",
 		Order: "asc",
 	}, {
@@ -285,7 +287,7 @@ func markDevicesSilent(ctx context.Context, client *opensearch.Client, tenantId 
 	var after []any
 	silentDevicesCount := 0
 	for {
-		data, newAfter, err := store.SearchPaginated(ctx, client, sightIndexName, query, INSIGHTS_READ_BATCH, after, sort)
+		data, newAfter, err := opensearch2.SearchPaginated(ctx, client, sightIndexName, query, INSIGHTS_READ_BATCH, after, sort)
 		if err != nil {
 			logger.GetLogger().Error("failed to paginate through device inventory sights", zap.String("index", sightIndexName), zap.String("tenant", tenantId), zap.Error(err))
 			return err
@@ -314,7 +316,7 @@ func markDevicesSilent(ctx context.Context, client *opensearch.Client, tenantId 
 			silentRequests = append(silentRequests, request)
 		}
 
-		err = store.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, silentRequests, func(s ReputationUpdateRequest) string {
+		err = opensearch2.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, silentRequests, func(s ReputationUpdateRequest) string {
 			return s.Id
 		})
 		if err != nil {
@@ -323,7 +325,7 @@ func markDevicesSilent(ctx context.Context, client *opensearch.Client, tenantId 
 		}
 
 		silentHistoryIndex := SilentDeviceInventoryHistoryIndex(tenantId)
-		err = store.BulkUpsert(ctx, client, silentHistoryIndex, history, func(h SilentDeviceHistory) string {
+		err = opensearch2.BulkUpsert(ctx, client, silentHistoryIndex, history, func(h SilentDeviceHistory) string {
 			return h.Id
 		})
 		if err != nil {
@@ -339,7 +341,7 @@ func markDevicesSilent(ctx context.Context, client *opensearch.Client, tenantId 
 
 func markDevicesUnSilent(ctx context.Context, client *opensearch.Client, tenantId string, sightIndexName string, before int64) error {
 	query := fmt.Sprintf("max_time:>%d AND reputation:%s", before, REPUTATION_SILENT)
-	sort := []store.Sort{{
+	sort := []opensearch2.Sort{{
 		Field: "key1.keyword",
 		Order: "asc",
 	}, {
@@ -353,7 +355,7 @@ func markDevicesUnSilent(ctx context.Context, client *opensearch.Client, tenantI
 	var after []any
 	unSilentCount := 0
 	for {
-		data, newAfter, err := store.SearchPaginated(ctx, client, sightIndexName, query, INSIGHTS_READ_BATCH, after, sort)
+		data, newAfter, err := opensearch2.SearchPaginated(ctx, client, sightIndexName, query, INSIGHTS_READ_BATCH, after, sort)
 		if err != nil {
 			logger.GetLogger().Error("failed to paginate through device inventory sights", zap.String("index", sightIndexName), zap.String("tenant", tenantId), zap.Error(err))
 			return err
@@ -379,7 +381,7 @@ func markDevicesUnSilent(ctx context.Context, client *opensearch.Client, tenantI
 			silentRequests = append(silentRequests, request)
 		}
 
-		err = store.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, silentRequests, func(s ReputationUpdateRequest) string {
+		err = opensearch2.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, silentRequests, func(s ReputationUpdateRequest) string {
 			return s.Id
 		})
 		if err != nil {

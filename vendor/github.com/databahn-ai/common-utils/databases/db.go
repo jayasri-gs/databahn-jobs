@@ -64,6 +64,38 @@ func (c *Connection) Connect(ctx context.Context) (*gorm.DB, error) {
 	return db, nil
 }
 
+// ConnectV2 moved database to one object to avoid multiple functions to connect
+func (c *Connection) ConnectV2(ctx context.Context) (*gorm.DB, error) {
+	logger := logging.GetLoggerWithContext(ctx)
+	dbLogger := zapgorm2.Logger{
+		ZapLogger:                 logging.GetLogger(),
+		LogLevel:                  glogger.LogLevel(logging.GetLogger().Level()),
+		SlowThreshold:             100 * time.Millisecond,
+		SkipCallerLookup:          true,
+		IgnoreRecordNotFoundError: false,
+		Context:                   nil,
+	}
+
+	connectString, maskedConnectString := c.getConnectionString()
+
+	logger.Debug("Attempting to connect to database", zap.String("connection string", maskedConnectString))
+
+	db, err := gorm.Open(postgres.Open(connectString), &gorm.Config{
+		Logger: dbLogger,
+		NamingStrategy: schema.NamingStrategy{
+			SingularTable: true,  // use singular table name, table for `User` would be `user` with this option enabled
+			NoLowerCase:   false, // skip the snake_casing of names
+		},
+	})
+
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("Unable to connect to database", zap.Error(err))
+		return nil, err
+	}
+	logging.GetLogger().Debug("connection attempt successful.")
+	return db, nil
+}
+
 func (c *Connection) getConnectionString() (string, string) {
 	connectString := buildDBConnectStringWith(
 		c.Credentials.Username,

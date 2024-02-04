@@ -79,7 +79,7 @@ func SaveAlertToOpenSearch(ctx context.Context, documents []AlertDoc, index stri
 		if err != nil {
 			return err
 		}
-		j, err := getUpdateRequestBody(&doc)
+		j, err := getUpdateRequestBody(doc, script)
 		if err != nil {
 			return err
 		}
