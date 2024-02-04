@@ -9,14 +9,16 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
-
 	"github.com/databahn-ai/go-logging/logger"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 )
 
-func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaDataStore, reqId string, threadId int, topic string) (error, string) {
+func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaDataStore, reqId string, threadId int, topic string, req model.Message) (error, string) {
 
 	filePath := filepath.Join(mst.GetPath("dataDir"), fileName)
 	logger.GetLogger().Info(" starting for    ", zap.String("filePath", filePath), zap.String("traceId", reqId), zap.Int("thread ", threadId))
@@ -56,6 +58,8 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	//var lineSlice string
 	lineCounter := 0
 	var byteSize int64 = 0
+
+	header := getHeader(req)
 	for scanner.Scan() {
 		line := scanner.Text()
 		//lineSlice = lineSlice + "\n" + line
@@ -70,6 +74,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 
 		message := kafka.Message{
 			Message: []byte(line),
+			Headers: header,
 		}
 		producer.SendAsync(message, func(err error) {
 			logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
@@ -92,7 +97,6 @@ func ProduceStatus(mst *replaymanager.MetaDataStore) {
 	dataReplayStatusProducer := GetProducer("reqId", constants.StatsTopic)
 
 	var statusList []model.Status
-
 	for _, val := range mst.GetMetaMap() {
 		filepath.Join(val.Prefix, val.FileName)
 
@@ -107,6 +111,7 @@ func ProduceStatus(mst *replaymanager.MetaDataStore) {
 			StartTime:   val.Time,
 			EndTime:     val.EndTime,
 			Percentage:  0.0,
+			Lines:       val.Offset,
 		}
 		statusList = append(statusList, status)
 	}
@@ -122,4 +127,21 @@ func ProduceStatus(mst *replaymanager.MetaDataStore) {
 	}
 	logger.GetLogger().Info(" publishing status to kafka")
 
+}
+
+func getHeader(request model.Message) []kafka.Header {
+
+	headers := make([]kafka.Header, 10)
+	headers[0] = kafka.Header{Key: "db_device_type", Value: []byte(request.DeviceType)}
+	headers[1] = kafka.Header{Key: "db_device_vendor", Value: []byte(request.DeviceVendor)}
+	headers[2] = kafka.Header{Key: "db_log_type", Value: []byte(request.LogType)}
+	headers[3] = kafka.Header{Key: "db_tenant_id", Value: []byte(request.TenantId)}
+	headers[4] = kafka.Header{Key: "db_event_source_id", Value: []byte(request.Source)}
+	headers[5] = kafka.Header{Key: "db_edge_id", Value: []byte(uuid.Nil.String())}
+	headers[6] = kafka.Header{Key: "db_fleet_id", Value: []byte(request.FleetId)}
+	headers[7] = kafka.Header{Key: "db_connector_id", Value: []byte(request.ConnectId)}
+	headers[8] = kafka.Header{Key: "db_event_id", Value: []byte(uuid.NewString())}
+	headers[9] = kafka.Header{Key: "db_edge_ts", Value: []byte(strconv.FormatInt(time.Now().UnixMilli(), 10))}
+
+	return headers
 }

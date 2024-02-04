@@ -6,6 +6,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/cmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"strings"
 )
@@ -33,6 +34,15 @@ func ReadInputData() model.Message {
 	flag.StringVar(&sampleMessage.SecretAccessKey, "secret", "JgboMDEhSwki1TQlVbt9IDjbnGSb71+AaNx+I1tM", "secret ")
 	flag.StringVar(&sampleMessage.Region, "region", "us-east-1", "aws region ")
 	flag.StringVar(&fileName, "fileName", "", "files ")
+
+	flag.StringVar(&sampleMessage.Source, "source", "", "Source id ")
+	flag.StringVar(&sampleMessage.TenantId, "tenantId", "", "TenantId")
+	flag.StringVar(&sampleMessage.DeviceType, "deviceType", "", "deviceType Id")
+	flag.StringVar(&sampleMessage.DeviceVendor, "deviceVendor", "", "deviceVendor Id")
+	flag.StringVar(&sampleMessage.LogType, "logType", "", "Log type name")
+	flag.StringVar(&sampleMessage.FleetId, "fleetId", uuid.Nil.String(), "Fleet ID ")
+	flag.StringVar(&sampleMessage.ConnectId, "connectId", uuid.Nil.String(), "aws region ")
+
 	flag.Parse()
 	sampleMessage.FileName = strings.Split(fileName, ",")
 

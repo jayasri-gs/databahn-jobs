@@ -10,4 +10,10 @@ type Message struct {
 	SecretAccessKey string   `json:"secretAccessKey"`
 	Region          string   `json:"region"`
 	FileName        []string `json:"fileName"`
+	TenantId        string   `json:"tenantId"`
+	DeviceType      string   `json:"deviceType"`
+	DeviceVendor    string   `json:"deviceVendor"`
+	LogType         string   `json:"logType"`
+	FleetId         string   `json:"fleetId"`
+	ConnectId       string   `json:"connectId"`
 }

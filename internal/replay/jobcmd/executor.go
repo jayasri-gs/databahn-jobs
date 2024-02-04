@@ -71,7 +71,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
 			}
-			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.Destination)
+			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.Destination, inputReq)
 			if err != nil {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
