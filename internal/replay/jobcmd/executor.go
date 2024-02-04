@@ -25,7 +25,7 @@ func ExecuteReplayJob(input model.Message) {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
-	input.Destination = "db.raw.cloud"
+	input.DestinationTopic = "db.raw.cloud"
 	_, exit, code := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 	if exit {
 		logger.GetLogger().Info("shutdown started  with error code", zap.Int("code", code))
@@ -33,8 +33,8 @@ func ExecuteReplayJob(input model.Message) {
 		os.Exit(code)
 	}
 
-	processor.InitProducer(input.RequestId, input.Destination)
-	go closeResources(ctx, mst, input.RequestId, input.Destination)
+	processor.InitProducer(input.RequestId, input.DestinationTopic)
+	go closeResources(ctx, mst, input.RequestId, input.DestinationTopic)
 	start := time.Now()
 	Process(input, mst)
 	elapsed := time.Since(start)
@@ -71,7 +71,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
 			}
-			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.Destination, inputReq)
+			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.DestinationTopic, inputReq)
 			if err != nil {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return

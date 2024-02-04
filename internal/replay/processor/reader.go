@@ -131,17 +131,23 @@ func ProduceStatus(mst *replaymanager.MetaDataStore) {
 
 func getHeader(request model.Message) []kafka.Header {
 
-	headers := make([]kafka.Header, 10)
+	headers := make([]kafka.Header, 12)
 	headers[0] = kafka.Header{Key: "db_device_type", Value: []byte(request.DeviceType)}
 	headers[1] = kafka.Header{Key: "db_device_vendor", Value: []byte(request.DeviceVendor)}
 	headers[2] = kafka.Header{Key: "db_log_type", Value: []byte(request.LogType)}
 	headers[3] = kafka.Header{Key: "db_tenant_id", Value: []byte(request.TenantId)}
-	headers[4] = kafka.Header{Key: "db_event_source_id", Value: []byte(request.Source)}
+	if request.Source != request.NewSource {
+		headers[4] = kafka.Header{Key: "db_event_source_id", Value: []byte(request.NewSource)}
+		request.Source = request.NewSource
+	} else {
+		headers[4] = kafka.Header{Key: "db_event_source_id", Value: []byte(request.Source)}
+	}
 	headers[5] = kafka.Header{Key: "db_edge_id", Value: []byte(uuid.Nil.String())}
 	headers[6] = kafka.Header{Key: "db_fleet_id", Value: []byte(request.FleetId)}
 	headers[7] = kafka.Header{Key: "db_connector_id", Value: []byte(request.ConnectId)}
 	headers[8] = kafka.Header{Key: "db_event_id", Value: []byte(uuid.NewString())}
 	headers[9] = kafka.Header{Key: "db_edge_ts", Value: []byte(strconv.FormatInt(time.Now().UnixMilli(), 10))}
+	headers[10] = kafka.Header{Key: "db_component_name", Value: []byte("replay_data")}
 
 	return headers
 }
