@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"github.com/databahn-ai/common-utils/utils"
-	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/store/opensearch"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
@@ -26,8 +25,8 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 	if err != nil {
 		return err
 	}
-	lastWindowTime := time.Now().Add(-time.Minute * common.INSIGHTS_INTERVAL_MINUTES)
-	lastTime, _ := util.FindWindow(lastWindowTime, time.Minute*common.INSIGHTS_INTERVAL_MINUTES)
+	lastWindowTime := time.Now().Add(-time.Minute * INSIGHTS_INTERVAL_MINUTES)
+	lastTime, _ := util.FindWindow(lastWindowTime, time.Minute*INSIGHTS_INTERVAL_MINUTES)
 
 	indexNames, err := opensearch.CatIndices(ctx, osClient)
 	if err != nil {
@@ -35,7 +34,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 	}
 	var allInsightsIndices []string
 	for _, index := range indexNames {
-		if strings.HasPrefix(index, common.INSIGHTS_STAGING_INDEX_PREFIX) {
+		if strings.HasPrefix(index, INSIGHTS_STAGING_INDEX_PREFIX) {
 			allInsightsIndices = append(allInsightsIndices, index)
 		}
 	}
@@ -72,17 +71,18 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 			}()
 			for _, indexMetadata := range indexMetadatas {
 				err := aggregateInsights(ctx, osClient, indexMetadata)
-				indexName := common.INSIGHTS_STAGING_INDEX_PREFIX + indexMetadata.String()
+				indexName := INSIGHTS_STAGING_INDEX_PREFIX + indexMetadata.String()
 				if err != nil {
 					errCount++
 					logger.GetLogger().Error("failed to aggregate insights", zap.Error(err), zap.String("index", indexName))
 				} else {
-					successCount++
 					logger.GetLogger().Info("successfully aggregated insights", zap.String("index", indexName))
 					err := opensearch.DeleteIndex(ctx, osClient, indexName)
 					if err != nil {
 						logger.GetLogger().Error("failed to delete index", zap.Error(err), zap.String("index", indexName))
+						errCount++
 					} else {
+						successCount++
 						logger.GetLogger().Info("successfully deleted index", zap.String("index", indexName))
 					}
 				}

@@ -98,6 +98,21 @@ func (mst *MetaDataStore) UpdateMetaData(key string, status string, offset int, 
 	}
 	if currentSize != 0 {
 		data.CurrentSize = currentSize
+
+	}
+	mst.metaMap[key] = data
+	mst.Mutex.Unlock()
+	mst.Flush()
+
+}
+func (mst *MetaDataStore) TimeStampMetaData(key string, start bool, end bool) {
+	mst.Mutex.Lock()
+	data := mst.metaMap[key]
+	if start {
+		data.Time = time.Now()
+	}
+	if end {
+		data.EndTime = time.Now()
 	}
 	mst.metaMap[key] = data
 	mst.Mutex.Unlock()
@@ -110,6 +125,13 @@ func (mst *MetaDataStore) AddToProcessList(value string) {
 	mst.processList = append(mst.processList, value)
 	mst.Mutex.Unlock()
 
+}
+func (mst *MetaDataStore) GetValuesOfMap() []model.MetaDataValue {
+	metaMapValues := make([]model.MetaDataValue, 0, len(mst.GetMetaMap()))
+	for _, val := range mst.metaMap {
+		metaMapValues = append(metaMapValues, val)
+	}
+	return metaMapValues
 }
 
 func (mst *MetaDataStore) Flush() {

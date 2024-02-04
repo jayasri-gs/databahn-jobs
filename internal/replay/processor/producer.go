@@ -24,7 +24,6 @@ func InitProducer(reqId string, topic string) {
 	Producer = make(map[string]*kafka.Producer)
 	logger.GetLogger().Info("initialising producer.", zap.String("traceId", reqId), zap.Int("thread ", -1))
 
-	utils.GetEnvInt("INSIGHTS_PROCESSING_PARALLELISM", 4)
 	boostrap := utils.GetEnvOrDefault(constants.KafkaBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 	kafka.NewKafkaCluster(constants.ClusterName, boostrap)
 	cluster, _ := kafka.GetKafkaCluster(constants.ClusterName)
@@ -43,9 +42,21 @@ func InitProducer(reqId string, topic string) {
 
 	if err != nil {
 
-		logger.GetLogger().Error("error while initialising producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
+		logger.GetLogger().Error("error while initialising  data producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
 		return
 	}
 	Producer[topic] = producer
+
+	statusProducer, err := cluster.NewProducer(context.Background(), kafka.ProducerConfig{
+		Name:       constants.DataReplayStatusProducer,
+		Topic:      constants.StatsTopic,
+		ExtraParam: prodExtraParam,
+	})
+	if err != nil {
+
+		logger.GetLogger().Error("error while initialising status producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
+		return
+	}
+	Producer[constants.StatsTopic] = statusProducer
 	logger.GetLogger().Info("initialising complete.", zap.String("traceId", reqId), zap.Int("thread ", -1))
 }

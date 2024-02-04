@@ -2,7 +2,6 @@ package insights
 
 import (
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"strconv"
@@ -17,10 +16,11 @@ type IndexMetadata struct {
 	Day      int
 	Hour     int
 	TenantId string
+	Type     string
 }
 
 func (m IndexMetadata) String() string {
-	return fmt.Sprintf("%s_%04d_%02d_%02d_%02d_%s", m.Version, m.Year, m.Month, m.Day, m.Hour, m.TenantId)
+	return fmt.Sprintf("%s_%s_%04d_%02d_%02d_%02d_%s", m.Version, m.Type, m.Year, m.Month, m.Day, m.Hour, m.TenantId)
 }
 
 func (m IndexMetadata) IsBefore(t time.Time) bool {
@@ -54,34 +54,35 @@ func (m IndexMetadata) IsBefore(t time.Time) bool {
 func parseIndices(indexNames []string) []IndexMetadata {
 	var indices []IndexMetadata
 	for _, name := range indexNames {
-		data := strings.ReplaceAll(name, common.INSIGHTS_STAGING_INDEX_PREFIX, "")
+		data := strings.ReplaceAll(name, INSIGHTS_STAGING_INDEX_PREFIX, "")
 		splitBy := strings.Split(data, "_")
 		if len(splitBy) > 0 {
 			version := splitBy[0]
 			switch version {
 			case "v1":
-				if len(splitBy) == 6 {
-					year, err := strconv.ParseInt(splitBy[1], 10, 64)
+				if len(splitBy) == 7 {
+					tp := splitBy[1]
+					year, err := strconv.ParseInt(splitBy[2], 10, 64)
 					if err != nil {
 						logger.GetLogger().Error("failed to parse index name year", zap.String("indexName", name))
 						continue
 					}
-					month, err := strconv.ParseInt(splitBy[2], 10, 64)
+					month, err := strconv.ParseInt(splitBy[3], 10, 64)
 					if err != nil {
 						logger.GetLogger().Error("failed to parse index name month", zap.String("indexName", name))
 						continue
 					}
-					day, err := strconv.ParseInt(splitBy[3], 10, 64)
+					day, err := strconv.ParseInt(splitBy[4], 10, 64)
 					if err != nil {
 						logger.GetLogger().Error("failed to parse index name day", zap.String("indexName", name))
 						continue
 					}
-					hour, err := strconv.ParseInt(splitBy[4], 10, 64)
+					hour, err := strconv.ParseInt(splitBy[5], 10, 64)
 					if err != nil {
 						logger.GetLogger().Error("failed to parse index name hour", zap.String("indexName", name))
 						continue
 					}
-					tenant := splitBy[5]
+					tenant := splitBy[6]
 					m := IndexMetadata{
 						Version:  version,
 						Year:     int(year),
@@ -89,6 +90,7 @@ func parseIndices(indexNames []string) []IndexMetadata {
 						Day:      int(day),
 						Hour:     int(hour),
 						TenantId: tenant,
+						Type:     tp,
 					}
 					indices = append(indices, m)
 				} else {

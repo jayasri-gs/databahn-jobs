@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -64,9 +65,12 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 				continue
 			}
 
+			fileNameValue := filepath.Base(file)
 			metaObject = model.MetaDataValue{
-				FileName:  file,
-				Key:       file,
+				FileName: fileNameValue,
+				Key:      fileNameValue,
+				//GETTING FULL FILE PATH UPTO DIR
+				Prefix:    filepath.Dir(file),
 				Offset:    0,
 				Retry:     1,
 				JobName:   jobName,
@@ -76,8 +80,8 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 				Time: time.Now(),
 			}
 
-			mst.AddMetaData(metaObject, file)
-			mst.AddToProcessList(file)
+			mst.AddMetaData(metaObject, fileNameValue)
+			mst.AddToProcessList(fileNameValue)
 		}
 
 		//Sending file as global and rest field empty for flushing data

@@ -15,3 +15,8 @@ func FindWindowForMillis(timeMillis int64, duration time.Duration) (int64, int64
 	end := start + durationMillis
 	return start, end
 }
+
+func GetDayEndTimestamp(millis int64) int64 {
+	t := time.UnixMilli(millis)
+	return time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 999999999, t.Location()).UnixMilli()
+}

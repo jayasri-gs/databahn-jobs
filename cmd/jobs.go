@@ -19,6 +19,11 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.INSIGHTS_AGGREGATION:
 		parallelism := utils.GetEnvInt("INSIGHTS_PROCESSING_PARALLELISM", 4)
 		err = insights.AggregateInsightsAndStore(ctx, parallelism)
+	case common.DEVICE_INVENTORY_HEALTH:
+		runFor := utils.GetEnvOrDefault("DEVICE_INVENTORY_HEALTH_RUN_FOR", insights.HEALTH_CALCULATION_YESTERDAY)
+		statuses, err2 := insights.CalculateDeviceInventoryHealth(ctx, runFor)
+		err = err2
+		logger.GetLogger().Info("device inventory health calculation completed", zap.String("runFor", runFor), zap.Any("statuses", statuses))
 	case common.DATA_REPLAY:
 		jobcmd.ExecuteReplayJob(input)
 	case common.FLEET_HEALTH_CHECKER:

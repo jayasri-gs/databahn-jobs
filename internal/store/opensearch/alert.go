@@ -6,13 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	"go.uber.org/zap"
 	"io"
-	"strings"
 )
 
 const AlertIndex = "db_alerts"
@@ -71,10 +69,6 @@ const script = `
 }
 `
 
-func getUpdateRequestBody(doc *AlertDoc) ([]byte, error) {
-	b := strings.ReplaceAll(script, "\n", " ")
-	return utils.ParseTemplate([]byte(b), doc)
-}
 func SaveAlertToOpenSearch(ctx context.Context, documents []AlertDoc, index string, client *opensearch.Client) error {
 	if len(documents) == 0 {
 		return nil
