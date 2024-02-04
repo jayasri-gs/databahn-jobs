@@ -27,7 +27,7 @@ func ReadInputData() model.Message {
 	var fileName string
 
 	flag.StringVar(&sampleMessage.RequestId, "reqId", "05101994", "request id ")
-	flag.StringVar(&sampleMessage.Destination, "destination", "out-topic", "destination-topic")
+	flag.StringVar(&sampleMessage.NewSource, "destination", "out-topic", "destination-topic")
 	flag.StringVar(&sampleMessage.BucketName, "bucketName", "db-replay", "bucket name")
 	flag.StringVar(&sampleMessage.BucketPrefix, "bucketPrefix", "test/vfs/72767276/2023/12/08/", "bucket Prefix")
 	flag.StringVar(&sampleMessage.AccessKeyID, "accessId", "AKIA3FRFSAVQ7REF25F3", "bucket name")
