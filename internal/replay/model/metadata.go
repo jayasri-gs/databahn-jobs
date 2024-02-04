@@ -29,4 +29,5 @@ type Status struct {
 	StartTime   time.Time `json:"startTime"`
 	EndTime     time.Time `json:"endTime"`
 	Percentage  float64   `json:"percentage"`
+	Lines       int       `json:"lines"`
 }
