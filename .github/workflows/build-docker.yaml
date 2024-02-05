@@ -11,7 +11,7 @@ env:
 
 jobs:
   build_docker:
-    runs-on: self-hosted
+    runs-on: [ self-hosted , tempRunner ]
     permissions:
       id-token: write
       contents: read
