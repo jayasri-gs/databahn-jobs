@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
-	"github.com/databahn-ai/databahn-jobs/internal/store/opensearch"
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logSource "github.com/databahn-ai/db-models/log-source"
@@ -23,8 +24,8 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
 	agg := "tags.db_event_source_id.keyword"
-	conf := opensearch.GetConf()
-	client, err := opensearch.NewClient(ctx, conf.Url, conf.Creds())
+	conf := os.GetConf()
+	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
 		return statistics.AggregateResponse{}, err
@@ -37,7 +38,7 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := opensearch.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
 
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
@@ -61,7 +62,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 	//get agg stats by event source - returns all logsources which are reporting stats from last 15 minutes
 	endTime := time.Now()
-	startTime := endTime.Add(-time.Minute * 15)
+	startTime := endTime.Add(-time.Minute * healthchecker.LogSourceActivityCheckerTime)
 	aggObj, err := getAggStatsForLogSource(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))

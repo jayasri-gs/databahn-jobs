@@ -8,8 +8,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.16
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.15.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.48.0
-	github.com/databahn-ai/common-utils v0.46.0
-	github.com/databahn-ai/db-models v0.56.0
+	github.com/databahn-ai/common-utils v0.50.0
+	github.com/databahn-ai/db-models v0.58.0
 	github.com/databahn-ai/go-logging v0.1.0
 	github.com/google/uuid v1.3.1
 	github.com/mitchellh/mapstructure v1.5.0
@@ -20,6 +20,8 @@ require (
 )
 
 require (
+	github.com/MicahParks/keyfunc v1.9.0 // indirect
+	github.com/ajg/form v1.5.1 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/apex/gateway v1.1.2 // indirect
 	github.com/aws/aws-lambda-go v1.34.1 // indirect
@@ -44,10 +46,12 @@ require (
 	github.com/aws/smithy-go v1.19.0 // indirect
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
+	github.com/go-chi/render v1.0.3 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.11.2 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

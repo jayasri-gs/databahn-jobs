@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/utils"
-	"github.com/databahn-ai/databahn-jobs/internal/store/opensearch"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	logSource "github.com/databahn-ai/db-models/log-source"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -31,8 +32,8 @@ func getHistogramForLogSource(ctx context.Context, startTime string, endTime str
 	if interval == "" {
 		return statistics.HistogramResponse{}, errors.New("interval is required")
 	}
-	conf := opensearch.GetConf()
-	client, err := opensearch.NewClient(ctx, conf.Url, conf.Creds())
+	conf := os.GetConf()
+	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
 		return statistics.HistogramResponse{}, err
@@ -45,7 +46,7 @@ func getHistogramForLogSource(ctx context.Context, startTime string, endTime str
 	searchBody.Aggs.SumOverTime.DateHistogram.Interval = interval
 	searchBody.Aggs.SumOverTime.Aggs.SumValue.Sum.Field = statistics.ES_COUNTER_VALUE_FIELD
 
-	searchResponse, err := opensearch.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
 
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
@@ -74,8 +75,8 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	}
 
 	endTime := time.Now()
-	startTime := endTime.Add(-time.Hour * 6)
-	startTimeThreshold := endTime.Add(-time.Hour * 24)
+	startTime := endTime.Add(-time.Hour * healthchecker.ReputationCheckerTime)
+	startTimeThreshold := endTime.Add(-time.Hour * healthchecker.ReputationCheckerTimeThreshold)
 
 	for _, lsId := range ls {
 		thresholdAggObj, err := getHistogramForLogSource(ctx, strconv.Itoa(int(startTimeThreshold.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), "1h", lsId)
@@ -90,9 +91,16 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 			return err
 		}
 		//silentThreshold, noisyThreshold := utils.CreateThresholds(thresholdAggObj.Buckets)
-		std := utils.CalculateStdDev(aggObj.Buckets)
-		stdThreshold := utils.CalculateStdDev(thresholdAggObj.Buckets)
-		reputation := utils.ClassifySources(std, stdThreshold)
+
+		// std deviation for stats for 6 hours duration
+		mean := util.CalculateMean(convertBucketObjectToFloatArray(aggObj.Buckets))
+		std := util.CalculateStandardDeviation(convertBucketObjectToFloatArray(aggObj.Buckets), mean)
+
+		//  std deviation  for stats of threshold duration
+		stdMean := util.CalculateMean(convertBucketObjectToFloatArray(thresholdAggObj.Buckets))
+		stdThreshold := util.CalculateStandardDeviation(convertBucketObjectToFloatArray(thresholdAggObj.Buckets), stdMean)
+
+		reputation := classifySources(std, stdThreshold)
 		fmt.Println("reputation", reputation)
 		err = config.GetDB().Model(&logSource.LogSource{}).Where("id = ? ", lsId).Updates(map[string]interface{}{"reputation": reputation}).Error
 		if err != nil {
@@ -101,4 +109,21 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		}
 	}
 	return err
+}
+
+func classifySources(std, stdThreshold float64) int {
+	if std < stdThreshold {
+		return common.WHISPERING
+	} else {
+		return common.NOISY
+	}
+}
+
+// convertBucketObjectToFloatArray
+func convertBucketObjectToFloatArray(buckets []statistics.HistogramBucket) []float64 {
+	var data []float64
+	for _, value := range buckets {
+		data = append(data, value.Value)
+	}
+	return data
 }

@@ -1,4 +1,4 @@
-package opensearch
+package os
 
 import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"

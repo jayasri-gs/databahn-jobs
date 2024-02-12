@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/db-models/alerts_common"
 	"github.com/databahn-ai/db-models/fleet"
@@ -14,7 +15,7 @@ import (
 
 func HealthCheckAlertForFleetNode(ctx context.Context) error {
 	currentTime := time.Now()
-	healthCheckTime := currentTime.Add(-time.Minute * 15)
+	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckTime)
 
 	//getting fleet nodes having heartbeat less than 15 minutes
 	var fleetNodes []fleet.FleetNode

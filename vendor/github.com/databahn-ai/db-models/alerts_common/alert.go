@@ -10,7 +10,7 @@ import (
 )
 
 type Alert struct {
-	ID                      uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()" json:"id"`
+	ID                      uuid.UUID `gorm:"primaryKey;type:uuid" json:"id"`
 	Criticality             string    `gorm:"not null" validate:"required" json:"criticality"`
 	Title                   string    `gorm:"not null;type:VARCHAR(128)" validate:"required" json:"title"`
 	Message                 string    `gorm:"type:VARCHAR(512)" json:"message"`
@@ -70,6 +70,9 @@ func (at *Alert) Update(ctx context.Context, db *gorm.DB, updated Alert) error {
 }
 
 func (at *Alert) Save(ctx context.Context, db *gorm.DB) (err error) {
+	if at.ID == uuid.Nil {
+		at.ID = uuid.New()
+	}
 	err = utils.IsValid(at)
 	if err != nil {
 		return err

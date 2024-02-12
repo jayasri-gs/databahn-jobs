@@ -19,3 +19,5 @@ const (
 	WHISPERING = 1
 	NOISY      = 2
 )
+
+const ControllerBaseUrl = "https://controller.dev.databahn.app"
