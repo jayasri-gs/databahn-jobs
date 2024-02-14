@@ -9,14 +9,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.15.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.48.0
 	github.com/databahn-ai/common-utils v0.50.0
-	github.com/databahn-ai/db-models v0.58.0
+	github.com/databahn-ai/db-models v0.65.0
 	github.com/databahn-ai/go-logging v0.1.0
 	github.com/google/uuid v1.3.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	go.uber.org/zap v1.24.0
-	golang.org/x/oauth2 v0.7.0
-	gorm.io/gorm v1.25.2
 )
 
 require (
@@ -77,6 +75,7 @@ require (
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/crypto v0.13.0 // indirect
 	golang.org/x/net v0.15.0 // indirect
+	golang.org/x/oauth2 v0.7.0 // indirect
 	golang.org/x/sys v0.12.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
@@ -88,5 +87,6 @@ require (
 	gorm.io/datatypes v1.1.0 // indirect
 	gorm.io/driver/mysql v1.4.4 // indirect
 	gorm.io/driver/postgres v1.5.2 // indirect
+	gorm.io/gorm v1.25.2 // indirect
 	moul.io/zapgorm2 v1.2.0 // indirect
 )

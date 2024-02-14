@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
@@ -101,7 +100,6 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		stdThreshold := util.CalculateStandardDeviation(convertBucketObjectToFloatArray(thresholdAggObj.Buckets), stdMean)
 
 		reputation := classifySources(std, stdThreshold)
-		fmt.Println("reputation", reputation)
 		err = config.GetDB().Model(&logSource.LogSource{}).Where("id = ? ", lsId).Updates(map[string]interface{}{"reputation": reputation}).Error
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))

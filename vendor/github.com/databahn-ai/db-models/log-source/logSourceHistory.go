@@ -42,6 +42,7 @@ type LogSourceHistory struct {
 	TimestampOverride     bool
 	LogSourceConfigs      datatypes.JSONType[[]config.LogSourceConfig]
 	FetchMechanism        string `gorm:"type:VARCHAR(32)"`
+	ReplaySource          bool
 }
 
 func NewLogSourceHistory(logSource LogSource, conf []config.LogSourceConfig) *LogSourceHistory {

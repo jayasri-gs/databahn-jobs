@@ -48,6 +48,7 @@ type LogSource struct {
 	LogSourceConfigs          []config.LogSourceConfig       `gorm:"foreignKey:LogSourceID;references:ID"`
 	FetchMechanism            string                         `gorm:"type:VARCHAR(32)"`
 	Reputation                int                            `validate:"min=0,max=2""`
+	ReplaySource              bool
 }
 
 func (ls *LogSource) Migrate(db *gorm.DB) error {

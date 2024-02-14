@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
@@ -49,7 +50,7 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 	resp := &statistics.AggregateQueryResponse{}
 	err = json.Unmarshal(bodyContent, resp)
 	aggObj := statistics.NewAggregateResponse(resp)
-	logging.GetLoggerWithContext(ctx).Info("got response from statistics store", zap.Any("response", aggObj))
+	logging.GetLoggerWithContext(ctx).Info("got response from statistics store")
 	return aggObj, err
 }
 
@@ -85,7 +86,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 	//getting logSources which are active but did not report stats in last 15 minutes
 	var activeLsArray []logSource.LogSource //array of ids not receiving stats
-	err = config.GetDB().Model(&logSource.LogSource{}).Where("id not in ? and status = ?", lsIdArray, common.LogSourceStatusActive).Find(&activeLsArray).Error
+	err = config.GetDB().Model(&logSource.LogSource{}).Where("id not in ? and status = ?", lsIdArray, constants.StatusActive).Find(&activeLsArray).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
@@ -93,6 +94,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 	//creating alertEntityArray for all logSources for which alert needs to be raised
 	var lsEntityArray []alerts_common.AlertEntityObject
+	var silentLs []string
 	for _, ls := range activeLsArray {
 		var temp alerts_common.AlertEntityObject
 		temp.EntityName = ls.Name
@@ -100,12 +102,14 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		temp.EntityTenantUUId = ls.TenantUUID
 		lsEntityArray = append(lsEntityArray, temp)
 
-		// update logsource mark silent
-		err = config.GetDB().Model(&logSource.LogSource{}).Where("id = ? ", ls.ID).Updates(map[string]interface{}{"reputation": common.SILENT}).Error
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
-			return err
-		}
+		silentLs = append(silentLs, ls.ID.String())
+	}
+
+	// update logsource mark silent
+	err = config.GetDB().Model(&logSource.LogSource{}).Where("id in ? ", silentLs).Updates(map[string]interface{}{"reputation": common.SILENT}).Error
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
+		return err
 	}
 
 	// raise alert and save it to opensearch

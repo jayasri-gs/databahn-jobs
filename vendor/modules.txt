@@ -230,10 +230,11 @@ github.com/databahn-ai/common-utils/aws
 github.com/databahn-ai/common-utils/configs
 github.com/databahn-ai/common-utils/configuration
 github.com/databahn-ai/common-utils/constants
+github.com/databahn-ai/common-utils/database
 github.com/databahn-ai/common-utils/databases
 github.com/databahn-ai/common-utils/kafka
 github.com/databahn-ai/common-utils/utils
-# github.com/databahn-ai/db-models v0.58.0
+# github.com/databahn-ai/db-models v0.65.0
 ## explicit; go 1.19
 github.com/databahn-ai/db-models/alerts_common
 github.com/databahn-ai/db-models/fleet

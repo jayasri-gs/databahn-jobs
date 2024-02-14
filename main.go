@@ -4,20 +4,23 @@ import (
 	"context"
 	"flag"
 	"github.com/databahn-ai/databahn-jobs/cmd"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
-	"github.com/databahn-ai/go-logging/logger"
-	"go.uber.org/zap"
 	"strings"
 )
 
 func main() {
 	ctx := context.Background()
-	job := flag.String("job", "", "job name")
-	input := ReadInputData()
+	//job := flag.String("job", "", "job name")
+	job := common.LOG_SOURCE_ACTIVITY_CHECKER
+	//input := ReadInputData()
 	//flag.Parse()
-	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
-
-	cmd.RunJob(ctx, *job, input)
+	//logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
+	config.GetAppConfiguration()
+	config.GetDB()
+	var sampleMessage model.Message
+	cmd.RunJob(ctx, job, sampleMessage)
 }
 
 func ReadInputData() model.Message {

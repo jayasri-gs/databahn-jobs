@@ -8,12 +8,11 @@ import (
 	"github.com/databahn-ai/db-models/alerts_common"
 	"github.com/databahn-ai/db-models/fleet"
 	logging "github.com/databahn-ai/go-logging/logger"
-
 	"go.uber.org/zap"
 	"time"
 )
 
-func HealthCheckAlertForFleetNode(ctx context.Context) error {
+func fleetHealthChecker(ctx context.Context) error {
 	currentTime := time.Now()
 	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckTime)
 
@@ -45,5 +44,58 @@ func HealthCheckAlertForFleetNode(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while raising alert fleet inactivity", zap.Error(err))
 		return err
 	}
+	return nil
+}
+
+//	func markLogSourceActive(ctx context.Context) error {
+//		logging.GetLoggerWithContext(ctx).Info("processing log source activation status check")
+//		aggObj, err := getAggStatsForLogSource(ctx, "", "")
+//		if err != nil {
+//			logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
+//			return err
+//		}
+//		logging.GetLoggerWithContext(ctx).Info("pulled stats successfully", zap.Any("stats", aggObj))
+//		var lsIdArray []string
+//		for key, value := range aggObj.Agg {
+//			valueInt, ok := value.(float64)
+//			if !ok {
+//				logging.GetLoggerWithContext(ctx).Error("error while getting value of stats", zap.Error(err))
+//				return err
+//			}
+//			if valueInt > 0 {
+//				_, err := uuid.Parse(key)
+//				if err != nil {
+//					continue
+//				}
+//				lsIdArray = append(lsIdArray, key)
+//			}
+//		}
+//		if len(lsIdArray) > 0 {
+//			logging.GetLoggerWithContext(ctx).Info("found log sources to activate", zap.Any("logSources", lsIdArray))
+//			err := config.GetDB().Model(&logSource.LogSource{}).Where("id in ? and status in ?", lsIdArray, []int{constants.StatusAccepted, constants.StatusDeploying}).Updates(map[string]interface{}{"status": constants.StatusActive}).Error
+//			if err != nil {
+//				logging.GetLoggerWithContext(ctx).Error("error while updating status to active", zap.Error(err))
+//				return err
+//			}
+//		} else {
+//			logging.GetLoggerWithContext(ctx).Info("no found log sources to activate")
+//		}
+//		return nil
+//	}
+func HealthCheckAlertForFleetNode(ctx context.Context) error {
+	defer logging.GetLogger().Sync()
+
+	logging.GetLoggerWithContext(ctx).Debug("Handling alerts for appliances whose health reported is less than 15 minutes, Marking log source as active if it is reporting stats")
+
+	err := fleetHealthChecker(ctx)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while handling alerts for unhealthy fleet nodes", zap.Error(err))
+		return err
+	}
+	//err = markLogSourceActive(ctx)
+	//if err != nil {
+	//	logging.GetLoggerWithContext(ctx).Error("error while marking log sources as active", zap.Error(err))
+	//	return err
+	//}
 	return nil
 }

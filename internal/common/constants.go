@@ -12,12 +12,11 @@ const InfoAlert = "info"
 const WarningAlert = "warning"
 const SevereAlert = "severe"
 
-const LogSourceStatusActive = "3"
-
 const (
-	SILENT     = 0
-	WHISPERING = 1
-	NOISY      = 2
+	SILENT         = 0
+	WHISPERING     = 1
+	NOISY          = 2
+	StatusInactive = 4
 )
 
 const ControllerBaseUrl = "https://controller.dev.databahn.app"
