@@ -25,7 +25,7 @@ func ExecuteReplayJob(input model.Message) {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
-	input.Destination = "db.raw.cloud"
+	input.DestinationTopic = "db.raw.cloud"
 	_, exit, code := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 	if exit {
 		logger.GetLogger().Info("shutdown started  with error code", zap.Int("code", code))
@@ -33,13 +33,12 @@ func ExecuteReplayJob(input model.Message) {
 		os.Exit(code)
 	}
 
-	processor.InitProducer(input.RequestId, input.Destination)
-	go closeResources(ctx, mst, input.RequestId, input.Destination)
+	processor.InitProducer(input.RequestId, input.DestinationTopic)
+	go closeResources(ctx, mst, input.RequestId, input.DestinationTopic)
 	start := time.Now()
 	Process(input, mst)
 	elapsed := time.Since(start)
-	logger.GetLogger().Info("Execution Time Taken  %s", zap.Duration("time", elapsed))
-	mst.UpdateGlobalStatus()
+	logger.GetLogger().Info("Execution Time Taken ", zap.Duration("time", elapsed))
 }
 
 func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
@@ -71,7 +70,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
 			}
-			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.Destination)
+			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.DestinationTopic, inputReq)
 			if err != nil {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
@@ -81,8 +80,12 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	}
 	logger.GetLogger().Info("waiting for threads to complete ")
 	wg.Wait()
+	logger.GetLogger().Info("input message : ", zap.Reflect("Input data : ", inputReq))
+	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetMetaMap()))
+	logger.GetLogger().Info("Headers ", zap.Reflect("Headers ", processor.GetHeader(inputReq)))
 	processor.ProduceStatus(mst)
 	logger.GetLogger().Info("threads jobs are completed ")
+	mst.UpdateGlobalStatus()
 
 }
 
