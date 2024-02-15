@@ -22,6 +22,7 @@ const (
 	OpenTelemetryCollectorUrl = "urls.optl_collector"
 	RedisUrl                  = "urls.redis"
 	GatewayUrl                = "urls.gateway"
+	ControlPlaneBaseUrl       = "urls.control_plane_base_url"
 	KsqlDbUrl                 = configs.KSqlDbUrl
 	// DataBahnApiUrl used to get the api url from app config
 	DataBahnApiUrl = "urls.databahn_api"
@@ -31,6 +32,7 @@ const (
 	AuthenticationUrl = configs.AuthenticationUrl
 
 	BackupEventsS3Bucket = "s3.events.bucket"
+	BackupEventsS3Region = "s3.events.region"
 	ArtifactsS3Bucket    = "s3.artifacts.bucket"
 	S3BinaryPrefix       = "s3.artifacts.paths.binaries"
 	S3BinaryName         = "s3.artifacts.paths.binary_name"

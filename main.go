@@ -5,6 +5,7 @@ import (
 	"flag"
 	"github.com/databahn-ai/databahn-jobs/cmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -17,7 +18,8 @@ func main() {
 	input := ReadInputData()
 	//flag.Parse()
 	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
-
+	config.GetAppConfiguration()
+	config.GetDB()
 	cmd.RunJob(ctx, *job, input)
 }
 

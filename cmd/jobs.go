@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/insights"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
@@ -25,6 +26,12 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		logger.GetLogger().Info("device inventory health calculation completed", zap.String("runFor", runFor), zap.Any("statuses", statuses))
 	case common.DATA_REPLAY:
 		jobcmd.ExecuteReplayJob(input)
+	case common.FLEET_HEALTH_CHECKER:
+		err = jobs.HealthCheckAlertForFleetNode(ctx)
+	case common.LOG_SOURCE_ACTIVITY_CHECKER:
+		err = jobs.AlertForLogSourceInactivity(ctx)
+	case common.LOG_SOURCE_REPUTATION_CHECKER:
+		err = jobs.UpdateReputationForLogSources(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}

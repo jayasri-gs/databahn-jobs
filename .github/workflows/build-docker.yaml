@@ -79,6 +79,9 @@ jobs:
           echo "updating new tag to $TAG"
           sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/insights-aggregation.yaml
           sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/insights-health.yaml
+          sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/logsource-reputation-checker.yaml
+          sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/logsource-inactivity-checker.yaml
+          sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/fleet-health-checker.yaml
           git add .
           git commit -m "$TAG for $SERVICE_NAME"
           git push
