@@ -30,3 +30,7 @@ func (c *OpenSearchConf) Creds() *Creds {
 		Password: c.Password,
 	}
 }
+func (c *OpenSearchConf) StatisticsIndexAlias(tenantId string) string {
+	return c.StatsIndex + "_alias_" + tenantId
+
+}

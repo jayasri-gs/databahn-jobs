@@ -78,7 +78,7 @@ func SearchPaginated(ctx context.Context, client *opensearch.Client, index strin
 	request.Query.QueryString.Query = query
 	request.SearchAfter = after
 	request.Sort = sortBy
-	response, err := MakeSearchCall(ctx, index, request, client)
+	response, err := MakeSearchCall(ctx, index+"*", request, client)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -126,7 +126,7 @@ func CompositePaginatedAggregate(ctx context.Context, cli *opensearch.Client, si
 		req.Aggs.GroupBy.Aggs[name] = make(map[string]Field)
 		req.Aggs.GroupBy.Aggs[name][agg.Function] = Field{Field: agg.Field}
 	}
-	response, err := MakeSearchCall(ctx, indexName, req, cli)
+	response, err := MakeSearchCall(ctx, indexName+"*", req, cli)
 	if err != nil {
 		logger.GetLogger().Error("failed to make composite paginated agg call", zap.Error(err))
 		return nil, nil, err

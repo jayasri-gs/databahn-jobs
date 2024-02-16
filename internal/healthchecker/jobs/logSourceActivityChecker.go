@@ -39,7 +39,7 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
 
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))

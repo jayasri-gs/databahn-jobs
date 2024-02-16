@@ -3,7 +3,7 @@ package statistics
 import (
 	"context"
 	"encoding/json"
-	os "github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"io"
 	"strings"
 
@@ -34,6 +34,7 @@ func GetStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime st
 	query := AddDateRange(q, startTime, endTime)
 	query = AddTenantId(query, tenantId)
 	conf := os.GetConf()
+	//conf.Url = "https://localhost:9201"
 	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
@@ -44,7 +45,7 @@ func GetStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime st
 	searchBody.Size = 0
 	searchBody.Query.QueryString.Query = query
 	searchBody.Aggs.SumValue.Sum.Field = ES_COUNTER_VALUE_FIELD
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatisticsIndexAlias(tenantId.String()), &searchBody, client)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
 		return SumResponse{}, err
@@ -74,7 +75,7 @@ func GetStatsAggregate(ctx context.Context, q string, tenantId uuid.UUID, agg st
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatisticsIndexAlias(tenantId.String()), &searchBody, client)
 
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
@@ -91,6 +92,7 @@ func GetStatsAggregate(ctx context.Context, q string, tenantId uuid.UUID, agg st
 func GetAllTenantsStatsAggregate(ctx context.Context, q string, agg string, startTime string, endTime string) (AggregateResponse, error) {
 	query := AddDateRange(q, startTime, endTime)
 	conf := os.GetConf()
+	//conf.Url = "https://localhost:7020"
 	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
@@ -104,7 +106,7 @@ func GetAllTenantsStatsAggregate(ctx context.Context, q string, agg string, star
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
 
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))

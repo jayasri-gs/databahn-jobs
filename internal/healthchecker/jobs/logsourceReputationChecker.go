@@ -45,7 +45,7 @@ func getHistogramForLogSource(ctx context.Context, startTime string, endTime str
 	searchBody.Aggs.SumOverTime.DateHistogram.Interval = interval
 	searchBody.Aggs.SumOverTime.Aggs.SumValue.Sum.Field = statistics.ES_COUNTER_VALUE_FIELD
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex, &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
 
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))

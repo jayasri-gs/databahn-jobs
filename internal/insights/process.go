@@ -85,7 +85,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		request.Aggs.GroupBy.Aggs.PageMnTime.Min.Field = "min_time"
 		request.Aggs.GroupBy.Aggs.PageMxTime.Max.Field = "max_time"
 
-		resp, err := os.MakeSearchCall(ctx, indexName, request, cli)
+		resp, err := os.MakeSearchCall(ctx, indexName+"*", request, cli)
 		if err != nil {
 			return err
 		}
