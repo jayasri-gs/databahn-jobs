@@ -82,6 +82,7 @@ jobs:
           sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/logsource-reputation-checker.yaml
           sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/logsource-inactivity-checker.yaml
           sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/fleet-health-checker.yaml
+          sed -i "s/tag: \".*\"/tag: \"$TAG\"/" scheduled/kafka_query.yaml
           git add .
           git commit -m "$TAG for $SERVICE_NAME"
           git push
