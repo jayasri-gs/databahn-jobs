@@ -19,7 +19,6 @@ func main() {
 	//flag.Parse()
 	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
 	config.GetAppConfiguration()
-	config.GetDB()
 	cmd.RunJob(ctx, *job, input)
 }
 
