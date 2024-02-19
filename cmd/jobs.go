@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/insights"
 	"github.com/databahn-ai/databahn-jobs/internal/kafkaquery"
@@ -36,7 +38,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.KAFKA_QUERY:
 		threadCount := utils.GetEnvInt("KAFKA_QUERY_THREAD_COUNT", 4)
 		waitMinutes := utils.GetEnvInt("KAFKA_QUERY_WAIT_MINUTES", 5)
-		brokers := utils.GetEnvOrDefault("KAFKA_QUERY_BROKERS", "localhost:9092")
+		brokers := config.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 		query := utils.GetEnvOrDefault("KAFKA_QUERY_QUERY", "{}")
 		kafkaquery.Start(ctx, brokers, query, threadCount, waitMinutes)
 	default:
