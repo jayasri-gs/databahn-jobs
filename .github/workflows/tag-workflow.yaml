@@ -1,0 +1,24 @@
+name: Production Release Workflow
+
+on:
+  release:
+    types: [ published ]
+
+jobs:
+  release:
+    uses: databahn-ai/ci-github-workflows/.github/workflows/build-go-service.yaml@master
+    with:
+      service_name: ${{ github.event.repository.name }}
+      service_version: ${{ github.event.release.name }}
+    secrets: inherit
+
+  update-gitops-repo:
+    needs:
+      - release
+    uses: databahn-ai/ci-github-workflows/.github/workflows/update-gitops-repo.yaml@master
+    with:
+      service_name: ${{ github.event.repository.name }}
+      service_version: ${{ github.event.release.name }}
+      gitops_repo: "master"
+      service_type: "scheduled"
+    secrets: inherit

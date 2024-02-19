@@ -1,0 +1,24 @@
+name: Develop CI Workflow
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  develop:
+    uses: databahn-ai/ci-github-workflows/.github/workflows/build-go-service.yaml@master
+    with:
+      service_name: ${{ github.event.repository.name }}
+      service_version: ${{ github.sha }}
+    secrets: inherit
+
+  update-gitops-repo:
+    needs:
+      - develop
+    uses: databahn-ai/ci-github-workflows/.github/workflows/update-gitops-repo.yaml@master
+    with:
+      service_name: ${{ github.event.repository.name }}
+      service_version: ${{ github.sha }}
+      service_type: "scheduled"
+    secrets: inherit
