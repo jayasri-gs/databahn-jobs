@@ -6,6 +6,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/insights"
+	"github.com/databahn-ai/databahn-jobs/internal/kafkaquery"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
@@ -32,6 +33,12 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.AlertForLogSourceInactivity(ctx)
 	case common.LOG_SOURCE_REPUTATION_CHECKER:
 		err = jobs.UpdateReputationForLogSources(ctx)
+	case common.KAFKA_QUERY:
+		threadCount := utils.GetEnvInt("KAFKA_QUERY_THREAD_COUNT", 4)
+		waitMinutes := utils.GetEnvInt("KAFKA_QUERY_WAIT_MINUTES", 5)
+		brokers := utils.GetEnvOrDefault("KAFKA_QUERY_BROKERS", "localhost:9092")
+		query := utils.GetEnvOrDefault("KAFKA_QUERY_QUERY", "{}")
+		kafkaquery.Start(ctx, brokers, query, threadCount, waitMinutes)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
