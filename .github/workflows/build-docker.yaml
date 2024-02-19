@@ -3,7 +3,7 @@ name: Docker Build
 on:
   push:
     branches:
-      - master
+      - develop
 
 env:
   SERVICE_NAME: databahn-jobs
