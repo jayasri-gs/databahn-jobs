@@ -42,3 +42,8 @@ func MarkAcksSuppressed(ids []string) error {
 	return config.GetDB().Table(constants.TableChangeFlagAck).Where("id IN ?", ids).
 		Update("process_status", constants.StatusSuppressed).Error
 }
+
+func DeleteRecords(olderThan time.Time) error {
+	return config.GetDB().Table(constants.TableChangeFlagAck).Unscoped().
+		Delete(&ChangeFlagAck{}, "timestamp < ? AND process_status = ?", olderThan, "PROCESSED").Error
+}
