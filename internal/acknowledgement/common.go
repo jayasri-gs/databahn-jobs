@@ -52,6 +52,22 @@ func markAckSuppressed(ack []db.ChangeFlagAck) {
 	}
 }
 
+func getStatusStringFromInt(status int) string {
+	switch status {
+	case utilConst.StatusActive:
+		return "ACTIVE"
+	case utilConst.StatusDisabled:
+		return "DISABLED"
+	case utilConst.StatusErrored:
+		return "ERROR"
+	case utilConst.StatusErrorDisabling:
+		return "DISABLE_ERROR"
+	default:
+		logger.GetLogger().Error("unknown status", zap.Int("status", status))
+	}
+	return ""
+}
+
 func markAckProcessed(successfulAck []db.ChangeFlagAck) {
 	ackIds := make([]string, len(successfulAck))
 	for i, a := range successfulAck {
