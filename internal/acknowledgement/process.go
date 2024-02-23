@@ -4,6 +4,7 @@ import (
 	ackPkg "github.com/databahn-ai/common-utils/ack"
 	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/utils"
+	ackConst "github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/db"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	data_transform "github.com/databahn-ai/db-models/data-transform"
@@ -175,7 +176,7 @@ func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[stri
 	// prepare queries in batches
 	batches := len(entities) / 100
 	for i := 0; i < batches; i++ {
-		cf, err := db.GetChangeFlagRequest(entities[i*100 : (i+1)*100])
+		cf, err := db.GetChangeFlagRequest(entities[i*ackConst.QueryBatchSize : (i+1)*ackConst.QueryBatchSize])
 		if err != nil {
 			return nil, err
 		}

@@ -9,5 +9,5 @@ const (
 	TableChangeFlagAck     = "change_flag_acks"
 	TableChangeFlagRequest = "change_flag_requests"
 
-	QueryBatchSize = 100
+	QueryBatchSize = 50
 )
