@@ -136,7 +136,7 @@ func markAllAcks(ack map[string]map[string][]db.ChangeFlagAck, successful map[st
 	markAckSuppressed(suppressedAck)
 }
 
-func getLatestEntityToRequestId(entityIdToChangeFlags map[string][]db.ChangeFlag) (map[string]string, map[string]struct{}) {
+func getLatestEntityToRequestId(entityIdToChangeFlags map[string][]db.ChangeFlagRequest) (map[string]string, map[string]struct{}) {
 	latestEntityIdToRequestId := make(map[string]string)
 
 	// get latest cf for each entity
@@ -163,8 +163,8 @@ func getLatestEntityToRequestId(entityIdToChangeFlags map[string][]db.ChangeFlag
 	return latestEntityIdToRequestId, suppressedRequestIds
 }
 
-func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck) (map[string][]db.ChangeFlag, error) {
-	var changeFlags []db.ChangeFlag
+func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck) (map[string][]db.ChangeFlagRequest, error) {
+	var changeFlags []db.ChangeFlagRequest
 	var entities []string
 
 	// prepare all entity ids
@@ -190,7 +190,7 @@ func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[stri
 	changeFlags = append(changeFlags, remaining...)
 
 	// create map of entityId to change flag requests
-	entityIdToChangeFlags := make(map[string][]db.ChangeFlag)
+	entityIdToChangeFlags := make(map[string][]db.ChangeFlagRequest)
 	for _, cfAck := range changeFlags {
 		entityIdToChangeFlags[cfAck.EntityId] = append(entityIdToChangeFlags[cfAck.EntityId], cfAck)
 	}

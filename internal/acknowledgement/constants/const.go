@@ -6,6 +6,8 @@ const (
 	StatusSuppressed = "SUPPRESSED"
 	StatusErrored    = "ERRORED"
 
-	TableChangeFlagAck     = "change_flag_ack"
-	TableChangeFlagRequest = "change_flag_request"
+	TableChangeFlagAck     = "change_flag_acks"
+	TableChangeFlagRequest = "change_flag_requests"
+
+	QueryBatchSize = 100
 )
