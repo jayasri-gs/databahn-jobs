@@ -41,9 +41,11 @@ func ProcessAck() error {
 		logger.GetLogger().Error("error while getting change flags to be processed", zap.Error(err))
 		return err
 	}
+	logger.GetLogger().Debug("acknowledgements to be processed", zap.Int("count", len(acks)))
 
 	// prepare map of [entityId][requestId][]acks
 	mapOfEntityIdToRequestIdToAck := prepareMapOfEntityIdToRequestIdToAck(acks)
+	logger.GetLogger().Debug("number of entities to be processed", zap.Int("count", len(mapOfEntityIdToRequestIdToAck)))
 
 	// get all change flags for entities
 	entityIdToChangeFlags, err := getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck)
@@ -132,6 +134,8 @@ func markAllAcks(ack map[string]map[string][]db.ChangeFlagAck, successful map[st
 		}
 	}
 
+	logger.GetLogger().Debug("process status of acknowledgements", zap.Int("successful", len(successfulAck)),
+		zap.Int("failed", len(failedAck)), zap.Int("suppressed", len(suppressedAck)))
 	markAckProcessed(successfulAck)
 	markAckError(failedAck)
 	markAckSuppressed(suppressedAck)
@@ -161,6 +165,7 @@ func getLatestEntityToRequestId(entityIdToChangeFlags map[string][]db.ChangeFlag
 		}
 	}
 
+	logger.GetLogger().Debug("number of suppressed request ids", zap.Int("count", len(suppressedRequestIds)))
 	return latestEntityIdToRequestId, suppressedRequestIds
 }
 
@@ -258,6 +263,7 @@ func updateDestination(ack db.ChangeFlagAck) error {
 		logger.GetLogger().Error("error while updating destination status", zap.Error(err))
 		return err
 	}
+	logger.GetLogger().Debug("destination status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(status)))
 	return nil
 }
 
@@ -268,6 +274,7 @@ func handleTransformer(ack db.ChangeFlagAck) error {
 		logger.GetLogger().Error("error while updating transformer status", zap.Error(err))
 		return err
 	}
+	logger.GetLogger().Debug("transformer status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(status)))
 	return nil
 }
 
@@ -278,6 +285,7 @@ func handleEnrichment(ack db.ChangeFlagAck) error {
 		logger.GetLogger().Error("error while updating enrichment status", zap.Error(err))
 		return err
 	}
+	logger.GetLogger().Debug("enrichment status updated", zap.String("entityId", ack.EntityId), zap.String("status", enrichmentStatus))
 	return nil
 }
 
@@ -288,6 +296,7 @@ func handleSource(ack db.ChangeFlagAck) error {
 		logger.GetLogger().Error("error while updating source status", zap.Error(err))
 		return err
 	}
+	logger.GetLogger().Debug("source status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(sourceStatus)))
 	return nil
 }
 
@@ -298,6 +307,7 @@ func handleLookup(ack db.ChangeFlagAck) error {
 		logger.GetLogger().Error("error while updating lookup status", zap.Error(err))
 		return err
 	}
+	logger.GetLogger().Debug("lookup status updated", zap.String("entityId", ack.EntityId), zap.String("status", lookupStatus))
 	return nil
 }
 
@@ -308,5 +318,6 @@ func handleRule(ack db.ChangeFlagAck) error {
 		logger.GetLogger().Error("error while updating rule status", zap.Error(err))
 		return err
 	}
+	logger.GetLogger().Debug("rule status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(ruleStatus)))
 	return nil
 }
