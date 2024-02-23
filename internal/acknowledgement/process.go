@@ -63,7 +63,8 @@ func ProcessAck() error {
 	// mark acknowledgements as suppressed, processed and errored accordingly
 	markAllAcks(mapOfEntityIdToRequestIdToAck, successfulReqIds, failedReqIds, suppressedReqIds)
 
-	return nil
+	// delete processed records older than certain time (an hour )
+	return db.DeleteRecords(t.Add(-1 * time.Hour))
 }
 
 func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck,
