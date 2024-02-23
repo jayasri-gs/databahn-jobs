@@ -123,7 +123,7 @@ func markAllAcks(ack map[string]map[string][]db.ChangeFlagAck, successful map[st
 			if _, ok := successful[reqId]; ok {
 				successfulAck = append(successfulAck, acks...)
 			}
-			if _, ok := suppressed[reqId]; !ok {
+			if _, ok := suppressed[reqId]; ok {
 				suppressedAck = append(suppressedAck, acks...)
 			}
 			if _, ok := failed[reqId]; ok {
