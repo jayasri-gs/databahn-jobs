@@ -937,6 +937,8 @@ github.com/d2g/dhcp4server v0.0.0-20181031114812-7d4a0a7f59a5/go.mod h1:Eo87+Kg/
 github.com/d2g/hardwareaddr v0.0.0-20190221164911-e7d9fbe030e4/go.mod h1:bMl4RjIciD2oAxI7DmWRx6gbeqrkoLqv3MV0vzNad+I=
 github.com/databahn-ai/common-utils v0.50.0 h1:himDFht3aCsK736LK4LS9GsQTZD440fX0r+Ox/m9NjM=
 github.com/databahn-ai/common-utils v0.50.0/go.mod h1:AAXOrOgdqOo5nk930O15HxfE1xS0T5WynHsG5JGwYSg=
+github.com/databahn-ai/common-utils v0.51.0 h1:rVj1V8tq6fWr/bxe/ATfWXP2Kw4hvtXLniMGIDZJ7E8=
+github.com/databahn-ai/common-utils v0.51.0/go.mod h1:AAXOrOgdqOo5nk930O15HxfE1xS0T5WynHsG5JGwYSg=
 github.com/databahn-ai/db-models v0.65.0 h1:gBgvfOh735EFwAv9MVrMaClaSh/jZqWhuOaJLn8zPwc=
 github.com/databahn-ai/db-models v0.65.0/go.mod h1:3YodXejr52yGnZDwpgkqdBWpm9egvTIOG8zK5ANqMrY=
 github.com/databahn-ai/go-logging v0.1.0 h1:g0AwXMfnu0hmeSXLL94JKom+F6cQgVJM868qEkn5OX4=

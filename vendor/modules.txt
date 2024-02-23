@@ -222,25 +222,34 @@ github.com/aws/smithy-go/waiter
 ## explicit; go 1.16
 github.com/confluentinc/confluent-kafka-go/v2/kafka
 github.com/confluentinc/confluent-kafka-go/v2/kafka/librdkafka_vendor
-# github.com/databahn-ai/common-utils v0.50.0
+# github.com/databahn-ai/common-utils v0.51.0
 ## explicit; go 1.19
+github.com/databahn-ai/common-utils/ack
 github.com/databahn-ai/common-utils/alert
 github.com/databahn-ai/common-utils/authentication
 github.com/databahn-ai/common-utils/aws
 github.com/databahn-ai/common-utils/configs
 github.com/databahn-ai/common-utils/configuration
 github.com/databahn-ai/common-utils/constants
-github.com/databahn-ai/common-utils/database
 github.com/databahn-ai/common-utils/databases
 github.com/databahn-ai/common-utils/kafka
 github.com/databahn-ai/common-utils/utils
 # github.com/databahn-ai/db-models v0.65.0
 ## explicit; go 1.19
 github.com/databahn-ai/db-models/alerts_common
+github.com/databahn-ai/db-models/data-transform
+github.com/databahn-ai/db-models/data-transform-function
+github.com/databahn-ai/db-models/destination
+github.com/databahn-ai/db-models/destination-config
+github.com/databahn-ai/db-models/enrichment
+github.com/databahn-ai/db-models/event-dependency
 github.com/databahn-ai/db-models/fleet
 github.com/databahn-ai/db-models/log-source
 github.com/databahn-ai/db-models/log-source-checkpoint
 github.com/databahn-ai/db-models/log-source-config
+github.com/databahn-ai/db-models/lookup
+github.com/databahn-ai/db-models/rule
+github.com/databahn-ai/db-models/tags
 github.com/databahn-ai/db-models/utils
 # github.com/databahn-ai/go-logging v0.1.0
 ## explicit; go 1.19

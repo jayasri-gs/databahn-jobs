@@ -24,6 +24,7 @@ const (
 	EntityTransformer          = "transformer"
 
 	ChangeFlagTopic         = "db.management.change.flag"
+	ChangeFlagAckTopic      = "db.management.ack"
 	ChangeFlagKafkaCluster  = "change_flag_cluster"
 	ChangeFlagKafkaConsumer = "change_flag_consumer"
 )

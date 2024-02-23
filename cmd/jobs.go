@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
+	ack "github.com/databahn-ai/databahn-jobs/internal/acknowledgement"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
@@ -41,6 +42,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		brokers := config.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 		query := utils.GetEnvOrDefault("KAFKA_QUERY_QUERY", "{}")
 		kafkaquery.Start(ctx, brokers, query, threadCount, waitMinutes)
+	case common.ACK_PROCESSOR:
+		err = ack.ProcessAck()
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
