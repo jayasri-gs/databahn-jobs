@@ -281,7 +281,7 @@ func handleTransformer(ack db.ChangeFlagAck) error {
 
 func handleEnrichment(ack db.ChangeFlagAck) error {
 	enrichmentStatus := getStatusString(ack)
-	err := config.GetDB().Table("enrichments").Where("id = ?", ack.EntityId).Update("status", enrichmentStatus).Error
+	err := config.GetDB().Table("enrichment").Where("id = ?", ack.EntityId).Update("status", enrichmentStatus).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating enrichment status", zap.Error(err))
 		return err
@@ -303,7 +303,7 @@ func handleSource(ack db.ChangeFlagAck) error {
 
 func handleLookup(ack db.ChangeFlagAck) error {
 	lookupStatus := getStatusString(ack)
-	err := config.GetDB().Table("lookups").Where("id = ?", ack.EntityId).Update("status", lookupStatus).Error
+	err := config.GetDB().Table("lookup").Where("id = ?", ack.EntityId).Update("status", lookupStatus).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating lookup status", zap.Error(err))
 		return err
