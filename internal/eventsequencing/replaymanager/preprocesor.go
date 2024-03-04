@@ -127,6 +127,7 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 
 		global := mst.metaMap[constants.Global]
 		if global.Status == constants.StatusCompleted {
+			CleanUpFile(mst.metaFilePath)
 			logger.GetLogger().Info("all files are processed , exiting", zap.String("traceId", input.RequestId), zap.Int("thread ", -1))
 			return nil, true, 0
 		}
