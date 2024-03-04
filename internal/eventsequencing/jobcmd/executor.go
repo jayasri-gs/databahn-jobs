@@ -23,7 +23,7 @@ import (
 func ExecuteS3DataSequencing(input model.Message) {
 
 	ctx := context.Background()
-	updateInputMsg(input)
+	updateInputMsg(&input)
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
 	sst, _ := replaymanager.NewSortStore()
@@ -117,7 +117,7 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, reqId
 
 }
 
-func updateInputMsg(input model.Message) {
+func updateInputMsg(input *model.Message) {
 	input.BucketName = config.GetAppConfiguration().GetString(constants.SequenceBucket)
 	input.BucketPrefix = "sequence"
 	input.Region = config.GetAppConfiguration().GetString("s3.events.region")
