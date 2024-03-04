@@ -12,6 +12,7 @@ import (
 
 var appConfigLoader, secretsLoader sync.Once
 var appConfigReader configuration.ConfigReader
+var destinationConfigReader configuration.ConfigReader
 var databaseConnection *databases.Connection
 var openSearchCreds *configuration.OpenSearchCredentials
 
@@ -23,6 +24,15 @@ func loadAppConfigReader() {
 		logger.GetLogger().Panic("failed to read app configuration", zap.Error(err))
 	}
 	appConfigReader = conf
+}
+
+func loadDestinationConfigReader() {
+
+	confDestination, err := configuration.NewConfig(configuration.DestinationConfig)
+	if err != nil {
+		logger.GetLogger().Panic("failed to read Destination configuration", zap.Error(err))
+	}
+	destinationConfigReader = confDestination
 }
 
 func readOpenSearchConfigs() {
@@ -37,6 +47,11 @@ func readOpenSearchConfigs() {
 func GetAppConfiguration() configuration.ConfigReader {
 	appConfigLoader.Do(loadAppConfigReader)
 	return appConfigReader
+}
+
+func GetDestinationConfiguration() configuration.ConfigReader {
+	appConfigLoader.Do(loadDestinationConfigReader)
+	return destinationConfigReader
 }
 
 func connectDB() {

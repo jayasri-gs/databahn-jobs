@@ -18,6 +18,9 @@ var _ = []int{EdgeStatusCreated, EdgeStatusInactive, EdgeStatusDeleted}
 const HeaderTenantUuid = "tenant_uuid"
 const TenantUuid = "TENANT_UUID"
 const EdgeUuid = "EDGE_UUID"
+const FleetId = "FLEET_ID"
+const ServiceName = "SERVICE_NAME"
+const ServiceVersion = "SERVICE_VERSION"
 const UserUuid = "USER_UUID"
 const ActivationCode = "APP_ACTIVATION_CODE"
 
@@ -31,3 +34,10 @@ const LogModeError = "ERROR"
 const LoggingEncoding = "LOG_ENCODING"
 const LoggingJsonEncoding = "json"
 const LoggingConsoleEncoding = "console"
+
+const EnableLogSampling = "ENABLE_LOG_SAMPLING"
+const LogSamplingMaxInitial = "LOG_SAMPLING_MAX_INITIAL"
+const LogSamplingRateThereafter = "LOG_SAMPLING_RATE_THEREAFTER"
+
+const DefaultLogSamplingMaxInitial = 1
+const DefaultLogSamplingRateThereafter = 1000

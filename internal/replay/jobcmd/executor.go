@@ -108,7 +108,7 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, reqId
 		logger.GetLogger().Info("closed kafka consumers")
 	}
 	processor.GetProducer(reqId, topic).Close(ctx)
-	processor.GetProducer("reqId", constants.DataReplayProducer).Close(ctx)
+	processor.GetProducer("reqId", constants.DataReplayStatusProducer).Close(ctx)
 	logger.GetLogger().Info("closed producers")
 
 }

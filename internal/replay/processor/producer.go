@@ -23,7 +23,6 @@ func InitProducer(reqId string, topic string) {
 
 	Producer = make(map[string]*kafka.Producer)
 	logger.GetLogger().Info("initialising producer.", zap.String("traceId", reqId), zap.Int("thread ", -1))
-
 	boostrap := utils.GetEnvOrDefault(constants.KafkaBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 	kafka.NewKafkaCluster(constants.ClusterName, boostrap)
 	cluster, _ := kafka.GetKafkaCluster(constants.ClusterName)

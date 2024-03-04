@@ -7,6 +7,7 @@ import (
 	ack "github.com/databahn-ai/databahn-jobs/internal/acknowledgement"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	evntjobCmd "github.com/databahn-ai/databahn-jobs/internal/eventsequencing/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/insights"
 	"github.com/databahn-ai/databahn-jobs/internal/kafkaquery"
@@ -44,6 +45,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		kafkaquery.Start(ctx, brokers, query, threadCount, waitMinutes)
 	case common.ACK_PROCESSOR:
 		err = ack.ProcessAck()
+	case common.EVENT_SEQUENCING:
+		evntjobCmd.ExecuteS3DataSequencing(input)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
