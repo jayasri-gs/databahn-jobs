@@ -23,7 +23,7 @@ import (
 func ExecuteS3DataSequencing(input model.Message) {
 
 	ctx := context.Background()
-
+	updateInputMsg(input)
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
 	sst, _ := replaymanager.NewSortStore()
