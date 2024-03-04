@@ -3,7 +3,6 @@ package replaymanager
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -133,7 +132,7 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 		}
 		for key, data := range mst.metaMap {
 			if key == "GLOBAL" {
-				fmt.Println("GLOBAL is here , GLOBAL ")
+				logger.GetLogger().Debug("global key occurred")
 				continue
 			}
 			if (!strings.Contains(data.Status, constants.StatusCompleted)) || !(data.Retry > constants.MaxRetry) {
@@ -177,7 +176,7 @@ func ListFilesInBucket(inputMsg *model.Message) error {
 	var files []string
 	for _, item := range resp.Contents {
 
-		fmt.Println("key :", *item.Key)
+		logger.GetLogger().Debug("file found", zap.String("file", *item.Key), zap.String("raceId", traceId))
 
 		if strings.HasSuffix(*item.Key, ".gz") {
 			files = append(files, *item.Key)

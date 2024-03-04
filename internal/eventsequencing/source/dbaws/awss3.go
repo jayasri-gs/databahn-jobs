@@ -162,7 +162,7 @@ func DeleteFileFromS3(input model.Message, mst *replaymanager.MetaDataStore, fil
 	s3Client, _ := GetOrCreateS3Connection(input)
 	_, err := s3Client.DeleteObject(context.TODO(), deleteQuery)
 	if err != nil {
-		fmt.Println("Error deleting object,", err)
+		logger.GetLogger().Debug("delete failed", zap.String("bucketName", input.BucketName), zap.String("fullFilePath ", fullPath), zap.String("traceId", input.RequestId))
 		return err
 	}
 

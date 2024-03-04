@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-var appConfigLoader, secretsLoader sync.Once
+var appConfigLoader, secretsLoader, destinationConfigLoader sync.Once
 var appConfigReader configuration.ConfigReader
 var destinationConfigReader configuration.ConfigReader
 var databaseConnection *databases.Connection
@@ -50,7 +50,7 @@ func GetAppConfiguration() configuration.ConfigReader {
 }
 
 func GetDestinationConfiguration() configuration.ConfigReader {
-	appConfigLoader.Do(loadDestinationConfigReader)
+	destinationConfigLoader.Do(loadDestinationConfigReader)
 	return destinationConfigReader
 }
 
