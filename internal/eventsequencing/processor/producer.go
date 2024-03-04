@@ -2,8 +2,9 @@ package processor
 
 import (
 	"context"
+	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/kafka"
-	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/constants"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -23,7 +24,7 @@ func InitProducer(reqId string) {
 
 	logger.GetLogger().Info("initialising producer.", zap.String("traceId", reqId), zap.Int("thread ", -1))
 
-	boostrap := utils.GetEnvOrDefault(constants.KafkaBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
+	boostrap := config.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 	kafka.NewKafkaCluster(constants.ClusterName, boostrap)
 	cluster, _ := kafka.GetKafkaCluster(constants.ClusterName)
 	prodExtraParam := map[string]any{
