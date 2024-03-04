@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -82,13 +83,14 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		rawEvent := modele.RawEvent{}
 		err := json.Unmarshal([]byte(line), &rawEvent)
 		if err != nil {
+			logger.GetLogger().Error("error while unmarshalling the data", zap.Error(err))
 			return err, ""
 		}
 		// Convert the string to an int64
 		num, err := strconv.ParseInt(rawEvent.Headers["db_edge_ts"], 10, 64)
 		if err != nil {
 			logger.GetLogger().Error("error while converting string to int64", zap.Error(err))
-			return err, constants.StatusFailed
+			continue
 		}
 		rawEvent.EventTime = num
 		eventsArray := sst.Get(outerKey)
@@ -149,19 +151,23 @@ func PrintDataInSequence(sst *replaymanager.SortStore, outerKey string) error {
 			Headers: GetHeaderFromMsg(val.Headers),
 		}
 		dType, ok := val.Headers[constants.DestinationType]
+		fmt.Println("Destination Type For : ", dType)
 		if !ok {
 			logger.GetLogger().Error("error while fetching destination type from the headers")
 			continue
 		}
 		topic, ok := confDest[strings.ToLower(dType)]
+		fmt.Println("topic is  : ", topic)
 		if ok {
 			producer.SendAsyncTopic(message, topic, func(err error) {
 				logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
 			})
+			fmt.Println("DATA SENT TO KAFKA########: " + topic)
 		} else {
 			logger.GetLogger().Error("error while fetching destination topic from the DestinationTopicMapping")
 		}
 	}
+
 	sst.DeleteSStData(outerKey)
 
 	return nil
