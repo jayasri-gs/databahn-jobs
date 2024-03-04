@@ -6,7 +6,6 @@ const (
 	ActionDelete   = "delete"
 	ActionInactive = "inactive"
 
-	HeaderEntity               = "entity"
 	EntityRule                 = "rule"
 	EntityLookup               = "lookup"
 	EntityEnrichment           = "enrichment"
@@ -27,4 +26,8 @@ const (
 	ChangeFlagAckTopic      = "db.management.ack"
 	ChangeFlagKafkaCluster  = "change_flag_cluster"
 	ChangeFlagKafkaConsumer = "change_flag_consumer"
+	HeaderTenantId          = "tenant_id"
+	HeaderRequestId         = "request_id"
+	HeaderAction            = "action"
+	HeaderEntityType        = "entity_type"
 )

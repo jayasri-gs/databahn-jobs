@@ -4,25 +4,25 @@ import (
 	"context"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/utils"
-	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
+	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/constants"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
 
-var Producer map[string]*kafka.Producer
+var Producer *kafka.Producer
 
-func GetProducer(reqId string, topic string) *kafka.Producer {
-	if Producer[topic] == nil {
+func GetProducer(reqId string) *kafka.Producer {
+	if Producer == nil {
 		logger.GetLogger().Info("producer not yet initialed. calling init process", zap.String("traceId", reqId), zap.Int("thread ", -1))
-		InitProducer(reqId, topic)
+		InitProducer(reqId)
 	}
-	return Producer[topic]
+	return Producer
 }
 
-func InitProducer(reqId string, topic string) {
+func InitProducer(reqId string) {
 
-	Producer = make(map[string]*kafka.Producer)
 	logger.GetLogger().Info("initialising producer.", zap.String("traceId", reqId), zap.Int("thread ", -1))
+
 	boostrap := utils.GetEnvOrDefault(constants.KafkaBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 	kafka.NewKafkaCluster(constants.ClusterName, boostrap)
 	cluster, _ := kafka.GetKafkaCluster(constants.ClusterName)
@@ -34,8 +34,7 @@ func InitProducer(reqId string, topic string) {
 		//TODO NEED TO DISCUSS 		//"queue.buffering.max.kbytes": 1048576,
 	}
 	producer, err := cluster.NewProducer(context.Background(), kafka.ProducerConfig{
-		Name:       constants.DataReplayProducer,
-		Topic:      topic,
+		Name:       constants.DataSequenceProducer,
 		ExtraParam: prodExtraParam,
 	})
 
@@ -44,18 +43,6 @@ func InitProducer(reqId string, topic string) {
 		logger.GetLogger().Error("error while initialising  data producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
 		return
 	}
-	Producer[topic] = producer
-
-	statusProducer, err := cluster.NewProducer(context.Background(), kafka.ProducerConfig{
-		Name:       constants.DataReplayStatusProducer,
-		Topic:      constants.StatsTopic,
-		ExtraParam: prodExtraParam,
-	})
-	if err != nil {
-
-		logger.GetLogger().Error("error while initialising status producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
-		return
-	}
-	Producer[constants.StatsTopic] = statusProducer
+	Producer = producer
 	logger.GetLogger().Info("initialising complete.", zap.String("traceId", reqId), zap.Int("thread ", -1))
 }

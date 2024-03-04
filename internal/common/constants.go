@@ -10,6 +10,7 @@ const LOG_SOURCE_ACTIVITY_CHECKER = "log-source-activity-checker"
 const LOG_SOURCE_REPUTATION_CHECKER = "log-source-reputation-checker"
 const KAFKA_QUERY = "kafka_query"
 
+const EVENT_SEQUENCING = "event-sequencing"
 const InfoAlert = "info"
 const WarningAlert = "warning"
 const SevereAlert = "severe"
