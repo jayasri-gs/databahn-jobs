@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/constants"
-	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/ecryption"
 	model2 "github.com/databahn-ai/databahn-jobs/internal/eventsequencing/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
@@ -26,7 +24,7 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 	var metaDataFile *os.File
 	err := ListFilesInBucket(&input)
 	if err != nil {
-		return err, false, 0
+		return err, false, 1
 	}
 
 	logger.GetLogger().Info("pre-processing starting", zap.String("traceId", input.RequestId), zap.Int("thread ", -1))
@@ -156,15 +154,9 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 func ListFilesInBucket(inputMsg *model.Message) error {
 
 	traceId := inputMsg.RequestId
-	key, secret := ecryption.DecryptKeys(inputMsg.AccessKeyID, inputMsg.SecretAccessKey, "")
+
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		// Hard coded credentials
-		config.WithCredentialsProvider(credentials.StaticCredentialsProvider{
-			Value: aws.Credentials{
-				AccessKeyID: key, SecretAccessKey: secret, SessionToken: "",
-				Source: "from kafka topic",
-			},
-		}), config.WithRegion(inputMsg.Region))
+		config.WithRegion(inputMsg.Region))
 	if err != nil {
 		logger.GetLogger().Info("failed to load Config", zap.Error(err), zap.String("raceId", traceId))
 		return err
@@ -177,7 +169,9 @@ func ListFilesInBucket(inputMsg *model.Message) error {
 
 	resp, err := s3Client.ListObjectsV2(context.TODO(), input)
 	if err != nil {
+		logger.GetLogger().Info("Unable to create aws connection", zap.Error(err), zap.String("raceId", traceId))
 		return err
+
 	}
 
 	var files []string
