@@ -12,7 +12,10 @@ type SortStore struct {
 }
 
 func (sst *SortStore) GetSortStore() map[string][]model.RawEvent {
-	return sst.sortMap
+	sst.Mutex.Lock()
+	value := sst.sortMap
+	sst.Mutex.Unlock()
+	return value
 }
 
 func NewSortStore() (*SortStore, error) {
@@ -60,6 +63,7 @@ func (sst *SortStore) GetReverseKeys(key string) (tenant string, source string, 
 }
 
 func (sst *SortStore) CleanUp() {
-
+	sst.Mutex.Lock()
 	sst.sortMap = make(map[string][]model.RawEvent)
+	sst.Mutex.Unlock()
 }
