@@ -3,7 +3,6 @@ package jobcmd
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/lookup"
@@ -14,9 +13,7 @@ import (
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -35,11 +32,12 @@ func ExecuteS3DataSequencing(input model.Message) {
 	}
 
 	processor.InitProducer(input.RequestId)
-	go closeResources(ctx, mst, input.RequestId, input.DestinationTopic)
+
 	start := time.Now()
 	Process(input, mst, sst)
 	elapsed := time.Since(start)
 	logger.GetLogger().Info("Execution Time Taken ", zap.Duration("time", elapsed))
+	closeResources(ctx, mst, input.RequestId, input.DestinationTopic)
 }
 
 func Process(inputReq model.Message, mst *replaymanager.MetaDataStore, sst *replaymanager.SortStore) {
@@ -97,21 +95,9 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore, sst *repl
 
 func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, reqId string, topic string) {
 
-	sig := make(chan os.Signal)
-	signal.Notify(sig, os.Interrupt)
-	signal.Notify(sig, os.Kill)
-	signal.Notify(sig, syscall.SIGTERM)
-
-	<-sig
-
 	logger.GetLogger().Info("Flushed MetaData")
 	mst.Flush()
 	time.Sleep(1 * time.Second)
-	cluster, err := kafka.GetKafkaCluster(constants.ClusterName)
-	if err == nil {
-		cluster.CloseConsumer(ctx, constants.ClusterName)
-		logger.GetLogger().Info("closed kafka consumers")
-	}
 	processor.GetProducer("").Close(ctx)
 	logger.GetLogger().Info("closed producers")
 
