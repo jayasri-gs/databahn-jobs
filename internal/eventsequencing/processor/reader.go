@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaDataStore, reqId string, threadId int, topic string, req model.Message, sst *replaymanager.SortStore) (error, string) {
@@ -171,6 +172,7 @@ func PrintDataInSequence(sst *replaymanager.SortStore, outerKey string) error {
 		}
 	}
 
+	time.Sleep(5 * time.Second)
 	sst.DeleteSStData(outerKey)
 
 	return nil
