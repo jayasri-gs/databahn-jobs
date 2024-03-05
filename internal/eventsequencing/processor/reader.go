@@ -3,6 +3,7 @@ package processor
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/databahn-ai/common-utils/configuration"
@@ -159,10 +160,12 @@ func PrintDataInSequence(sst *replaymanager.SortStore, outerKey string) error {
 		topic, ok := confDest[strings.ToLower(dType)]
 		fmt.Println("topic is  : ", topic)
 		if ok {
-			producer.SendAsyncTopic(message, topic, func(err error) {
-				logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
-			})
-			fmt.Println("DATA SENT TO KAFKA########: " + topic)
+			err := producer.SendSyncTopic(context.Background(), message, topic)
+			if err != nil {
+				logger.GetLogger().Error("error while sending message to kafka", zap.Error(err))
+			} else {
+				fmt.Println("DATA SENT TO KAFKA########: " + topic)
+			}
 		} else {
 			logger.GetLogger().Error("error while fetching destination topic from the DestinationTopicMapping")
 		}
