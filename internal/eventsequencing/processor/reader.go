@@ -179,28 +179,17 @@ func PrintDataInSequence(sst *replaymanager.SortStore, outerKey string) error {
 }
 
 func GetHeaderFromMsg1(request map[string]string) []kafka.Header {
-	headers := make([]kafka.Header, 6)
+	headers := make([]kafka.Header, 10)
 	headers[0] = kafka.Header{Key: constants.RuleId, Value: []byte(request[constants.RuleId])}
 	headers[1] = kafka.Header{Key: constants.DestinationId, Value: []byte(request[constants.DestinationId])}
 	headers[2] = kafka.Header{Key: constants.EventId, Value: []byte(request[constants.EventId])}
 	headers[3] = kafka.Header{Key: constants.EdgeTimestamp, Value: []byte(request[constants.EdgeTimestamp])}
 	headers[4] = kafka.Header{Key: constants.DestinationType, Value: []byte(request[constants.DestinationType])}
 	headers[5] = kafka.Header{Key: constants.EventSourceId, Value: []byte(request[constants.EventSourceId])}
-	return headers
-}
-
-func GetHeaderFromMsg(request map[string]string) []kafka.Header {
-	var headers []kafka.Header
-	keys := []string{constants.DeviceType, constants.DeviceVendor, constants.LogType, constants.TenantID,
-		constants.EventSourceId, constants.EdgeId, constants.FleetId, constants.ConnectorId,
-		constants.EventId, constants.EdgeTimestamp, constants.ComponentName, constants.DestinationType,
-		constants.PipelineId, constants.RuleId, constants.DestinationId}
-
-	for _, key := range keys {
-		if value, ok := request[key]; ok {
-			headers = append(headers, kafka.Header{Key: key, Value: []byte(value)})
-		}
-	}
+	headers[6] = kafka.Header{Key: constants.TenantID, Value: []byte(request[constants.TenantID])}
+	headers[7] = kafka.Header{Key: constants.ConnectorId, Value: []byte(request[constants.ConnectorId])}
+	headers[8] = kafka.Header{Key: constants.EdgeId, Value: []byte(request[constants.EdgeId])}
+	headers[9] = kafka.Header{Key: constants.EventDependencyId, Value: []byte(request[constants.EventDependencyId])}
 
 	return headers
 }
