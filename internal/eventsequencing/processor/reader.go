@@ -170,8 +170,10 @@ func PrintDataInSequence(sst *replaymanager.SortStore, outerKey string) error {
 		} else {
 			logger.GetLogger().Error("error while fetching destination topic from the DestinationTopicMapping")
 		}
-	}
 
+	}
+	producer.Producer.Flush(10000)
+	logger.GetLogger().Info(fmt.Sprintf("Data Flushed for producer"))
 	time.Sleep(5 * time.Second)
 	sst.DeleteSStData(outerKey)
 
