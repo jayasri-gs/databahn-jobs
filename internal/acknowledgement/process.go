@@ -259,7 +259,7 @@ func updateStatus(ack db.ChangeFlagAck) error {
 
 func updateDestination(ack db.ChangeFlagAck) error {
 	status := getStatusInt(ack)
-	err := config.GetDB().Model(destination.Destination{}).Where("id = ?", ack.EntityId).Update("status", status).Error
+	err := config.GetDB().Model(destination.Destination{}).Where("id = ? AND status != ?", ack.EntityId, status).Update("status", status).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating destination status", zap.Error(err))
 		return err
@@ -270,7 +270,7 @@ func updateDestination(ack db.ChangeFlagAck) error {
 
 func handleTransformer(ack db.ChangeFlagAck) error {
 	status := getStatusInt(ack)
-	err := config.GetDB().Model(data_transform.DataTransform{}).Where("id = ?", ack.EntityId).Update("status", status).Error
+	err := config.GetDB().Model(data_transform.DataTransform{}).Where("id = ? AND status != ?", ack.EntityId, status).Update("status", status).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating transformer status", zap.Error(err))
 		return err
@@ -281,7 +281,7 @@ func handleTransformer(ack db.ChangeFlagAck) error {
 
 func handleEnrichment(ack db.ChangeFlagAck) error {
 	enrichmentStatus := getStatusString(ack)
-	err := config.GetDB().Table("enrichment").Where("id = ?", ack.EntityId).Update("status", enrichmentStatus).Error
+	err := config.GetDB().Table("enrichment").Where("id = ? AND status != ?", ack.EntityId, enrichmentStatus).Update("status", enrichmentStatus).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating enrichment status", zap.Error(err))
 		return err
@@ -292,7 +292,7 @@ func handleEnrichment(ack db.ChangeFlagAck) error {
 
 func handleSource(ack db.ChangeFlagAck) error {
 	sourceStatus := getStatusInt(ack)
-	err := config.GetDB().Model(log_source.LogSource{}).Where("id = ?", ack.EntityId).Update("status", sourceStatus).Error
+	err := config.GetDB().Model(log_source.LogSource{}).Where("id = ? AND status != ?", ack.EntityId, sourceStatus).Update("status", sourceStatus).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating source status", zap.Error(err))
 		return err
@@ -303,7 +303,7 @@ func handleSource(ack db.ChangeFlagAck) error {
 
 func handleLookup(ack db.ChangeFlagAck) error {
 	lookupStatus := getStatusString(ack)
-	err := config.GetDB().Table("lookup").Where("id = ?", ack.EntityId).Update("status", lookupStatus).Error
+	err := config.GetDB().Table("lookup").Where("id = ? AND status != ?", ack.EntityId, lookupStatus).Update("status", lookupStatus).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating lookup status", zap.Error(err))
 		return err
@@ -314,7 +314,7 @@ func handleLookup(ack db.ChangeFlagAck) error {
 
 func handleRule(ack db.ChangeFlagAck) error {
 	ruleStatus := getStatusInt(ack)
-	err := config.GetDB().Model(rule.Rule{}).Where("id = ?", ack.EntityId).Update("status", ruleStatus).Error
+	err := config.GetDB().Model(rule.Rule{}).Where("id = ? and status != ?", ack.EntityId, ruleStatus).Update("status", ruleStatus).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating rule status", zap.Error(err))
 		return err
