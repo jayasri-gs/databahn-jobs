@@ -1,9 +1,5 @@
 package os
 
-import (
-	"github.com/databahn-ai/databahn-jobs/internal/config"
-)
-
 type OpenSearchConf struct {
 	Url        string
 	Username   string
@@ -12,10 +8,11 @@ type OpenSearchConf struct {
 }
 
 func GetConf() *OpenSearchConf {
-	url := config.GetOpenSearchSecrets().Url
-	user := config.GetOpenSearchSecrets().Username
-	pass := config.GetOpenSearchSecrets().Password
-	statsIndex := config.GetOpenSearchSecrets().StatisticsIndexName
+	//url := config.GetOpenSearchSecrets().Url
+	url := "https://localhost:9200"
+	user := "osadmin"
+	pass := "6RuMm?g-k~5Wzy^8"
+	statsIndex := "db_statistics"
 	return &OpenSearchConf{
 		Url:        url,
 		Username:   user,

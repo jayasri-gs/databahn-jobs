@@ -7,9 +7,11 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/db-models/alerts_common"
 	logSource "github.com/databahn-ai/db-models/log-source"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -66,8 +68,8 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 
 	logging.GetLoggerWithContext(ctx).Info("getting histogram all log sources")
 
-	var ls []string
-	err := config.GetDB().Model(&logSource.LogSource{}).Select("id").Find(&ls, "reputation != ?", common.SILENT).Error
+	var logSources []logSource.LogSource
+	err := config.GetDB().Model(&logSource.LogSource{}).Scan(&logSources).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
 		return err
@@ -77,14 +79,16 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	startTime := endTime.Add(-time.Hour * healthchecker.ReputationCheckerTime)
 	startTimeThreshold := endTime.Add(-time.Hour * healthchecker.ReputationCheckerTimeThreshold)
 
-	for _, lsId := range ls {
-		thresholdAggObj, err := getHistogramForLogSource(ctx, strconv.Itoa(int(startTimeThreshold.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), "1h", lsId)
+	var whisperingAlertsEntityArray, noisyAlertsEntityArray []alerts_common.AlertEntityObject
+	var whisperingLs, noisyLs []string
+	for _, ls := range logSources {
+		thresholdAggObj, err := getHistogramForLogSource(ctx, strconv.Itoa(int(startTimeThreshold.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), "1h", ls.ID.String())
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 			return err
 		}
 
-		aggObj, err := getHistogramForLogSource(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), "1h", lsId)
+		aggObj, err := getHistogramForLogSource(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), "1h", ls.ID.String())
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 			return err
@@ -93,27 +97,80 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 
 		// std deviation for stats for 6 hours duration
 		mean := util.CalculateMean(convertBucketObjectToFloatArray(aggObj.Buckets))
-		std := util.CalculateStandardDeviation(convertBucketObjectToFloatArray(aggObj.Buckets), mean)
+		//std := util.CalculateStandardDeviation(convertBucketObjectToFloatArray(aggObj.Buckets), mean)
 
 		//  std deviation  for stats of threshold duration
-		stdMean := util.CalculateMean(convertBucketObjectToFloatArray(thresholdAggObj.Buckets))
-		stdThreshold := util.CalculateStandardDeviation(convertBucketObjectToFloatArray(thresholdAggObj.Buckets), stdMean)
+		meanThreshold := util.CalculateMean(convertBucketObjectToFloatArray(thresholdAggObj.Buckets))
+		stdThreshold := util.CalculateStandardDeviation(convertBucketObjectToFloatArray(thresholdAggObj.Buckets), meanThreshold)
 
-		reputation := classifySources(std, stdThreshold)
-		err = config.GetDB().Model(&logSource.LogSource{}).Where("id = ? ", lsId).Updates(map[string]interface{}{"reputation": reputation}).Error
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
-			return err
+		zScoreMean := util.CalculateZScore(mean, meanThreshold, stdThreshold)
+		reputation := classifySources(zScoreMean)
+
+		if reputation == common.WHISPERING {
+			var temp alerts_common.AlertEntityObject
+			temp.EntityName = ls.Name
+			temp.EntityId = ls.ID
+			temp.EntityTenantUUId = ls.TenantUUID
+			whisperingAlertsEntityArray = append(whisperingAlertsEntityArray, temp)
+			whisperingLs = append(whisperingLs, ls.ID.String())
+		} else if reputation == common.NOISY {
+			var temp alerts_common.AlertEntityObject
+			temp.EntityName = ls.Name
+			temp.EntityId = ls.ID
+			temp.EntityTenantUUId = ls.TenantUUID
+			noisyAlertsEntityArray = append(noisyAlertsEntityArray, temp)
+			noisyLs = append(noisyLs, ls.ID.String())
 		}
+	}
+	err = markReputationAndRaiseAlert(ctx, noisyLs, noisyAlertsEntityArray, whisperingLs, whisperingAlertsEntityArray)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
+		return err
 	}
 	return err
 }
 
-func classifySources(std, stdThreshold float64) int {
-	if std < stdThreshold {
+func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAlertsEntityArray []alerts_common.AlertEntityObject, whisperingLs []string, whisperingAlertsEntityArray []alerts_common.AlertEntityObject) error {
+	// mark reputation for whispering
+	err := config.GetDB().Model(&logSource.LogSource{}).Where("id in ? ", whisperingLs).Updates(map[string]interface{}{"reputation": common.WHISPERING}).Error
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as whispering", zap.Error(err))
+		return err
+	}
+
+	// mark reputation for noisy
+	err = config.GetDB().Model(&logSource.LogSource{}).Where("id in ? ", noisyLs).Updates(map[string]interface{}{"reputation": common.NOISY}).Error
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as noisy", zap.Error(err))
+		return err
+	}
+
+	// raise alert for whispering
+	if len(whisperingAlertsEntityArray) > 0 {
+		err = helper.SendAlertToControlFlag(ctx, whisperingAlertsEntityArray, common.WhisperingAlertTitle, common.WhisperingAlertMessage, common.WhisperingAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while raising alerts for whispering log sources", zap.Error(err))
+			return err
+		}
+	}
+	// raise alert for noisy log sources
+	if len(noisyAlertsEntityArray) > 0 {
+		err = helper.SendAlertToControlFlag(ctx, noisyAlertsEntityArray, common.NoisyAlertTitle, common.NoisyAlertMessage, common.NoisyAlertType, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while raising alerts for noisy log sources", zap.Error(err))
+			return err
+		}
+	}
+	return nil
+}
+
+func classifySources(zScoreMean float64) int {
+	if zScoreMean > common.NoisyThreshold {
+		return common.NOISY
+	} else if zScoreMean < (-1 * common.NoisyThreshold) {
 		return common.WHISPERING
 	} else {
-		return common.NOISY
+		return common.STABLE
 	}
 }
 

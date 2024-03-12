@@ -177,3 +177,37 @@ type HistogramQueryResponse struct {
 		} `json:"sum_over_time"`
 	} `json:"aggregations"`
 }
+
+type SearchResponse struct {
+	Hits struct {
+		Total struct {
+			Value    int    `json:"value"`
+			Relation string `json:"relation"`
+		} `json:"total"`
+		MaxScore float64 `json:"max_score"`
+		Hits     []struct {
+			Index  string  `json:"_index"`
+			Id     string  `json:"_id"`
+			Score  float64 `json:"_score"`
+			Source struct {
+				Class                   string `json:"_class"`
+				Id                      string `json:"id"`
+				Title                   string `json:"title"`
+				Criticality             string `json:"criticality"`
+				Message                 string `json:"message"`
+				CreatedAt               int64  `json:"createdAt"`
+				UpdatedAt               int64  `json:"updatedAt"`
+				FirstObservedAt         int64  `json:"firstObservedAt"`
+				LastObservedAt          int64  `json:"lastObservedAt"`
+				TenantId                string `json:"tenantId"`
+				FunctionalityType       string `json:"functionalityType"`
+				Functionality           string `json:"functionality"`
+				FunctionalityEntityId   string `json:"functionalityEntityId"`
+				FunctionalityEntityName string `json:"functionalityEntityName"`
+				Dismissed               bool   `json:"dismissed"`
+				DismissedAt             int64  `json:"dismissedAt"`
+				DismissedBy             string `json:"dismissedBy"`
+			} `json:"_source"`
+		} `json:"hits"`
+	} `json:"hits"`
+}

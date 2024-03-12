@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -54,6 +55,37 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 	return aggObj, err
 }
 
+func checkInactivityAlertExistsForGivenLogSources(ctx context.Context, logsources []string) error {
+	conf := os.GetConf()
+	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
+		return err
+	}
+
+	type Body struct {
+		Query struct {
+			QueryString struct {
+				Query string `json:"query"`
+			} `json:"query_string"`
+		} `json:"query"`
+	}
+	q := `functionalityEntityId:` + "(" + strings.Join(logsources, " OR ") + ")" + ` AND functionalityType:` + alerts_common.LogSourceStatsNotReceived
+	body := Body{}
+	body.Query.QueryString.Query = q
+
+	searchResponse, err := os.MakeSearchCall(ctx, "db_alerts", &body, client)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+	}
+	bodyContent, _ := io.ReadAll(searchResponse.Body)
+	resp := &statistics.SearchResponse{}
+	err = json.Unmarshal(bodyContent, resp)
+	fmt.Println(resp.Hits)
+
+	return nil
+}
+
 func AlertForLogSourceInactivity(ctx context.Context) error {
 	defer func(logger *zap.Logger) {
 		_ = logger.Sync()
@@ -84,9 +116,15 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 			lsIdArray = append(lsIdArray, key)
 		}
 	}
+
+	err = checkInactivityAlertExistsForGivenLogSources(ctx, lsIdArray)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while checking inactivity alert exists", zap.Error(err))
+		return err
+	}
 	//getting logSources which are active but did not report stats in last 15 minutes
 	var activeLsArray []logSource.LogSource //array of ids not receiving stats
-	err = config.GetDB().Model(&logSource.LogSource{}).Where("id not in ? and status = ?", lsIdArray, constants.StatusActive).Find(&activeLsArray).Error
+	err = config.GetDB().Model(&logSource.LogSource{}).Where("id not in ? and status = ?", lsIdArray, constants.StatusAccepted).Find(&activeLsArray).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
@@ -105,6 +143,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		silentLs = append(silentLs, ls.ID.String())
 	}
 
+	// check if any logsource whose stats came back but alert exists
+
 	// update logsource mark silent
 	err = config.GetDB().Model(&logSource.LogSource{}).Where("id in ? ", silentLs).Updates(map[string]interface{}{"reputation": common.SILENT}).Error
 	if err != nil {
@@ -115,7 +155,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	// raise alert and save it to opensearch
 	err = helper.SendAlertToControlFlag(ctx, lsEntityArray, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while raid=sing alert for logSource activity check", zap.Error(err))
+		logging.GetLoggerWithContext(ctx).Error("error while raising alert for logSource activity check", zap.Error(err))
 		return err
 	}
 	return nil
