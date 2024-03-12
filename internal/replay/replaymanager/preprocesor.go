@@ -2,7 +2,6 @@ package replaymanager
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
@@ -124,7 +123,7 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 		}
 		for key, data := range mst.metaMap {
 			if key == "GLOBAL" {
-				fmt.Println("GLOBAL is here , GLOBAL ")
+				logger.GetLogger().Debug("global key occurred")
 				continue
 			}
 			if (!strings.Contains(data.Status, constants.StatusCompleted)) || !(data.Retry > constants.MaxRetry) {

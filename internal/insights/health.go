@@ -70,7 +70,7 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 	logger.GetLogger().Info("considering sights indices", zap.Int("index_count", len(sightsIndices)))
 	logger.GetLogger().Info("considering frequency indices", zap.Int("index_count", len(frequencyIndices)))
 	var statuses []HealthJobStatus
-
+	var processingError error
 	for _, index := range sightsIndices {
 		split := strings.Split(index, "_")
 		tenantId := split[len(split)-1]
@@ -87,6 +87,9 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 		if err != nil {
 			logger.GetLogger().Error("failed to calculate silent device health for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
 			statusHealth.Status = STATUS_ERROR
+			if processingError == nil {
+				processingError = err
+			}
 			statusHealth.Error = err
 		} else {
 			statusHealth.Status = STATUS_SUCCESS
@@ -118,7 +121,7 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 		statuses = append(statuses, statusNoise)
 	}
 
-	return statuses, nil
+	return statuses, processingError
 }
 
 func calculateDeviceInventoryHealthForTenant(ctx context.Context, client *opensearch.Client, tenantId string, sightIndexName string, runningFor string) error {

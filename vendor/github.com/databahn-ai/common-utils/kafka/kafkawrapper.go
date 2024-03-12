@@ -175,9 +175,13 @@ func (c Cluster) GetProducer(ctx context.Context, name string) (*Producer, error
 }
 
 func (p Producer) SendSync(ctx context.Context, message Message) error {
+	return p.SendSyncTopic(ctx, message, p.Config.Topic)
+}
+
+func (p Producer) SendSyncTopic(ctx context.Context, message Message, topic string) error {
 	report := make(chan kafka.Event)
 	defer close(report)
-	kafkaMessage := adaptMessage(message, p.Config.Topic)
+	kafkaMessage := adaptMessage(message, topic)
 	err := p.Producer.Produce(kafkaMessage, report)
 	if err != nil {
 		return nil
@@ -199,7 +203,11 @@ func (p Producer) SendSync(ctx context.Context, message Message) error {
 }
 
 func (p Producer) SendAsync(message Message, callback func(err error)) {
-	kafkaMessage := adaptMessage(message, p.Config.Topic)
+	p.SendAsyncTopic(message, p.Config.Topic, callback)
+}
+
+func (p Producer) SendAsyncTopic(message Message, topic string, callback func(err error)) {
+	kafkaMessage := adaptMessage(message, topic)
 	err := p.retrySending(kafkaMessage, 0, 1000)
 	if err != nil && callback != nil {
 		callback(err)

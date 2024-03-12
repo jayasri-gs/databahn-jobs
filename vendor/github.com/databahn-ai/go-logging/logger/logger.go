@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/apex/gateway"
-	"github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/databahn-ai/go-logging/logger/constants"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -34,23 +34,18 @@ func GetLoggerWithContext(ctx context.Context) (newLogger *zap.Logger) {
 	newLogger, _ = initLogger()
 
 	if userUUID := ctx.Value(constants.UserUuid); userUUID != nil {
-		newLogger = newLogger.With(zap.Any("UserUUID", userUUID))
+		newLogger = newLogger.With(zap.Any("user_uuid", userUUID))
 	}
 	if tenantUUID := ctx.Value(constants.TenantUuid); tenantUUID != nil {
-		newLogger = newLogger.With(zap.Any("TenantUUID", tenantUUID))
+		newLogger = newLogger.With(zap.Any("tenant_uuid", tenantUUID))
 	}
 
-	if edgeId := ctx.Value(constants.EdgeUuid); edgeId != nil {
-		newLogger = newLogger.With(zap.Any("EdgeUUID", edgeId))
+	if fleetId := ctx.Value(constants.FleetId); fleetId != nil {
+		newLogger = newLogger.With(zap.Any("fleet_id", fleetId))
 	}
 
 	if activationKey := ctx.Value(constants.ActivationCode); activationKey != nil {
-		newLogger = newLogger.With(zap.Any("ActivationCode", activationKey))
-	}
-
-	xrayTraceID := xray.TraceID(ctx)
-	if len(xrayTraceID) > 0 {
-		newLogger = newLogger.With(zap.Any("XRayTraceID", xrayTraceID))
+		newLogger = newLogger.With(zap.Any("activation_code", activationKey))
 	}
 
 	return newLogger
@@ -68,6 +63,13 @@ func initLogger() (*zap.Logger, error) {
 		cfg := NewDbConfig()
 		logger, err = cfg.Build()
 		loggerReady = err == nil
+		if serviceVersion := os.Getenv(constants.ServiceVersion); serviceVersion != "" {
+			logger = logger.With(zap.String("service_version", serviceVersion))
+		}
+
+		if serviceName := os.Getenv(constants.ServiceName); serviceName != "" {
+			logger = logger.With(zap.String("service_name", serviceName))
+		}
 	})
 	return logger, err
 }
@@ -75,7 +77,7 @@ func initLogger() (*zap.Logger, error) {
 func NewDbConfig() zap.Config {
 	level := getLogLevel()
 	encoding := getLogEncoding()
-	return zap.Config{
+	config := zap.Config{
 		Level:            level,
 		Development:      false,
 		Encoding:         encoding,
@@ -83,6 +85,14 @@ func NewDbConfig() zap.Config {
 		OutputPaths:      []string{"stderr"},
 		ErrorOutputPaths: []string{"stderr"},
 	}
+	if isSamplingEnabled() {
+		initial, thereafter := getSamplingConfig()
+		config.Sampling = &zap.SamplingConfig{
+			Initial:    initial,
+			Thereafter: thereafter,
+		}
+	}
+	return config
 }
 
 func getLogLevel() zap.AtomicLevel {
@@ -163,4 +173,36 @@ func SetLoggingContexts(ctx context.Context) context.Context {
 	ctx = context.WithValue(ctx, constants.TenantUuid, tenantUUID)
 	ctx = context.WithValue(ctx, constants.UserUuid, userUUID)
 	return ctx
+}
+
+func isSamplingEnabled() bool {
+	env := os.Getenv(constants.EnableLogSampling)
+	return env != "false"
+}
+
+func getSamplingConfig() (int, int) {
+	var initial, thereafter int
+	maxEnv := os.Getenv(constants.LogSamplingMaxInitial)
+	if maxEnv == "" {
+		initial = constants.DefaultLogSamplingMaxInitial
+	} else {
+		parsed, err := strconv.ParseInt(maxEnv, 10, 64)
+		if err != nil {
+			initial = constants.DefaultLogSamplingMaxInitial
+		} else {
+			initial = int(parsed)
+		}
+	}
+	rateEnv := os.Getenv(constants.LogSamplingRateThereafter)
+	if rateEnv == "" {
+		thereafter = constants.DefaultLogSamplingRateThereafter
+	} else {
+		parsed, err := strconv.ParseInt(rateEnv, 10, 64)
+		if err != nil {
+			thereafter = constants.DefaultLogSamplingRateThereafter
+		} else {
+			thereafter = int(parsed)
+		}
+	}
+	return initial, thereafter
 }

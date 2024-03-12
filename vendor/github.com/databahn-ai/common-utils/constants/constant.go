@@ -8,6 +8,8 @@ const StatusDeploying = 2
 const StatusActive = 3
 const StatusDisabled = 4
 const StatusDeleted = 5
+const StatusErrorDisabling = 6
+const StatusErrored = 7
 
 func IsStatusRunning(status int) bool {
 	return status >= 1 && status <= 3

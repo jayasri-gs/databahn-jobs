@@ -19,3 +19,4 @@ node_modules
 .sst
 cdk.context.json
 app.yaml
+destination.yaml

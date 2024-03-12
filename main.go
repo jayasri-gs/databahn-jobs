@@ -26,14 +26,14 @@ func ReadInputData() model.Message {
 	var sampleMessage model.Message
 	var fileName string
 
-	flag.StringVar(&sampleMessage.RequestId, "reqId", "05101994", "request id ")
-	flag.StringVar(&sampleMessage.NewSource, "destination", "out-topic", "destination-topic")
-	flag.StringVar(&sampleMessage.BucketName, "bucketName", "db-replay", "bucket name")
-	flag.StringVar(&sampleMessage.BucketPrefix, "bucketPrefix", "test/vfs/72767276/2023/12/08/", "bucket Prefix")
-	flag.StringVar(&sampleMessage.AccessKeyID, "accessId", "AKIA3FRFSAVQ7REF25F3", "bucket name")
-	flag.StringVar(&sampleMessage.SecretAccessKey, "secret", "JgboMDEhSwki1TQlVbt9IDjbnGSb71+AaNx+I1tM", "secret ")
-	flag.StringVar(&sampleMessage.Region, "region", "us-east-1", "aws region ")
-	flag.StringVar(&fileName, "fileName", "", "files ")
+	flag.StringVar(&sampleMessage.RequestId, "reqId", "", "request id ")
+	flag.StringVar(&sampleMessage.NewSource, "destination", "", "destination-topic")
+	flag.StringVar(&sampleMessage.BucketName, "bucketName", "", "bucket name")
+	flag.StringVar(&sampleMessage.BucketPrefix, "bucketPrefix", "", "bucket Prefix")
+	flag.StringVar(&sampleMessage.AccessKeyID, "accessId", "", "bucket name")
+	flag.StringVar(&sampleMessage.SecretAccessKey, "secret", "", "secret ")
+	flag.StringVar(&sampleMessage.Region, "region", "", "aws region ")
+	flag.StringVar(&fileName, "fileName", "", "")
 
 	flag.StringVar(&sampleMessage.Source, "source", "", "Source id ")
 	flag.StringVar(&sampleMessage.TenantId, "tenantId", "", "TenantId")
