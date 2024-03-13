@@ -11,7 +11,6 @@ const (
 const (
 	ES_COUNTER_VALUE_FIELD string = "counter.value"
 	ES_TIME_FIELD          string = "tags.db_ts_win"
-	PROCESSING_TIME_FIELD  string = "timestamp"
 )
 
 const (

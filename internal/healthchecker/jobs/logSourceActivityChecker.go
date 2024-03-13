@@ -15,6 +15,7 @@ import (
 	logSource "github.com/databahn-ai/db-models/log-source"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"io"
 	"strconv"
@@ -55,25 +56,28 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 	return aggObj, err
 }
 
-func checkInactivityAlertExistsForGivenLogSources(ctx context.Context, logsources []string) (statistics.AlertSearchResponse, error) {
+func checkInactivityAlertExistsForGivenLogSources(ctx context.Context, logsources []string) ([]statistics.AlertDocument, error) {
 	conf := os.GetConf()
 	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return statistics.AlertSearchResponse{}, err
+		return nil, err
 	}
 	q := `dismissed:false AND functionalityEntityId:` + "(" + strings.Join(logsources, " OR ") + ")" + ` AND functionalityType:` + alerts_common.LogSourceStatsNotReceived
-	body := statistics.AlertSearchQueryRequest{}
-	body.Query.QueryString.Query = q
 
-	searchResponse, err := os.MakeSearchCall(ctx, common.AlertsIndex, &body, client)
+	res, err := os.Search(ctx, client, common.AlertsIndex, q)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", common.AlertsIndex))
+		return nil, err
 	}
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
-	resp := &statistics.AlertSearchQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	alerts := statistics.NewAlertSearchResponse(resp)
+
+	var alerts []statistics.AlertDocument
+	decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+	err = decoder.Decode(res)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
+		return alerts, err
+	}
 	return alerts, nil
 }
 
@@ -130,7 +134,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// check if any logsource whose stats came back but alert exists
-	alertObj, err := checkInactivityAlertExistsForGivenLogSources(ctx, logsourceIdsStatsReceived)
+	alerts, err := checkInactivityAlertExistsForGivenLogSources(ctx, logsourceIdsStatsReceived)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while checking inactivity alert exists", zap.Error(err))
 		return err
@@ -138,7 +142,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 	// get alerts array for dismissal
 	var toDismissAlerts []alerts_common.AlertEntityObject
-	for _, alert := range alertObj.Alerts {
+	for _, alert := range alerts {
 		var temp alerts_common.AlertEntityObject
 		temp.EntityName = alert.FunctionalityEntityName
 		temp.EntityId = utils.UUIDFromStringOrNil(alert.FunctionalityEntityId)
@@ -147,11 +151,12 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// send dismiss alerts to change flag
-	err = helper.SendAlertToControlFlag(ctx, toDismissAlerts, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertAutoResolved, true, "system")
-
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while dismissing alerts for logSource activity check", zap.Error(err))
-		return err
+	if len(toDismissAlerts) > 0 {
+		err = helper.SendAlertToControlPlane(ctx, toDismissAlerts, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertAutoResolved, true, "system")
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while dismissing alerts for logSource activity check", zap.Error(err))
+			return err
+		}
 	}
 
 	// update logsource mark silent
@@ -162,10 +167,12 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// raise alert and save it to opensearch
-	err = helper.SendAlertToControlFlag(ctx, logsourcesEntityArray, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertOpen, false, "system")
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while raising alert for logSource activity check", zap.Error(err))
-		return err
+	if len(logsourcesEntityArray) > 0 {
+		err = helper.SendAlertToControlPlane(ctx, logsourcesEntityArray, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertOpen, false, "system")
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while raising alert for logSource activity check", zap.Error(err))
+			return err
+		}
 	}
 	return nil
 }

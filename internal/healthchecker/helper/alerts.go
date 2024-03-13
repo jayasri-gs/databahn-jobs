@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func SendAlertToControlFlag(ctx context.Context, entityArray []alerts_common.AlertEntityObject, title string, message string, functionalityType string, functionality string, severity string, status int, dismissed bool, updatedBy string) error {
+func SendAlertToControlPlane(ctx context.Context, entityArray []alerts_common.AlertEntityObject, title string, message string, functionalityType string, functionality string, severity string, status int, dismissed bool, updatedBy string) error {
 	var alerts []alerts_common.Alert
 	for _, entity := range entityArray {
 		temp := alerts_common.Alert{

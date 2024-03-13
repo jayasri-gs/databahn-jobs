@@ -43,7 +43,7 @@ func getHistogramForLogSource(ctx context.Context, startTime string, endTime str
 	searchBody := &statistics.HistogramQueryRequest{}
 	searchBody.Size = 0
 	searchBody.Query.QueryString.Query = query
-	searchBody.Aggs.SumOverTime.DateHistogram.Field = statistics.PROCESSING_TIME_FIELD
+	searchBody.Aggs.SumOverTime.DateHistogram.Field = statistics.ES_TIME_FIELD
 	searchBody.Aggs.SumOverTime.DateHistogram.Interval = interval
 	searchBody.Aggs.SumOverTime.Aggs.SumValue.Sum.Field = statistics.ES_COUNTER_VALUE_FIELD
 
@@ -147,7 +147,7 @@ func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAle
 
 	// raise alert for whispering
 	if len(whisperingAlertsEntityArray) > 0 {
-		err = helper.SendAlertToControlFlag(ctx, whisperingAlertsEntityArray, alerts_common.WhisperingAlertTitle, alerts_common.WhisperingAlertMessage, alerts_common.WhisperingAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
+		err = helper.SendAlertToControlPlane(ctx, whisperingAlertsEntityArray, alerts_common.WhisperingAlertTitle, alerts_common.WhisperingAlertMessage, alerts_common.WhisperingAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alerts for whispering log sources", zap.Error(err))
 			return err
@@ -155,7 +155,7 @@ func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAle
 	}
 	// raise alert for noisy log sources
 	if len(noisyAlertsEntityArray) > 0 {
-		err = helper.SendAlertToControlFlag(ctx, noisyAlertsEntityArray, alerts_common.NoisyAlertTitle, alerts_common.NoisyAlertMessage, alerts_common.NoisyAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
+		err = helper.SendAlertToControlPlane(ctx, noisyAlertsEntityArray, alerts_common.NoisyAlertTitle, alerts_common.NoisyAlertMessage, alerts_common.NoisyAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alerts for noisy log sources", zap.Error(err))
 			return err

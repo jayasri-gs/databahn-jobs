@@ -36,7 +36,7 @@ func AddDateRange(q string, startTime string, endTime string) string {
 		return q
 	}
 
-	dateRangeQuery := fmt.Sprintf("%s:[%d TO %d]", PROCESSING_TIME_FIELD, start, end)
+	dateRangeQuery := fmt.Sprintf("%s:[%d TO %d]", ES_TIME_FIELD, start, end)
 	if q == "" {
 		return dateRangeQuery
 	} else {
@@ -177,14 +177,6 @@ type HistogramQueryResponse struct {
 	} `json:"aggregations"`
 }
 
-type AlertSearchQueryRequest struct {
-	Query struct {
-		QueryString struct {
-			Query string `json:"query"`
-		} `json:"query_string"`
-	} `json:"query"`
-}
-
 type AlertDocument struct {
 	Class                   string `json:"_class"`
 	Id                      string `json:"id"`
@@ -203,19 +195,4 @@ type AlertDocument struct {
 	Dismissed               bool   `json:"dismissed"`
 	DismissedAt             int64  `json:"dismissedAt"`
 	DismissedBy             string `json:"dismissedBy"`
-}
-type AlertSearchQueryResponse struct {
-	Hits struct {
-		Total struct {
-			Value    int    `json:"value"`
-			Relation string `json:"relation"`
-		} `json:"total"`
-		MaxScore float64 `json:"max_score"`
-		Hits     []struct {
-			Index  string        `json:"_index"`
-			Id     string        `json:"_id"`
-			Score  float64       `json:"_score"`
-			Source AlertDocument `json:"_source"`
-		} `json:"hits"`
-	} `json:"hits"`
 }
