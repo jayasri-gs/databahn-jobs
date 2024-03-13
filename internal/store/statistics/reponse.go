@@ -7,7 +7,9 @@ type SumResponse struct {
 type AggregateResponse struct {
 	Agg map[string]any `json:"agg"`
 }
-
+type AlertSearchResponse struct {
+	Alerts []AlertDocument `json:"alerts"`
+}
 type HistogramBucket struct {
 	Value      float64 `json:"value"`
 	Time       int64   `json:"time"`
@@ -64,4 +66,14 @@ func NewHistogramResponse(res *HistogramQueryResponse) HistogramResponse {
 		Buckets: buckets,
 	}
 
+}
+
+func NewAlertSearchResponse(res *AlertSearchQueryResponse) AlertSearchResponse {
+	var alerts []AlertDocument
+	for _, v := range res.Hits.Hits {
+		alerts = append(alerts, v.Source)
+	}
+	return AlertSearchResponse{
+		Alerts: alerts,
+	}
 }

@@ -25,9 +25,4 @@ const (
 const NoisyThreshold = 1.5
 const ControllerBaseUrl = "https://controller.dev.databahn.app"
 
-const WhisperingAlertTitle = "Whispering Log Source"
-const WhisperingAlertMessage = "Log source is whispering"
-const WhisperingAlertType = "whispering-log-source-alert"
-const NoisyAlertTitle = "Noisy Log Source"
-const NoisyAlertMessage = "Log source is noisy"
-const NoisyAlertType = "noisy-log-source-alert"
+const AlertsIndex = "db_alerts"

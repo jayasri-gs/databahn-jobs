@@ -28,7 +28,7 @@ type Source struct {
 }
 
 func getHistogramForLogSource(ctx context.Context, startTime string, endTime string, interval string, lsId string) (statistics.HistogramResponse, error) {
-	q := `tags.component_name: "ingestion" AND name: "total_events_delivered" and tags.db_event_source_id.keyword:` + lsId
+	q := `tags.component_name: "ingestion" AND name: "total_events_delivered" AND tags.db_event_source_id.keyword:` + lsId
 	query := statistics.AddDateRange(q, startTime, endTime)
 	if interval == "" {
 		return statistics.HistogramResponse{}, errors.New("interval is required")
@@ -43,7 +43,7 @@ func getHistogramForLogSource(ctx context.Context, startTime string, endTime str
 	searchBody := &statistics.HistogramQueryRequest{}
 	searchBody.Size = 0
 	searchBody.Query.QueryString.Query = query
-	searchBody.Aggs.SumOverTime.DateHistogram.Field = statistics.ES_TIME_FIELD
+	searchBody.Aggs.SumOverTime.DateHistogram.Field = statistics.PROCESSING_TIME_FIELD
 	searchBody.Aggs.SumOverTime.DateHistogram.Interval = interval
 	searchBody.Aggs.SumOverTime.Aggs.SumValue.Sum.Field = statistics.ES_COUNTER_VALUE_FIELD
 
@@ -69,7 +69,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	logging.GetLoggerWithContext(ctx).Info("getting histogram all log sources")
 
 	var logSources []logSource.LogSource
-	err := config.GetDB().Model(&logSource.LogSource{}).Scan(&logSources).Error
+	err := config.GetDB().Model(&logSource.LogSource{}).Where("tenant_uuid = ?", "fdff23ab-1827-4a58-9a75-1a574b9df4e3").Scan(&logSources).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
 		return err
@@ -147,7 +147,7 @@ func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAle
 
 	// raise alert for whispering
 	if len(whisperingAlertsEntityArray) > 0 {
-		err = helper.SendAlertToControlFlag(ctx, whisperingAlertsEntityArray, common.WhisperingAlertTitle, common.WhisperingAlertMessage, common.WhisperingAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert)
+		err = helper.SendAlertToControlFlag(ctx, whisperingAlertsEntityArray, alerts_common.WhisperingAlertTitle, alerts_common.WhisperingAlertMessage, alerts_common.WhisperingAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alerts for whispering log sources", zap.Error(err))
 			return err
@@ -155,7 +155,7 @@ func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAle
 	}
 	// raise alert for noisy log sources
 	if len(noisyAlertsEntityArray) > 0 {
-		err = helper.SendAlertToControlFlag(ctx, noisyAlertsEntityArray, common.NoisyAlertTitle, common.NoisyAlertMessage, common.NoisyAlertType, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert)
+		err = helper.SendAlertToControlFlag(ctx, noisyAlertsEntityArray, alerts_common.NoisyAlertTitle, alerts_common.NoisyAlertMessage, alerts_common.NoisyAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alerts for noisy log sources", zap.Error(err))
 			return err

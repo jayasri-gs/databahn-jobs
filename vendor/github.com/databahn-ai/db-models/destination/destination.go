@@ -16,7 +16,7 @@ type Destination struct {
 	DestinationType string    `gorm:"type:VARCHAR(36)" validate:"required"`
 	CreatedBy       string    `gorm:"type:VARCHAR(100)" validate:"required"`
 	UpdatedBy       string    `gorm:"type:VARCHAR(100)" validate:"required"`
-	Status          int       `validate:"min=0,max=5"`
+	Status          int
 	Enabled         bool
 	ForwardDataType int `validate:"lte=3"`
 	CreatedAt       time.Time

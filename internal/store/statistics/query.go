@@ -36,7 +36,7 @@ func AddDateRange(q string, startTime string, endTime string) string {
 		return q
 	}
 
-	dateRangeQuery := fmt.Sprintf("%s:[%d TO %d]", ES_TIME_FIELD, start, end)
+	dateRangeQuery := fmt.Sprintf("%s:[%d TO %d]", PROCESSING_TIME_FIELD, start, end)
 	if q == "" {
 		return dateRangeQuery
 	} else {
@@ -90,7 +90,6 @@ type AggregateQueryRequest struct {
 	} `json:"query"`
 	NestedAgg `json:"aggs"`
 }
-
 type GroupByAgg struct {
 	Terms     Terms     `json:"terms"`
 	NestedAgg NestedAgg `json:"aggs"`
@@ -178,7 +177,34 @@ type HistogramQueryResponse struct {
 	} `json:"aggregations"`
 }
 
-type SearchResponse struct {
+type AlertSearchQueryRequest struct {
+	Query struct {
+		QueryString struct {
+			Query string `json:"query"`
+		} `json:"query_string"`
+	} `json:"query"`
+}
+
+type AlertDocument struct {
+	Class                   string `json:"_class"`
+	Id                      string `json:"id"`
+	Title                   string `json:"title"`
+	Criticality             string `json:"criticality"`
+	Message                 string `json:"message"`
+	CreatedAt               int64  `json:"createdAt"`
+	UpdatedAt               int64  `json:"updatedAt"`
+	FirstObservedAt         int64  `json:"firstObservedAt"`
+	LastObservedAt          int64  `json:"lastObservedAt"`
+	TenantId                string `json:"tenantId"`
+	FunctionalityType       string `json:"functionalityType"`
+	Functionality           string `json:"functionality"`
+	FunctionalityEntityId   string `json:"functionalityEntityId"`
+	FunctionalityEntityName string `json:"functionalityEntityName"`
+	Dismissed               bool   `json:"dismissed"`
+	DismissedAt             int64  `json:"dismissedAt"`
+	DismissedBy             string `json:"dismissedBy"`
+}
+type AlertSearchQueryResponse struct {
 	Hits struct {
 		Total struct {
 			Value    int    `json:"value"`
@@ -186,28 +212,10 @@ type SearchResponse struct {
 		} `json:"total"`
 		MaxScore float64 `json:"max_score"`
 		Hits     []struct {
-			Index  string  `json:"_index"`
-			Id     string  `json:"_id"`
-			Score  float64 `json:"_score"`
-			Source struct {
-				Class                   string `json:"_class"`
-				Id                      string `json:"id"`
-				Title                   string `json:"title"`
-				Criticality             string `json:"criticality"`
-				Message                 string `json:"message"`
-				CreatedAt               int64  `json:"createdAt"`
-				UpdatedAt               int64  `json:"updatedAt"`
-				FirstObservedAt         int64  `json:"firstObservedAt"`
-				LastObservedAt          int64  `json:"lastObservedAt"`
-				TenantId                string `json:"tenantId"`
-				FunctionalityType       string `json:"functionalityType"`
-				Functionality           string `json:"functionality"`
-				FunctionalityEntityId   string `json:"functionalityEntityId"`
-				FunctionalityEntityName string `json:"functionalityEntityName"`
-				Dismissed               bool   `json:"dismissed"`
-				DismissedAt             int64  `json:"dismissedAt"`
-				DismissedBy             string `json:"dismissedBy"`
-			} `json:"_source"`
+			Index  string        `json:"_index"`
+			Id     string        `json:"_id"`
+			Score  float64       `json:"_score"`
+			Source AlertDocument `json:"_source"`
 		} `json:"hits"`
 	} `json:"hits"`
 }
