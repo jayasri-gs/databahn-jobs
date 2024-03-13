@@ -69,7 +69,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	logging.GetLoggerWithContext(ctx).Info("getting histogram all log sources")
 
 	var logSources []logSource.LogSource
-	err := config.GetDB().Model(&logSource.LogSource{}).Where("tenant_uuid = ?", "fdff23ab-1827-4a58-9a75-1a574b9df4e3").Scan(&logSources).Error
+	err := config.GetDB().Model(&logSource.LogSource{}).Scan(&logSources).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
 		return err
