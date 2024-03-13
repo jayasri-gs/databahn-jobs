@@ -3,22 +3,23 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/databahn-ai/databahn-jobs/cmd"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
+	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"strings"
 )
 
 func main() {
 	ctx := context.Background()
-	//job := flag.String("job", "", "job name")
-	//input := ReadInputData()
+	job := flag.String("job", "", "job name")
+	input := ReadInputData()
 	//flag.Parse()
-	//logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
+	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
 	config.GetAppConfiguration()
-	//cmd.RunJob(ctx, in, input)
-	jobs.AlertForLogSourceInactivity(ctx)
+	cmd.RunJob(ctx, *job, input)
 }
 
 func ReadInputData() model.Message {
