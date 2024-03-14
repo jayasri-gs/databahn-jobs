@@ -26,3 +26,11 @@ const NoisyThreshold = 1.5
 const ControllerBaseUrl = "https://controller.dev.databahn.app"
 
 const AlertsIndex = "db_alerts"
+
+const FleetNodeHealthCheck = "fleet health check"
+const FleetNodeHealthCheckTitle = "node health not reported"
+const FleetNodeHealthCheckMessage = "node health not reported for more than 5 minutes"
+
+const FleetConnectorHealthCheckMessage = "connector health not reported for more than 5 minutes"
+
+const FleetConnectorHealthCheckTitle = "fleet connector health check"

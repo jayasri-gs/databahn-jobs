@@ -32,7 +32,10 @@ func SendAlertToControlPlane(ctx context.Context, entityArray []alerts_common.Al
 		}
 		alerts = append(alerts, temp)
 	}
+	return sendAlertToCP(ctx, alerts)
+}
 
+func sendAlertToCP(ctx context.Context, alerts []alerts_common.Alert) error {
 	alertClient, err := alert.NewAlertClient(ctx, config.GetAppConfiguration())
 	if err != nil {
 		logger.GetLogger().Error("error while creating alert client", zap.Error(err))

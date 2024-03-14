@@ -5,14 +5,18 @@ const WarningAlert = "warning"
 const SevereAlert = "severe"
 const CriticalAlert = "critical"
 
-const EdgeFunctionality = "edge"
+const FleetFunctionality = "fleet"
 const LogSourceFunctionality = "log-source"
 const CloudLogSourceFunctionality = "cloud-log-source"
 const DispenserFunctionality = "dispenser"
 
-const EdgeNodeHealthCheck = "edge-node-health-check"
-const EdgeNodeHealthCheckTitle = "Edge health not reported for more than 15 minutes"
-const EdgeNodeHealthCheckMessage = "Edge health not reported for more than 15 minutes"
+const FleetNodeHealthCheck = "fleet node health check"
+const FleetNodeHealthCheckTitle = "no health received from fleet node for more than 5 minutes"
+const FleetNodeHealthCheckMessage = "%s node health not reported for more than 5 minutes"
+
+const FleetConnectorHealthCheck = "fleet connector health check"
+const FleetConnectorHealthCheckTitle = "no health received from fleet connector for more than 5 minutes"
+const FleetConnectorHealthCheckMessage = "%s connector health not reported for more than 5 minutes"
 
 const LogSourceStatsNotReceived = "log-source-activity-check"
 const LogSourceStatsNotReceivedTitle = "Events not received for last 15 minutes"
