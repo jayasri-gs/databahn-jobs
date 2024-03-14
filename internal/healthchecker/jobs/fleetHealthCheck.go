@@ -48,7 +48,7 @@ func fleetHealthChecker(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while raising alert fleet inactivity", zap.Error(err))
 		return err
 	}
-	logging.GetLogger().Info("alert raised successfully for unhealthy fleet nodes", zap.Any("fleets", fleetNodes))
+	logging.GetLogger().Info("alert raised successfully for unhealthy fleet nodes", zap.Int("no_of_fleets", len(fleetNodes)))
 	return nil
 }
 
@@ -80,7 +80,7 @@ func connectorHealthChecker(ctx context.Context) error {
 	}
 
 	// raise alert and save it to opensearch
-	err = helper.SendAlertToControlPlane(ctx, connectorEntity, common.FleetNodeHealthCheckTitle, common.FleetConnectorHealthCheckMessage, alerts_common.FleetConnectorHealthCheck, alerts_common.FleetFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
+	err = helper.SendAlertToControlPlane(ctx, connectorEntity, common.FleetConnectorHealthCheckTitle, common.FleetConnectorHealthCheckMessage, alerts_common.FleetConnectorHealthCheck, alerts_common.FleetFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while raising alert connector inactivity", zap.Error(err))
 		return err
