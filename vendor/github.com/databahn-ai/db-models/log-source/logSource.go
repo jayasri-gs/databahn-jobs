@@ -34,7 +34,7 @@ type LogSource struct {
 	TenantUUID                uuid.UUID      `gorm:"uniqueIndex:unique_name_per_tenant;type:uuid" json:"-"`
 	DeletedAt                 gorm.DeletedAt `gorm:"index"`
 	StatsLastUpdated          time.Time      `gorm:"autoCreateTime"`
-	Status                    int            `validate:"min=0,max=5"`
+	Status                    int
 	EventCollected            int64
 	EventDelivered            datatypes.JSON
 	Timezone                  string

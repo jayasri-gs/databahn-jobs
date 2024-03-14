@@ -39,7 +39,7 @@ func fleetHealthChecker(ctx context.Context) error {
 	}
 
 	// raise alert and save it to opensearch
-	err = helper.SendAlertToControlFlag(ctx, fleetEntityArray, alerts_common.EdgeNodeHealthCheckTitle, alerts_common.EdgeNodeHealthCheckMessage, alerts_common.EdgeNodeHealthCheck, alerts_common.EdgeFunctionality, alerts_common.WarningAlert)
+	err = helper.SendAlertToControlPlane(ctx, fleetEntityArray, alerts_common.EdgeNodeHealthCheckTitle, alerts_common.EdgeNodeHealthCheckMessage, alerts_common.EdgeNodeHealthCheck, alerts_common.EdgeFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while raising alert fleet inactivity", zap.Error(err))
 		return err

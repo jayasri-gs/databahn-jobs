@@ -21,7 +21,7 @@ type DestinationHistory struct {
 	UpdatedBy          string    `gorm:"type:VARCHAR(100)"`
 	Enabled            bool
 	ForwardDataType    int
-	Status             int `validate:"min=0,max=5"`
+	Status             int
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	HeartBeatAt        time.Time

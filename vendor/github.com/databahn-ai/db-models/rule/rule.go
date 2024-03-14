@@ -12,21 +12,21 @@ import (
 )
 
 type Rule struct {
-	ID                   uuid.UUID   `gorm:"primarykey;type:uuid"`
-	Name                 string      `gorm:"type:VARCHAR(100);uniqueIndex:unique_name_per_tenant" validate:"required"`
-	HistoryVersion       int         `gorm:"type:INT;default:1"`
-	Conditions           string      `gorm:"type:TEXT" validate:"required"`
-	Description          string      `gorm:"type:VARCHAR(512)"`
-	TenantUUID           uuid.UUID   `gorm:"type:uuid;uniqueIndex:unique_name_per_tenant" validate:"required" json:"-"`
-	EventDependencyID    uuid.UUID   `gorm:"type:uuid" validate:"required"`
-	PipelineId           string      `gorm:"type:VARCHAR(36)"`
-	DestinationId        uuid.UUID   `gorm:"type:uuid" validate:"required"`
-	Scope                string      `gorm:"type:VARCHAR(16);default:CLOUD" validate:"required"`
-	Priority             int         `gorm:"type:INT;default:301" validate:"required"`
-	ActionType           string      `gorm:"type:VARCHAR(32);default:FORWARD" validate:"required"`
-	SourceDevice         string      `gorm:"type:VARCHAR(32)"`
-	SourceVendor         string      `gorm:"type:VARCHAR(32)"`
-	Status               int         `validate:"min=0,max=5"`
+	ID                   uuid.UUID `gorm:"primarykey;type:uuid"`
+	Name                 string    `gorm:"type:VARCHAR(100);uniqueIndex:unique_name_per_tenant" validate:"required"`
+	HistoryVersion       int       `gorm:"type:INT;default:1"`
+	Conditions           string    `gorm:"type:TEXT" validate:"required"`
+	Description          string    `gorm:"type:VARCHAR(512)"`
+	TenantUUID           uuid.UUID `gorm:"type:uuid;uniqueIndex:unique_name_per_tenant" validate:"required" json:"-"`
+	EventDependencyID    uuid.UUID `gorm:"type:uuid" validate:"required"`
+	PipelineId           string    `gorm:"type:VARCHAR(36)"`
+	DestinationId        uuid.UUID `gorm:"type:uuid" validate:"required"`
+	Scope                string    `gorm:"type:VARCHAR(16);default:CLOUD" validate:"required"`
+	Priority             int       `gorm:"type:INT;default:301" validate:"required"`
+	ActionType           string    `gorm:"type:VARCHAR(32);default:FORWARD" validate:"required"`
+	SourceDevice         string    `gorm:"type:VARCHAR(32)"`
+	SourceVendor         string    `gorm:"type:VARCHAR(32)"`
+	Status               int
 	Type                 string      `gorm:"type:VARCHAR(32)" validate:"required"`
 	Tags                 []tags.Tags `json:"tags,omitempty" gorm:"foreignKey:entity_id;references:id"`
 	SamplingRate         int64       `gorm:"type:BIGINT;"`

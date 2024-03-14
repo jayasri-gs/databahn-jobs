@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func SendAlertToControlFlag(ctx context.Context, entityArray []alerts_common.AlertEntityObject, title string, message string, functionalityType string, functionality string, severity string) error {
+func SendAlertToControlPlane(ctx context.Context, entityArray []alerts_common.AlertEntityObject, title string, message string, functionalityType string, functionality string, severity string, status int, dismissed bool, updatedBy string) error {
 	var alerts []alerts_common.Alert
 	for _, entity := range entityArray {
 		temp := alerts_common.Alert{
@@ -25,13 +25,14 @@ func SendAlertToControlFlag(ctx context.Context, entityArray []alerts_common.Ale
 			Functionality:           functionality,
 			FunctionalityEntityId:   entity.EntityId.String(),
 			FunctionalityEntityName: entity.EntityName,
-			Dismissed:               false,
-			DismissedBy:             "",
+			Dismissed:               dismissed,
 			Criticality:             severity,
+			Status:                  status,
+			UpdatedBy:               updatedBy,
 		}
 		alerts = append(alerts, temp)
 	}
-	
+
 	alertClient, err := alert.NewAlertClient(ctx, config.GetAppConfiguration())
 	if err != nil {
 		logger.GetLogger().Error("error while creating alert client", zap.Error(err))
@@ -42,7 +43,6 @@ func SendAlertToControlFlag(ctx context.Context, entityArray []alerts_common.Ale
 		return err
 	}
 	logger.GetLogger().Info("alert sent successfully", zap.Any("response", resp))
-	
+
 	return nil
 }
-

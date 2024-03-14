@@ -216,7 +216,7 @@ github.com/databahn-ai/common-utils/constants
 github.com/databahn-ai/common-utils/databases
 github.com/databahn-ai/common-utils/kafka
 github.com/databahn-ai/common-utils/utils
-# github.com/databahn-ai/db-models v0.73.0
+# github.com/databahn-ai/db-models v0.78.0
 ## explicit; go 1.19
 github.com/databahn-ai/db-models/alerts_common
 github.com/databahn-ai/db-models/data-transform

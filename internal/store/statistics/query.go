@@ -90,7 +90,6 @@ type AggregateQueryRequest struct {
 	} `json:"query"`
 	NestedAgg `json:"aggs"`
 }
-
 type GroupByAgg struct {
 	Terms     Terms     `json:"terms"`
 	NestedAgg NestedAgg `json:"aggs"`
@@ -176,4 +175,24 @@ type HistogramQueryResponse struct {
 			} `json:"buckets"`
 		} `json:"sum_over_time"`
 	} `json:"aggregations"`
+}
+
+type AlertDocument struct {
+	Class                   string `json:"_class"`
+	Id                      string `json:"id"`
+	Title                   string `json:"title"`
+	Criticality             string `json:"criticality"`
+	Message                 string `json:"message"`
+	CreatedAt               int64  `json:"createdAt"`
+	UpdatedAt               int64  `json:"updatedAt"`
+	FirstObservedAt         int64  `json:"firstObservedAt"`
+	LastObservedAt          int64  `json:"lastObservedAt"`
+	TenantId                string `json:"tenantId"`
+	FunctionalityType       string `json:"functionalityType"`
+	Functionality           string `json:"functionality"`
+	FunctionalityEntityId   string `json:"functionalityEntityId"`
+	FunctionalityEntityName string `json:"functionalityEntityName"`
+	Dismissed               bool   `json:"dismissed"`
+	DismissedAt             int64  `json:"dismissedAt"`
+	DismissedBy             string `json:"dismissedBy"`
 }

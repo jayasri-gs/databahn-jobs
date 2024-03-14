@@ -3,6 +3,7 @@ package alerts_common
 const InfoAlert = "info"
 const WarningAlert = "warning"
 const SevereAlert = "severe"
+const CriticalAlert = "critical"
 
 const EdgeFunctionality = "edge"
 const LogSourceFunctionality = "log-source"
@@ -45,3 +46,20 @@ const SyslogDestinationUnavailableMessage = "Marking destination temporarily dis
 
 const InvalidCredentials = "Invalid credentials"
 const DestinationUnavailable = "Destination unavailable"
+
+const WhisperingAlertTitle = "Whispering Log Source"
+const WhisperingAlertMessage = "Log source is whispering"
+const WhisperingAlertType = "whispering-log-source-alert"
+const NoisyAlertTitle = "Noisy Log Source"
+const NoisyAlertMessage = "Log source is noisy"
+const NoisyAlertType = "noisy-log-source-alert"
+const SilentAlertTitle = "Silent Log Source"
+const SilentAlertMessage = "Log source is silent"
+const SilentAlertType = "silent-log-source-alert"
+
+const (
+	AlertOpen         = 1
+	AlertDismissed    = 2
+	AlertResolved     = 3
+	AlertAutoResolved = 4
+)

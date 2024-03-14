@@ -23,9 +23,9 @@ type Alert struct {
 	FunctionalityEntityId   string    `gorm:"type:VARCHAR(36)" json:"functionalityEntityId"`
 	FunctionalityEntityName string    `gorm:"type:VARCHAR(128)" json:"functionalityEntityName"`
 	FunctionalityType       string    `gorm:"type:VARCHAR(64)" json:"functionalityType"`
+	Status                  int       `json:"status"`
+	UpdatedBy               string    `gorm:"type:VARCHAR(100)" validate:"required"`
 	Dismissed               bool      `json:"dismissed"`
-	DismissedAt             time.Time `json:"dismissedAt"`
-	DismissedBy             string    `gorm:"type:VARCHAR(128)" json:"dismissedBy"`
 }
 
 func (at *Alert) Migrate(db *gorm.DB) error {
@@ -81,7 +81,7 @@ func (at *Alert) Save(ctx context.Context, db *gorm.DB) (err error) {
 }
 
 func (at *Alert) DismissAlert(ctx context.Context, db *gorm.DB) error {
-	return db.WithContext(ctx).Model(&at).Updates(Alert{DismissedAt: time.Now(), DismissedBy: "admin", Dismissed: true}).Error
+	return db.WithContext(ctx).Model(&at).Updates(Alert{UpdatedAt: time.Now(), UpdatedBy: "admin", Status: AlertDismissed}).Error
 }
 
 func (at *Alert) UpdateLastSeen(ctx context.Context, db *gorm.DB) error {

@@ -16,10 +16,13 @@ const WarningAlert = "warning"
 const SevereAlert = "severe"
 
 const (
-	SILENT         = 0
-	WHISPERING     = 1
-	NOISY          = 2
-	StatusInactive = 4
+	SILENT     = 0
+	STABLE     = 1
+	WHISPERING = 2
+	NOISY      = 3
 )
 
+const NoisyThreshold = 1.5
 const ControllerBaseUrl = "https://controller.dev.databahn.app"
+
+const AlertsIndex = "db_alerts"

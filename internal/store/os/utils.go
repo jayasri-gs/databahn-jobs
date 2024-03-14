@@ -108,6 +108,33 @@ func SearchPaginated(ctx context.Context, client *opensearch.Client, index strin
 	return data, searchAfter, nil
 }
 
+func Search(ctx context.Context, client *opensearch.Client, index string, query string) ([]map[string]any, error) {
+	request := SearchRequest{}
+	request.Query.QueryString.Query = query
+	response, err := MakeSearchCall(ctx, index+"*", request, client)
+	if err != nil {
+		return nil, err
+	}
+	if response.IsError() {
+		msg := fmt.Sprintf("[%d] Status from OpenSearch body: %s", response.StatusCode, response.String())
+		return nil, errors.New(msg)
+	}
+	bodyContent, _ := io.ReadAll(response.Body)
+	searchResponse := SearchResponse{}
+	err = json.Unmarshal(bodyContent, &searchResponse)
+	if err != nil {
+		return nil, err
+	}
+	if searchResponse.Error.Reason != "" {
+		return nil, errors.New(searchResponse.Error.Reason)
+	}
+	data := make([]map[string]any, 0)
+	for _, hit := range searchResponse.Hits.Hits {
+		data = append(data, hit.Source)
+	}
+	return data, nil
+}
+
 func CompositePaginatedAggregate(ctx context.Context, cli *opensearch.Client, size int, indexName, query string, groupBy []string, aggregations []AggregationFunction, after map[string]any) ([]AggResponse, map[string]any, error) {
 	req := CompositeAggRequest{}
 	req.Size = 0
@@ -346,7 +373,13 @@ type SearchRequestPaginated struct {
 	SearchAfter []any               `json:"search_after,omitempty"`
 	Sort        []map[string]string `json:"sort"`
 }
-
+type SearchRequest struct {
+	Query struct {
+		QueryString struct {
+			Query string `json:"query"`
+		} `json:"query_string"`
+	} `json:"query"`
+}
 type SearchResponse struct {
 	ErrorResponse
 	Hits struct {

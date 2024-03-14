@@ -7,7 +7,6 @@ type SumResponse struct {
 type AggregateResponse struct {
 	Agg map[string]any `json:"agg"`
 }
-
 type HistogramBucket struct {
 	Value      float64 `json:"value"`
 	Time       int64   `json:"time"`
