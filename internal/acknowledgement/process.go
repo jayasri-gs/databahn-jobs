@@ -264,6 +264,13 @@ func updateDestination(ack db.ChangeFlagAck) error {
 		logger.GetLogger().Error("error while updating destination status", zap.Error(err))
 		return err
 	}
+
+	statusV2 := getStatusString(ack)
+	err = config.GetDB().Table("destination").Where("id = ? AND status != ?", ack.EntityId, statusV2).Update("status", statusV2).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating destination status", zap.Error(err))
+		return err
+	}
 	logger.GetLogger().Debug("destination status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(status)))
 	return nil
 }
@@ -271,6 +278,13 @@ func updateDestination(ack db.ChangeFlagAck) error {
 func handleTransformer(ack db.ChangeFlagAck) error {
 	status := getStatusInt(ack)
 	err := config.GetDB().Model(data_transform.DataTransform{}).Where("id = ? AND status != ?", ack.EntityId, status).Update("status", status).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating transformer status", zap.Error(err))
+		return err
+	}
+
+	statusV2 := getStatusString(ack)
+	err = config.GetDB().Table("data_transformation").Where("id = ? AND status != ?", ack.EntityId, statusV2).Update("status", statusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating transformer status", zap.Error(err))
 		return err
@@ -297,6 +311,13 @@ func handleSource(ack db.ChangeFlagAck) error {
 		logger.GetLogger().Error("error while updating source status", zap.Error(err))
 		return err
 	}
+
+	sourceStatusV2 := getStatusString(ack)
+	err = config.GetDB().Table("log_source").Where("id = ? AND status != ?", ack.EntityId, sourceStatusV2).Update("status", sourceStatusV2).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating source status", zap.Error(err))
+		return err
+	}
 	logger.GetLogger().Debug("source status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(sourceStatus)))
 	return nil
 }
@@ -315,6 +336,13 @@ func handleLookup(ack db.ChangeFlagAck) error {
 func handleRule(ack db.ChangeFlagAck) error {
 	ruleStatus := getStatusInt(ack)
 	err := config.GetDB().Model(rule.Rule{}).Where("id = ? and status != ?", ack.EntityId, ruleStatus).Update("status", ruleStatus).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating rule status", zap.Error(err))
+		return err
+	}
+
+	ruleStatusV2 := getStatusString(ack)
+	err = config.GetDB().Table("vc_rule").Where("id = ? and status != ?", ack.EntityId, ruleStatusV2).Update("status", ruleStatusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating rule status", zap.Error(err))
 		return err
