@@ -59,7 +59,7 @@ func getStatusStringFromInt(status int) string {
 	case utilConst.StatusDisabled:
 		return "DISABLED"
 	case utilConst.StatusErrored:
-		return "ERROR"
+		return "ERRORED"
 	case utilConst.StatusErrorDisabling:
 		return "DISABLE_ERROR"
 	default:
@@ -123,7 +123,7 @@ func getStatusString(ack db.ChangeFlagAck) (status string) {
 			if ack.Action == utilConst.ActionDelete {
 				status = "DISABLE_ERROR"
 			} else {
-				status = "ERROR"
+				status = "ERRORED"
 			}
 		} else {
 			logger.GetLogger().Error("unknown status", zap.String("ack_status", ack.Status))

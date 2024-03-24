@@ -7,11 +7,6 @@ import (
 	ackConst "github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/db"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	data_transform "github.com/databahn-ai/db-models/data-transform"
-	"github.com/databahn-ai/db-models/destination"
-	log_source "github.com/databahn-ai/db-models/log-source"
-	"github.com/databahn-ai/db-models/rule"
-
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"strings"
@@ -258,24 +253,24 @@ func updateStatus(ack db.ChangeFlagAck) error {
 }
 
 func updateDestination(ack db.ChangeFlagAck) error {
-	status := getStatusInt(ack)
-	err := config.GetDB().Model(destination.Destination{}).Where("id = ? AND status != ?", ack.EntityId, status).Update("status", status).Error
+	statusV2 := getStatusString(ack)
+	err := config.GetDB().Table("destination").Where("id = ? AND status != ?", ack.EntityId, statusV2).Update("status", statusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating destination status", zap.Error(err))
 		return err
 	}
-	logger.GetLogger().Debug("destination status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(status)))
+	logger.GetLogger().Debug("destination status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
 	return nil
 }
 
 func handleTransformer(ack db.ChangeFlagAck) error {
-	status := getStatusInt(ack)
-	err := config.GetDB().Model(data_transform.DataTransform{}).Where("id = ? AND status != ?", ack.EntityId, status).Update("status", status).Error
+	statusV2 := getStatusString(ack)
+	err := config.GetDB().Table("data_transformation").Where("id = ? AND status != ?", ack.EntityId, statusV2).Update("status", statusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating transformer status", zap.Error(err))
 		return err
 	}
-	logger.GetLogger().Debug("transformer status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(status)))
+	logger.GetLogger().Debug("transformer status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
 	return nil
 }
 
@@ -291,13 +286,13 @@ func handleEnrichment(ack db.ChangeFlagAck) error {
 }
 
 func handleSource(ack db.ChangeFlagAck) error {
-	sourceStatus := getStatusInt(ack)
-	err := config.GetDB().Model(log_source.LogSource{}).Where("id = ? AND status != ?", ack.EntityId, sourceStatus).Update("status", sourceStatus).Error
+	sourceStatusV2 := getStatusString(ack)
+	err := config.GetDB().Table("log_source").Where("id = ? AND status != ?", ack.EntityId, sourceStatusV2).Update("status", sourceStatusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating source status", zap.Error(err))
 		return err
 	}
-	logger.GetLogger().Debug("source status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(sourceStatus)))
+	logger.GetLogger().Debug("source status updated", zap.String("entityId", ack.EntityId), zap.String("status", sourceStatusV2))
 	return nil
 }
 
@@ -313,12 +308,12 @@ func handleLookup(ack db.ChangeFlagAck) error {
 }
 
 func handleRule(ack db.ChangeFlagAck) error {
-	ruleStatus := getStatusInt(ack)
-	err := config.GetDB().Model(rule.Rule{}).Where("id = ? and status != ?", ack.EntityId, ruleStatus).Update("status", ruleStatus).Error
+	ruleStatusV2 := getStatusString(ack)
+	err := config.GetDB().Table("vc_rule").Where("id = ? and status != ?", ack.EntityId, ruleStatusV2).Update("status", ruleStatusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating rule status", zap.Error(err))
 		return err
 	}
-	logger.GetLogger().Debug("rule status updated", zap.String("entityId", ack.EntityId), zap.String("status", getStatusStringFromInt(ruleStatus)))
+	logger.GetLogger().Debug("rule status updated", zap.String("entityId", ack.EntityId), zap.String("status", ruleStatusV2))
 	return nil
 }
