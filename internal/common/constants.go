@@ -22,6 +22,8 @@ const (
 	NOISY      = 3
 )
 
+const StatusCreated = "CREATED"
+
 const NoisyThreshold = 1.5
 const ControllerBaseUrl = "https://controller.dev.databahn.app"
 

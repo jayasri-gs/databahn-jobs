@@ -6,9 +6,8 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
+	"github.com/databahn-ai/databahn-jobs/internal/store/fleet"
 	"github.com/databahn-ai/db-models/alerts_common"
-	"github.com/databahn-ai/db-models/connector"
-	"github.com/databahn-ai/db-models/fleet"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"time"
@@ -19,8 +18,8 @@ func fleetHealthChecker(ctx context.Context) error {
 	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckTime)
 	logging.GetLogger().Info("checking fleet health")
 	//getting fleet nodes having heartbeat less than 15 minutes
-	var fleetNodes []fleet.FleetNode
-	err := config.GetDB().Find(&fleetNodes, "heartbeat_at < ? AND status != 0", healthCheckTime).Error
+	var fleetNodes []fleet.Node
+	err := config.GetDB().Find(&fleetNodes, "heartbeat_at < ? AND status != ?", healthCheckTime, common.StatusCreated).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy fleet node query", zap.Error(err))
 		return err
@@ -38,7 +37,7 @@ func fleetHealthChecker(ctx context.Context) error {
 		var temp alerts_common.AlertEntityObject
 		temp.EntityName = ed.Name
 		temp.EntityId = ed.Id
-		temp.EntityTenantUUId = ed.TenantUUID
+		temp.EntityTenantUUId = ed.TenantId
 		fleetEntityArray = append(fleetEntityArray, temp)
 	}
 
@@ -57,8 +56,8 @@ func connectorHealthChecker(ctx context.Context) error {
 	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckTime)
 	logging.GetLogger().Info("checking fleet connector health")
 
-	var connectors []connector.Connector
-	err := config.GetDB().Find(&connectors, "heartbeat_at < ? AND status != 0", healthCheckTime).Error
+	var connectors []fleet.Connector
+	err := config.GetDB().Find(&connectors, "heartbeat_at < ? AND status != ?", healthCheckTime, common.StatusCreated).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy fleet connector query", zap.Error(err))
 		return err
@@ -75,7 +74,7 @@ func connectorHealthChecker(ctx context.Context) error {
 		var temp alerts_common.AlertEntityObject
 		temp.EntityName = ed.Name
 		temp.EntityId = ed.ID
-		temp.EntityTenantUUId = ed.TenantUUID
+		temp.EntityTenantUUId = ed.TenantID
 		connectorEntity = append(connectorEntity, temp)
 	}
 
