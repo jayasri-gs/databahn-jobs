@@ -12,10 +12,11 @@ type OpenSearchConf struct {
 }
 
 func GetConf() *OpenSearchConf {
-	url := config.GetOpenSearchSecrets().Url
-	user := config.GetOpenSearchSecrets().Username
-	pass := config.GetOpenSearchSecrets().Password
-	statsIndex := config.GetOpenSearchSecrets().StatisticsIndexName
+	osSecrets := config.GetOpenSearchSecrets()
+	url := osSecrets.Url
+	user := osSecrets.Username
+	pass := osSecrets.Password
+	statsIndex := osSecrets.StatisticsIndexName
 	return &OpenSearchConf{
 		Url:        url,
 		Username:   user,

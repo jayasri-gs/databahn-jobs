@@ -15,6 +15,7 @@ import (
 	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	"go.uber.org/zap"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -34,8 +35,8 @@ const sightsScript = `
     ",
     "lang": "painless",
     "params": {
-      "key1": "{{.Key1}}",
-      "key2": "{{.Key2}}",
+      "key1": {{.Key1 | printf "%q"}},
+      "key2": {{.Key2 | printf "%q"}},
       "source_id": "{{.SourceId}}",
       "tenant_id": "{{.TenantId}}",
       "min_time": {{.MinTime}},
@@ -44,9 +45,9 @@ const sightsScript = `
     }
   },
   "upsert": {
-      "id": "{{.Id}}",
-      "key1": "{{.Key1}}",
-      "key2": "{{.Key2}}",
+      "id": {{.Id | printf "%q"}},
+      "key1": {{.Key1 | printf "%q"}},
+      "key2": {{.Key2 | printf "%q"}},
       "tenant_id": "{{.TenantId}}",
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
@@ -159,7 +160,7 @@ func upsertSightsDocs(ctx context.Context, cli *opensearch.Client, tenantId, app
 	index := SightIndexNameByApp(app, tenantId)
 	buff := new(bytes.Buffer)
 	for _, doc := range documents {
-		_, err := fmt.Fprintf(buff, "{\"update\": {\"_id\": \"%s\"}}\n", doc.Id)
+		_, err := fmt.Fprintf(buff, "{\"update\": {\"_id\": %s}}\n", strconv.Quote(doc.Id))
 		if err != nil {
 			return err
 		}
@@ -193,7 +194,7 @@ func upsertFrequencyDocs(ctx context.Context, cli *opensearch.Client, index *Ind
 	for _, doc := range documents {
 		f := doc.Frequency()
 		id := buildFrequencyDocId(index, &f)
-		_, err := fmt.Fprintf(buff, "{\"index\": {\"_id\": \"%s\"}}\n", id)
+		_, err := fmt.Fprintf(buff, "{\"index\": {\"_id\": %s}}\n", strconv.Quote(id))
 		if err != nil {
 			return err
 		}
