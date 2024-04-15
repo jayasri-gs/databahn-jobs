@@ -19,7 +19,7 @@ func main() {
 	input := ReadInputData()
 	//flag.Parse()
 	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
-	if *job == common.DATA_REPLAY {
+	if *job != common.DATA_REPLAY {
 		config.GetAppConfiguration()
 	}
 
