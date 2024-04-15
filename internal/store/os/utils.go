@@ -12,6 +12,7 @@ import (
 	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	"go.uber.org/zap"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -201,7 +202,7 @@ func BulkUpsert[T any](ctx context.Context, cli *opensearch.Client, indexName st
 	buff := new(bytes.Buffer)
 	for _, doc := range documents {
 		id := idExtractor(doc)
-		_, err := fmt.Fprintf(buff, "{\"index\": {\"_id\": \"%s\"}}\n", id)
+		_, err := fmt.Fprintf(buff, "{\"index\": {\"_id\": %s}}\n", strconv.Quote(id))
 		if err != nil {
 			return err
 		}
@@ -231,7 +232,7 @@ func BulkUpsertWithScript[T any](ctx context.Context, cli *opensearch.Client, in
 	buff := new(bytes.Buffer)
 	for _, doc := range documents {
 		id := idExtractor(doc)
-		_, err := fmt.Fprintf(buff, "{\"update\": {\"_id\": \"%s\"}}\n", id)
+		_, err := fmt.Fprintf(buff, "{\"update\": {\"_id\": %s}}\n", strconv.Quote(id))
 		if err != nil {
 			return err
 		}
