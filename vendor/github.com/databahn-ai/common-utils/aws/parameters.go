@@ -6,11 +6,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
-func ParameterStoreByName(parameterName string) (*ssm.GetParameterOutput, error) {
+func ParameterStoreByName(parameterName, region string) (*ssm.GetParameterOutput, error) {
 	input := &ssm.GetParameterInput{
 		Name: &parameterName,
 	}
-	client := ssm.NewFromConfig(getClient())
+	client := ssm.NewFromConfig(getClient(region))
 
 	data, err := client.GetParameter(context.TODO(), input)
 	if err != nil {

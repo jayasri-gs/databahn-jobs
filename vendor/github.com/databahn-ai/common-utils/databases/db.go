@@ -32,7 +32,11 @@ type Connection struct {
 }
 
 // Connect moved database to one object to avoid multiple functions to connect
-func (c *Connection) Connect(ctx context.Context) (*gorm.DB, error) {
+func (c *Connection) Connect(ctx context.Context, useTablePrefix bool) (*gorm.DB, error) {
+	tablePrefix := ""
+	if useTablePrefix {
+		tablePrefix = "db_"
+	}
 	logger := logging.GetLoggerWithContext(ctx)
 	dbLogger := zapgorm2.Logger{
 		ZapLogger:                 logging.GetLogger(),
@@ -50,7 +54,7 @@ func (c *Connection) Connect(ctx context.Context) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(connectString), &gorm.Config{
 		Logger: dbLogger,
 		NamingStrategy: schema.NamingStrategy{
-			TablePrefix:   "db_",
+			TablePrefix:   tablePrefix,
 			SingularTable: true,  // use singular table name, table for `User` would be `user` with this option enabled
 			NoLowerCase:   false, // skip the snake_casing of names
 		},
@@ -148,8 +152,8 @@ func Initialize(config configuration.ConfigReader) (*gorm.DB, error) {
 	return db, nil
 }
 
-func ReadDBSecrets(ctx context.Context, secretName string) (*DatabaseCredentials, error) {
-	data, err := aws.ReadSecretByName(secretName)
+func ReadDBSecrets(ctx context.Context, secretName, region string) (*DatabaseCredentials, error) {
+	data, err := aws.ReadSecretByName(secretName, region)
 	if err != nil {
 		return nil, err
 	}

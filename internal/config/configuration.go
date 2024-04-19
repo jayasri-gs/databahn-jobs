@@ -37,7 +37,8 @@ func loadDestinationConfigReader() {
 
 func readOpenSearchConfigs() {
 	secretName := appConfigReader.GetString(configuration.OpenSearchSecretName)
-	creds, err := configuration.ReadOpenSearchSecrets(context.Background(), secretName)
+	region := appConfigReader.GetString(configuration.Region)
+	creds, err := configuration.ReadOpenSearchSecrets(context.Background(), secretName, region)
 	if err != nil {
 		logger.GetLogger().Error("error while reading opensearch secret", zap.Error(err))
 	}
@@ -56,7 +57,8 @@ func GetDestinationConfiguration() configuration.ConfigReader {
 
 func connectDB() {
 	secretName := appConfigReader.GetString("database.secret_name")
-	dbSecrets, err := databases.ReadDBSecrets(context.Background(), secretName)
+	region := appConfigReader.GetString(configuration.Region)
+	dbSecrets, err := databases.ReadDBSecrets(context.Background(), secretName, region)
 	if err != nil {
 		logger.GetLoggerWithContext(context.Background()).Error("error while fetching database credentials", zap.Error(err))
 	}
@@ -67,7 +69,7 @@ func connectDB() {
 		DatabaseName: appConfigReader.GetString(configuration.DatabaseName),
 		Credentials:  *dbSecrets,
 	}
-	dbConnection, err := databaseConnection.Connect(context.Background())
+	dbConnection, err := databaseConnection.Connect(context.Background(), false)
 	if err != nil {
 		logger.GetLoggerWithContext(context.Background()).Error("error while connecting to database", zap.Error(err))
 		return

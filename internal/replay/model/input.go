@@ -17,4 +17,5 @@ type Message struct {
 	LogType          string   `json:"logType"`
 	FleetId          string   `json:"fleetId"`
 	ConnectId        string   `json:"connectId"`
+	AckId            string   `json:"ackId"`
 }

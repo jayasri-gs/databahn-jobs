@@ -11,8 +11,8 @@ import (
 	"log"
 )
 
-func ReadSecretByName(secretName string) (data *secretsmanager.GetSecretValueOutput, err error) {
-	sm := secretsmanager.NewFromConfig(getClient())
+func ReadSecretByName(secretName string, region string) (data *secretsmanager.GetSecretValueOutput, err error) {
+	sm := secretsmanager.NewFromConfig(getClient(region))
 
 	smInput := secretsmanager.GetSecretValueInput{SecretId: &secretName}
 
@@ -27,8 +27,8 @@ func ReadSecretByName(secretName string) (data *secretsmanager.GetSecretValueOut
 }
 
 // ! getClient may panic
-func getClient() aws.Config {
-	cfg, err := awsconfig.LoadDefaultConfig(context.TODO())
+func getClient(region string) aws.Config {
+	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(), awsconfig.WithRegion(region))
 	if err != nil {
 		panic("configuration error, " + err.Error())
 	}
@@ -36,8 +36,8 @@ func getClient() aws.Config {
 	return cfg
 }
 
-func CreateSecret(secretName string, secretString string) (data *secretsmanager.CreateSecretOutput, err error) {
-	sm := secretsmanager.NewFromConfig(getClient())
+func CreateSecret(secretName string, secretString string, region string) (data *secretsmanager.CreateSecretOutput, err error) {
+	sm := secretsmanager.NewFromConfig(getClient(region))
 
 	input := &secretsmanager.CreateSecretInput{
 		Name:         aws.String(secretName),
@@ -52,8 +52,8 @@ func CreateSecret(secretName string, secretString string) (data *secretsmanager.
 	return res, nil
 }
 
-func CreateJSONSecret(secretId string, secretKey string, secretValue string) error {
-	sm := secretsmanager.NewFromConfig(getClient())
+func CreateJSONSecret(secretId string, secretKey string, secretValue string, region string) error {
+	sm := secretsmanager.NewFromConfig(getClient(region))
 
 	secretMap := make(map[string]string)
 	secretMap[secretKey] = secretValue
@@ -74,17 +74,17 @@ func CreateJSONSecret(secretId string, secretKey string, secretValue string) err
 	return nil
 }
 
-func AppendJSONSecret(secretId string, secretKey string, secretValue string) error {
-	sm := secretsmanager.NewFromConfig(getClient())
+func AppendJSONSecret(secretId string, secretKey string, secretValue, region string) error {
+	sm := secretsmanager.NewFromConfig(getClient(region))
 
 	//If secret is not present create secret
-	exist, err := checkSecretExists(secretId)
+	exist, err := checkSecretExists(secretId, region)
 	if err != nil {
 		return err
 	}
 
 	if !exist {
-		return CreateJSONSecret(secretId, secretKey, secretValue)
+		return CreateJSONSecret(secretId, secretKey, secretValue, region)
 	}
 
 	input := &secretsmanager.GetSecretValueInput{
@@ -127,8 +127,8 @@ func AppendJSONSecret(secretId string, secretKey string, secretValue string) err
 	return nil
 }
 
-func checkSecretExists(secretId string) (bool, error) {
-	sm := secretsmanager.NewFromConfig(getClient())
+func checkSecretExists(secretId string, region string) (bool, error) {
+	sm := secretsmanager.NewFromConfig(getClient(region))
 
 	input := &secretsmanager.DescribeSecretInput{
 		SecretId: aws.String(secretId),

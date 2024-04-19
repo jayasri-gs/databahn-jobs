@@ -111,7 +111,7 @@ func loadAppConfig(config *viper.Viper, appConfig *AppConfig) error {
 	if os.Getenv("LOG_LEVEL") == "debug" {
 		fmt.Printf("reading parameter from parameter store with path %s \n", parameterName)
 	}
-	data, err := aws.ParameterStoreByName(parameterName)
+	data, err := aws.ParameterStoreByName(parameterName, config.GetString(REGION))
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func loadInfraConfig(config *viper.Viper, infraConfig *InfraConfig) error {
 	if os.Getenv("LOG_LEVEL") == "debug" {
 		fmt.Printf("reading parameter from parameter store with path %s \n", parameterName)
 	}
-	data, err := aws.ParameterStoreByName(parameterName)
+	data, err := aws.ParameterStoreByName(parameterName, config.GetString(REGION))
 	if err != nil {
 		return err
 	}
