@@ -2,9 +2,10 @@ FROM golang:1.20-alpine AS builder
 RUN apk add alpine-sdk librdkafka-dev
 WORKDIR /go/app
 COPY . .
-RUN GOOS=linux GOARCH=arm64 go build -tags musl -o databahn-jobs main.go
+ENV CGO_ENABLED=1
+RUN go build -tags musl -o databahn-jobs main.go
 
-FROM alpine:latest as runner
+FROM alpine:3.14 as runner
 WORKDIR /root/
 
 RUN apk add librdkafka-dev
