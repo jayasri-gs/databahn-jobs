@@ -5,6 +5,11 @@ import "github.com/databahn-ai/common-utils/configs"
 const (
 	SourceParsedTopicMapping           = "source_parsed_topic_mapping"
 	DestinationTopicMapping            = "topic_mapping"
+	StagingTopicMapping                = "staging"
+	StagingEnrichment                  = "enrichment"
+	StagingVc                          = "vc"
+	StagingTransform                   = "transform"
+	StagingAggregation                 = "aggregation"
 	DestinationTopicAggregationMapping = "topic_aggregation_mapping"
 
 	DatabaseName   = "database.database"
@@ -13,11 +18,11 @@ const (
 	DatabasePort   = "database.port"
 
 	//for backend service to read from both old and new config
-	KafkaBootstrapServers = configs.KafkaBootstrapServer
-
-	OpenSearchUrl                    = "open_search.url"
-	OpenSearchSecretName             = "open_search.os_secret_name"
-	OAuthClientCredentialsSecretName = configs.OAuthClientCredentialsSecretName
+	KafkaBootstrapServers             = configs.KafkaBootstrapServer
+	InputKafkaClusterBootstrapServers = "kafka.input.bootstrap_brokers"
+	OpenSearchUrl                     = "open_search.url"
+	OpenSearchSecretName              = "open_search.os_secret_name"
+	OAuthClientCredentialsSecretName  = configs.OAuthClientCredentialsSecretName
 
 	OpenTelemetryCollectorUrl = "urls.optl_collector"
 	RedisUrl                  = "urls.redis"

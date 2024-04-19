@@ -34,7 +34,7 @@ func ExecuteReplayJob(input model.Message) {
 	}
 
 	processor.InitProducer(input.RequestId, input.DestinationTopic)
-	go closeResources(ctx, mst, input.RequestId, input.DestinationTopic)
+	go closeResources(ctx, mst, input)
 	start := time.Now()
 	Process(input, mst)
 	elapsed := time.Since(start)
@@ -83,13 +83,13 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	logger.GetLogger().Info("input message : ", zap.Reflect("Input data : ", inputReq))
 	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetMetaMap()))
 	logger.GetLogger().Info("Headers ", zap.Reflect("Headers ", processor.GetHeader(inputReq)))
-	processor.ProduceStatus(mst)
+	processor.ProduceStatus(mst, inputReq)
 	logger.GetLogger().Info("threads jobs are completed ")
 	mst.UpdateGlobalStatus()
 
 }
 
-func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, reqId string, topic string) {
+func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, input model.Message) {
 
 	sig := make(chan os.Signal)
 	signal.Notify(sig, os.Interrupt)
@@ -101,13 +101,14 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, reqId
 	logger.GetLogger().Info("Flushed MetaData")
 	mst.Flush()
 	time.Sleep(1 * time.Second)
-	processor.ProduceStatus(mst)
+	processor.ProduceStatus(mst, input)
 	cluster, err := kafka.GetKafkaCluster(constants.ClusterName)
 	if err == nil {
 		cluster.CloseConsumer(ctx, constants.ClusterName)
 		logger.GetLogger().Info("closed kafka consumers")
 	}
-	processor.GetProducer(reqId, topic).Close(ctx)
+	processor.GetProducer(input.RequestId, input.DestinationTopic).Close(ctx)
+	processor.AckProducer.Close(ctx)
 	processor.GetProducer("reqId", constants.DataReplayStatusProducer).Close(ctx)
 	logger.GetLogger().Info("closed producers")
 

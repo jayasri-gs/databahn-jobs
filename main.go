@@ -47,6 +47,7 @@ func ReadInputData() model.Message {
 	flag.StringVar(&sampleMessage.LogType, "logType", "", "Log type name")
 	flag.StringVar(&sampleMessage.FleetId, "fleetId", uuid.Nil.String(), "Fleet ID ")
 	flag.StringVar(&sampleMessage.ConnectId, "connectId", uuid.Nil.String(), "aws region ")
+	flag.StringVar(&sampleMessage.AckId, "ackId", uuid.Nil.String(), "ackId Is ")
 
 	flag.Parse()
 	sampleMessage.FileName = strings.Split(fileName, ",")

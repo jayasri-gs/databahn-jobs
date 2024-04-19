@@ -14,8 +14,8 @@ type OpenSearchCredentials struct {
 	StatisticsIndexName string `json:"statisticsIndexName"`
 }
 
-func ReadOpenSearchSecrets(ctx context.Context, secretName string) (*OpenSearchCredentials, error) {
-	data, err := aws.ReadSecretByName(secretName)
+func ReadOpenSearchSecrets(ctx context.Context, secretName, region string) (*OpenSearchCredentials, error) {
+	data, err := aws.ReadSecretByName(secretName, region)
 	if err != nil {
 		return nil, err
 	}
@@ -33,8 +33,8 @@ type OAuthClientCredentials struct {
 	ClientSecret string `json:"clientSecret"`
 }
 
-func ReadOAuthClientCredentials(secretName string) (*OAuthClientCredentials, error) {
-	data, err := aws.ReadSecretByName(secretName)
+func ReadOAuthClientCredentials(secretName, region string) (*OAuthClientCredentials, error) {
+	data, err := aws.ReadSecretByName(secretName, region)
 	if err != nil {
 		return nil, err
 	}

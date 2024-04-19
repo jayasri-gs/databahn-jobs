@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
+	"github.com/databahn-ai/common-utils/ack"
 	"github.com/databahn-ai/common-utils/kafka"
+	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
@@ -91,14 +92,13 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	return nil, ""
 }
 
-func ProduceStatus(mst *replaymanager.MetaDataStore) {
-	dataReplayStatusProducer := GetProducer("reqId", constants.StatsTopic)
+func ProduceStatus(mst *replaymanager.MetaDataStore, inputReq model.Message) {
 
-	var statusList []model.Status
+	var statusList []ack.Status
 	for _, val := range mst.GetMetaMap() {
 		filepath.Join(val.Prefix, val.FileName)
 
-		status := model.Status{
+		status := ack.Status{
 			FileName:    val.FileName,
 			RequestId:   val.RequestId,
 			Status:      val.Status,
@@ -114,17 +114,30 @@ func ProduceStatus(mst *replaymanager.MetaDataStore) {
 		statusList = append(statusList, status)
 	}
 
-	val, _ := json.Marshal(statusList)
-	message := kafka.Message{
-		Message: val,
-	}
-	err := dataReplayStatusProducer.SendSync(context.Background(), message)
+	acknowledgment := PrepareAck(statusList, inputReq)
+	err := AckProducer.Produce(context.Background(), acknowledgment, nil)
 	if err != nil {
 		logger.GetLogger().Error("error while publishing status to kafka", zap.Error(err))
 		return
 	}
 	logger.GetLogger().Info(" publishing status to kafka")
 
+}
+
+func PrepareAck(status []ack.Status, inputReq model.Message) ack.Ack {
+	return ack.Ack{
+		Type:        "REPLAY",
+		EntityId:    inputReq.RequestId,
+		RequestId:   inputReq.AckId,
+		TenantId:    inputReq.TenantId,
+		Action:      "Create",
+		EntityType:  "data-replay",
+		Status:      "completed",
+		ServiceName: utils.GetEnvOrDefault("SERVICE_NAME", "data-replay"),
+		ReplayStatus: &ack.ReplayStatus{
+			Status: status,
+		},
+	}
 }
 
 func GetHeader(request model.Message) []kafka.Header {

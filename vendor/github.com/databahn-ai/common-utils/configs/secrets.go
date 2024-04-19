@@ -35,7 +35,7 @@ func loadSecrets(config *viper.Viper) error {
 }
 
 func loadDbSecrets(config *viper.Viper) error {
-	data, err := aws.ReadSecretByName(config.GetString(DbSecretsName))
+	data, err := aws.ReadSecretByName(config.GetString(DbSecretsName), config.GetString(REGION))
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func loadDbSecrets(config *viper.Viper) error {
 }
 
 func loadOpenSearchSecrets(config *viper.Viper) error {
-	data, err := aws.ReadSecretByName(config.GetString(OpenSearchSecretsName))
+	data, err := aws.ReadSecretByName(config.GetString(OpenSearchSecretsName), config.GetString(REGION))
 	if err != nil {
 		return err
 	}

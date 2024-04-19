@@ -1,5 +1,7 @@
 package ack
 
+import "time"
+
 const (
 	StatusSuccess = "SUCCESS"
 
@@ -34,12 +36,19 @@ type Ack struct {
 }
 
 type ReplayStatus struct {
-	FileName    string `json:"file_name"`
-	FilePath    string `json:"file_path"`
-	FileSize    int    `json:"file_size"`
-	CurrentSize int    `json:"current_size"`
-	StartTime   string `json:"start_time"`
-	EndTime     string `json:"end_time"`
-	Percentage  string `json:"percentage"`
-	Lines       int    `json:"lines"`
+	Status []Status `json:"status"`
+}
+
+type Status struct {
+	FileName    string    `json:"fileName"`
+	RequestId   string    `json:"requestId"`
+	Status      string    `json:"status"`
+	FileSize    int64     `json:"fileSize"`
+	CurrentSize int64     `json:"currentSize"`
+	FilePath    string    `json:"filePath"`
+	ErrorMsg    []string  `json:"errorMsg"`
+	StartTime   time.Time `json:"startTime"`
+	EndTime     time.Time `json:"endTime"`
+	Percentage  float64   `json:"percentage"`
+	Lines       int       `json:"lines"`
 }

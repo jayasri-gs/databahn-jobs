@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"github.com/databahn-ai/common-utils/ack"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
@@ -10,6 +11,7 @@ import (
 )
 
 var Producer map[string]*kafka.Producer
+var AckProducer *ack.AckProducer
 
 func GetProducer(reqId string, topic string) *kafka.Producer {
 	if Producer[topic] == nil {
@@ -46,16 +48,10 @@ func InitProducer(reqId string, topic string) {
 	}
 	Producer[topic] = producer
 
-	statusProducer, err := cluster.NewProducer(context.Background(), kafka.ProducerConfig{
-		Name:       constants.DataReplayStatusProducer,
-		Topic:      constants.StatsTopic,
-		ExtraParam: prodExtraParam,
-	})
+	AckProducer, err = ack.NewAckProducer(context.Background(), boostrap)
 	if err != nil {
-
-		logger.GetLogger().Error("error while initialising status producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
+		logger.GetLogger().Error("error while initialising status ack producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
 		return
 	}
-	Producer[constants.StatsTopic] = statusProducer
 	logger.GetLogger().Info("initialising complete.", zap.String("traceId", reqId), zap.Int("thread ", -1))
 }

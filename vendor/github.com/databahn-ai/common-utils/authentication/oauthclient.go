@@ -13,7 +13,7 @@ var tokenUrlTemplate = "https://%s/realms/%s/protocol/openid-connect/token"
 
 func buildAuthClient(ctx context.Context, appConfig configuration.ConfigReader) (*http.Client, error) {
 	secretName := appConfig.GetString(configuration.OAuthClientCredentialsSecretName)
-	creds, err := configuration.ReadOAuthClientCredentials(secretName)
+	creds, err := configuration.ReadOAuthClientCredentials(secretName, appConfig.GetString(configuration.Region))
 	if err != nil {
 		return nil, err
 	}
