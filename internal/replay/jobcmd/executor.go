@@ -3,6 +3,7 @@ package jobcmd
 import (
 	"context"
 	"fmt"
+	commConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/lookup"
@@ -25,7 +26,7 @@ func ExecuteReplayJob(input model.Message) {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
-	input.DestinationTopic = "db.raw.cloud"
+	input.DestinationTopic = commConst.InputTopicPrefix
 	_, exit, code := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 	if exit {
 		logger.GetLogger().Info("shutdown started  with error code", zap.Int("code", code))

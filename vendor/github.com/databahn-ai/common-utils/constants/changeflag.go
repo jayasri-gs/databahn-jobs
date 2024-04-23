@@ -25,6 +25,7 @@ const (
 	EntityPipeline                   = "pipeline"
 	EntityRouteProcessor             = "route_processor"
 	EntityDataReplay                 = "data_replay"
+	EntityInsightsRule               = "insights_rule"
 
 	ChangeFlagTopic         = "db.management.change.flag"
 	ChangeFlagAckTopic      = "db.management.ack"

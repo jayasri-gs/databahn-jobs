@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"github.com/databahn-ai/common-utils/ack"
+	commConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
@@ -75,7 +76,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			Message: []byte(line),
 			Headers: GetHeader(req),
 		}
-		producer.SendAsync(message, func(err error) {
+		producer.SendAsyncTopic(message, utils.GetDynamicTopicName(commConst.InputTopicPrefix), func(err error) {
 			logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
 		})
 
@@ -142,18 +143,19 @@ func PrepareAck(status []ack.Status, inputReq model.Message) ack.Ack {
 
 func GetHeader(request model.Message) []kafka.Header {
 
-	headers := make([]kafka.Header, 11)
-	headers[0] = kafka.Header{Key: "db_device_type", Value: []byte(request.DeviceType)}
-	headers[1] = kafka.Header{Key: "db_device_vendor", Value: []byte(request.DeviceVendor)}
-	headers[2] = kafka.Header{Key: "db_log_type", Value: []byte(request.LogType)}
-	headers[3] = kafka.Header{Key: "db_tenant_id", Value: []byte(request.TenantId)}
-	headers[4] = kafka.Header{Key: "db_event_source_id", Value: []byte(request.Source)}
-	headers[5] = kafka.Header{Key: "db_edge_id", Value: []byte(uuid.Nil.String())}
-	headers[6] = kafka.Header{Key: "db_fleet_id", Value: []byte(request.FleetId)}
-	headers[7] = kafka.Header{Key: "db_connector_id", Value: []byte(request.Source)}
-	headers[8] = kafka.Header{Key: "db_event_id", Value: []byte(uuid.NewString())}
-	headers[9] = kafka.Header{Key: "db_edge_ts", Value: []byte(strconv.FormatInt(time.Now().UnixMilli(), 10))}
+	headers := make([]kafka.Header, 12)
+	headers[0] = kafka.Header{Key: commConst.DeviceType, Value: []byte(request.DeviceType)}
+	headers[1] = kafka.Header{Key: commConst.DeviceVendor, Value: []byte(request.DeviceVendor)}
+	headers[2] = kafka.Header{Key: commConst.LogType, Value: []byte(request.LogType)}
+	headers[3] = kafka.Header{Key: commConst.TenantId, Value: []byte(request.TenantId)}
+	headers[4] = kafka.Header{Key: commConst.EventSourceId, Value: []byte(request.Source)}
+	headers[5] = kafka.Header{Key: commConst.EdgeId, Value: []byte(uuid.Nil.String())}
+	headers[6] = kafka.Header{Key: commConst.FleetId, Value: []byte(request.FleetId)}
+	headers[7] = kafka.Header{Key: commConst.ConnectorId, Value: []byte(request.Source)}
+	headers[8] = kafka.Header{Key: commConst.EventId, Value: []byte(uuid.NewString())}
+	headers[9] = kafka.Header{Key: commConst.EdgeTimestamp, Value: []byte(strconv.FormatInt(time.Now().UnixMilli(), 10))}
 	headers[10] = kafka.Header{Key: "db_component_name", Value: []byte("replay_data")}
+	headers[11] = kafka.Header{Key: commConst.PipelineDone, Value: []byte(commConst.DataReplayStage)}
 
 	return headers
 }

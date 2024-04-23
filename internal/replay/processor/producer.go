@@ -22,11 +22,10 @@ func GetProducer(reqId string, topic string) *kafka.Producer {
 }
 
 func InitProducer(reqId string, topic string) {
-
 	Producer = make(map[string]*kafka.Producer)
 	logger.GetLogger().Info("initialising producer.", zap.String("traceId", reqId), zap.Int("thread ", -1))
-	boostrap := utils.GetEnvOrDefault(constants.KafkaBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
-	kafka.NewKafkaCluster(constants.ClusterName, boostrap)
+	InputBrokers := utils.GetEnvOrDefault(constants.KafkaInputBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
+	kafka.NewKafkaCluster(constants.ClusterName, InputBrokers)
 	cluster, _ := kafka.GetKafkaCluster(constants.ClusterName)
 	prodExtraParam := map[string]any{
 		"acks":             1,
@@ -37,18 +36,16 @@ func InitProducer(reqId string, topic string) {
 	}
 	producer, err := cluster.NewProducer(context.Background(), kafka.ProducerConfig{
 		Name:       constants.DataReplayProducer,
-		Topic:      topic,
 		ExtraParam: prodExtraParam,
 	})
-
 	if err != nil {
-
 		logger.GetLogger().Error("error while initialising  data producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
 		return
 	}
 	Producer[topic] = producer
 
-	AckProducer, err = ack.NewAckProducer(context.Background(), boostrap)
+	processingBrokers := utils.GetEnvOrDefault(constants.KafkaBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
+	AckProducer, err = ack.NewAckProducer(context.Background(), processingBrokers)
 	if err != nil {
 		logger.GetLogger().Error("error while initialising status ack producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
 		return
