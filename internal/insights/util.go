@@ -1,9 +1,12 @@
 package insights
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+)
 
 func InsightId(key1, key2, sourceId string) string {
-	return fmt.Sprintf("%s:%s:%s", key1, key2, sourceId)
+	return fmt.Sprintf("%s:%s:%s", url.QueryEscape(key1), url.QueryEscape(key2), sourceId)
 }
 
 func SightIndexName(tenantId string) string {
