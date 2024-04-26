@@ -86,6 +86,9 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		}
 		lineCounter++
 	}
+	//waiting for 5 sec to flush  before completion
+	count := producer.Producer.Flush(10000)
+	logger.GetLogger().Info("Flushed the events", zap.String("file", fileName), zap.Int("event pending", count), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 	mst.UpdateMetaData(fileName, constants.StatusCompleted, lineCounter, 0, 0, byteSize, "")
 	logger.GetLogger().Info("completed the process", zap.String("file", fileName), zap.Int("lineCounter", lineCounter), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 	replaymanager.CleanUpFile(filePath)
