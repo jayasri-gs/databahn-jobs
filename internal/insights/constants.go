@@ -1,6 +1,6 @@
 package insights
 
-const INSIGHTS_INTERVAL_MINUTES = 30
+const INSIGHTS_INTERVAL_MINUTES = 60
 const INSIGHTS_STAGING_INDEX_PREFIX = "db_staging_insights_"
 const INSIGHTS_READ_BATCH = 500
 const INSIGHTS_STORE_INDEX_PREFIX = "db_insights_"
