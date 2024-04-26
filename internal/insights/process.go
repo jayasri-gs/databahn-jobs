@@ -134,9 +134,11 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			docs = append(docs, doc)
 		}
 
-		err = upsertSightsDocs(ctx, cli, index.TenantId, index.Type, docs)
-		if err != nil {
-			return err
+		if index.Type == APP_TYPE_SOURCEHOSTNAME {
+			err = upsertSightsDocs(ctx, cli, index.TenantId, index.Type, docs)
+			if err != nil {
+				return err
+			}
 		}
 
 		err = upsertFrequencyDocs(ctx, cli, &index, docs)
