@@ -204,7 +204,7 @@ github.com/aws/smithy-go/waiter
 ## explicit; go 1.16
 github.com/confluentinc/confluent-kafka-go/v2/kafka
 github.com/confluentinc/confluent-kafka-go/v2/kafka/librdkafka_vendor
-# github.com/databahn-ai/common-utils v0.81.0
+# github.com/databahn-ai/common-utils v0.82.0
 ## explicit; go 1.19
 github.com/databahn-ai/common-utils/ack
 github.com/databahn-ai/common-utils/alert
