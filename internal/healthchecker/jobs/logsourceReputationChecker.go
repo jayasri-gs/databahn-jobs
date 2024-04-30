@@ -13,7 +13,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_common"
-	logSource "github.com/databahn-ai/db-models/log-source"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"io"
@@ -133,14 +132,14 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 
 func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAlertsEntityArray []alerts_common.AlertEntityObject, whisperingLs []string, whisperingAlertsEntityArray []alerts_common.AlertEntityObject) error {
 	// mark reputation for whispering
-	err := config.GetDB().Model(&logSource.LogSource{}).Where("id in ? ", whisperingLs).Updates(map[string]interface{}{"reputation": common.WHISPERING}).Error
+	err := config.GetDB().Model(&source.Source{}).Where("id in ? ", whisperingLs).Updates(map[string]interface{}{"reputation": common.WHISPERING}).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as whispering", zap.Error(err))
 		return err
 	}
 
 	// mark reputation for noisy
-	err = config.GetDB().Model(&logSource.LogSource{}).Where("id in ? ", noisyLs).Updates(map[string]interface{}{"reputation": common.NOISY}).Error
+	err = config.GetDB().Model(&source.Source{}).Where("id in ? ", noisyLs).Updates(map[string]interface{}{"reputation": common.NOISY}).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as noisy", zap.Error(err))
 		return err
