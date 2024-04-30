@@ -16,10 +16,10 @@ const WarningAlert = "warning"
 const SevereAlert = "severe"
 
 const (
-	SILENT     = 0
-	STABLE     = 1
-	WHISPERING = 2
-	NOISY      = 3
+	SILENT     = "SILENT"
+	STABLE     = "STABLE"
+	WHISPERING = "WHISPERING"
+	NOISY      = "NOISY"
 )
 
 const StatusCreated = "CREATED"

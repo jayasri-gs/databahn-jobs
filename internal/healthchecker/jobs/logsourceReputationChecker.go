@@ -164,7 +164,7 @@ func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAle
 	return nil
 }
 
-func classifySources(zScoreMean float64) int {
+func classifySources(zScoreMean float64) string {
 	if zScoreMean > common.NoisyThreshold {
 		return common.NOISY
 	} else if zScoreMean < (-1 * common.NoisyThreshold) {
