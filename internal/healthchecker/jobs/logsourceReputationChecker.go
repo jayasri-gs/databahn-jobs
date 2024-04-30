@@ -9,6 +9,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_common"
@@ -68,8 +69,8 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 
 	logging.GetLoggerWithContext(ctx).Info("getting histogram all log sources")
 
-	var logSources []logSource.LogSource
-	err := config.GetDB().Model(&logSource.LogSource{}).Scan(&logSources).Error
+	var logSources []source.Source
+	err := config.GetDB().Model(&source.Source{}).Scan(&logSources).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
 		return err
@@ -110,14 +111,14 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 			var temp alerts_common.AlertEntityObject
 			temp.EntityName = ls.Name
 			temp.EntityId = ls.ID
-			temp.EntityTenantUUId = ls.TenantUUID
+			temp.EntityTenantUUId = ls.TenantID
 			whisperingAlertsEntityArray = append(whisperingAlertsEntityArray, temp)
 			whisperingLs = append(whisperingLs, ls.ID.String())
 		} else if reputation == common.NOISY {
 			var temp alerts_common.AlertEntityObject
 			temp.EntityName = ls.Name
 			temp.EntityId = ls.ID
-			temp.EntityTenantUUId = ls.TenantUUID
+			temp.EntityTenantUUId = ls.TenantID
 			noisyAlertsEntityArray = append(noisyAlertsEntityArray, temp)
 			noisyLs = append(noisyLs, ls.ID.String())
 		}
