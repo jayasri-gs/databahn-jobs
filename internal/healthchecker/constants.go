@@ -7,5 +7,5 @@ const (
 	ReputationCheckerTimeThreshold = 24
 	NotificationCluster            = "notification_cluster"
 	NotificationProducer           = "notification_service_producer"
-	NotificationTopic              = "db.management.notification.0"
+	NotificationTopic              = "db.management.notification"
 )
