@@ -32,6 +32,11 @@ func GenerateAuditReport(ctx context.Context) error {
 	var failedRequests []FailedRequests
 	var successAlerts []alerts_common.AlertEntityObject
 
+	var file *os.File
+	defer file.Close()
+	var writer *csv.Writer
+	defer writer.Flush()
+
 	for _, req := range auditReportRequests {
 		// update the status to in progress
 		err = updateRequestStatus(config.GetDB(), req.Id.String(), STATUS_INPROGRESS)
@@ -45,14 +50,13 @@ func GenerateAuditReport(ctx context.Context) error {
 		pageSize := utils.GetEnvInt("AUDIT_REPORT_PAGE_SIZE", 1000)
 		offset := 0
 
-		file, err := createTempFile(req.Id.String())
+		file, err = createTempFile(req.Id.String())
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
 			errRequest := NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 			failedRequests = append(failedRequests, errRequest)
 			continue
 		}
-		defer file.Close()
 
 		startTime, endTime, err := getConfigFromRequest(req)
 		if err != nil {
@@ -70,8 +74,7 @@ func GenerateAuditReport(ctx context.Context) error {
 				continue
 			}
 			fetchedRowsCount := 0
-			writer := csv.NewWriter(file)
-			defer writer.Flush()
+			writer = csv.NewWriter(file)
 
 			fetchedRowsCount, err = writeRowToTheFileOneByOne(columns, rows, writer, fetchedRowsCount)
 			if err != nil {
