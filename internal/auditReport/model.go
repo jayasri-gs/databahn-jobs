@@ -37,8 +37,7 @@ func NewFailedRequest(reqId string, tenantId string, retry int, err string) Fail
 func getAllReportRequests(db *gorm.DB) ([]AuditReport, error) {
 	var auditReportRequests []AuditReport
 	var status = []string{STATUS_REQUESTED, STATUS_FAILED}
-	maxRetries := 3
-	err := db.Table("audit_report").Where("status in ? and retries <= ? ", status, maxRetries).Find(&auditReportRequests).Error
+	err := db.Table("audit_report").Where("status in ? and retries < ? ", status, maxRetries).Find(&auditReportRequests).Error
 	if err != nil {
 		return nil, err
 	}

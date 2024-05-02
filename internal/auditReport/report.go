@@ -1,14 +1,15 @@
 package auditReport
 
 import (
-	"/github.com/databahn-ai/db-models/alerts_common"
 	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
+	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
@@ -65,6 +66,15 @@ func GenerateAuditReport(ctx context.Context) error {
 			failedRequests = append(failedRequests, errRequest)
 			continue
 		}
+
+		err = validateConfig(startTime, endTime)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error in validating startime and endtime", zap.Error(err))
+			errRequest := NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+			failedRequests = append(failedRequests, errRequest)
+			continue
+		}
+
 		for {
 			rows, columns, err := getRowsAndColumnsFromAuditTable(pageSize, offset, startTime, endTime)
 			if err != nil {
@@ -75,6 +85,14 @@ func GenerateAuditReport(ctx context.Context) error {
 			}
 			fetchedRowsCount := 0
 			writer = csv.NewWriter(file)
+
+			err = writer.Write(columns)
+			if err != nil {
+				logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
+				errRequest := NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+				failedRequests = append(failedRequests, errRequest)
+				continue
+			}
 
 			fetchedRowsCount, err = writeRowToTheFileOneByOne(columns, rows, writer, fetchedRowsCount)
 			if err != nil {
@@ -110,7 +128,7 @@ func GenerateAuditReport(ctx context.Context) error {
 		}
 
 		// update the status to completed and link to database
-		err = updateRequestStatusAndDownloadLink(config.GetDB(), req.Id.String(), STATUS_COMPLETED, downloadLink, time.Now().Add(time.Second*86400))
+		err = updateRequestStatusAndDownloadLink(config.GetDB(), req.Id.String(), STATUS_COMPLETED, downloadLink, time.Now().Add(time.Hour*168))
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while updating status to completed", zap.Error(err))
 			errRequest := NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
@@ -140,6 +158,28 @@ func GenerateAuditReport(ctx context.Context) error {
 	}
 	return nil
 }
+func validateConfig(startTime string, endTime string) error {
+
+	if startTime == "" || endTime == "" {
+		return errors.New("start time and end time cannot be empty")
+	}
+	// Parse time strings into time.Time objects
+	start, err := time.Parse(time.RFC3339, startTime)
+	if err != nil {
+		return err
+	}
+
+	end, err := time.Parse(time.RFC3339, endTime)
+	if err != nil {
+		return err
+	}
+
+	// Compare time1 and time2
+	if start.After(end) {
+		return errors.New("startTime greater than endTime")
+	}
+	return nil
+}
 func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertEntityObject, errorAlerts []alerts_common.AlertEntityObject) error {
 
 	if len(successAlerts) > 0 {
@@ -160,12 +200,13 @@ func handleErrorRequests(requests []FailedRequests) ([]alerts_common.AlertEntity
 
 	var errorAlerts []alerts_common.AlertEntityObject
 	for _, req := range requests {
-		if req.Retry <= 3 {
+		if req.Retry <= maxRetries {
 			err := updateRequestStatusAndRetries(config.GetDB(), req.RequestId, STATUS_FAILED, req.Retry)
 			if err != nil {
 				return nil, err
 			}
-		} else {
+		}
+		if req.Retry == maxRetries {
 			alertEntity := alerts_common.AlertEntityObject{
 				EntityName:       req.RequestId,
 				EntityId:         utils.UUIDFromStringOrNil(req.RequestId),

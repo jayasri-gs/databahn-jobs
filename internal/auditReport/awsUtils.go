@@ -41,7 +41,7 @@ func uploadFileToS3(ctx context.Context, filePath string, bucketName string, obj
 	return nil
 }
 func getPresignedUrl(bucketName string, objectKey string) (string, error) {
-	downloadLink, err := aws.CreatePresignedLink(bucketName, objectKey, time.Second*86400)
+	downloadLink, err := aws.CreatePresignedLink(bucketName, objectKey, time.Hour*168)
 	if err != nil {
 		return "", err
 	}
