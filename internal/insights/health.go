@@ -22,7 +22,7 @@ const updateReputation = `
       if (ctx._source.reputation != params.skip_reputation) {
         ctx._source.reputation = params.reputation;
       }
-      ctx._source.reputation_updated_at = params.updated_at;
+      ctx._source.updated_at = params.updated_at;
     ",
     "lang": "painless",
     "params": {

@@ -32,6 +32,7 @@ const sightsScript = `
       }
       ctx._source.source_id = params.source_id; 
       ctx._source.timestamp = params.timestamp;
+      ctx._source.updated_at = params.updated_at;
     ",
     "lang": "painless",
     "params": {
@@ -41,7 +42,8 @@ const sightsScript = `
       "tenant_id": "{{.TenantId}}",
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
-      "timestamp": {{.Timestamp}}
+      "timestamp": {{.Timestamp}},
+      "updated_at": {{.UpdatedAt}}
     }
   },
   "upsert": {
@@ -53,6 +55,7 @@ const sightsScript = `
       "max_time": {{.MaxTime}},
       "source_id": "{{.SourceId}}",
       "timestamp": {{.Timestamp}},
+	  "updated_at": {{.UpdatedAt}},
       "reputation": "` + REPUTATION_NORMAL + `"
     }
 }
@@ -376,6 +379,7 @@ func (d Doc) Sight() Sight {
 		MinTime:   d.MinTime,
 		MaxTime:   d.MaxTime,
 		Timestamp: d.Timestamp,
+		UpdatedAt: time.Now().UnixMilli(),
 	}
 }
 
@@ -395,17 +399,17 @@ func (d Doc) Frequency() Frequency {
 }
 
 type Sight struct {
-	Id                  string `json:"id"`
-	Key1                string `json:"key1"`
-	Key2                string `json:"key2,omitempty"`
-	Type                string `json:"type"`
-	SourceId            string `json:"source_id"`
-	TenantId            string `json:"tenant_id"`
-	MinTime             int64  `json:"min_time"`
-	MaxTime             int64  `json:"max_time"`
-	Reputation          string `json:"reputation"`
-	Timestamp           int64  `json:"timestamp"`
-	ReputationUpdatedAt int64  `json:"reputation_updated_at"`
+	Id         string `json:"id"`
+	Key1       string `json:"key1"`
+	Key2       string `json:"key2,omitempty"`
+	Type       string `json:"type"`
+	SourceId   string `json:"source_id"`
+	TenantId   string `json:"tenant_id"`
+	MinTime    int64  `json:"min_time"`
+	MaxTime    int64  `json:"max_time"`
+	Reputation string `json:"reputation"`
+	Timestamp  int64  `json:"timestamp"`
+	UpdatedAt  int64  `json:"updated_at"`
 }
 
 type ReputationUpdateRequest struct {
