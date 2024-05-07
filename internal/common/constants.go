@@ -36,3 +36,5 @@ const FleetNodeHealthCheckMessage = "node health not reported for more than 5 mi
 const FleetConnectorHealthCheckMessage = "connector health not reported for more than 5 minutes"
 
 const FleetConnectorHealthCheckTitle = "fleet connector health check"
+
+const ALERT_REPORT_PROCESSOR = "alert_report_processor"

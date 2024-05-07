@@ -8,13 +8,14 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.16
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.15.13
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.48.0
-	github.com/databahn-ai/common-utils v0.81.0
+	github.com/databahn-ai/common-utils v0.82.0
 	github.com/databahn-ai/db-models v0.90.0
 	github.com/databahn-ai/go-logging v0.5.0
 	github.com/google/uuid v1.3.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	go.uber.org/zap v1.24.0
+	gorm.io/datatypes v1.1.0
 	gorm.io/gorm v1.25.2
 )
 
@@ -81,7 +82,6 @@ require (
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/datatypes v1.1.0 // indirect
 	gorm.io/driver/mysql v1.4.4 // indirect
 	gorm.io/driver/postgres v1.5.2 // indirect
 	moul.io/zapgorm2 v1.2.0 // indirect

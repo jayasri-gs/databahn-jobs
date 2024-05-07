@@ -94,8 +94,8 @@ func UploadFileToS3(ctx context.Context, request *s3.PutObjectInput) (*s3.PutObj
 	return client.PutObject(ctx, request)
 }
 
-// CreatePresignedLink will return presigned url for given s3 object
-func CreatePresignedLink(bucketName string, path string) (*v4.PresignedHTTPRequest, error) {
+// CreatePresignedLink will return pre-signed url for given s3 object
+func CreatePresignedLink(bucketName string, path string, expiry time.Duration) (*v4.PresignedHTTPRequest, error) {
 
 	client, err := getS3Client()
 	logging.Info("bucket name " + bucketName)
@@ -112,7 +112,7 @@ func CreatePresignedLink(bucketName string, path string) (*v4.PresignedHTTPReque
 	}
 
 	presignDuration := func(po *s3.PresignOptions) {
-		po.Expires = 5 * time.Minute
+		po.Expires = expiry
 	}
 
 	presignResult, err := presignClient.PresignGetObject(context.TODO(), presignParams, presignDuration)
