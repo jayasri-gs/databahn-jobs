@@ -77,6 +77,8 @@ func createSource(key string) Source {
 		source.Key4 = &terms
 	case "key5":
 		source.Key5 = &terms
+	case "source_id":
+		source.SourceId = &terms
 	}
 	return source
 }
@@ -92,10 +94,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		sourceKey3 := createSource("key3")
 		sourceKey4 := createSource("key4")
 		sourceKey5 := createSource("key5")
-		sourceSourceId := Source{}
-		sourceTerms := Terms{}
-		sourceTerms.Terms.Field = "source_id"
-		sourceSourceId.SourceId = &sourceTerms
+		sourceSourceId := createSource("source_id")
 		request := Request{}
 		request.Aggs.GroupBy.Composite.Size = INSIGHTS_READ_BATCH
 		request.Aggs.GroupBy.Composite.After = after
