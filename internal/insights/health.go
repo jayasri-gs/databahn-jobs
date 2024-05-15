@@ -183,7 +183,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 					zap.Float64("z_score", zScore), zap.String("reputation", reputation), zap.String("tenant_id", tenantId), zap.Bool("change", change))
 				if change {
 					request := ReputationUpdateRequest{
-						Id:             InsightId(key1, key2, sourceId),
+						Id:             InsightId2(key1, key2, sourceId),
 						Reputation:     reputation,
 						SkipReputation: REPUTATION_SILENT,
 						UpdatedAt:      time.Now().UnixMilli(),
@@ -219,7 +219,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 			zap.Float64("z_score", zScore), zap.String("reputation", reputation), zap.String("tenant_id", tenantId), zap.Bool("change", change))
 		if change {
 			request := ReputationUpdateRequest{
-				Id:             InsightId(key1, key2, sourceId),
+				Id:             InsightId2(key1, key2, sourceId),
 				Reputation:     reputation,
 				SkipReputation: REPUTATION_SILENT,
 				UpdatedAt:      time.Now().UnixMilli(),

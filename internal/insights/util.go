@@ -9,6 +9,10 @@ func InsightId(key1, key2, sourceId string) string {
 	return fmt.Sprintf("%s:%s:%s", url.QueryEscape(key1), url.QueryEscape(key2), sourceId)
 }
 
+func InsightId2(key1, key2, sourceId string) string {
+	return fmt.Sprintf("%s:%s:%s", url.QueryEscape(key1), url.QueryEscape(key2), sourceId)
+}
+
 func SightIndexName(tenantId string) string {
 	return fmt.Sprintf("%s%s_%s_%s", INSIGHTS_STORE_INDEX_PREFIX, APP_TYPE_SOURCEHOSTNAME, AGG_SIGHTS, tenantId)
 }
