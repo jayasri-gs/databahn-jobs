@@ -20,6 +20,7 @@ import (
 	"time"
 )
 
+// todo: Do we need to update acc to key3, key4, key5 ?
 const sightsScript = `
 {
   "script": {
@@ -61,29 +62,47 @@ const sightsScript = `
 }
 `
 
+func createSource(key string) Source {
+	terms := Terms{}
+	terms.Terms.Field = key
+	source := Source{}
+	switch key {
+	case "key1":
+		source.Key1 = &terms
+	case "key2":
+		source.Key2 = &terms
+	case "key3":
+		source.Key3 = &terms
+	case "key4":
+		source.Key4 = &terms
+	case "key5":
+		source.Key5 = &terms
+	case "source_id":
+		source.SourceId = &terms
+	}
+	return source
+}
+
 func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata) error {
 	indexName := INSIGHTS_STAGING_INDEX_PREFIX + index.String()
 	page := 0
 	count := 0
 	var after *After = nil
 	for {
-		sourceKey1 := Source{}
-		key1Terms := Terms{}
-		key1Terms.Terms.Field = "key1"
-		sourceKey1.Key1 = &key1Terms
-		sourceKey2 := Source{}
-		key2Terms := Terms{}
-		key2Terms.Terms.Field = "key2"
-		sourceKey2.Key2 = &key2Terms
-		sourceSourceId := Source{}
-		sourceTerms := Terms{}
-		sourceTerms.Terms.Field = "source_id"
-		sourceSourceId.SourceId = &sourceTerms
+		sourceKey1 := createSource("key1")
+		sourceKey2 := createSource("key2")
+		sourceKey3 := createSource("key3")
+		sourceKey4 := createSource("key4")
+		sourceKey5 := createSource("key5")
+		sourceSourceId := createSource("source_id")
 		request := Request{}
 		request.Aggs.GroupBy.Composite.Size = INSIGHTS_READ_BATCH
 		request.Aggs.GroupBy.Composite.After = after
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey1)
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey2)
+		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey3)
+		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey4)
+		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey5)
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceSourceId)
 		request.Aggs.GroupBy.Aggs.PageCnt.Sum.Field = "count"
 		request.Aggs.GroupBy.Aggs.PageMnTime.Min.Field = "min_time"
@@ -126,7 +145,11 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc := Doc{}
 			doc.Key1 = bucket.Key.Key1
 			doc.Key2 = bucket.Key.Key2
-			doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.SourceId)
+			doc.Key3 = bucket.Key.Key3
+			doc.Key4 = bucket.Key.Key4
+			doc.Key5 = bucket.Key.Key5
+
+			doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.Key3, bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
 			doc.SourceId = bucket.Key.SourceId
 			doc.TenantId = index.TenantId
 			doc.Type = index.Type
@@ -223,7 +246,7 @@ func upsertFrequencyDocs(ctx context.Context, cli *opensearch.Client, index *Ind
 }
 
 func buildFrequencyDocId(index *IndexMetadata, doc *Frequency) string {
-	key := index.String() + doc.Key1 + doc.Key2 + doc.SourceId
+	key := index.String() + doc.Key1 + doc.Key2 + doc.Key3 + doc.Key4 + doc.Key5 + doc.SourceId
 	h := sha256.New()
 	h.Write([]byte(key))
 	id := fmt.Sprintf("%x", h.Sum(nil))
@@ -273,12 +296,18 @@ type Terms struct {
 type Source struct {
 	Key1     *Terms `json:"key1,omitempty"`
 	Key2     *Terms `json:"key2,omitempty"`
+	Key3     *Terms `json:"key3,omitempty"`
+	Key4     *Terms `json:"key4,omitempty"`
+	Key5     *Terms `json:"key5,omitempty"`
 	SourceId *Terms `json:"source_id,omitempty"`
 }
 
 type After struct {
 	Key1     string `json:"key1"`
 	Key2     string `json:"key2"`
+	Key3     string `json:"key3"`
+	Key4     string `json:"key4"`
+	Key5     string `json:"key5"`
 	SourceId string `json:"source_id"`
 }
 
@@ -337,6 +366,9 @@ type Response struct {
 				Key struct {
 					Key1     string `json:"key1"`
 					Key2     string `json:"key2"`
+					Key3     string `json:"key3"`
+					Key4     string `json:"key4"`
+					Key5     string `json:"key5"`
 					SourceId string `json:"source_id"`
 				} `json:"key"`
 				DocCount   int `json:"doc_count"`
@@ -358,6 +390,9 @@ type Doc struct {
 	Id        string  `json:"id"`
 	Key1      string  `json:"key1"`
 	Key2      string  `json:"key2,omitempty"`
+	Key3      string  `json:"key3,omitempty"`
+	Key4      string  `json:"key4,omitempty"`
+	Key5      string  `json:"key5,omitempty"`
 	Type      string  `json:"type"`
 	InsightId string  `json:"insight_id"`
 	SourceId  string  `json:"source_id"`
@@ -389,6 +424,9 @@ func (d Doc) Frequency() Frequency {
 		Id:              d.Id,
 		Key1:            d.Key1,
 		Key2:            d.Key2,
+		Key3:            d.Key3,
+		Key4:            d.Key4,
+		Key5:            d.Key5,
 		Type:            d.Type,
 		SourceId:        d.SourceId,
 		TenantId:        d.TenantId,
@@ -402,6 +440,9 @@ type Sight struct {
 	Id         string `json:"id"`
 	Key1       string `json:"key1"`
 	Key2       string `json:"key2,omitempty"`
+	Key3       string `json:"key3,omitempty"`
+	Key4       string `json:"key4,omitempty"`
+	Key5       string `json:"key5,omitempty"`
 	Type       string `json:"type"`
 	SourceId   string `json:"source_id"`
 	TenantId   string `json:"tenant_id"`
@@ -425,6 +466,9 @@ func (s Sight) History(time int64, reputation string) SilentDeviceHistory {
 		Id:              id,
 		Key1:            s.Key1,
 		Key2:            s.Key2,
+		Key3:            s.Key3,
+		Key4:            s.Key4,
+		Key5:            s.Key5,
 		Type:            s.Type,
 		SourceId:        s.SourceId,
 		TenantId:        s.TenantId,
@@ -437,6 +481,9 @@ type SilentDeviceHistory struct {
 	Id              string `json:"id"`
 	Key1            string `json:"key1"`
 	Key2            string `json:"key2,omitempty"`
+	Key3            string `json:"key3,omitempty"`
+	Key4            string `json:"key4,omitempty"`
+	Key5            string `json:"key5,omitempty"`
 	Type            string `json:"type"`
 	SourceId        string `json:"source_id"`
 	TenantId        string `json:"tenant_id"`
@@ -448,6 +495,9 @@ type Frequency struct {
 	Id              string  `json:"id"`
 	Key1            string  `json:"key1"`
 	Key2            string  `json:"key2"`
+	Key3            string  `json:"key3"`
+	Key4            string  `json:"key4"`
+	Key5            string  `json:"key5"`
 	Type            string  `json:"type"`
 	SourceId        string  `json:"source_id"`
 	TenantId        string  `json:"tenant_id"`
