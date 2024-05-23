@@ -24,7 +24,5 @@ const SilentDaysBefore = 2
 
 const NOISE_DAYS_TO_CONSIDER = 30
 
-const NOISE_ZSCORE_THRESHOLD = 1.5
-
 const STATUS_ERROR = "error"
 const STATUS_SUCCESS = "success"
