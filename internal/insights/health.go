@@ -59,11 +59,11 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 	var sightsIndices []string
 	var frequencyIndices []string
 	for _, index := range indices {
-		sightsIndexPrefix := fmt.Sprintf("%s%s_%s_", INSIGHTS_STORE_INDEX_PREFIX, APP_TYPE_SOURCEHOSTNAME, AGG_SIGHTS)
+		sightsIndexPrefix := fmt.Sprintf("%s%s_%s_", INSIGHTS_STORE_INDEX_PREFIX, AGG_SIGHTS, APP_TYPE_SOURCEHOSTNAME)
 		if strings.HasPrefix(index, sightsIndexPrefix) {
 			sightsIndices = append(sightsIndices, index)
 		}
-		frequencyIndexPrefix := fmt.Sprintf("%s%s_%s_", INSIGHTS_STORE_INDEX_PREFIX, APP_TYPE_SOURCEHOSTNAME, AGG_FREQUENCY)
+		frequencyIndexPrefix := fmt.Sprintf("%s%s_%s_", INSIGHTS_STORE_INDEX_PREFIX, AGG_FREQUENCY, APP_TYPE_SOURCEHOSTNAME)
 		if strings.HasPrefix(index, frequencyIndexPrefix) {
 			frequencyIndices = append(frequencyIndices, index)
 		}
