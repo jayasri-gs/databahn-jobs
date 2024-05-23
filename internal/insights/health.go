@@ -11,6 +11,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
+	"math"
 	"strings"
 	"time"
 )
@@ -243,22 +244,40 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 }
 
 func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64) {
+	if len(counts) < 3 {
+		return "", false, 0
+	}
 	newDays, newCounts := sortTwoSlices(days, counts)
 	lastDay := newDays[len(newDays)-1]
 	lastCount := newCounts[len(newCounts)-1]
+	sampleCounts := counts[:len(counts)-1]
 	if checkIfEodEpochIsYesterday(lastDay) {
-		mean := util.CalculateMean(newCounts)
-		deviation := util.CalculateStandardDeviation(newCounts, mean)
+		mean := util.CalculateMean(sampleCounts)
+		deviation := util.CalculateStandardDeviation(sampleCounts, mean)
+		if deviation == 0 || math.IsNaN(deviation) {
+			return "", false, 0
+		}
 		zScore := util.CalculateZScore(lastCount, mean, deviation)
-		if zScore > NOISE_ZSCORE_THRESHOLD {
+		threshold := dynamicThreshold(len(sampleCounts))
+		if zScore > threshold {
 			return REPUTATION_NOISY, true, zScore
-		} else if zScore < (-1 * NOISE_ZSCORE_THRESHOLD) {
+		} else if zScore < (-1 * threshold) {
 			return REPUTATION_WHISPERING, true, zScore
 		} else {
 			return "", false, zScore
 		}
 	}
 	return "", false, 0
+}
+
+func dynamicThreshold(sampleSize int) float64 {
+	if sampleSize < 10 {
+		return 5.0
+	} else if sampleSize < 30 {
+		return 3.0
+	} else {
+		return 1.5
+	}
 }
 
 func sortTwoSlices(days []float64, counts []float64) ([]float64, []float64) {
