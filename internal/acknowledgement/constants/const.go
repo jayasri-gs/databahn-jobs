@@ -10,4 +10,6 @@ const (
 	TableChangeFlagRequest = "change_flag_requests"
 
 	QueryBatchSize = 50
+
+	StatusDeleted = "DELETED"
 )
