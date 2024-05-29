@@ -2,8 +2,9 @@ package acknowledgement
 
 import (
 	ackPkg "github.com/databahn-ai/common-utils/ack"
-	"github.com/databahn-ai/common-utils/constants"
+	utilConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
 	ackConst "github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/db"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -223,27 +224,27 @@ func updateStatus(ack db.ChangeFlagAck) error {
 	}
 
 	switch ack.EntityType {
-	case constants.EntityLookup:
+	case utilConst.EntityLookup:
 		err := handleLookup(ack)
 		if err != nil {
 			return err
 		}
-	case constants.EntityRule:
+	case utilConst.EntityRule:
 		err := handleRule(ack)
 		if err != nil {
 			return err
 		}
-	case constants.EntitySource:
+	case utilConst.EntitySource:
 		err := handleSource(ack)
 		if err != nil {
 			return err
 		}
-	case constants.EntityEnrichment:
+	case utilConst.EntityEnrichment:
 		err := handleEnrichment(ack)
 		if err != nil {
 			return err
 		}
-	case constants.EntityTransformer:
+	case utilConst.EntityTransformer:
 		err := handleTransformer(ack)
 		if err != nil {
 			return err
@@ -254,7 +255,8 @@ func updateStatus(ack db.ChangeFlagAck) error {
 
 func updateDestination(ack db.ChangeFlagAck) error {
 	statusV2 := getStatusString(ack)
-	err := config.GetDB().Table("destination").Where("id = ? AND status != ?", ack.EntityId, statusV2).Update("status", statusV2).Error
+	err := config.GetDB().Table("destination").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
+		Update("status", statusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating destination status", zap.Error(err))
 		return err
@@ -265,7 +267,8 @@ func updateDestination(ack db.ChangeFlagAck) error {
 
 func handleTransformer(ack db.ChangeFlagAck) error {
 	statusV2 := getStatusString(ack)
-	err := config.GetDB().Table("data_transformation").Where("id = ? AND status != ?", ack.EntityId, statusV2).Update("status", statusV2).Error
+	err := config.GetDB().Table("data_transformation").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
+		Update("status", statusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating transformer status", zap.Error(err))
 		return err
@@ -276,7 +279,8 @@ func handleTransformer(ack db.ChangeFlagAck) error {
 
 func handleEnrichment(ack db.ChangeFlagAck) error {
 	enrichmentStatus := getStatusString(ack)
-	err := config.GetDB().Table("enrichment").Where("id = ? AND status != ?", ack.EntityId, enrichmentStatus).Update("status", enrichmentStatus).Error
+	err := config.GetDB().Table("enrichment").Where("id = ? AND status not in (?,?)", ack.EntityId, enrichmentStatus, constants.StatusDeleted).
+		Update("status", enrichmentStatus).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating enrichment status", zap.Error(err))
 		return err
@@ -287,7 +291,8 @@ func handleEnrichment(ack db.ChangeFlagAck) error {
 
 func handleSource(ack db.ChangeFlagAck) error {
 	sourceStatusV2 := getStatusString(ack)
-	err := config.GetDB().Table("log_source").Where("id = ? AND status != ?", ack.EntityId, sourceStatusV2).Update("status", sourceStatusV2).Error
+	err := config.GetDB().Table("log_source").Where("id = ? AND status not in (?,?)", ack.EntityId, sourceStatusV2, constants.StatusDeleted).
+		Update("status", sourceStatusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating source status", zap.Error(err))
 		return err
@@ -309,7 +314,8 @@ func handleLookup(ack db.ChangeFlagAck) error {
 
 func handleRule(ack db.ChangeFlagAck) error {
 	ruleStatusV2 := getStatusString(ack)
-	err := config.GetDB().Table("vc_rule").Where("id = ? and status != ?", ack.EntityId, ruleStatusV2).Update("status", ruleStatusV2).Error
+	err := config.GetDB().Table("vc_rule").Where("id = ? and status not in (?,?)", ack.EntityId, ruleStatusV2, constants.StatusDeleted).
+		Update("status", ruleStatusV2).Error
 	if err != nil {
 		logger.GetLogger().Error("error while updating rule status", zap.Error(err))
 		return err
