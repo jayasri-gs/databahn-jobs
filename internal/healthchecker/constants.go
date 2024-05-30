@@ -10,4 +10,5 @@ const (
 	NotificationTopic              = "db.management.notification"
 
 	StatusDisabled = "DISABLED"
+	StatusDeleted  = "DELETED"
 )
