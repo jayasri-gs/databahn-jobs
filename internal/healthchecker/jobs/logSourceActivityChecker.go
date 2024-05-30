@@ -3,7 +3,6 @@ package jobs
 import (
 	"context"
 	"encoding/json"
-	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -114,7 +113,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 	// getting logSources which are not active but and did not report stats in last 15 minutes
 	var alertToBeRaisedLogSources []source.Source // array of ids not receiving stats
-	err = config.GetDB().Model(&source.Source{}).Where("id not in ? and status != ?", logsourceIdsStatsReceived, constants.StatusDisabled).Find(&alertToBeRaisedLogSources).Error
+	err = config.GetDB().Model(&source.Source{}).Where("id not in ? and status != ?", logsourceIdsStatsReceived, healthchecker.StatusDisabled).Find(&alertToBeRaisedLogSources).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
