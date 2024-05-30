@@ -3,16 +3,15 @@ package jobs
 import (
 	"context"
 	"encoding/json"
-	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	source "github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/db-models/alerts_common"
-	logSource "github.com/databahn-ai/db-models/log-source"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -113,8 +112,9 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// getting logSources which are not active but and did not report stats in last 15 minutes
-	var alertToBeRaisedLogSources []logSource.LogSource // array of ids not receiving stats
-	err = config.GetDB().Model(&logSource.LogSource{}).Where("id not in ? and status != ?", logsourceIdsStatsReceived, constants.StatusDisabled).Find(&alertToBeRaisedLogSources).Error
+	var alertToBeRaisedLogSources []source.Source // array of ids not receiving stats
+	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted}
+	err = config.GetDB().Model(&source.Source{}).Where("id not in ? and status not in", logsourceIdsStatsReceived, checkStatus).Find(&alertToBeRaisedLogSources).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
@@ -127,7 +127,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		var temp alerts_common.AlertEntityObject
 		temp.EntityName = ls.Name
 		temp.EntityId = ls.ID
-		temp.EntityTenantUUId = ls.TenantUUID
+		temp.EntityTenantUUId = ls.TenantID
 		logsourcesEntityArray = append(logsourcesEntityArray, temp)
 
 		silentLogsources = append(silentLogsources, ls.ID.String())
@@ -160,7 +160,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// update logsource mark silent
-	err = config.GetDB().Model(&logSource.LogSource{}).Where("id in ? ", silentLogsources).Updates(map[string]interface{}{"reputation": common.SILENT}).Error
+	err = config.GetDB().Model(&source.Source{}).Where("id in ? ", silentLogsources).Updates(map[string]interface{}{"reputation": common.SILENT}).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
 		return err

@@ -8,4 +8,7 @@ const (
 	NotificationCluster            = "notification_cluster"
 	NotificationProducer           = "notification_service_producer"
 	NotificationTopic              = "db.management.notification"
+
+	StatusDisabled = "DISABLED"
+	StatusDeleted  = "DELETED"
 )
