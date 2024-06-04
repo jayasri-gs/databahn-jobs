@@ -29,7 +29,7 @@ type Source struct {
 	TenantID                     uuid.UUID              `gorm:"type:uuid" json:"tenant_id"`
 	TimestampOverrideEnabled     bool                   `json:"timestamp_override_enabled"`
 	TimezoneNormalizationEnabled bool                   `json:"timezone_normalization_enabled"`
-	UpdatedAt                    time.Time              `gorm:"type:timestamp" json:"updated_at"`
+	UpdatedAt                    time.Time              `gorm:"-" json:"updated_at"`
 	UpdatedBy                    uuid.UUID              `gorm:"type:uuid" json:"updated_by"`
 	Vendor                       string                 `gorm:"type:varchar(30)" json:"vendor"`
 	Version                      string                 `gorm:"type:varchar(36)" json:"version"`
