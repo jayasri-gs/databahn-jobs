@@ -8,6 +8,7 @@ const ACK_PROCESSOR = "ack_processor"
 const FLEET_HEALTH_CHECKER = "fleet-health-checker"
 const LOG_SOURCE_ACTIVITY_CHECKER = "log-source-activity-checker"
 const LOG_SOURCE_REPUTATION_CHECKER = "log-source-reputation-checker"
+const AGENT_HEALTH_CHECKER = "agent-health-checker"
 const KAFKA_QUERY = "kafka_query"
 
 const EVENT_SEQUENCING = "event-sequencing"
