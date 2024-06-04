@@ -70,7 +70,7 @@ func DownloadCheckpointFile(bucket string) error {
 
 func AgentHealthChecker(ctx context.Context) error {
 
-	bucket := config.GetAppConfiguration().GetString(" s3.artifacts.bucket")
+	bucket := config.GetAppConfiguration().GetString("s3.artifacts.bucket")
 	err := DownloadCheckpointFile(bucket)
 	if err != nil {
 		return err
