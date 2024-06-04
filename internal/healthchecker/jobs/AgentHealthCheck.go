@@ -171,7 +171,7 @@ func processLogFiles(ctx context.Context, prefix string, bucket string, tenantId
 			temp.ID = uuid.New()
 			temp.Criticality = alerts_common.CriticalAlert
 			temp.Title = "Agent Node Health Data"
-			temp.Message = "Agent Node Health Data For Last 1 Hour"
+			temp.Message = output["msg"].(string)
 			temp.CreatedAt = time.Now()
 			temp.UpdatedAt = time.Now()
 			temp.FirstObservedAt = time.Now()
