@@ -168,12 +168,11 @@ func processLogFiles(ctx context.Context, prefix string, bucket string, tenantId
 		if output["level"] == "error" || output["level"] == "warn" || output["msg"] == "fluent-bit started" {
 			logging.GetLoggerWithContext(ctx).Info(" Data:  ", zap.String("AgentName", agentObject.Name), zap.String("AgentName", agentObject.Name), zap.String("tenantId", tenantId), zap.String("agentId", agentId), zap.Reflect("output", output))
 			logMessage := fmt.Sprintf(" AgentName: %s, TenantId: %s, AgentId: %s, Output: %v", agentObject.Name, tenantId, agentId, output)
-			title := fmt.Sprintf(" Agent Node Health Data Reporting AgentName: %s, TenantId: %s, AgentId: %s", agentObject.Name, tenantId, agentId)
 			logging.GetLoggerWithContext(ctx).Info(logMessage)
 			var temp alerts_common.Alert
 			temp.ID = uuid.New()
 			temp.Criticality = alerts_common.CriticalAlert
-			temp.Title = title
+			temp.Title = " Agent Node Health Data Reporting"
 			temp.Message = logMessage
 			temp.CreatedAt = time.Now()
 			temp.UpdatedAt = time.Now()
