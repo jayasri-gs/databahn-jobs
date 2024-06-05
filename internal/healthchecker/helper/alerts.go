@@ -75,17 +75,24 @@ func SendToNotificationTopic(ctx context.Context, alerts []alerts_common.Alert) 
 		} else {
 			alt.Criticality = "info"
 		}
+
 		notification := Notification{
-			TenantId:         alt.TenantUUID.String(),
-			Subject:          alt.Title,
-			Message:          alt.Message,
-			NotificationType: "EMAIL",
-			Suggestion:       "",
-			AlertInfo:        alt.Title,
-			Severity:         alt.Criticality,
-			Service:          "BACKEND",
-			Granularity:      "tenant",
-			Version:          "v1",
+			TenantId:                alt.TenantUUID.String(),
+			Subject:                 alt.Title,
+			Message:                 alt.Message,
+			NotificationType:        "EMAIL",
+			Suggestion:              "",
+			AlertInfo:               alt.Title,
+			Severity:                alt.Criticality,
+			Service:                 "BACKEND",
+			Granularity:             "tenant",
+			Version:                 "v1",
+			ID:                      alt.ID,
+			Title:                   alt.Title,
+			Functionality:           alt.Functionality,
+			FunctionalityEntityId:   alt.FunctionalityEntityId,
+			FunctionalityEntityName: alt.FunctionalityEntityName,
+			FunctionalityType:       alt.FunctionalityType,
 		}
 		nfbyts, er := json.Marshal(notification)
 		if er != nil {
