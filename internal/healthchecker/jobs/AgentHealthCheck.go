@@ -93,6 +93,7 @@ func AgentHealthChecker(ctx context.Context) error {
 	currentHour := time.Now().UTC().Hour() - 1
 	for _, object := range objects.Contents {
 
+		logging.GetLoggerWithContext(ctx).Info("Checking for object", zap.String("key", *object.Key), zap.Time("lastModified", *object.LastModified))
 		objectDay := object.LastModified.UTC().Day()
 		currentDay := time.Now().UTC().Day()
 		if objectDay == currentDay {
@@ -109,6 +110,7 @@ func AgentHealthChecker(ctx context.Context) error {
 				agentId := parts[4]
 				fileName := parts[5]
 				if CheckpointData[agentId] != fileName {
+					logging.GetLoggerWithContext(ctx).Info("Picked for Processing f", zap.String("key", key), zap.String("bucketName", bucketName))
 					processLogFiles(ctx, key, bucketName, tenantId, agentId, fileName)
 				}
 
