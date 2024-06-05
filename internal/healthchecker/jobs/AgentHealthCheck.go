@@ -89,7 +89,9 @@ func AgentHealthChecker(ctx context.Context) error {
 	sort.Slice(objects.Contents, func(i, j int) bool {
 		return objects.Contents[i].LastModified.After(*objects.Contents[j].LastModified)
 	})
-
+	for _, obj := range objects.Contents {
+		logging.GetLoggerWithContext(ctx).Info("Object", zap.String("keyInLoop", *obj.Key), zap.Time("InLooplastModified", *obj.LastModified))
+	}
 	currentHour := time.Now().UTC().Hour() - 1
 	for _, object := range objects.Contents {
 
