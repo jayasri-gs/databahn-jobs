@@ -29,9 +29,12 @@ const ControllerBaseUrl = "https://controller.dev.databahn.app"
 
 const AlertsIndex = "db_alerts"
 
-const FleetNodeHealthCheck = "fleet health check"
+const AgentHealthCheck = "agent health check"
+const AgentFunctionality = "endpoint health checker"
 const FleetNodeHealthCheckTitle = "node health not reported"
+const AgentHealthCheckTitle = "unhealthy agent nodes found"
 const FleetNodeHealthCheckMessage = "node health not reported for more than 5 minutes"
+const AgentHealthCheckMessage = "health from agent not reported for more than 5 minutes, marking unhealthy"
 
 const FleetConnectorHealthCheckMessage = "connector health not reported for more than 5 minutes"
 

@@ -6,12 +6,49 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
+	"github.com/databahn-ai/databahn-jobs/internal/store/agent"
 	"github.com/databahn-ai/databahn-jobs/internal/store/fleet"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"time"
 )
+
+func agentHealthChecker(ctx context.Context) error {
+	currentTime := time.Now()
+	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.AgentHealthCheckTime)
+	logging.GetLogger().Info("checking agent health")
+	var agents []agent.Agent
+	err := config.GetDB().Find(&agents, "heartbeat_at < ? AND status != ?", healthCheckTime, common.StatusCreated).Error
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy agent query", zap.Error(err))
+		return err
+	}
+	if len(agents) <= 0 {
+		logging.GetLoggerWithContext(ctx).Info("no unhealthy agent found")
+		return nil
+	}
+	//creating fleet alert object for fleets
+	var agentAlerts []alerts_common.AlertEntityObject
+	for _, ed := range agents {
+		var temp alerts_common.AlertEntityObject
+		temp.EntityName = ed.Name
+		temp.EntityId = ed.ID
+		temp.EntityTenantUUId = ed.TenantId
+		agentAlerts = append(agentAlerts, temp)
+	}
+
+	// raise alert and save it to opensearch
+	err = helper.SendAlertToControlPlane(ctx, agentAlerts, common.AgentHealthCheckTitle, common.AgentHealthCheckMessage,
+		common.AgentHealthCheck, common.AgentFunctionality, alerts_common.SevereAlert,
+		alerts_common.AlertOpen, false, "system")
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while raising alert agent inactivity", zap.Error(err))
+		return err
+	}
+	logging.GetLogger().Info("alert raised successfully for unhealthy agent nodes", zap.Int("no_of_agent", len(agentAlerts)))
+	return nil
+}
 
 func fleetHealthChecker(ctx context.Context) error {
 	currentTime := time.Now()
@@ -104,5 +141,10 @@ func HealthCheckAlertForFleetNode(ctx context.Context) error {
 		return err
 	}
 
+	err = agentHealthChecker(ctx)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while handling alerts for unhealthy agents", zap.Error(err))
+		return err
+	}
 	return nil
 }
