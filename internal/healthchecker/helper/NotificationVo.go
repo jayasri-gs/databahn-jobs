@@ -1,6 +1,9 @@
 package helper
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+	"time"
+)
 
 type Notification struct {
 	ID                      uuid.UUID
@@ -20,4 +23,6 @@ type Notification struct {
 	FunctionalityEntityId   string
 	FunctionalityEntityName string
 	FunctionalityType       string
+	FirstObservedAt         time.Time
+	LastObservedAt          time.Time
 }
