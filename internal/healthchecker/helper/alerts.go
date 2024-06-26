@@ -93,6 +93,8 @@ func SendToNotificationTopic(ctx context.Context, alerts []alerts_common.Alert) 
 			FunctionalityEntityId:   alt.FunctionalityEntityId,
 			FunctionalityEntityName: alt.FunctionalityEntityName,
 			FunctionalityType:       alt.FunctionalityType,
+			FirstObservedAt:         alt.FirstObservedAt,
+			LastObservedAt:          alt.LastObservedAt,
 		}
 		nfbyts, er := json.Marshal(notification)
 		if er != nil {
