@@ -19,7 +19,8 @@ func fleetHealthChecker(ctx context.Context) error {
 	logging.GetLogger().Info("checking fleet health")
 	//getting fleet nodes having heartbeat less than 15 minutes
 	var fleetNodes []fleet.Node
-	err := config.GetDB().Find(&fleetNodes, "heartbeat_at < ? AND status != ?", healthCheckTime, common.StatusCreated).Error
+	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
+	err := config.GetDB().Find(&fleetNodes, "heartbeat_at < ? AND status != ?", healthCheckTime, checkStatus).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy fleet node query", zap.Error(err))
 		return err
@@ -57,7 +58,8 @@ func connectorHealthChecker(ctx context.Context) error {
 	logging.GetLogger().Info("checking fleet connector health")
 
 	var connectors []fleet.Connector
-	err := config.GetDB().Find(&connectors, "heartbeat_at < ? AND status != ?", healthCheckTime, common.StatusCreated).Error
+	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
+	err := config.GetDB().Find(&connectors, "heartbeat_at < ? AND status not in ?", healthCheckTime, checkStatus).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy fleet connector query", zap.Error(err))
 		return err

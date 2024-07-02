@@ -11,4 +11,6 @@ const (
 
 	StatusDisabled = "DISABLED"
 	StatusDeleted  = "DELETED"
+	StatusCreated  = "CREATED"
+	StatusInactive = "INACTIVE"
 )
