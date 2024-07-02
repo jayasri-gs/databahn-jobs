@@ -16,11 +16,12 @@ import (
 func fleetHealthChecker(ctx context.Context) error {
 	currentTime := time.Now()
 	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckTime)
+	healthCheckIgnoreTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckIgnoreTime)
 	logging.GetLogger().Info("checking fleet health")
 	//getting fleet nodes having heartbeat less than 15 minutes
 	var fleetNodes []fleet.Node
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err := config.GetDB().Find(&fleetNodes, "heartbeat_at < ? AND status != ?", healthCheckTime, checkStatus).Error
+	err := config.GetDB().Find(&fleetNodes, "(heartbeat_at < ? AND heartbeat_at > ?) AND status != ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy fleet node query", zap.Error(err))
 		return err
@@ -55,11 +56,12 @@ func fleetHealthChecker(ctx context.Context) error {
 func connectorHealthChecker(ctx context.Context) error {
 	currentTime := time.Now()
 	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckTime)
+	healthCheckIgnoreTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckIgnoreTime)
 	logging.GetLogger().Info("checking fleet connector health")
 
 	var connectors []fleet.Connector
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err := config.GetDB().Find(&connectors, "heartbeat_at < ? AND status not in ?", healthCheckTime, checkStatus).Error
+	err := config.GetDB().Find(&connectors, "(heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy fleet connector query", zap.Error(err))
 		return err

@@ -2,6 +2,7 @@ package healthchecker
 
 const (
 	FleetHealthCheckTime           = 5
+	FleetHealthCheckIgnoreTime     = 120
 	LogSourceActivityCheckerTime   = 15
 	ReputationCheckerTime          = 6
 	ReputationCheckerTimeThreshold = 24
