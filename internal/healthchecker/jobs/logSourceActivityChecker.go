@@ -162,8 +162,17 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	// update logsource mark silent
 	err = config.GetDB().Model(&source.Source{}).Where("id in ? ", silentLogsources).Updates(map[string]interface{}{"reputation": common.SILENT}).Error
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
+		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as silent", zap.Error(err))
 		return err
+	}
+
+	if len(logsourceIdsStatsReceived) > 0 {
+		// update logsource mark STABLE for logSources which are active and receiving stats
+		err = config.GetDB().Model(&source.Source{}).Where("id in ? ", logsourceIdsStatsReceived).Updates(map[string]interface{}{"reputation": common.STABLE}).Error
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while marking log sources as stable", zap.Error(err))
+			return err
+		}
 	}
 
 	// raise alert and save it to opensearch
