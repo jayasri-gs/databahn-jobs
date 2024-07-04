@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -114,7 +115,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	// getting logSources which are not active but did not report stats in last 15 minutes
 	var alertToBeRaisedLogSources []source.Source // array of ids not receiving stats
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err = config.GetDB().Model(&source.Source{}).Where("id not in ? and status not in ? AND reputation != ?", logsourceIdsStatsReceived, checkStatus, common.SILENT).Find(&alertToBeRaisedLogSources).Error
+	err = config.GetDB().Model(&source.Source{}).Where("id not in ? and status not in ?", logsourceIdsStatsReceived, checkStatus).Find(&alertToBeRaisedLogSources).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
@@ -152,7 +153,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 	// send dismiss alerts to change flag
 	if len(toDismissAlerts) > 0 {
-		err = helper.SendAlertToControlPlane(ctx, toDismissAlerts, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertAutoResolved, true, "system")
+		err = helper.SendAlertToControlPlane(ctx, toDismissAlerts, fmt.Sprintf(alerts_common.LogSourceStatsNotReceivedTitle, healthchecker.LogSourceActivityCheckerTime), fmt.Sprintf(alerts_common.LogSourceStatsNotReceivedMessage, healthchecker.LogSourceActivityCheckerTime), alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertAutoResolved, true, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while dismissing alerts for logSource activity check", zap.Error(err))
 			return err
@@ -166,18 +167,9 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		return err
 	}
 
-	if len(logsourceIdsStatsReceived) > 0 {
-		// update logsource mark STABLE for logSources which are active and receiving stats
-		err = config.GetDB().Model(&source.Source{}).Where("id in ? ", logsourceIdsStatsReceived).Updates(map[string]interface{}{"reputation": common.STABLE}).Error
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while marking log sources as stable", zap.Error(err))
-			return err
-		}
-	}
-
 	// raise alert and save it to opensearch
 	if len(logsourcesEntityArray) > 0 {
-		err = helper.SendAlertToControlPlane(ctx, logsourcesEntityArray, alerts_common.LogSourceStatsNotReceivedTitle, alerts_common.LogSourceStatsNotReceivedMessage, alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertOpen, false, "system")
+		err = helper.SendAlertToControlPlane(ctx, logsourcesEntityArray, fmt.Sprintf(alerts_common.LogSourceStatsNotReceivedTitle, healthchecker.LogSourceActivityCheckerTime), fmt.Sprintf(alerts_common.LogSourceStatsNotReceivedMessage, healthchecker.LogSourceActivityCheckerTime), alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alert for logSource activity check", zap.Error(err))
 			return err

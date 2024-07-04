@@ -31,9 +31,9 @@ const ControllerBaseUrl = "https://controller.dev.databahn.app"
 const AlertsIndex = "db_alerts"
 
 const FleetNodeHealthCheck = "fleet health check"
-const FleetNodeHealthCheckTitle = "node health not reported"
-const FleetNodeHealthCheckMessage = "node health not reported for more than 5 minutes"
+const FleetNodeHealthCheckTitle = "No heartbeat received in the last 30 minutes"
+const FleetNodeHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified fleet node for the past 30 minutes. Heartbeat signals are periodic messages sent by fleet node to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 
-const FleetConnectorHealthCheckMessage = "connector health not reported for more than 5 minutes"
+const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified connector for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 
-const FleetConnectorHealthCheckTitle = "fleet connector health check"
+const FleetConnectorHealthCheckTitle = "No heartbeat received in the last 30 minutes"
