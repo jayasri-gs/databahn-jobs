@@ -1,6 +1,9 @@
 package util
 
-import "math"
+import (
+	"math"
+	"strconv"
+)
 
 func CalculateMean(numbers []float64) float64 {
 	sum := 0.0
@@ -22,4 +25,12 @@ func CalculateStandardDeviation(numbers []float64, mean float64) float64 {
 
 func CalculateZScore(newNumber, mean, stdDev float64) float64 {
 	return (newNumber - mean) / stdDev
+}
+
+func GetEnvInt64FromString(env string) int {
+	d, err := strconv.Atoi(env)
+	if err != nil {
+		return 0
+	}
+	return d
 }

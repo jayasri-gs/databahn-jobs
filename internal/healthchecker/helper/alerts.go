@@ -68,7 +68,7 @@ func SendToNotificationTopic(ctx context.Context, alerts []alerts_common.Alert) 
 	}
 
 	for _, alt := range alerts {
-		if alt.Criticality == "severe" {
+		if alt.Criticality == "severe" || alt.Criticality == "critical" {
 			alt.Criticality = "critical"
 		} else if alt.Criticality == "warning" {
 			alt.Criticality = "warning"
@@ -93,6 +93,8 @@ func SendToNotificationTopic(ctx context.Context, alerts []alerts_common.Alert) 
 			FunctionalityEntityId:   alt.FunctionalityEntityId,
 			FunctionalityEntityName: alt.FunctionalityEntityName,
 			FunctionalityType:       alt.FunctionalityType,
+			FirstObservedAt:         alt.FirstObservedAt,
+			LastObservedAt:          alt.LastObservedAt,
 		}
 		nfbyts, er := json.Marshal(notification)
 		if er != nil {

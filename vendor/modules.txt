@@ -216,12 +216,9 @@ github.com/databahn-ai/common-utils/constants
 github.com/databahn-ai/common-utils/databases
 github.com/databahn-ai/common-utils/kafka
 github.com/databahn-ai/common-utils/utils
-# github.com/databahn-ai/db-models v0.90.0
+# github.com/databahn-ai/db-models v0.105.0
 ## explicit; go 1.19
 github.com/databahn-ai/db-models/alerts_common
-github.com/databahn-ai/db-models/log-source
-github.com/databahn-ai/db-models/log-source-checkpoint
-github.com/databahn-ai/db-models/log-source-config
 github.com/databahn-ai/db-models/utils
 # github.com/databahn-ai/go-logging v0.5.0
 ## explicit; go 1.19

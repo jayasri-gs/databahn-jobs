@@ -8,6 +8,7 @@ const ACK_PROCESSOR = "ack_processor"
 const FLEET_HEALTH_CHECKER = "fleet-health-checker"
 const LOG_SOURCE_ACTIVITY_CHECKER = "log-source-activity-checker"
 const LOG_SOURCE_REPUTATION_CHECKER = "log-source-reputation-checker"
+const AGENT_HEALTH_CHECKER = "agent-health-checker"
 const KAFKA_QUERY = "kafka_query"
 
 const EVENT_SEQUENCING = "event-sequencing"
@@ -29,15 +30,18 @@ const ControllerBaseUrl = "https://controller.dev.databahn.app"
 
 const AlertsIndex = "db_alerts"
 
+const FleetNodeHealthCheck = "fleet health check"
+const FleetNodeHealthCheckTitle = "No heartbeat received in the last 30 minutes"
+const FleetNodeHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified fleet node for the past 30 minutes. Heartbeat signals are periodic messages sent by fleet node to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
+
 const AgentHealthCheck = "agent health check"
 const AgentFunctionality = "endpoint health checker"
-const FleetNodeHealthCheckTitle = "node health not reported"
 const AgentHealthCheckTitle = "unhealthy agent nodes found"
-const FleetNodeHealthCheckMessage = "node health not reported for more than 5 minutes"
 const AgentHealthCheckMessage = "health from agent not reported for more than 5 minutes, marking unhealthy"
 
-const FleetConnectorHealthCheckMessage = "connector health not reported for more than 5 minutes"
 
-const FleetConnectorHealthCheckTitle = "fleet connector health check"
+const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified connector for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
+
+const FleetConnectorHealthCheckTitle = "No heartbeat received in the last 30 minutes"
 
 const ALERT_REPORT_PROCESSOR = "alert_report_processor"
