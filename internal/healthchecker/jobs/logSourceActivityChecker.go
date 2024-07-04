@@ -12,6 +12,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	source "github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
@@ -90,7 +91,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 	//get agg stats by event source - returns all logsources which are reporting stats from last 15 minutes
 	endTime := time.Now()
-	startTime := endTime.Add(-time.Minute * healthchecker.LogSourceActivityCheckerTime)
+	startTime := endTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.LogSourceActivityCheckerTime)))
 	aggObj, err := getAggStatsForLogSource(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))

@@ -76,8 +76,8 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	}
 
 	endTime := time.Now()
-	startTime := endTime.Add(-time.Hour * healthchecker.ReputationCheckerTime)
-	startTimeThreshold := endTime.Add(-time.Hour * healthchecker.ReputationCheckerTimeThreshold)
+	startTime := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTime)))
+	startTimeThreshold := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTimeThreshold)))
 
 	var whisperingAlertsEntityArray, noisyAlertsEntityArray []alerts_common.AlertEntityObject
 	var whisperingLs, noisyLs []string

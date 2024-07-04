@@ -7,6 +7,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/fleet"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -15,8 +16,8 @@ import (
 
 func fleetHealthChecker(ctx context.Context) error {
 	currentTime := time.Now()
-	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckTime)
-	healthCheckIgnoreTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckIgnoreTime)
+	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckTime)))
+	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
 	logging.GetLogger().Info("checking fleet health")
 	//getting fleet nodes having heartbeat less than 15 minutes
 	var fleetNodes []fleet.Node
@@ -55,8 +56,8 @@ func fleetHealthChecker(ctx context.Context) error {
 
 func connectorHealthChecker(ctx context.Context) error {
 	currentTime := time.Now()
-	healthCheckTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckTime)
-	healthCheckIgnoreTime := currentTime.Add(-time.Minute * healthchecker.FleetHealthCheckIgnoreTime)
+	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckTime)))
+	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
 	logging.GetLogger().Info("checking fleet connector health")
 
 	var connectors []fleet.Connector

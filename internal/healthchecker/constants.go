@@ -2,7 +2,6 @@ package healthchecker
 
 import (
 	"github.com/databahn-ai/common-utils/utils"
-	"time"
 )
 
 const (
@@ -22,8 +21,8 @@ const (
 	StatusInactive = "INACTIVE"
 )
 
-var FleetHealthCheckTime = time.Duration(utils.GetEnvInt(EnvFleetHealthCheckTime, 30))
-var FleetHealthCheckIgnoreTime = time.Duration(utils.GetEnvInt(EnvFleetHealthCheckIgnoreTime, 600))
-var LogSourceActivityCheckerTime = time.Duration(utils.GetEnvInt(EnvLogSourceActivityCheckerTime, 30))
-var ReputationCheckerTime = time.Duration(utils.GetEnvInt(EnvReputationCheckerTime, 6))
-var ReputationCheckerTimeThreshold = time.Duration(utils.GetEnvInt(EnvReputationCheckerTimeThreshold, 24))
+var FleetHealthCheckTime = utils.GetEnvOrDefault(EnvFleetHealthCheckTime, "30")
+var FleetHealthCheckIgnoreTime = utils.GetEnvOrDefault(EnvFleetHealthCheckIgnoreTime, "600")
+var LogSourceActivityCheckerTime = utils.GetEnvOrDefault(EnvLogSourceActivityCheckerTime, "30")
+var ReputationCheckerTime = utils.GetEnvOrDefault(EnvReputationCheckerTime, "6")
+var ReputationCheckerTimeThreshold = utils.GetEnvOrDefault(EnvReputationCheckerTimeThreshold, "24")
