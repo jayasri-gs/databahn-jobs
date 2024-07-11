@@ -84,7 +84,7 @@ func SendToNotificationTopic(ctx context.Context, alerts []alerts_common.Alert) 
 			Suggestion:              "",
 			AlertInfo:               alt.Title,
 			Severity:                alt.Criticality,
-			Service:                 "BACKEND",
+			Service:                 alt.Functionality,
 			Granularity:             "tenant",
 			Version:                 "v1",
 			ID:                      alt.ID,
