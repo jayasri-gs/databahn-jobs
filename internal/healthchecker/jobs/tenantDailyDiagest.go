@@ -60,7 +60,7 @@ func TenantDailyDigest(ctx context.Context) error {
 	logger.GetLogger().Info("got total events ingested", zap.Reflect("eventsByTenantId", eventsIngestedByTenantId))
 
 	for _, currTenant := range t {
-		logger.GetLogger().Info("Processing tenant "+currTenant.Id.String(), zap.String("name", currTenant.Name))
+		logger.GetLogger().Debug("Processing tenant "+currTenant.Id.String(), zap.String("name", currTenant.Name))
 		dailyDigest := tenant.Digest{
 			TenantId: currTenant.Id,
 			Name:     currTenant.Name,
@@ -97,8 +97,10 @@ func TenantDailyDigest(ctx context.Context) error {
 		} else {
 			dailyDigest.VolumeReductionAchievement = 0
 		}
-
 		logger.GetLogger().Info("daily digest for tenant", zap.String("tenantId", currTenant.Id.String()), zap.String("tenantName", currTenant.Name), zap.Reflect("digest", dailyDigest))
+		// send notification to kafka
+
+		time.Sleep(5 * time.Second)
 	}
 
 	return nil
