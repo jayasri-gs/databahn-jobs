@@ -40,6 +40,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.UpdateReputationForLogSources(ctx)
 	case common.AGENT_HEALTH_CHECKER:
 		err = jobs.AgentAlertForFleetNode(ctx)
+	case common.TENANT_DAILY_DIGEST:
+		err = jobs.TenantDailyDigest(ctx)
 	case common.KAFKA_QUERY:
 		threadCount := utils.GetEnvInt("KAFKA_QUERY_THREAD_COUNT", 4)
 		waitMinutes := utils.GetEnvInt("KAFKA_QUERY_WAIT_MINUTES", 5)
