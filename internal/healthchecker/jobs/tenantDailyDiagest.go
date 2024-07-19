@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"io"
 	"strconv"
 	"strings"
@@ -99,10 +100,32 @@ func TenantDailyDigest(ctx context.Context) error {
 		}
 		logger.GetLogger().Info("daily digest for tenant", zap.String("tenantId", currTenant.Id.String()), zap.String("tenantName", currTenant.Name), zap.Reflect("digest", dailyDigest))
 		// send notification to kafka
-
+		h := helper.Notification{
+			TenantId:                dailyDigest.TenantId.String(),
+			Subject:                 "Daily Digest - " + time.Now().Format(time.DateOnly),
+			Message:                 dailyDigest,
+			NotificationType:        "EMAIL",
+			Suggestion:              "",
+			AlertInfo:               "Daily Digest",
+			Severity:                "info",
+			Service:                 "DAILY_DIGEST",
+			Granularity:             "tenant",
+			Version:                 "v1",
+			ID:                      dailyDigest.TenantId,
+			Title:                   "Daily Digest - " + time.Now().Format(time.DateOnly),
+			Functionality:           "DAILY_DIGEST",
+			FunctionalityEntityId:   dailyDigest.TenantId.String(),
+			FunctionalityEntityName: dailyDigest.Name,
+			FunctionalityType:       "DAILY_DIGEST",
+			FirstObservedAt:         time.Now(),
+			LastObservedAt:          time.Now(),
+		}
+		err := helper.SendNotificationMessage(h)
+		if err != nil {
+			logger.GetLogger().Error("error while sending notification", zap.Error(err))
+		}
 		time.Sleep(5 * time.Second)
 	}
-
 	return nil
 }
 

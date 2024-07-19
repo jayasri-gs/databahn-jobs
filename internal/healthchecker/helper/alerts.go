@@ -119,3 +119,34 @@ func SendToNotificationTopic(ctx context.Context, alerts []alerts_common.Alert) 
 	logger.GetLogger().Info("Producer Flush  complete.", zap.Int("count", count))
 	return nil
 }
+
+func SendNotificationMessage(notification Notification) error {
+	producer := GetProducer()
+
+	if producer == nil {
+		logger.GetLogger().Error("error while getting producer")
+		return errors.New("error while getting producer")
+	}
+
+	nfbyts, er := json.Marshal(notification)
+	if er != nil {
+		logger.GetLogger().Error("error while marshalling notification", zap.Error(er), zap.Reflect("notification", notification))
+		return er
+	}
+
+	headers := make([]kafka.Header, 1)
+	headers[0] = kafka.Header{Key: "notification", Value: nfbyts}
+	message := kafka.Message{
+		Message: nfbyts,
+		Headers: headers,
+	}
+
+	//ADDED CHANGES FOR DYNAMIC TOPIC
+	producer.SendAsyncTopic(message, healthchecker.NotificationTopic, func(err error) {
+		logger.GetLogger().Error("Error while sending alt", zap.Error(err), zap.Reflect("Notification", notification))
+	})
+	logger.GetLogger().Info("alert sent successfully", zap.Any("response", notification))
+	count := producer.Producer.Flush(1000)
+	logger.GetLogger().Info("Producer Flush  complete.", zap.Int("count", count))
+	return nil
+}
