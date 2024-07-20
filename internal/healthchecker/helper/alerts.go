@@ -133,12 +133,8 @@ func SendNotificationMessage(notification Notification) error {
 		logger.GetLogger().Error("error while marshalling notification", zap.Error(er), zap.Reflect("notification", notification))
 		return er
 	}
-
-	headers := make([]kafka.Header, 1)
-	headers[0] = kafka.Header{Key: "notification", Value: nfbyts}
 	message := kafka.Message{
 		Message: nfbyts,
-		Headers: headers,
 	}
 
 	//ADDED CHANGES FOR DYNAMIC TOPIC
