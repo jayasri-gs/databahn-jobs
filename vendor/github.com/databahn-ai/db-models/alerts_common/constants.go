@@ -7,6 +7,7 @@ const CriticalAlert = "critical"
 
 const FleetFunctionality = "fleet"
 const LogSourceFunctionality = "log-source"
+const DestinationFunctionality = "destination"
 const CloudLogSourceFunctionality = "cloud-log-source"
 const DispenserFunctionality = "dispenser"
 
@@ -21,6 +22,10 @@ const FleetConnectorHealthCheckMessage = "%s connector health not reported for m
 const LogSourceStatsNotReceived = "ingestion-checker"
 const LogSourceStatsNotReceivedTitle = "No new events received in the last %s minutes"
 const LogSourceStatsNotReceivedMessage = "No new events received in the last %s minutes"
+
+const DestinationStatsNotReceived = "delivery-checker"
+const DestinationStatsNotReceivedTitle = "No new events develivered to destination in the last %s minutes"
+const DestinationStatsNotReceivedMessage = "No new events develivered to destination in the last %s minutes"
 
 const TokenValidationFailed = "token-validation"
 const TokenValidationFailedTitle = "Invalid credentials"
