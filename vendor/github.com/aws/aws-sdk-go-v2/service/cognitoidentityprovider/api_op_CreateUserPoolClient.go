@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -61,12 +60,15 @@ type CreateUserPoolClientInput struct {
 	// are valid for one hour.
 	AccessTokenValidity *int32
 
-	// The allowed OAuth flows. code Use a code grant flow, which provides an
-	// authorization code as the response. This code can be exchanged for access tokens
-	// with the /oauth2/token endpoint. implicit Issue the access token (and,
-	// optionally, ID token, based on scopes) directly to your user. client_credentials
-	// Issue the access token from the /oauth2/token endpoint directly to a non-person
-	// user using a combination of the client ID and client secret.
+	// The OAuth grant types that you want your app client to generate. To create an
+	// app client that generates client credentials grants, you must add
+	// client_credentials as the only allowed OAuth flow. code Use a code grant flow,
+	// which provides an authorization code as the response. This code can be exchanged
+	// for access tokens with the /oauth2/token endpoint. implicit Issue the access
+	// token (and, optionally, ID token, based on scopes) directly to your user.
+	// client_credentials Issue the access token from the /oauth2/token endpoint
+	// directly to a non-person user using a combination of the client ID and client
+	// secret.
 	AllowedOAuthFlows []types.OAuthFlowType
 
 	// Set to true to use OAuth 2.0 features in your user pool app client.
@@ -114,12 +116,13 @@ type CreateUserPoolClientInput struct {
 	// supported.
 	CallbackURLs []string
 
-	// The default redirect URI. Must be in the CallbackURLs list. A redirect URI
-	// must:
+	// The default redirect URI. In app clients with one assigned IdP, replaces
+	// redirect_uri in authentication requests. Must be in the CallbackURLs list. A
+	// redirect URI must:
 	//   - Be an absolute URI.
 	//   - Be registered with the authorization server.
 	//   - Not include a fragment component.
-	// See OAuth 2.0 - Redirection Endpoint (https://tools.ietf.org/html/rfc6749#section-3.1.2)
+	// For more information, see Default redirect URI (https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-client-apps.html#cognito-user-pools-app-idp-settings-about)
 	// . Amazon Cognito requires HTTPS over HTTP except for http://localhost for
 	// testing purposes only. App callback URLs such as myapp://example are also
 	// supported.
@@ -290,25 +293,25 @@ func (c *Client) addOperationCreateUserPoolClientMiddlewares(stack *middleware.S
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddClientRequestIDMiddleware(stack); err != nil {
+	if err = addClientRequestID(stack); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddComputeContentLengthMiddleware(stack); err != nil {
+	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
+	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetryMiddlewares(stack, options); err != nil {
+	if err = addRetry(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
+	if err = addRawResponseToMetadata(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
+	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
 	if err = addClientUserAgent(stack, options); err != nil {
@@ -329,7 +332,7 @@ func (c *Client) addOperationCreateUserPoolClientMiddlewares(stack *middleware.S
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opCreateUserPoolClient(options.Region), middleware.Before); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
+	if err = addRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -7,7 +7,6 @@ const CriticalAlert = "critical"
 
 const FleetFunctionality = "fleet"
 const LogSourceFunctionality = "log-source"
-const DestinationFunctionality = "destination"
 const CloudLogSourceFunctionality = "cloud-log-source"
 const DispenserFunctionality = "dispenser"
 
@@ -23,21 +22,32 @@ const LogSourceStatsNotReceived = "ingestion-checker"
 const LogSourceStatsNotReceivedTitle = "No new events received in the last %s minutes"
 const LogSourceStatsNotReceivedMessage = "No new events received in the last %s minutes"
 
-const DestinationStatsNotReceived = "delivery-checker"
-const DestinationStatsNotReceivedTitle = "No new events develivered to destination in the last %s minutes"
-const DestinationStatsNotReceivedMessage = "No new events develivered to destination in the last %s minutes"
-
 const TokenValidationFailed = "token-validation"
 const TokenValidationFailedTitle = "Invalid credentials"
 const TokenValidationFailedMessage = "Marking Ingestion for log source temporarily disabled due to invalid/incorrect authentication token. Please verify source configuration."
 
 const S3DispenserOnboarding = "s3-dispenser-onboarding"
+const GooglePubsubDispenserOnboarding = "google-pubsub-dispenser-onboarding"
+const GoogleStorageDispenserOnboarding = "google-storage-dispenser-onboarding"
+
+const DestinationFunctionality = "destination"
+const DestinationStatsNotReceived = "delivery-checker"
+const DestinationStatsNotReceivedTitle = "No new events develivered to destination in the last %s minutes"
+const DestinationStatsNotReceivedMessage = "No new events develivered to destination in the last %s minutes"
 
 const S3CredentialsInvalidTitle = "Invalid Credentials. Disabling S3 destination"
 const S3CredentialsInvalidMessage = "Invalid aws credentials"
+const GoogleStorageCredentialsInvalidTitle = "Invalid Credentials. Disabling google cloud storage destination"
+const GoogleStorageCredentialsInvalidMessage = "Invalid google storage credentials"
+const GooglePubsubCredentialsInvalidTitle = "Invalid Credentials. Disabling google pubsub destination"
+const GooglePubsubCredentialsInvalidMessage = "Invalid google pubsub credentials"
 
 const S3BucketNotExistsTitle = "S3 bucket doesn't exist"
 const S3BucketNotExistsMessage = "S3 bucket doesn't exist"
+const GoogleStorageBucketNotExistsTitle = "Google storage bucket doesn't exist"
+const GoogleStorageBucketNotExistsMessage = "Google storage bucket doesn't exist"
+const GooglePubsubTopicNotExistsTitle = "Google pubsub topic doesn't exist"
+const GooglePubsubTopicNotExistsMessage = "Google pubsub topic doesn't exist"
 
 const S3SqsConnectorOnboarding = "s3-sqs-onboarding"
 

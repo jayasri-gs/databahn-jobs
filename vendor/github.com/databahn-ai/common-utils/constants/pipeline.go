@@ -27,3 +27,16 @@ const NormalizationCloudTopicPrefix = "db.raw.cloud"
 const TransformerTopicPrefix = "db.staging.transform"
 const InputTopicPrefix = "db.raw.input"
 const NormalizationTopicPrefix = "db.staging.norm"
+
+const DestinationForwardTypeRaw = "RAW"
+const DestinationForwardTypeParsed = "PARSED"
+
+const NormalizationTypeJson = "JSN"
+const NormalizationTypeJsonTopicSuffix = "json"
+const NormalizationTypeStructured = "STR"
+const NormalizationTypeCustom = "CST"
+
+const NormalizationTypeStructuredTopicSuffix = "structured"
+const NormalizationTypeSyslog = "SLG"
+const NormalizationTypeSyslogTopicSuffix = "syslog"
+const NormalizationTypeCustomTopicSuffix = "custom"

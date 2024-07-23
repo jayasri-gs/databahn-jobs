@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -53,13 +52,13 @@ type ListUsersInput struct {
 	AttributesToGet []string
 
 	// A filter string of the form "AttributeName Filter-Type "AttributeValue"".
-	// Quotation marks within the filter string must be escaped using the backslash (\)
-	// character. For example, " family_name = \"Reddy\"".
+	// Quotation marks within the filter string must be escaped using the backslash ( \
+	// ) character. For example, "family_name = \"Reddy\"" .
 	//   - AttributeName: The name of the attribute to search for. You can only search
 	//   for one attribute at a time.
-	//   - Filter-Type: For an exact match, use =, for example, " given_name =
-	//   \"Jon\"". For a prefix ("starts with") match, use ^=, for example, " given_name
-	//   ^= \"Jon\"".
+	//   - Filter-Type: For an exact match, use = , for example, " given_name = \"Jon\"
+	//   ". For a prefix ("starts with") match, use ^= , for example, " given_name ^=
+	//   \"Jon\" ".
 	//   - AttributeValue: The attribute value that must be matched for each user.
 	// If the filter string is empty, ListUsers returns all users in the user pool.
 	// You can only search for the following standard attributes:
@@ -148,25 +147,25 @@ func (c *Client) addOperationListUsersMiddlewares(stack *middleware.Stack, optio
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddClientRequestIDMiddleware(stack); err != nil {
+	if err = addClientRequestID(stack); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddComputeContentLengthMiddleware(stack); err != nil {
+	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
+	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetryMiddlewares(stack, options); err != nil {
+	if err = addRetry(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
+	if err = addRawResponseToMetadata(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
+	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
 	if err = addClientUserAgent(stack, options); err != nil {
@@ -187,7 +186,7 @@ func (c *Client) addOperationListUsersMiddlewares(stack *middleware.Stack, optio
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListUsers(options.Region), middleware.Before); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
+	if err = addRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/databahn-ai/common-utils/utils"
 	"runtime"
 	"time"
 
@@ -129,7 +130,7 @@ func (c Cluster) NewProducer(ctx context.Context, config ProducerConfig) (*Produ
 	for key, value := range config.ExtraParam {
 		configMap.SetKey(key, value)
 	}
-
+	CheckAndUpdateSSLConfig(configMap)
 	producer, err := kafka.NewProducer(configMap)
 	if err != nil {
 		return nil, err
@@ -373,6 +374,7 @@ func (c Cluster) createConsumer(config ConsumerConfig) (*kafka.Consumer, error) 
 	for key, value := range config.ExtraParam {
 		configMap.SetKey(key, value)
 	}
+	CheckAndUpdateSSLConfig(&configMap)
 	consumer, err := kafka.NewConsumer(&configMap)
 	return consumer, err
 }
@@ -439,5 +441,16 @@ func startConsuming(ctx context.Context, config ConsumerConfig, consumer *kafka.
 				}
 			}
 		}
+	}
+}
+
+func CheckAndUpdateSSLConfig(configMap *kafka.ConfigMap) {
+	sslEnabled := utils.GetEnvOrDefault(KafkaSSLEnabled, "false")
+	if sslEnabled == "true" {
+		configMap.SetKey("security.protocol", "SSL")
+		configMap.SetKey("ssl.key.location", utils.GetEnvOrDefault(KafkaSSLKeyLocation, ""))
+		configMap.SetKey("ssl.certificate.location", utils.GetEnvOrDefault(KafkaSSLCertLocation, ""))
+		configMap.SetKey("ssl.key.password", utils.GetEnvOrDefault(KafkaSSLPassword, ""))
+		configMap.SetKey("ssl.ca.location", utils.GetEnvOrDefault(KafkaSSLCA, ""))
 	}
 }

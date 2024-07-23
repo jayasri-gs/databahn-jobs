@@ -182,8 +182,9 @@ type AuthEventType struct {
 	// The challenge responses.
 	ChallengeResponses []ChallengeResponseType
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// The user context data captured at the time of an event request. This value
@@ -427,8 +428,9 @@ type DeviceType struct {
 	// The date when the device was last authenticated.
 	DeviceLastAuthenticatedDate *time.Time
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	DeviceLastModifiedDate *time.Time
 
 	noSmithyDocumentSerde
@@ -612,8 +614,9 @@ type EventRiskType struct {
 // The group type.
 type GroupType struct {
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// A string containing the description of the group.
@@ -622,8 +625,9 @@ type GroupType struct {
 	// The name of the group.
 	GroupName *string
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	LastModifiedDate *time.Time
 
 	// A non-negative integer value that specifies the precedence of this group
@@ -667,53 +671,87 @@ type IdentityProviderType struct {
 	// A mapping of IdP attributes to standard and custom user pool attributes.
 	AttributeMapping map[string]string
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// A list of IdP identifiers.
 	IdpIdentifiers []string
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	LastModifiedDate *time.Time
 
-	// The IdP details. The following list describes the provider detail keys for each
-	// IdP type.
-	//   - For Google and Login with Amazon:
-	//   - client_id
-	//   - client_secret
-	//   - authorize_scopes
-	//   - For Facebook:
-	//   - client_id
-	//   - client_secret
-	//   - authorize_scopes
-	//   - api_version
-	//   - For Sign in with Apple:
-	//   - client_id
-	//   - team_id
-	//   - key_id
-	//   - private_key You can submit a private_key when you add or update an IdP.
-	//   Describe operations don't return the private key.
-	//   - authorize_scopes
-	//   - For OIDC providers:
-	//   - client_id
-	//   - client_secret
-	//   - attributes_request_method
-	//   - oidc_issuer
-	//   - authorize_scopes
-	//   - The following keys are only present if Amazon Cognito didn't discover them
-	//   at the oidc_issuer URL.
-	//   - authorize_url
-	//   - token_url
-	//   - attributes_url
-	//   - jwks_uri
-	//   - Amazon Cognito sets the value of the following keys automatically. They are
-	//   read-only.
-	//   - attributes_url_add_attributes
-	//   - For SAML providers:
-	//   - MetadataFile or MetadataURL
-	//   - IDPSignout optional
+	// The scopes, URLs, and identifiers for your external identity provider. The
+	// following examples describe the provider detail keys for each IdP type. These
+	// values and their schema are subject to change. Social IdP authorize_scopes
+	// values must match the values listed here. OpenID Connect (OIDC) Amazon Cognito
+	// accepts the following elements when it can't discover endpoint URLs from
+	// oidc_issuer : attributes_url , authorize_url , jwks_uri , token_url . Create or
+	// update request: "ProviderDetails": { "attributes_request_method": "GET",
+	// "attributes_url": "https://auth.example.com/userInfo", "authorize_scopes":
+	// "openid profile email", "authorize_url": "https://auth.example.com/authorize",
+	// "client_id": "1example23456789", "client_secret": "provider-app-client-secret",
+	// "jwks_uri": "https://auth.example.com/.well-known/jwks.json", "oidc_issuer":
+	// "https://auth.example.com", "token_url": "https://example.com/token" } Describe
+	// response: "ProviderDetails": { "attributes_request_method": "GET",
+	// "attributes_url": "https://auth.example.com/userInfo",
+	// "attributes_url_add_attributes": "false", "authorize_scopes": "openid profile
+	// email", "authorize_url": "https://auth.example.com/authorize", "client_id":
+	// "1example23456789", "client_secret": "provider-app-client-secret", "jwks_uri":
+	// "https://auth.example.com/.well-known/jwks.json", "oidc_issuer":
+	// "https://auth.example.com", "token_url": "https://example.com/token" } SAML
+	// Create or update request with Metadata URL: "ProviderDetails": { "IDPInit":
+	// "true", "IDPSignout": "true", "EncryptedResponses" : "true", "MetadataURL":
+	// "https://auth.example.com/sso/saml/metadata", "RequestSigningAlgorithm":
+	// "rsa-sha256" } Create or update request with Metadata file: "ProviderDetails":
+	// { "IDPInit": "true", "IDPSignout": "true", "EncryptedResponses" : "true",
+	// "MetadataFile": "[metadata XML]", "RequestSigningAlgorithm": "rsa-sha256" } The
+	// value of MetadataFile must be the plaintext metadata document with all quote
+	// (") characters escaped by backslashes. Describe response: "ProviderDetails": {
+	// "IDPInit": "true", "IDPSignout": "true", "EncryptedResponses" : "true",
+	// "ActiveEncryptionCertificate": "[certificate]", "MetadataURL":
+	// "https://auth.example.com/sso/saml/metadata", "RequestSigningAlgorithm":
+	// "rsa-sha256", "SLORedirectBindingURI": "https://auth.example.com/slo/saml",
+	// "SSORedirectBindingURI": "https://auth.example.com/sso/saml" } LoginWithAmazon
+	// Create or update request: "ProviderDetails": { "authorize_scopes": "profile
+	// postal_code", "client_id": "amzn1.application-oa2-client.1example23456789",
+	// "client_secret": "provider-app-client-secret" Describe response:
+	// "ProviderDetails": { "attributes_url": "https://api.amazon.com/user/profile",
+	// "attributes_url_add_attributes": "false", "authorize_scopes": "profile
+	// postal_code", "authorize_url": "https://www.amazon.com/ap/oa", "client_id":
+	// "amzn1.application-oa2-client.1example23456789", "client_secret":
+	// "provider-app-client-secret", "token_request_method": "POST", "token_url":
+	// "https://api.amazon.com/auth/o2/token" } Google Create or update request:
+	// "ProviderDetails": { "authorize_scopes": "email profile openid", "client_id":
+	// "1example23456789.apps.googleusercontent.com", "client_secret":
+	// "provider-app-client-secret" } Describe response: "ProviderDetails": {
+	// "attributes_url": "https://people.googleapis.com/v1/people/me?personFields=",
+	// "attributes_url_add_attributes": "true", "authorize_scopes": "email profile
+	// openid", "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+	// "client_id": "1example23456789.apps.googleusercontent.com", "client_secret":
+	// "provider-app-client-secret", "oidc_issuer": "https://accounts.google.com",
+	// "token_request_method": "POST", "token_url":
+	// "https://www.googleapis.com/oauth2/v4/token" } SignInWithApple Create or update
+	// request: "ProviderDetails": { "authorize_scopes": "email name", "client_id":
+	// "com.example.cognito", "private_key": "1EXAMPLE", "key_id": "2EXAMPLE",
+	// "team_id": "3EXAMPLE" } Describe response: "ProviderDetails": {
+	// "attributes_url_add_attributes": "false", "authorize_scopes": "email name",
+	// "authorize_url": "https://appleid.apple.com/auth/authorize", "client_id":
+	// "com.example.cognito", "key_id": "1EXAMPLE", "oidc_issuer":
+	// "https://appleid.apple.com", "team_id": "2EXAMPLE", "token_request_method":
+	// "POST", "token_url": "https://appleid.apple.com/auth/token" } Facebook Create or
+	// update request: "ProviderDetails": { "api_version": "v17.0",
+	// "authorize_scopes": "public_profile, email", "client_id": "1example23456789",
+	// "client_secret": "provider-app-client-secret" } Describe response:
+	// "ProviderDetails": { "api_version": "v17.0", "attributes_url":
+	// "https://graph.facebook.com/v17.0/me?fields=", "attributes_url_add_attributes":
+	// "true", "authorize_scopes": "public_profile, email", "authorize_url":
+	// "https://www.facebook.com/v17.0/dialog/oauth", "client_id": "1example23456789",
+	// "client_secret": "provider-app-client-secret", "token_request_method": "GET",
+	// "token_url": "https://graph.facebook.com/v17.0/oauth/access_token" }
 	ProviderDetails map[string]string
 
 	// The IdP name.
@@ -917,7 +955,9 @@ type NotifyEmailType struct {
 // The minimum and maximum values of an attribute that is of the number data type.
 type NumberAttributeConstraintsType struct {
 
-	// The maximum value of an attribute that is of the number data type.
+	// The maximum length of a number attribute value. Must be a number less than or
+	// equal to 2^1023 , represented as a string with a length of 131072 characters or
+	// fewer.
 	MaxValue *string
 
 	// The minimum value of an attribute that is of the number data type.
@@ -984,8 +1024,9 @@ type PreTokenGenerationVersionConfigType struct {
 // A container for IdP details.
 type ProviderDescription struct {
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// The date the provider was last modified.
@@ -1051,7 +1092,12 @@ type ResourceServerScopeType struct {
 // A container for information about a resource server for a user pool.
 type ResourceServerType struct {
 
-	// The identifier for the resource server.
+	// A unique resource server identifier for the resource server. The identifier can
+	// be an API friendly name like solar-system-data . You can also set an API URL
+	// like https://solar-system-data-api.example.com as your identifier. Amazon
+	// Cognito represents scopes in the access token in the format
+	// $resource-server-identifier/$scope . Longer scope-identifier strings increase
+	// the size of your access tokens.
 	Identifier *string
 
 	// The name of the resource server.
@@ -1080,8 +1126,9 @@ type RiskConfigurationType struct {
 	// and the EventAction .
 	CompromisedCredentialsRiskConfiguration *CompromisedCredentialsRiskConfigurationType
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	LastModifiedDate *time.Time
 
 	// The configuration to override the risk decision.
@@ -1276,7 +1323,9 @@ type SoftwareTokenMfaSettingsType struct {
 // The constraints associated with a string attribute.
 type StringAttributeConstraintsType struct {
 
-	// The maximum length.
+	// The maximum length of a string attribute value. Must be a number less than or
+	// equal to 2^1023 , represented as a string with a length of 131072 characters or
+	// fewer.
 	MaxLength *string
 
 	// The minimum length.
@@ -1321,15 +1370,17 @@ type UICustomizationType struct {
 	// The client ID for the client app.
 	ClientId *string
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// The logo image for the UI customization.
 	ImageUrl *string
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	LastModifiedDate *time.Time
 
 	// The user pool ID for the user pool.
@@ -1396,8 +1447,9 @@ type UserImportJobType struct {
 	// The message returned when the user import job is completed.
 	CompletionMessage *string
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// The number of users that couldn't be imported.
@@ -1568,8 +1620,9 @@ type UserPoolClientType struct {
 	// The client secret from the user pool request of the client type.
 	ClientSecret *string
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// The default redirect URI. Must be in the CallbackURLs list. A redirect URI
@@ -1640,8 +1693,9 @@ type UserPoolClientType struct {
 	// of your app client, your ID tokens are valid for one hour.
 	IdTokenValidity *int32
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	LastModifiedDate *time.Time
 
 	// A list of allowed logout URLs for the IdPs.
@@ -1726,8 +1780,9 @@ type UserPoolClientType struct {
 // A user pool description.
 type UserPoolDescriptionType struct {
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// The ID in a user pool description.
@@ -1736,8 +1791,9 @@ type UserPoolDescriptionType struct {
 	// The Lambda configuration information in a user pool description.
 	LambdaConfig *LambdaConfigType
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	LastModifiedDate *time.Time
 
 	// The name in a user pool description.
@@ -1784,8 +1840,9 @@ type UserPoolType struct {
 	// The attributes that are auto-verified in a user pool.
 	AutoVerifiedAttributes []VerifiedAttributeType
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was created.
+	// The date and time when the item was created. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	CreationDate *time.Time
 
 	// A custom domain name that you provide to Amazon Cognito. This parameter applies
@@ -1840,8 +1897,9 @@ type UserPoolType struct {
 	// The Lambda triggers associated with the user pool.
 	LambdaConfig *LambdaConfigType
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	LastModifiedDate *time.Time
 
 	// Can be one of the following values:
@@ -1952,8 +2010,9 @@ type UserType struct {
 	// The creation date of the user.
 	UserCreateDate *time.Time
 
-	// The date and time, in ISO 8601 (https://www.iso.org/iso-8601-date-and-time-format.html)
-	// format, when the item was modified.
+	// The date and time when the item was modified. Amazon Cognito returns this
+	// timestamp in UNIX epoch time format. Your SDK might render the output in a
+	// human-readable format like ISO 8601 or a Java Date object.
 	UserLastModifiedDate *time.Time
 
 	// The user status. This can be one of the following:

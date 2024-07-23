@@ -131,6 +131,11 @@ type Association struct {
 	// shared form another account, you must set the document version to default .
 	DocumentVersion *string
 
+	// The number of hours that an association can run on specified targets. After the
+	// resulting cutoff time passes, associations that are currently running are
+	// cancelled, and no pending executions are started on remaining targets.
+	Duration *int32
+
 	// The managed node ID.
 	InstanceId *string
 
@@ -205,6 +210,11 @@ type AssociationDescription struct {
 
 	// The document version.
 	DocumentVersion *string
+
+	// The number of hours that an association can run on specified targets. After the
+	// resulting cutoff time passes, associations that are currently running are
+	// cancelled, and no pending executions are started on remaining targets.
+	Duration *int32
 
 	// The managed node ID.
 	InstanceId *string
@@ -491,6 +501,11 @@ type AssociationVersionInfo struct {
 	// The version of an Amazon Web Services Systems Manager document (SSM document)
 	// used when the association version was created.
 	DocumentVersion *string
+
+	// The number of hours that an association can run on specified targets. After the
+	// resulting cutoff time passes, associations that are currently running are
+	// cancelled, and no pending executions are started on remaining targets.
+	Duration *int32
 
 	// The maximum number of targets allowed to run the association at the same time.
 	// You can specify a number, for example 10, or a percentage of the target set, for
@@ -977,15 +992,15 @@ type Command struct {
 	// The maximum number of managed nodes that are allowed to run the command at the
 	// same time. You can specify a number of managed nodes, such as 10, or a
 	// percentage of nodes, such as 10%. The default value is 50. For more information
-	// about how to use MaxConcurrency , see Running commands using Systems Manager
-	// Run Command (https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html)
+	// about how to use MaxConcurrency , see Amazon Web Services Systems Manager Run
+	// Command (https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html)
 	// in the Amazon Web Services Systems Manager User Guide.
 	MaxConcurrency *string
 
 	// The maximum number of errors allowed before the system stops sending the
 	// command to additional targets. You can specify a number of errors, such as 10,
 	// or a percentage or errors, such as 10%. The default value is 0 . For more
-	// information about how to use MaxErrors , see Running commands using Systems
+	// information about how to use MaxErrors , see Amazon Web Services Systems
 	// Manager Run Command (https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html)
 	// in the Amazon Web Services Systems Manager User Guide.
 	MaxErrors *string
@@ -1333,11 +1348,11 @@ type CommandPlugin struct {
 
 // A summary of the call execution that includes an execution ID, the type of
 // execution (for example, Command ), and the date/time of the execution using a
-// datetime object that is saved in the following format: yyyy-MM-dd'T'HH:mm:ss'Z'.
+// datetime object that is saved in the following format: yyyy-MM-dd'T'HH:mm:ss'Z'
 type ComplianceExecutionSummary struct {
 
 	// The time the execution ran as a datetime object that is saved in the following
-	// format: yyyy-MM-dd'T'HH:mm:ss'Z'.
+	// format: yyyy-MM-dd'T'HH:mm:ss'Z'
 	//
 	// This member is required.
 	ExecutionTime *time.Time
@@ -1518,6 +1533,19 @@ type CreateAssociationBatchRequestEntry struct {
 
 	// The document version.
 	DocumentVersion *string
+
+	// The number of hours the association can run before it is canceled. Duration
+	// applies to associations that are currently running, and any pending and in
+	// progress commands on all targets. If a target was taken offline for the
+	// association to run, it is made available again immediately, without a reboot.
+	// The Duration parameter applies only when both these conditions are true:
+	//   - The association for which you specify a duration is cancelable according to
+	//   the parameters of the SSM command document or Automation runbook associated with
+	//   this execution.
+	//   - The command specifies the ApplyOnlyAtCronInterval (https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_CreateAssociationBatchRequestEntry.html#systemsmanager-Type-CreateAssociationBatchRequestEntry-ApplyOnlyAtCronInterval)
+	//   parameter, which means that the association doesn't run immediately after it is
+	//   created, but only according to the specified schedule.
+	Duration *int32
 
 	// The managed node ID. InstanceId has been deprecated. To specify a managed node
 	// ID for an association, use the Targets parameter. Requests that include the
@@ -1794,8 +1822,8 @@ type DocumentIdentifier struct {
 	TargetType *string
 
 	// An optional field specifying the version of the artifact associated with the
-	// document. For example, "Release 12, Update 6". This value is unique across all
-	// versions of a document, and can't be changed.
+	// document. For example, 12.6. This value is unique across all versions of a
+	// document, and can't be changed.
 	VersionName *string
 
 	noSmithyDocumentSerde
@@ -1899,8 +1927,8 @@ type DocumentRequires struct {
 	Version *string
 
 	// An optional field specifying the version of the artifact associated with the
-	// document. For example, "Release 12, Update 6". This value is unique across all
-	// versions of a document, and can't be changed.
+	// document. For example, 12.6. This value is unique across all versions of a
+	// document, and can't be changed.
 	VersionName *string
 
 	noSmithyDocumentSerde
@@ -1998,9 +2026,8 @@ type DocumentVersionInfo struct {
 	// the URL of the S3 bucket is correct."
 	StatusInformation *string
 
-	// The version of the artifact associated with the document. For example, "Release
-	// 12, Update 6". This value is unique across all versions of a document, and can't
-	// be changed.
+	// The version of the artifact associated with the document. For example, 12.6.
+	// This value is unique across all versions of a document, and can't be changed.
 	VersionName *string
 
 	noSmithyDocumentSerde
@@ -2091,7 +2118,7 @@ type InstanceAggregatedAssociationOverview struct {
 	// Detailed status information about the aggregated associations.
 	DetailedStatus *string
 
-	// The number of associations for the managed node(s).
+	// The number of associations for the managed nodes.
 	InstanceAssociationStatusAggregatedCount map[string]int32
 
 	noSmithyDocumentSerde
@@ -2106,7 +2133,7 @@ type InstanceAssociation struct {
 	// Version information for the association on the managed node.
 	AssociationVersion *string
 
-	// The content of the association document for the managed node(s).
+	// The content of the association document for the managed nodes.
 	Content *string
 
 	// The managed node ID.
@@ -2117,7 +2144,7 @@ type InstanceAssociation struct {
 
 // An S3 bucket where you want to store the results of this request. For the
 // minimal permissions required to enable Amazon S3 output for an association, see
-// Creating associations (https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-state-assoc.html)
+// Create an association (console) (https://docs.aws.amazon.com/systems-manager/latest/userguide/state-manager-associations-creating.html#state-manager-associations-console)
 // in the Systems Manager User Guide.
 type InstanceAssociationOutputLocation struct {
 
@@ -2232,8 +2259,8 @@ type InstanceInformation struct {
 	// specified as the DefaultInstanceName property using the CreateActivation
 	// command. It is applied to the managed node by specifying the Activation Code and
 	// Activation ID when you install SSM Agent on the node, as explained in Install
-	// SSM Agent for a hybrid environment (Linux) (https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-install-managed-linux.html)
-	// and Install SSM Agent for a hybrid environment (Windows) (https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-install-managed-win.html)
+	// SSM Agent for a hybrid and multicloud environment (Linux) (https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-install-managed-linux.html)
+	// and Install SSM Agent for a hybrid and multicloud environment (Windows) (https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-install-managed-win.html)
 	// . To retrieve the Name tag of an EC2 instance, use the Amazon EC2
 	// DescribeInstances operation. For information, see DescribeInstances (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html)
 	// in the Amazon EC2 API Reference or describe-instances (https://docs.aws.amazon.com/cli/latest/reference/ec2/describe-instances.html)
@@ -2375,8 +2402,8 @@ type InstancePatchState struct {
 	// maintain in an S3 bucket in YAML format and specify in the SSM document
 	// AWS-RunPatchBaseline , overrides the patches specified by the default patch
 	// baseline. For more information about the InstallOverrideList parameter, see
-	// About the AWS-RunPatchBaseline (https://docs.aws.amazon.com/systems-manager/latest/userguide/patch-manager-about-aws-runpatchbaseline.html)
-	// SSM document in the Amazon Web Services Systems Manager User Guide.
+	// About the AWS-RunPatchBaseline SSM document (https://docs.aws.amazon.com/systems-manager/latest/userguide/patch-manager-about-aws-runpatchbaseline.html)
+	// in the Amazon Web Services Systems Manager User Guide.
 	InstallOverrideList *string
 
 	// The number of patches from the patch baseline that are installed on the managed
@@ -2482,6 +2509,132 @@ type InstancePatchStateFilter struct {
 	//
 	// This member is required.
 	Values []string
+
+	noSmithyDocumentSerde
+}
+
+// An object containing various properties of a managed node.
+type InstanceProperty struct {
+
+	// The activation ID created by Systems Manager when the server or virtual machine
+	// (VM) was registered
+	ActivationId *string
+
+	// The version of SSM Agent running on your managed node.
+	AgentVersion *string
+
+	// The CPU architecture of the node. For example, x86_64.
+	Architecture *string
+
+	// Status information about the aggregated associations.
+	AssociationOverview *InstanceAggregatedAssociationOverview
+
+	// The status of the State Manager association applied to the managed node.
+	AssociationStatus *string
+
+	// The fully qualified host name of the managed node.
+	ComputerName *string
+
+	// The public IPv4 address assigned to the node. If a public IPv4 address isn't
+	// assigned to the node, this value is blank.
+	IPAddress *string
+
+	// The IAM role used in the hybrid activation to register the node with Systems
+	// Manager.
+	IamRole *string
+
+	// The ID of the managed node.
+	InstanceId *string
+
+	// The instance profile attached to the node. If an instance profile isn't
+	// attached to the node, this value is blank.
+	InstanceRole *string
+
+	// The current state of the node.
+	InstanceState *string
+
+	// The instance type of the managed node. For example, t3.large.
+	InstanceType *string
+
+	// The name of the key pair associated with the node. If a key pair isnt't
+	// associated with the node, this value is blank.
+	KeyName *string
+
+	// The date the association was last run.
+	LastAssociationExecutionDate *time.Time
+
+	// The date and time when the SSM Agent last pinged the Systems Manager service.
+	LastPingDateTime *time.Time
+
+	// The last date the association was successfully run.
+	LastSuccessfulAssociationExecutionDate *time.Time
+
+	// The timestamp for when the node was launched.
+	LaunchTime *time.Time
+
+	// The value of the EC2 Name tag associated with the node. If a Name tag hasn't
+	// been applied to the node, this value is blank.
+	Name *string
+
+	// Connection status of the SSM Agent on the managed node.
+	PingStatus PingStatus
+
+	// The name of the operating system platform running on your managed node.
+	PlatformName *string
+
+	// The operating system platform type of the managed node. For example, Windows.
+	PlatformType PlatformType
+
+	// The version of the OS platform running on your managed node.
+	PlatformVersion *string
+
+	// The date the node was registered with Systems Manager.
+	RegistrationDate *time.Time
+
+	// The type of managed node.
+	ResourceType *string
+
+	// The ID of the source resource.
+	SourceId *string
+
+	// The type of the source resource.
+	SourceType SourceType
+
+	noSmithyDocumentSerde
+}
+
+// Describes a filter for a specific list of managed nodes. You can filter node
+// information by using tags. You specify tags by using a key-value mapping.
+type InstancePropertyFilter struct {
+
+	// The name of the filter.
+	//
+	// This member is required.
+	Key InstancePropertyFilterKey
+
+	// The filter values.
+	//
+	// This member is required.
+	ValueSet []string
+
+	noSmithyDocumentSerde
+}
+
+// The filters to describe or get information about your managed nodes.
+type InstancePropertyStringFilter struct {
+
+	// The filter key name to describe your managed nodes.
+	//
+	// This member is required.
+	Key *string
+
+	// The filter key name to describe your managed nodes.
+	//
+	// This member is required.
+	Values []string
+
+	// The operator used by the filter call.
+	Operator InstancePropertyFilterOperator
 
 	noSmithyDocumentSerde
 }
@@ -3369,7 +3522,8 @@ type OpsFilter struct {
 // alarm or event details, alarm history, and an alarm timeline graph. For the
 // Amazon Web Services resource, OpsCenter aggregates information from Config,
 // CloudTrail logs, and EventBridge, so you don't have to navigate across multiple
-// console pages during your investigation. For more information, see OpsCenter (https://docs.aws.amazon.com/systems-manager/latest/userguide/OpsCenter.html)
+// console pages during your investigation. For more information, see Amazon Web
+// Services Systems Manager OpsCenter (https://docs.aws.amazon.com/systems-manager/latest/userguide/OpsCenter.html)
 // in the Amazon Web Services Systems Manager User Guide.
 type OpsItem struct {
 
@@ -3821,7 +3975,8 @@ type ParameterHistory struct {
 	// Information about the parameter.
 	Description *string
 
-	// The ID of the query key used for this parameter.
+	// The alias of the Key Management Service (KMS) key used to encrypt the
+	// parameter. Applies to SecureString parameters only
 	KeyId *string
 
 	// Labels assigned to the parameter version.
@@ -3877,9 +4032,12 @@ type ParameterInlinePolicy struct {
 	noSmithyDocumentSerde
 }
 
-// Metadata includes information like the ARN of the last user and the date/time
-// the parameter was last used.
+// Metadata includes information like the Amazon Resource Name (ARN) of the last
+// user to update the parameter and the date and time the parameter was last used.
 type ParameterMetadata struct {
+
+	// The (ARN) of the last user to update the parameter.
+	ARN *string
 
 	// A parameter name can include only the following letters and symbols.
 	// a-zA-Z0-9_.-
@@ -3892,7 +4050,8 @@ type ParameterMetadata struct {
 	// Description of the parameter actions.
 	Description *string
 
-	// The ID of the query key used for this parameter.
+	// The alias of the Key Management Service (KMS) key used to encrypt the
+	// parameter. Applies to SecureString parameters only.
 	KeyId *string
 
 	// Date the parameter was last changed or updated.
@@ -4144,7 +4303,8 @@ type PatchComplianceData struct {
 	Title *string
 
 	// The IDs of one or more Common Vulnerabilities and Exposure (CVE) issues that
-	// are resolved by the patch.
+	// are resolved by the patch. Currently, CVE ID values are reported only for
+	// patches with a status of Missing or Failed .
 	CVEIds *string
 
 	noSmithyDocumentSerde
@@ -4549,7 +4709,8 @@ type ResourceDataSyncSource struct {
 	// options, then Systems Manager automatically enables all OpsData sources in the
 	// selected Amazon Web Services Regions for all Amazon Web Services accounts in
 	// your organization (or in the selected organization units). For more information,
-	// see About multiple account and Region resource data syncs (https://docs.aws.amazon.com/systems-manager/latest/userguide/Explorer-resouce-data-sync-multiple-accounts-and-regions.html)
+	// see Setting up Systems Manager Explorer to display data from multiple accounts
+	// and Regions (https://docs.aws.amazon.com/systems-manager/latest/userguide/Explorer-resource-data-sync.html)
 	// in the Amazon Web Services Systems Manager User Guide.
 	EnableAllOpsDataSources bool
 
@@ -4577,7 +4738,8 @@ type ResourceDataSyncSourceWithState struct {
 	// options, then Systems Manager automatically enables all OpsData sources in the
 	// selected Amazon Web Services Regions for all Amazon Web Services accounts in
 	// your organization (or in the selected organization units). For more information,
-	// see About multiple account and Region resource data syncs (https://docs.aws.amazon.com/systems-manager/latest/userguide/Explorer-resouce-data-sync-multiple-accounts-and-regions.html)
+	// see Setting up Systems Manager Explorer to display data from multiple accounts
+	// and Regions (https://docs.aws.amazon.com/systems-manager/latest/userguide/Explorer-resource-data-sync.html)
 	// in the Amazon Web Services Systems Manager User Guide.
 	EnableAllOpsDataSources bool
 
@@ -5016,37 +5178,33 @@ type Tag struct {
 // information about running tasks that don't specify targets, see Registering
 // maintenance window tasks without targets (https://docs.aws.amazon.com/systems-manager/latest/userguide/maintenance-windows-targetless-tasks.html)
 // in the Amazon Web Services Systems Manager User Guide. Supported formats include
-// the following.
-//   - Key=InstanceIds,Values=,,
-//   - Key=tag:,Values=,
-//   - Key=tag-key,Values=,
-//   - Run Command and Maintenance window targets only:
-//     Key=resource-groups:Name,Values=
-//   - Maintenance window targets only:
-//     Key=resource-groups:ResourceTypeFilters,Values=,
-//   - Automation targets only: Key=ResourceGroup;Values=
+// the following. For all Systems Manager capabilities:
+//   - Key=tag-key,Values=tag-value-1,tag-value-2
 //
-// For example:
+// For Automation and Change Manager:
+//   - Key=tag:tag-key,Values=tag-value
+//   - Key=ResourceGroup,Values=resource-group-name
+//   - Key=ParameterValues,Values=value-1,value-2,value-3
+//   - To target all instances in the Amazon Web Services Region:
+//   - Key=AWS::EC2::Instance,Values=*
+//   - Key=InstanceIds,Values=*
 //
-//	-
-//	Key=InstanceIds,Values=i-02573cafcfEXAMPLE,i-0471e04240EXAMPLE,i-07782c72faEXAMPLE
-//	- Key=tag:CostCenter,Values=CostCenter1,CostCenter2,CostCenter3
-//	- Key=tag-key,Values=Name,Instance-Type,CostCenter
-//	- Run Command and Maintenance window targets only:
-//	Key=resource-groups:Name,Values=ProductionResourceGroup This example
-//	demonstrates how to target all resources in the resource group
-//	ProductionResourceGroup in your maintenance window.
-//	- Maintenance window targets only:
-//	Key=resource-groups:ResourceTypeFilters,Values=AWS::EC2::INSTANCE,AWS::EC2::VPC
-//	This example demonstrates how to target only Amazon Elastic Compute Cloud
-//	(Amazon EC2) instances and VPCs in your maintenance window.
-//	- Automation targets only: Key=ResourceGroup,Values=MyResourceGroup
-//	- State Manager association targets only: Key=InstanceIds,Values=* This
-//	example demonstrates how to target all managed instances in the Amazon Web
-//	Services Region where the association was created.
+// For Run Command and Maintenance Windows:
+//   - Key=InstanceIds,Values=instance-id-1,instance-id-2,instance-id-3
+//   - Key=tag:tag-key,Values=tag-value-1,tag-value-2
+//   - Key=resource-groups:Name,Values=resource-group-name
+//   - Additionally, Maintenance Windows support targeting resource types:
+//     -
+//     Key=resource-groups:ResourceTypeFilters,Values=resource-type-1,resource-type-2
+//
+// For State Manager:
+//   - Key=InstanceIds,Values=instance-id-1,instance-id-2,instance-id-3
+//   - Key=tag:tag-key,Values=tag-value-1,tag-value-2
+//   - To target all instances in the Amazon Web Services Region:
+//   - Key=InstanceIds,Values=*
 //
 // For more information about how to send commands that target managed nodes using
-// Key,Value parameters, see Targeting multiple instances (https://docs.aws.amazon.com/systems-manager/latest/userguide/send-commands-multiple.html#send-commands-targeting)
+// Key,Value parameters, see Targeting multiple managed nodes (https://docs.aws.amazon.com/systems-manager/latest/userguide/send-commands-multiple.html#send-commands-targeting)
 // in the Amazon Web Services Systems Manager User Guide.
 type Target struct {
 

@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -80,11 +79,11 @@ type CreatePatchBaselineInput struct {
 	//   only if it is a dependency of another package. It is considered compliant with
 	//   the patch baseline, and its status is reported as InstalledOther . This is the
 	//   default action if no option is specified.
-	//   - BLOCK : Packages in the RejectedPatches list, and packages that include them
-	//   as dependencies, aren't installed under any circumstances. If a package was
-	//   installed before it was added to the Rejected patches list, it is considered
-	//   non-compliant with the patch baseline, and its status is reported as
-	//   InstalledRejected .
+	//   - BLOCK: Packages in the Rejected patches list, and packages that include
+	//   them as dependencies, aren't installed by Patch Manager under any circumstances.
+	//   If a package was installed before it was added to the Rejected patches list, or
+	//   is installed outside of Patch Manager afterward, it's considered noncompliant
+	//   with the patch baseline and its status is reported as InstalledRejected.
 	RejectedPatchesAction types.PatchAction
 
 	// Information about the patches to use to update the managed nodes, including
@@ -138,25 +137,25 @@ func (c *Client) addOperationCreatePatchBaselineMiddlewares(stack *middleware.St
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddClientRequestIDMiddleware(stack); err != nil {
+	if err = addClientRequestID(stack); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddComputeContentLengthMiddleware(stack); err != nil {
+	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
+	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetryMiddlewares(stack, options); err != nil {
+	if err = addRetry(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
+	if err = addRawResponseToMetadata(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
+	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
 	if err = addClientUserAgent(stack, options); err != nil {
@@ -180,7 +179,7 @@ func (c *Client) addOperationCreatePatchBaselineMiddlewares(stack *middleware.St
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opCreatePatchBaseline(options.Region), middleware.Before); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
+	if err = addRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

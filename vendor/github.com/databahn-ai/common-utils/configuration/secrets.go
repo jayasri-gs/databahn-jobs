@@ -29,8 +29,8 @@ func ReadOpenSearchSecrets(ctx context.Context, secretName, region string) (*Ope
 }
 
 type OAuthClientCredentials struct {
-	ClientId     string `json:"clientId"`
-	ClientSecret string `json:"clientSecret"`
+	ServiceAccountClient string `json:"service_account_client"`
+	ServiceAccountSecret string `json:"service_account_secret"`
 }
 
 func ReadOAuthClientCredentials(secretName, region string) (*OAuthClientCredentials, error) {

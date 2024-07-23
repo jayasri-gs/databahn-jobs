@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -31,10 +30,11 @@ func (c *Client) PutParameter(ctx context.Context, params *PutParameterInput, op
 type PutParameterInput struct {
 
 	// The fully qualified name of the parameter that you want to add to the system.
-	// The fully qualified name includes the complete hierarchy of the parameter path
-	// and name. For parameters in a hierarchy, you must include a leading forward
-	// slash character (/) when you create or reference a parameter. For example:
-	// /Dev/DBServer/MySQL/db-string13 Naming Constraints:
+	// You can't enter the Amazon Resource Name (ARN) for a parameter, only the
+	// parameter name itself. The fully qualified name includes the complete hierarchy
+	// of the parameter path and name. For parameters in a hierarchy, you must include
+	// a leading forward slash character (/) when you create or reference a parameter.
+	// For example: /Dev/DBServer/MySQL/db-string13 Naming Constraints:
 	//   - Parameter names are case sensitive.
 	//   - A parameter name must be unique within an Amazon Web Services Region
 	//   - A parameter name can't be prefixed with " aws " or " ssm "
@@ -91,7 +91,7 @@ type PutParameterInput struct {
 	// parameters are created successfully, see Setting up notifications or trigger
 	// actions based on Parameter Store events (https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-paramstore-cwe.html)
 	// . For more information about AMI format validation , see Native parameter
-	// support for Amazon Machine Image (AMI) IDs (https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-ec2-aliases.html)
+	// support for Amazon Machine Image IDs (https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-ec2-aliases.html)
 	// .
 	DataType *string
 
@@ -151,7 +151,7 @@ type PutParameterInput struct {
 	// Advanced parameters have a content size limit of 8 KB and can be configured to
 	// use parameter policies. You can create a maximum of 100,000 advanced parameters
 	// for each Region in an Amazon Web Services account. Advanced parameters incur a
-	// charge. For more information, see Standard and advanced parameter tiers (https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-advanced-parameters.html)
+	// charge. For more information, see Managing parameter tiers (https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-advanced-parameters.html)
 	// in the Amazon Web Services Systems Manager User Guide. You can change a standard
 	// parameter to an advanced parameter any time. But you can't revert an advanced
 	// parameter to a standard parameter. Reverting an advanced parameter to a standard
@@ -185,7 +185,7 @@ type PutParameterInput struct {
 	//   - More than 10,000 parameters already exist in your Amazon Web Services
 	//   account in the current Amazon Web Services Region.
 	// For more information about configuring the default tier option, see Specifying
-	// a default parameter tier (https://docs.aws.amazon.com/systems-manager/latest/userguide/ps-default-tier.html)
+	// a default parameter tier (https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-advanced-parameters.html#ps-default-tier)
 	// in the Amazon Web Services Systems Manager User Guide.
 	Tier types.ParameterTier
 
@@ -242,25 +242,25 @@ func (c *Client) addOperationPutParameterMiddlewares(stack *middleware.Stack, op
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddClientRequestIDMiddleware(stack); err != nil {
+	if err = addClientRequestID(stack); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddComputeContentLengthMiddleware(stack); err != nil {
+	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
+	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetryMiddlewares(stack, options); err != nil {
+	if err = addRetry(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
+	if err = addRawResponseToMetadata(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
+	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
 	if err = addClientUserAgent(stack, options); err != nil {
@@ -281,7 +281,7 @@ func (c *Client) addOperationPutParameterMiddlewares(stack *middleware.Stack, op
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opPutParameter(options.Region), middleware.Before); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
+	if err = addRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

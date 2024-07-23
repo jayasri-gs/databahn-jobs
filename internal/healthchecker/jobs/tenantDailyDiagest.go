@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
+	"github.com/databahn-ai/go-logging/logger"
+	"github.com/opensearch-project/opensearch-go/v2"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -13,10 +16,22 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
-	"github.com/databahn-ai/go-logging/logger"
-	"github.com/opensearch-project/opensearch-go/v2"
+	humanize "github.com/dustin/go-humanize"
 	"go.uber.org/zap"
 )
+
+func formatNumber(num float64) string {
+	switch {
+	case num >= 1_000_000_000:
+		return strconv.FormatFloat(float64(num)/1_000_000_000, 'f', 1, 64) + "B"
+	case num >= 1_000_000:
+		return strconv.FormatFloat(float64(num)/1_000_000, 'f', 1, 64) + "M"
+	case num >= 1_000:
+		return strconv.FormatFloat(float64(num)/1_000, 'f', 1, 64) + "K"
+	default:
+		return strconv.FormatFloat(num, 'f', 1, 64)
+	}
+}
 
 func TenantDailyDigest(ctx context.Context) error {
 	conf := os.GetConf()
@@ -39,7 +54,6 @@ func TenantDailyDigest(ctx context.Context) error {
 		logger.GetLogger().Error("error while getting total events ingested", zap.Error(err))
 		return err
 	}
-
 	dataReceivedByTenantId, err := getTotalDataReceived(ctx, client, startTime, endTime)
 	if err != nil {
 		logger.GetLogger().Error("error while getting total data received", zap.Error(err))
@@ -66,25 +80,29 @@ func TenantDailyDigest(ctx context.Context) error {
 			TenantId: currTenant.Id,
 			Name:     currTenant.Name,
 		}
-
+		totalIngestionSize := 0.0
+		totalDeliveredSize := 0.0
 		if eventsIngestedByTenantId.Agg[currTenant.Id.String()] == nil {
-			dailyDigest.TotalIngestionEvents = 0
+			dailyDigest.TotalIngestionEvents = "0"
 			dailyDigest.IngestionHealth = "Unhealthy"
 		} else {
-			dailyDigest.TotalIngestionEvents = eventsIngestedByTenantId.Agg[currTenant.Id.String()].(float64)
+			dailyDigest.TotalIngestionEvents = formatNumber(eventsIngestedByTenantId.Agg[currTenant.Id.String()].(float64))
 			dailyDigest.IngestionHealth = "Healthy"
 		}
 
 		if dataReceivedByTenantId.Agg[currTenant.Id.String()] == nil {
-			dailyDigest.TotalIngestionSize = 0
+			dailyDigest.TotalIngestionSize = "0"
 		} else {
-			dailyDigest.TotalIngestionSize = dataReceivedByTenantId.Agg[currTenant.Id.String()].(float64)
+			dailyDigest.TotalIngestionSize = humanize.Bytes(uint64(dataReceivedByTenantId.Agg[currTenant.Id.String()].(float64)))
+			totalIngestionSize = dataReceivedByTenantId.Agg[currTenant.Id.String()].(float64)
 		}
 
 		if dataDeliveredByTenantId.Agg[currTenant.Id.String()] == nil {
-			dailyDigest.TotalDeliveredSize = 0
+			dailyDigest.TotalDeliveredSize = "0"
+			totalDeliveredSize = 0
 		} else {
-			dailyDigest.TotalDeliveredSize = dataDeliveredByTenantId.Agg[currTenant.Id.String()].(float64)
+			dailyDigest.TotalDeliveredSize = humanize.Bytes(uint64(dataDeliveredByTenantId.Agg[currTenant.Id.String()].(float64)))
+			totalDeliveredSize = dataDeliveredByTenantId.Agg[currTenant.Id.String()].(float64)
 		}
 
 		if sensitiveDataByTenantId.Agg[currTenant.Id.String()] == nil {
@@ -93,8 +111,10 @@ func TenantDailyDigest(ctx context.Context) error {
 			dailyDigest.SensitiveDataEvents = sensitiveDataByTenantId.Agg[currTenant.Id.String()].(float64)
 		}
 
-		if dailyDigest.TotalIngestionSize > 0 {
-			dailyDigest.VolumeReductionAchievement = ((dailyDigest.TotalIngestionSize - dailyDigest.TotalDeliveredSize) / dailyDigest.TotalIngestionSize) * 100
+		if totalIngestionSize > 0 {
+			// round to 2 digits
+			dailyDigest.VolumeReductionAchievement = math.Round(((totalIngestionSize - totalDeliveredSize) / totalIngestionSize) * 100)
+
 		} else {
 			dailyDigest.VolumeReductionAchievement = 0
 		}
