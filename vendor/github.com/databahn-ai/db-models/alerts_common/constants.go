@@ -32,8 +32,8 @@ const GoogleStorageDispenserOnboarding = "google-storage-dispenser-onboarding"
 
 const DestinationFunctionality = "destination"
 const DestinationStatsNotReceived = "delivery-checker"
-const DestinationStatsNotReceivedTitle = "No new events develivered to destination in the last %s minutes"
-const DestinationStatsNotReceivedMessage = "No new events develivered to destination in the last %s minutes"
+const DestinationStatsNotReceivedTitle = "No new events delivered to destination in the last %s minutes"
+const DestinationStatsNotReceivedMessage = "No new events delivered to destination in the last %s minutes"
 
 const S3CredentialsInvalidTitle = "Invalid Credentials. Disabling S3 destination"
 const S3CredentialsInvalidMessage = "Invalid aws credentials"
