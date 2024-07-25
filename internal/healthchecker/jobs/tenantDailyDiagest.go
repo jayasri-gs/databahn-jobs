@@ -82,7 +82,7 @@ func TenantDailyDigest(ctx context.Context) error {
 	logger.GetLogger().Info("got total events ingested", zap.Reflect("eventsByTenantId", eventsIngestedByTenantId))
 
 	for _, currTenant := range t {
-		destinationMetrics := make(map[string]string)
+		var destinationMetrics []destination.Destination
 
 		destinations, err := destination.GetDestinationByTenantId(currTenant.Id, config.GetDB())
 		if err != nil {
@@ -93,8 +93,9 @@ func TenantDailyDigest(ctx context.Context) error {
 				if dataDeliveredByDestination.Agg[dest.ID.String()] == nil {
 					logger.GetLogger().Info("no data delivered for destination", zap.String("destinationId", dest.ID.String()))
 				} else {
+					dest.Count = formatNumber(dataDeliveredByDestination.Agg[dest.ID.String()].(float64))
 					logger.GetLogger().Debug("data delivered for destination", zap.String("destinationId", dest.ID.String()), zap.String("destinationName", dest.Name), zap.String("dataDelivered", formatNumber(dataDeliveredByDestination.Agg[dest.ID.String()].(float64))))
-					destinationMetrics[dest.Name] = formatNumber(dataDeliveredByDestination.Agg[dest.ID.String()].(float64))
+					destinationMetrics = append(destinationMetrics, dest)
 				}
 			}
 		}

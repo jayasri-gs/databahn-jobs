@@ -15,6 +15,7 @@ type Destination struct {
 	DestinationType  string    `gorm:"type:varchar(30)" json:"destination_type"`
 	ForwardDataTypes string    `gorm:"type:varchar(30)[]" json:"forward_data_types"`
 	TenantID         uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
+	Count            string    `json:"count" gorm:"-"`
 }
 
 func (s *Destination) TableName() string {
