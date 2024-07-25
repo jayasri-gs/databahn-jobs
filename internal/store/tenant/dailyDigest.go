@@ -6,7 +6,7 @@ type Digest struct {
 	TenantId                   uuid.UUID         `json:"tenant_id"`
 	Name                       string            `json:"name"`
 	IngestionHealth            string            `json:"ingestion_health"`
-	DeliveryHealth             string            `json:"device_health"`
+	DeliveryHealth             string            `json:"delivery_health"`
 	TotalIngestionEvents       string            `json:"total_ingestion_events"`
 	TotalIngestionSize         string            `json:"total_ingestion_size"`
 	TotalDeliveredSize         string            `json:"total_delivered_size"`

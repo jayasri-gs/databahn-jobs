@@ -9,6 +9,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
+	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	source "github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
@@ -147,9 +148,9 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 	}
 
 	// getting logSources which are not active but did not report stats in last 15 minutes
-	var alertToBeRaisedDispenser []source.Dispenser // array of ids not receiving stats
+	var alertToBeRaisedDispenser []destination.Destination
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err = config.GetDB().Model(&source.Dispenser{}).Where("id not in ? and status not in ?", destinationStatsReceived, checkStatus).Find(&alertToBeRaisedDispenser).Error
+	err = config.GetDB().Model(&destination.Destination{}).Where("id not in ? and status not in ?", destinationStatsReceived, checkStatus).Find(&alertToBeRaisedDispenser).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err

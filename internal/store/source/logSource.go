@@ -10,18 +10,6 @@ type Configuration struct {
 	Configuration map[string]interface{} `json:"configuration"`
 }
 
-type Dispenser struct {
-	ID       uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
-	Name     string    `gorm:"type:varchar(100)" json:"name"`
-	Scope    string    `gorm:"type:varchar(255)" json:"scope"`
-	Status   string    `gorm:"type:varchar(255)" json:"status"`
-	TenantID uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
-}
-
-func (s *Dispenser) TableName() string {
-	return "destination"
-}
-
 type Source struct {
 	ID                           uuid.UUID              `gorm:"type:uuid;primary_key" json:"id"`
 	Configuration                datatypes.JSON         `json:"configuration"`

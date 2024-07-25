@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
+	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"io"
@@ -72,13 +73,36 @@ func TenantDailyDigest(ctx context.Context) error {
 		return err
 	}
 
+	dataDeliveredByDestination, err := getDataDeliveredByDestination(ctx, client, startTime, endTime)
+	if err != nil {
+		logger.GetLogger().Error("error while getting data delivered by destination", zap.Error(err))
+		return err
+	}
+
 	logger.GetLogger().Info("got total events ingested", zap.Reflect("eventsByTenantId", eventsIngestedByTenantId))
 
 	for _, currTenant := range t {
+		destinationMetrics := make(map[string]string)
+
+		destinations, err := destination.GetDestinationByTenantId(currTenant.Id, config.GetDB())
+		if err != nil {
+			logger.GetLogger().Error("error while getting destinations", zap.Error(err))
+		} else {
+			logger.GetLogger().Info("got destinations", zap.String("tenantId", currTenant.Id.String()))
+			for _, dest := range destinations {
+				if dataDeliveredByDestination.Agg[dest.ID.String()] == nil {
+					logger.GetLogger().Info("no data delivered for destination", zap.String("destinationId", dest.ID.String()))
+				} else {
+					logger.GetLogger().Debug("data delivered for destination", zap.String("destinationId", dest.ID.String()), zap.String("destinationName", dest.Name), zap.String("dataDelivered", formatNumber(dataDeliveredByDestination.Agg[dest.ID.String()].(float64))))
+					destinationMetrics[dest.Name] = formatNumber(dataDeliveredByDestination.Agg[dest.ID.String()].(float64))
+				}
+			}
+		}
 		logger.GetLogger().Debug("Processing tenant "+currTenant.Id.String(), zap.String("name", currTenant.Name))
 		dailyDigest := tenant.Digest{
-			TenantId: currTenant.Id,
-			Name:     currTenant.Name,
+			TenantId:          currTenant.Id,
+			Name:              currTenant.Name,
+			DeliveryBreakdown: destinationMetrics,
 		}
 		totalIngestionSize := 0.0
 		totalDeliveredSize := 0.0
@@ -100,9 +124,11 @@ func TenantDailyDigest(ctx context.Context) error {
 		if dataDeliveredByTenantId.Agg[currTenant.Id.String()] == nil {
 			dailyDigest.TotalDeliveredSize = "0"
 			totalDeliveredSize = 0
+			dailyDigest.DeliveryHealth = "Unhealthy"
 		} else {
 			dailyDigest.TotalDeliveredSize = humanize.Bytes(uint64(dataDeliveredByTenantId.Agg[currTenant.Id.String()].(float64)))
 			totalDeliveredSize = dataDeliveredByTenantId.Agg[currTenant.Id.String()].(float64)
+			dailyDigest.DeliveryHealth = "Healthy"
 		}
 
 		if sensitiveDataByTenantId.Agg[currTenant.Id.String()] == nil {
@@ -140,7 +166,7 @@ func TenantDailyDigest(ctx context.Context) error {
 			FirstObservedAt:         time.Now(),
 			LastObservedAt:          time.Now(),
 		}
-		err := helper.SendNotificationMessage(h)
+		err = helper.SendNotificationMessage(h)
 		if err != nil {
 			logger.GetLogger().Error("error while sending notification", zap.Error(err))
 		}
@@ -222,6 +248,40 @@ func sensitiveDataTracking(ctx context.Context, client *opensearch.Client, start
 
 	query := statistics.AddDateRange(q, startTime, endTime)
 	agg := "tags.db_tenant_id.keyword"
+	conf := os.GetConf()
+	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
+		return nil, err
+	}
+
+	searchBody := &statistics.AggregateQueryRequest{}
+	searchBody.Size = 0
+	searchBody.Query.QueryString.Query = query
+
+	aggList := strings.Split(agg, ",")
+	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
+
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
+
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+		return nil, err
+	}
+
+	bodyContent, _ := io.ReadAll(searchResponse.Body)
+
+	resp := &statistics.AggregateQueryResponse{}
+	err = json.Unmarshal(bodyContent, resp)
+	aggObj := statistics.NewAggregateResponse(resp)
+	logger.GetLoggerWithContext(ctx).Info("got response from statistics store")
+	return &aggObj, err
+}
+
+func getDataDeliveredByDestination(ctx context.Context, client *opensearch.Client, startTime, endTime string) (*statistics.AggregateResponse, error) {
+	q := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
+	query := statistics.AddDateRange(q, startTime, endTime)
+	agg := "tags.destination_id.keyword"
 	conf := os.GetConf()
 	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
