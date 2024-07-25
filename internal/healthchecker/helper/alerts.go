@@ -6,7 +6,6 @@ import (
 	"errors"
 	"github.com/databahn-ai/common-utils/alert"
 	"github.com/databahn-ai/common-utils/kafka"
-	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/db-models/alerts_common"
@@ -110,7 +109,7 @@ func SendToNotificationTopic(ctx context.Context, alerts []alerts_common.Alert) 
 		}
 
 		//ADDED CHANGES FOR DYNAMIC TOPIC
-		producer.SendAsyncTopic(message, utils.GetDynamicTopicName(healthchecker.NotificationTopic), func(err error) {
+		producer.SendAsyncTopic(message, healthchecker.NotificationTopic, func(err error) {
 			logger.GetLogger().Error("Error while sending alt", zap.Error(err), zap.Reflect("Notification", notification))
 		})
 		logger.GetLogger().Info("alert sent successfully", zap.Any("response", notification))
