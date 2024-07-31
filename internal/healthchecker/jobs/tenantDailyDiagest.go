@@ -2,155 +2,63 @@ package jobs
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
-	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/go-logging/logger"
-	"github.com/opensearch-project/opensearch-go/v2"
-	"io"
-	"math"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/store/os"
-	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
-	humanize "github.com/dustin/go-humanize"
 	"go.uber.org/zap"
 )
 
-func formatNumber(num float64) string {
-	switch {
-	case num >= 1_000_000_000:
-		return strconv.FormatFloat(float64(num)/1_000_000_000, 'f', 1, 64) + "B"
-	case num >= 1_000_000:
-		return strconv.FormatFloat(float64(num)/1_000_000, 'f', 1, 64) + "M"
-	case num >= 1_000:
-		return strconv.FormatFloat(float64(num)/1_000, 'f', 1, 64) + "K"
-	default:
-		return strconv.FormatFloat(num, 'f', 1, 64)
-	}
-}
-
 func TenantDailyDigest(ctx context.Context) error {
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLogger().Error("error while connecting to statistics store", zap.Error(err))
-		return err
-	}
-
 	startTime := strconv.Itoa(int(time.Now().Add(-24 * time.Hour).UnixMilli()))
 	endTime := strconv.Itoa(int(time.Now().UnixMilli()))
 
-	t, err := tenant.GetTenants(ctx, config.GetDB())
+	tenants, err := tenant.GetTenants(ctx, config.GetDB())
 	if err != nil {
 		return err
 	}
 
-	eventsIngestedByTenantId, err := getTotalEventsIngested(ctx, client, startTime, endTime)
-	if err != nil {
-		logger.GetLogger().Error("error while getting total events ingested", zap.Error(err))
-		return err
-	}
-	dataReceivedByTenantId, err := getTotalDataReceived(ctx, client, startTime, endTime)
-	if err != nil {
-		logger.GetLogger().Error("error while getting total data received", zap.Error(err))
-		return err
-	}
+	logger.GetLogger().Info("daily digest for tenants", zap.String("startTime", startTime), zap.String("endTime", endTime), zap.Int("tenantCount", len(tenants)))
 
-	sensitiveDataByTenantId, err := sensitiveDataTracking(ctx, client, startTime, endTime)
+	// get total events ingested by tenant id
+	ingestedEventsByTenant, ingestedSizeByTenant, err := tenant.GetIngestionByTenantId(ctx, startTime, endTime)
 	if err != nil {
-		logger.GetLogger().Error("error while getting sensitive data tracking", zap.Error(err))
+		logger.GetLogger().Error("error while getting total events ingested by tenant id", zap.Error(err))
 		return err
 	}
 
-	dataDeliveredByTenantId, err := getTotalDataDelivered(ctx, client, startTime, endTime)
-	if err != nil {
-		logger.GetLogger().Error("error while getting total data delivered", zap.Error(err))
-		return err
-	}
-
-	dataDeliveredByDestination, err := getDataDeliveredByDestination(ctx, client, startTime, endTime)
-	if err != nil {
-		logger.GetLogger().Error("error while getting data delivered by destination", zap.Error(err))
-		return err
-	}
-
-	logger.GetLogger().Info("got total events ingested", zap.Reflect("eventsByTenantId", eventsIngestedByTenantId))
-
-	for _, currTenant := range t {
-		var destinationMetrics []destination.Destination
-
-		destinations, err := destination.GetDestinationByTenantId(currTenant.Id, config.GetDB())
+	for _, t := range tenants {
+		logger.GetLogger().Info("processing tenant", zap.String("tenantId", t.Name))
+		digest := tenant.GetDailyDigest(t.Id, t.Name, startTime, endTime)
 		if err != nil {
-			logger.GetLogger().Error("error while getting destinations", zap.Error(err))
-		} else {
-			logger.GetLogger().Info("got destinations", zap.String("tenantId", currTenant.Id.String()))
-			for _, dest := range destinations {
-				if dataDeliveredByDestination.Agg[dest.ID.String()] == nil {
-					logger.GetLogger().Info("no data delivered for destination", zap.String("destinationId", dest.ID.String()))
-				} else {
-					dest.Count = formatNumber(dataDeliveredByDestination.Agg[dest.ID.String()].(float64))
-					logger.GetLogger().Debug("data delivered for destination", zap.String("destinationId", dest.ID.String()), zap.String("destinationName", dest.Name), zap.String("dataDelivered", formatNumber(dataDeliveredByDestination.Agg[dest.ID.String()].(float64))))
-					destinationMetrics = append(destinationMetrics, dest)
-				}
-			}
-		}
-		logger.GetLogger().Debug("Processing tenant "+currTenant.Id.String(), zap.String("name", currTenant.Name))
-		dailyDigest := tenant.Digest{
-			TenantId:          currTenant.Id,
-			Name:              currTenant.Name,
-			DeliveryBreakdown: destinationMetrics,
-		}
-		totalIngestionSize := 0.0
-		totalDeliveredSize := 0.0
-		if eventsIngestedByTenantId.Agg[currTenant.Id.String()] == nil {
-			dailyDigest.TotalIngestionEvents = "0"
-			dailyDigest.IngestionHealth = "Unhealthy"
-		} else {
-			dailyDigest.TotalIngestionEvents = formatNumber(eventsIngestedByTenantId.Agg[currTenant.Id.String()].(float64))
-			dailyDigest.IngestionHealth = "Healthy"
+			logger.GetLogger().Error("error while getting daily digest", zap.Error(err))
+			continue
 		}
 
-		if dataReceivedByTenantId.Agg[currTenant.Id.String()] == nil {
-			dailyDigest.TotalIngestionSize = "0"
-		} else {
-			dailyDigest.TotalIngestionSize = humanize.Bytes(uint64(dataReceivedByTenantId.Agg[currTenant.Id.String()].(float64)))
-			totalIngestionSize = dataReceivedByTenantId.Agg[currTenant.Id.String()].(float64)
+		digest.GetIngestionStats(ingestedEventsByTenant[t.Id.String()], ingestedSizeByTenant[t.Id.String()])
+		err = digest.GetSensitiveDataTrackingStats()
+		if err != nil {
+			logger.GetLogger().Error("error while setting sensitive data tracking stats", zap.Error(err))
 		}
-
-		if dataDeliveredByTenantId.Agg[currTenant.Id.String()] == nil {
-			dailyDigest.TotalDeliveredSize = "0"
-			totalDeliveredSize = 0
-			dailyDigest.DeliveryHealth = "Unhealthy"
-		} else {
-			dailyDigest.TotalDeliveredSize = humanize.Bytes(uint64(dataDeliveredByTenantId.Agg[currTenant.Id.String()].(float64)))
-			totalDeliveredSize = dataDeliveredByTenantId.Agg[currTenant.Id.String()].(float64)
-			dailyDigest.DeliveryHealth = "Healthy"
+		digest.CalculateEPS()
+		err := digest.GetEventDeliveryBreakdown()
+		if err != nil {
+			logger.GetLogger().Error("error while setting event delivery breakdown", zap.Error(err))
+			continue
 		}
-
-		if sensitiveDataByTenantId.Agg[currTenant.Id.String()] == nil {
-			dailyDigest.SensitiveDataEvents = 0
-		} else {
-			dailyDigest.SensitiveDataEvents = sensitiveDataByTenantId.Agg[currTenant.Id.String()].(float64)
+		err = digest.GetIngestionBreakdown()
+		if err != nil {
+			logger.GetLogger().Error("error while setting ingestion breakdown", zap.Error(err))
+			continue
 		}
-
-		if totalIngestionSize > 0 {
-			// round to 2 digits
-			dailyDigest.VolumeReductionAchievement = math.Round(((totalIngestionSize - totalDeliveredSize) / totalIngestionSize) * 100)
-
-		} else {
-			dailyDigest.VolumeReductionAchievement = 0
-		}
-		logger.GetLogger().Info("daily digest for tenant", zap.String("tenantId", currTenant.Id.String()), zap.String("tenantName", currTenant.Name), zap.Reflect("digest", dailyDigest))
-		// send notification to kafka
+		digest.GetVolumeReductionAchievements()
 		h := helper.Notification{
-			TenantId:                dailyDigest.TenantId.String(),
+			TenantId:                digest.TenantId.String(),
 			Subject:                 "Daily Digest - " + time.Now().Format(time.DateOnly),
-			Message:                 dailyDigest,
+			Message:                 digest,
 			NotificationType:        "EMAIL",
 			Suggestion:              "",
 			AlertInfo:               "Daily Digest",
@@ -158,11 +66,11 @@ func TenantDailyDigest(ctx context.Context) error {
 			Service:                 "DAILY_DIGEST",
 			Granularity:             "tenant",
 			Version:                 "v1",
-			ID:                      dailyDigest.TenantId,
+			ID:                      digest.TenantId,
 			Title:                   "Daily Digest - " + time.Now().Format(time.DateOnly),
 			Functionality:           "DAILY_DIGEST",
-			FunctionalityEntityId:   dailyDigest.TenantId.String(),
-			FunctionalityEntityName: dailyDigest.Name,
+			FunctionalityEntityId:   digest.TenantId.String(),
+			FunctionalityEntityName: digest.Name,
 			FunctionalityType:       "DAILY_DIGEST",
 			FirstObservedAt:         time.Now(),
 			LastObservedAt:          time.Now(),
@@ -173,176 +81,6 @@ func TenantDailyDigest(ctx context.Context) error {
 		}
 		time.Sleep(5 * time.Second)
 	}
+
 	return nil
-}
-
-func getTotalEventsIngested(ctx context.Context, client *opensearch.Client, startTime, endTime string) (*statistics.AggregateResponse, error) {
-	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
-	query := statistics.AddDateRange(q, startTime, endTime)
-	agg := "tags.db_tenant_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
-
-	searchBody := &statistics.AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
-
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
-		return nil, err
-	}
-
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
-
-	resp := &statistics.AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := statistics.NewAggregateResponse(resp)
-	logger.GetLoggerWithContext(ctx).Info("got response from statistics store")
-	return &aggObj, err
-}
-
-func getTotalDataReceived(ctx context.Context, client *opensearch.Client, startTime, endTime string) (*statistics.AggregateResponse, error) {
-	q := `tags.component_name: "storage" AND name: "total_data_received"`
-	query := statistics.AddDateRange(q, startTime, endTime)
-	agg := "tags.db_tenant_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
-
-	searchBody := &statistics.AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
-
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
-		return nil, err
-	}
-
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
-
-	resp := &statistics.AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := statistics.NewAggregateResponse(resp)
-	logger.GetLoggerWithContext(ctx).Info("got response from statistics store")
-	return &aggObj, err
-}
-
-func sensitiveDataTracking(ctx context.Context, client *opensearch.Client, startTime, endTime string) (*statistics.AggregateResponse, error) {
-	q := `tags.sensitive_type.keyword AND name: "sensitive_total"`
-
-	query := statistics.AddDateRange(q, startTime, endTime)
-	agg := "tags.db_tenant_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
-
-	searchBody := &statistics.AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
-
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
-		return nil, err
-	}
-
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
-
-	resp := &statistics.AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := statistics.NewAggregateResponse(resp)
-	logger.GetLoggerWithContext(ctx).Info("got response from statistics store")
-	return &aggObj, err
-}
-
-func getDataDeliveredByDestination(ctx context.Context, client *opensearch.Client, startTime, endTime string) (*statistics.AggregateResponse, error) {
-	q := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
-	query := statistics.AddDateRange(q, startTime, endTime)
-	agg := "tags.destination_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
-
-	searchBody := &statistics.AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
-
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
-		return nil, err
-	}
-
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
-
-	resp := &statistics.AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := statistics.NewAggregateResponse(resp)
-	logger.GetLoggerWithContext(ctx).Info("got response from statistics store")
-	return &aggObj, err
-}
-
-func getTotalDataDelivered(ctx context.Context, client *opensearch.Client, startTime, endTime string) (*statistics.AggregateResponse, error) {
-	q := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
-	query := statistics.AddDateRange(q, startTime, endTime)
-	agg := "tags.db_tenant_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
-
-	searchBody := &statistics.AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
-
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
-		return nil, err
-	}
-
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
-
-	resp := &statistics.AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := statistics.NewAggregateResponse(resp)
-	logger.GetLoggerWithContext(ctx).Info("got response from statistics store")
-	return &aggObj, err
 }

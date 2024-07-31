@@ -23,3 +23,12 @@ func GetTenants(ctx context.Context, db *gorm.DB) ([]Tenant, error) {
 	}
 	return tenants, nil
 }
+
+func GetTenantDetailsById(ctx context.Context, db *gorm.DB, id uuid.UUID) (*Tenant, error) {
+	var tenant *Tenant
+	err := db.WithContext(ctx).Where("active = ? AND id = ?", true, id).First(&tenant).Error
+	if err != nil {
+		return nil, err
+	}
+	return tenant, nil
+}
