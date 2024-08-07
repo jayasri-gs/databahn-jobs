@@ -14,8 +14,15 @@ import (
 )
 
 var appConfig = config.GetAppConfiguration()
-var conf = os.GetConf()
+var _conf *os.OpenSearchConf
 var client *opensearch.Client
+
+func GetOsConf() *os.OpenSearchConf {
+	if _conf == nil {
+		_conf = os.GetConf()
+	}
+	return _conf
+}
 
 func GetIngestionByTenantId(ctx context.Context, startTime, endTime string) (map[string]any, map[string]any, error) {
 	events, err := getTotalEventsIngestedByTenantId(ctx, startTime, endTime)
@@ -65,6 +72,7 @@ func getClient() (*opensearch.Client, error) {
 }
 
 func ExecuteAggQuery(ctx context.Context, client *opensearch.Client, q, aggBy, startTime, endTime string) (map[string]any, error) {
+	conf := GetOsConf()
 	query := statistics.AddDateRange(q, startTime, endTime)
 	searchBody := &statistics.AggregateQueryRequest{}
 	searchBody.Size = 0
