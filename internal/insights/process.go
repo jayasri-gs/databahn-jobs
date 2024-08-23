@@ -95,6 +95,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		sourceKey4 := createSource("key4")
 		sourceKey5 := createSource("key5")
 		sourceSourceId := createSource("source_id")
+		sourceDataPlaneId := createSource("data_plane_id")
 		request := Request{}
 		request.Aggs.GroupBy.Composite.Size = INSIGHTS_READ_BATCH
 		request.Aggs.GroupBy.Composite.After = after
@@ -104,6 +105,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey4)
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey5)
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceSourceId)
+		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceDataPlaneId)
 		request.Aggs.GroupBy.Aggs.PageCnt.Sum.Field = "count"
 		request.Aggs.GroupBy.Aggs.PageMnTime.Min.Field = "min_time"
 		request.Aggs.GroupBy.Aggs.PageMxTime.Max.Field = "max_time"
@@ -148,9 +150,9 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc.Key3 = bucket.Key.Key3
 			doc.Key4 = bucket.Key.Key4
 			doc.Key5 = bucket.Key.Key5
-
 			doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.Key3, bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
 			doc.SourceId = bucket.Key.SourceId
+			doc.DataPlaneId = bucket.Key.DataPlaneId
 			doc.TenantId = index.TenantId
 			doc.Type = index.Type
 			doc.MinTime = int64(bucket.PageMnTime.Value)
@@ -364,12 +366,13 @@ type Response struct {
 			AfterKey *After `json:"after_key"`
 			Buckets  []struct {
 				Key struct {
-					Key1     string `json:"key1"`
-					Key2     string `json:"key2"`
-					Key3     string `json:"key3"`
-					Key4     string `json:"key4"`
-					Key5     string `json:"key5"`
-					SourceId string `json:"source_id"`
+					Key1        string `json:"key1"`
+					Key2        string `json:"key2"`
+					Key3        string `json:"key3"`
+					Key4        string `json:"key4"`
+					Key5        string `json:"key5"`
+					SourceId    string `json:"source_id"`
+					DataPlaneId string `json:"data_plane_id"`
 				} `json:"key"`
 				DocCount   int `json:"doc_count"`
 				PageMnTime struct {
@@ -387,34 +390,36 @@ type Response struct {
 }
 
 type Doc struct {
-	Id        string  `json:"id"`
-	Key1      string  `json:"key1"`
-	Key2      string  `json:"key2,omitempty"`
-	Key3      string  `json:"key3,omitempty"`
-	Key4      string  `json:"key4,omitempty"`
-	Key5      string  `json:"key5,omitempty"`
-	Type      string  `json:"type"`
-	InsightId string  `json:"insight_id"`
-	SourceId  string  `json:"source_id"`
-	TenantId  string  `json:"tenant_id"`
-	MinTime   int64   `json:"min_time"`
-	MaxTime   int64   `json:"max_time"`
-	Count     float64 `json:"count"`
-	Timestamp int64   `json:"timestamp"`
+	Id          string  `json:"id"`
+	Key1        string  `json:"key1"`
+	Key2        string  `json:"key2,omitempty"`
+	Key3        string  `json:"key3,omitempty"`
+	Key4        string  `json:"key4,omitempty"`
+	Key5        string  `json:"key5,omitempty"`
+	Type        string  `json:"type"`
+	InsightId   string  `json:"insight_id"`
+	SourceId    string  `json:"source_id"`
+	TenantId    string  `json:"tenant_id"`
+	DataPlaneId string  `json:"data_plane_id"`
+	MinTime     int64   `json:"min_time"`
+	MaxTime     int64   `json:"max_time"`
+	Count       float64 `json:"count"`
+	Timestamp   int64   `json:"timestamp"`
 }
 
 func (d Doc) Sight() Sight {
 	return Sight{
-		Id:        d.Id,
-		Key1:      d.Key1,
-		Key2:      d.Key2,
-		Type:      d.Type,
-		SourceId:  d.SourceId,
-		TenantId:  d.TenantId,
-		MinTime:   d.MinTime,
-		MaxTime:   d.MaxTime,
-		Timestamp: d.Timestamp,
-		UpdatedAt: time.Now().UnixMilli(),
+		Id:          d.Id,
+		Key1:        d.Key1,
+		Key2:        d.Key2,
+		Type:        d.Type,
+		SourceId:    d.SourceId,
+		TenantId:    d.TenantId,
+		DataPlaneId: d.DataPlaneId,
+		MinTime:     d.MinTime,
+		MaxTime:     d.MaxTime,
+		Timestamp:   d.Timestamp,
+		UpdatedAt:   time.Now().UnixMilli(),
 	}
 }
 
@@ -437,20 +442,21 @@ func (d Doc) Frequency() Frequency {
 }
 
 type Sight struct {
-	Id         string `json:"id"`
-	Key1       string `json:"key1"`
-	Key2       string `json:"key2,omitempty"`
-	Key3       string `json:"key3,omitempty"`
-	Key4       string `json:"key4,omitempty"`
-	Key5       string `json:"key5,omitempty"`
-	Type       string `json:"type"`
-	SourceId   string `json:"source_id"`
-	TenantId   string `json:"tenant_id"`
-	MinTime    int64  `json:"min_time"`
-	MaxTime    int64  `json:"max_time"`
-	Reputation string `json:"reputation"`
-	Timestamp  int64  `json:"timestamp"`
-	UpdatedAt  int64  `json:"updated_at"`
+	Id          string `json:"id"`
+	Key1        string `json:"key1"`
+	Key2        string `json:"key2,omitempty"`
+	Key3        string `json:"key3,omitempty"`
+	Key4        string `json:"key4,omitempty"`
+	Key5        string `json:"key5,omitempty"`
+	Type        string `json:"type"`
+	SourceId    string `json:"source_id"`
+	TenantId    string `json:"tenant_id"`
+	DataPlaneId string `json:"data_plane_id"`
+	MinTime     int64  `json:"min_time"`
+	MaxTime     int64  `json:"max_time"`
+	Reputation  string `json:"reputation"`
+	Timestamp   int64  `json:"timestamp"`
+	UpdatedAt   int64  `json:"updated_at"`
 }
 
 type ReputationUpdateRequest struct {
@@ -487,6 +493,7 @@ type SilentDeviceHistory struct {
 	Type            string `json:"type"`
 	SourceId        string `json:"source_id"`
 	TenantId        string `json:"tenant_id"`
+	DataPlaneId     string `json:"data_plane_id"`
 	DayEndTimestamp int64  `json:"day_end_timestamp"`
 	Reputation      string `json:"reputation"`
 }
@@ -501,6 +508,7 @@ type Frequency struct {
 	Type            string  `json:"type"`
 	SourceId        string  `json:"source_id"`
 	TenantId        string  `json:"tenant_id"`
+	DataPlaneId     string  `json:"data_plane_id"`
 	Count           float64 `json:"count"`
 	Timestamp       int64   `json:"timestamp"`
 	DayEndTimestamp int64   `json:"day_end_timestamp"`
