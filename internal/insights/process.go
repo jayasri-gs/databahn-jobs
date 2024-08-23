@@ -435,6 +435,7 @@ func (d Doc) Frequency() Frequency {
 		Type:            d.Type,
 		SourceId:        d.SourceId,
 		TenantId:        d.TenantId,
+		DataPlaneId:     d.DataPlaneId,
 		Count:           d.Count,
 		Timestamp:       d.MaxTime,
 		DayEndTimestamp: eod,
@@ -478,6 +479,7 @@ func (s Sight) History(time int64, reputation string) SilentDeviceHistory {
 		Type:            s.Type,
 		SourceId:        s.SourceId,
 		TenantId:        s.TenantId,
+		DataPlaneId:     s.DataPlaneId,
 		Reputation:      reputation,
 		DayEndTimestamp: time,
 	}
