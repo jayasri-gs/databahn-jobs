@@ -41,6 +41,7 @@ const sightsScript = `
       "key2": {{.Key2 | printf "%q"}},
       "source_id": "{{.SourceId}}",
       "tenant_id": "{{.TenantId}}",
+      "data_plane_id": "{{.DataPlaneId}}",
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
       "timestamp": {{.Timestamp}},
@@ -55,6 +56,7 @@ const sightsScript = `
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
       "source_id": "{{.SourceId}}",
+      "data_plane_id": "{{.DataPlaneId}}",
       "timestamp": {{.Timestamp}},
 	  "updated_at": {{.UpdatedAt}},
       "reputation": "` + REPUTATION_NORMAL + `"
@@ -79,6 +81,8 @@ func createSource(key string) Source {
 		source.Key5 = &terms
 	case "source_id":
 		source.SourceId = &terms
+	case "data_plane_id":
+		source.DataPlaneId = &terms
 	}
 	return source
 }
@@ -296,12 +300,13 @@ type Terms struct {
 }
 
 type Source struct {
-	Key1     *Terms `json:"key1,omitempty"`
-	Key2     *Terms `json:"key2,omitempty"`
-	Key3     *Terms `json:"key3,omitempty"`
-	Key4     *Terms `json:"key4,omitempty"`
-	Key5     *Terms `json:"key5,omitempty"`
-	SourceId *Terms `json:"source_id,omitempty"`
+	Key1        *Terms `json:"key1,omitempty"`
+	Key2        *Terms `json:"key2,omitempty"`
+	Key3        *Terms `json:"key3,omitempty"`
+	Key4        *Terms `json:"key4,omitempty"`
+	Key5        *Terms `json:"key5,omitempty"`
+	SourceId    *Terms `json:"source_id,omitempty"`
+	DataPlaneId *Terms `json:"data_plane_id,omitempty"`
 }
 
 type After struct {
