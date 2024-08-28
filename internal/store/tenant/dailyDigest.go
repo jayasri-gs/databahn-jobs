@@ -9,6 +9,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"reflect"
 	"strconv"
 )
 
@@ -121,7 +122,12 @@ func (d *Digest) GetEventDeliveryBreakdown() error {
 	for _, dest := range destinations {
 		if value, ok := destinationStats[dest.ID.String()]; ok {
 			d.DeliveryHealth = "Healthy"
-			dest.Stats = value.(float64)
+			// check if value is of type float64
+			if reflect.TypeOf(value).Kind() == reflect.Float64 {
+				dest.Stats = value.(float64)
+			} else {
+				dest.Stats = 0
+			}
 			dest.Count = formatNumber(dest.Stats)
 			d.EventDeliveryBreakdown = append(d.EventDeliveryBreakdown, dest)
 		}
