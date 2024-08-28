@@ -22,9 +22,6 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
 		return err
 	}
-	if err != nil {
-		return err
-	}
 	lastWindowTime := time.Now().Add(-time.Minute * INSIGHTS_INTERVAL_MINUTES)
 	lastTime, _ := util.FindWindow(lastWindowTime, time.Minute*INSIGHTS_INTERVAL_MINUTES)
 
