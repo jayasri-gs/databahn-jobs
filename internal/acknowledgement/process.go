@@ -254,6 +254,11 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		if err != nil {
 			return err
 		}
+	case utilConst.EntityRouteProcessor:
+		err := handleRouteProcessor(ack)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -279,6 +284,18 @@ func handleTransformer(ack db.ChangeFlagAck) error {
 		return err
 	}
 	logger.GetLogger().Debug("transformer status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
+	return nil
+}
+
+func handleRouteProcessor(ack db.ChangeFlagAck) error {
+	statusV2 := getStatusString(ack)
+	err := config.GetDB().Table("route_processor").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
+		Update("status", statusV2).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating route processor status", zap.Error(err))
+		return err
+	}
+	logger.GetLogger().Debug("route processor  status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
 	return nil
 }
 
