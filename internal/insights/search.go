@@ -65,9 +65,9 @@ func uploadFileToS3ForSearch(ctx context.Context, index *IndexMetadata, fileName
 	return _uploadFileToS3(ctx, objectKey, fileName)
 }
 
-func writeToSearchFile(file *os.File, docs []Doc, attMap map[string]string) error {
+func writeToSearchFile(file *os.File, docs []Doc, attMap map[string]string, sourceIdToNameMap map[string]string) error {
 	for _, doc := range docs {
-		searchMap := doc.SearchMap(attMap)
+		searchMap := doc.SearchMap(attMap, sourceIdToNameMap)
 		j, err := json.Marshal(searchMap)
 		if err != nil {
 			return err

@@ -88,7 +88,7 @@ func createSource(key string) Source {
 	return source
 }
 
-func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata) error {
+func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata, sourceIdToNameMap map[string]string) error {
 	indexName := INSIGHTS_STAGING_INDEX_PREFIX + index.String()
 	page := 0
 	count := 0
@@ -195,7 +195,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		}
 
 		hasData = true
-		err = writeToSearchFile(s3File, docs, attMap)
+		err = writeToSearchFile(s3File, docs, attMap, sourceIdToNameMap)
 		if err != nil {
 			return err
 		}
@@ -480,7 +480,7 @@ func (d Doc) Frequency() Frequency {
 	}
 }
 
-func (d Doc) SearchMap(attMap map[string]string) map[string]any {
+func (d Doc) SearchMap(attMap map[string]string, sourceIdToNameMap map[string]string) map[string]any {
 	result := make(map[string]any)
 	for k, v := range attMap {
 		switch k {
@@ -497,6 +497,11 @@ func (d Doc) SearchMap(attMap map[string]string) map[string]any {
 		}
 	}
 	result["source_id"] = d.SourceId
+	if sourceName, ok := sourceIdToNameMap[d.SourceId]; ok {
+		result["source_name"] = sourceName
+	} else {
+		result["source_name"] = "unknown_source_name"
+	}
 	result["timestamp"] = d.Timestamp
 	result["count"] = d.Count
 	return result
