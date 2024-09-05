@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
-	os "github.com/databahn-ai/databahn-jobs/internal/store/os"
+	osstore "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	"go.uber.org/zap"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -87,11 +88,21 @@ func createSource(key string) Source {
 	return source
 }
 
-func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata) error {
+func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata, sourceIdToNameMap map[string]string) error {
 	indexName := INSIGHTS_STAGING_INDEX_PREFIX + index.String()
 	page := 0
 	count := 0
 	var after *After = nil
+	s3FileName := getS3FileName(index)
+	s3File, err := os.OpenFile(s3FileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	attMap, err := getAttributes(index)
+	if err != nil {
+		return err
+	}
+	hasData := false
 	for {
 		sourceKey1 := createSource("key1")
 		sourceKey2 := createSource("key2")
@@ -114,12 +125,17 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		request.Aggs.GroupBy.Aggs.PageMnTime.Min.Field = "min_time"
 		request.Aggs.GroupBy.Aggs.PageMxTime.Max.Field = "max_time"
 
-		resp, err := os.MakeSearchCall(ctx, indexName+"*", request, cli)
+		resp, err := osstore.MakeSearchCall(ctx, indexName+"*", request, cli)
 		if err != nil {
 			return err
 		}
-
-		bodyContent, _ := io.ReadAll(resp.Body)
+		bodyContent, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != 200 {
+			return errors.New("failed to get successful response from opensearch, body:" + string(bodyContent))
+		}
 		response := &Response{}
 		err = json.Unmarshal(bodyContent, response)
 		if err != nil {
@@ -178,7 +194,23 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			return err
 		}
 
+		hasData = true
+		err = writeToSearchFile(s3File, docs, attMap, sourceIdToNameMap)
+		if err != nil {
+			return err
+		}
+
 		logger.GetLogger().Debug("processed documents", zap.String("index", indexName), zap.Int("page", page), zap.Int("count", len(docs)))
+	}
+	err = s3File.Close()
+	if err != nil {
+		return err
+	}
+	if hasData {
+		err = uploadFileToS3ForSearch(ctx, &index, s3File.Name())
+		if err != nil {
+			return err
+		}
 	}
 
 	logger.GetLogger().Info("processed all documents", zap.String("index", indexName), zap.Int("total_count", count))
@@ -350,7 +382,7 @@ type Request struct {
 }
 
 type Response struct {
-	os.ErrorResponse
+	osstore.ErrorResponse
 	Took     int  `json:"took"`
 	TimedOut bool `json:"timed_out"`
 	Shards   struct {
@@ -430,6 +462,52 @@ func (d Doc) Sight() Sight {
 }
 
 func (d Doc) Frequency() Frequency {
+	eod := util.GetDayEndTimestamp(d.MaxTime)
+	return Frequency{
+		Id:              d.Id,
+		Key1:            d.Key1,
+		Key2:            d.Key2,
+		Key3:            d.Key3,
+		Key4:            d.Key4,
+		Key5:            d.Key5,
+		Type:            d.Type,
+		SourceId:        d.SourceId,
+		TenantId:        d.TenantId,
+		DataPlaneId:     d.DataPlaneId,
+		Count:           d.Count,
+		Timestamp:       d.MaxTime,
+		DayEndTimestamp: eod,
+	}
+}
+
+func (d Doc) SearchMap(attMap map[string]string, sourceIdToNameMap map[string]string) map[string]any {
+	result := make(map[string]any)
+	for k, v := range attMap {
+		switch k {
+		case "key1":
+			result[v] = d.Key1
+		case "key2":
+			result[v] = d.Key2
+		case "key3":
+			result[v] = d.Key3
+		case "key4":
+			result[v] = d.Key4
+		case "key5":
+			result[v] = d.Key5
+		}
+	}
+	result["source_id"] = d.SourceId
+	if sourceName, ok := sourceIdToNameMap[d.SourceId]; ok {
+		result["source_name"] = sourceName
+	} else {
+		result["source_name"] = "unknown_source_name"
+	}
+	result["timestamp"] = d.Timestamp
+	result["count"] = d.Count
+	return result
+}
+
+func (d Doc) KeyMap() Frequency {
 	eod := util.GetDayEndTimestamp(d.MaxTime)
 	return Frequency{
 		Id:              d.Id,
