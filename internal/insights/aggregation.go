@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -54,6 +56,15 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 	for _, index := range indicesToProcess {
 		indicesByTenant[index.TenantId] = append(indicesByTenant[index.TenantId], index)
 	}
+	var logSources []source.Source
+	err = config.GetDB().Model(&source.Source{}).Scan(&logSources).Error
+	if err != nil {
+		return err
+	}
+	sourceIdToNameMap := make(map[string]string)
+	for _, logSource := range logSources {
+		sourceIdToNameMap[logSource.ID.String()] = logSource.Name
+	}
 	parrCtrl := make(chan struct{}, parallelism)
 	errCount := 0
 	successCount := 0
@@ -67,7 +78,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 				wg.Done()
 			}()
 			for _, indexMetadata := range indexMetadatas {
-				err := aggregateInsights(ctx, osClient, indexMetadata)
+				err := aggregateInsights(ctx, osClient, indexMetadata, sourceIdToNameMap)
 				indexName := INSIGHTS_STAGING_INDEX_PREFIX + indexMetadata.String()
 				if err != nil {
 					errCount++

@@ -229,6 +229,11 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		if err != nil {
 			return err
 		}
+	case utilConst.EntityInsightsRule:
+		err := handleInsightRule(ack)
+		if err != nil {
+			return err
+		}
 	case utilConst.EntityRule:
 		err := handleRule(ack)
 		if err != nil {
@@ -326,6 +331,17 @@ func handleLookup(ack db.ChangeFlagAck) error {
 		return err
 	}
 	logger.GetLogger().Debug("lookup status updated", zap.String("entityId", ack.EntityId), zap.String("status", lookupStatus))
+	return nil
+}
+
+func handleInsightRule(ack db.ChangeFlagAck) error {
+	status := getStatusString(ack)
+	err := config.GetDB().Table("insights_rule").Where("id = ? AND status != ?", ack.EntityId, status).Update("status", status).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating insights_rule status", zap.Error(err))
+		return err
+	}
+	logger.GetLogger().Debug("insights_rule status updated", zap.String("entityId", ack.EntityId), zap.String("status", status))
 	return nil
 }
 
