@@ -1,6 +1,7 @@
 package acknowledgement
 
 import (
+	"errors"
 	ackPkg "github.com/databahn-ai/common-utils/ack"
 	utilConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/utils"
@@ -259,6 +260,8 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		if err != nil {
 			return err
 		}
+	default:
+		return errors.New("Ack does not support entity type:" + ack.EntityType)
 	}
 	return nil
 }
