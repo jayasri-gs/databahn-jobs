@@ -255,7 +255,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	// getting logSources which are not active but did not report stats in last 15 minutes
 	var alertToBeRaisedLogSources []source.Source // array of ids not receiving stats
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err = config.GetDB().Model(&source.Source{}).Where("id not in ? and status not in ? AND id in ?", logsourceIdsStatsReceived, checkStatus, historicalIds).Find(&alertToBeRaisedLogSources).Debug().Error
+	err = config.GetDB().Model(&source.Source{}).Where("id not in ? and status not in ? AND id in ?", logsourceIdsStatsReceived, checkStatus, statsExistsInLast7Days).Find(&alertToBeRaisedLogSources).Debug().Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
