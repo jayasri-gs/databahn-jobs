@@ -169,10 +169,17 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		}
 	}
 
+	var destinationIdsToAlert []string
+	for _, id := range destinationStats7Days {
+		if !util.Contains(destinationStatsReceived, id) {
+			destinationIdsToAlert = append(destinationIdsToAlert, id)
+		}
+	}
+
 	// getting logSources which are not active but did not report stats in last 15 minutes
 	var alertToBeRaisedDispenser []destination.Destination
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err = config.GetDB().Model(&destination.Destination{}).Where("id not in ? and status not in ? AND id in ?", destinationStatsReceived, checkStatus, destinationStats7Days).Debug().Find(&alertToBeRaisedDispenser).Error
+	err = config.GetDB().Model(&destination.Destination{}).Where("status not in ? AND id in ?", checkStatus, destinationIdsToAlert).Debug().Find(&alertToBeRaisedDispenser).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
@@ -199,6 +206,7 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 			return err
 		}
 	}
+	logging.GetLogger().Info("notification stats as follows", zap.Any("no_of_inactive_sources", len(destinationStatsReceived)), zap.Any("ids", destinationIdsToAlert))
 	return nil
 }
 
@@ -321,5 +329,6 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 			return err
 		}
 	}
+	logging.GetLogger().Info("notification stats as follows", zap.Any("no_of_inactive_sources", len(logsourceIdsStatsReceived)), zap.Any("ids", sourceIdToAlert))
 	return nil
 }
