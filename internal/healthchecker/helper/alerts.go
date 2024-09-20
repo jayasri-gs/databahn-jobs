@@ -36,20 +36,22 @@ func SendAlertToControlPlane(ctx context.Context, entityArray []alerts_common.Al
 		}
 		alerts = append(alerts, temp)
 	}
-	return sendAlertToCP(ctx, alerts)
+	return sendAlertToCP(ctx, alerts, !dismissed)
 }
 
-func sendAlertToCP(ctx context.Context, alerts []alerts_common.Alert) error {
+func sendAlertToCP(ctx context.Context, alerts []alerts_common.Alert, sendNotification bool) error {
 	alertClient, err := alert.NewAlertClient(ctx, config.GetAppConfiguration())
 	if err != nil {
 		logger.GetLogger().Error("error while creating alert client", zap.Error(err))
 		return err
 	}
-	err = SendToNotificationTopic(ctx, alerts)
-	if err != nil {
-		logger.GetLogger().Error("Enable to Send Alert to Notification Topic ", zap.Error(err))
+	if sendNotification {
+		err = SendToNotificationTopic(ctx, alerts)
+		if err != nil {
+			logger.GetLogger().Error("Enable to Send Alert to Notification Topic ", zap.Error(err))
+		}
+		logger.GetLogger().Info("Notification alert sent successfully")
 	}
-	logger.GetLogger().Info("Notification alert sent successfully")
 	resp, err1 := alertClient.SendAlertWithRetry(alert.Request{Alerts: alerts}, 3)
 	if err1 != nil {
 		return err
