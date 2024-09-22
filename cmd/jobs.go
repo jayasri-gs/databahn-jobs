@@ -31,7 +31,9 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = err2
 		logger.GetLogger().Info("device inventory health calculation completed", zap.String("runFor", runFor), zap.Any("statuses", statuses))
 	case common.DATA_REPLAY:
+		logger.GetLogger().Info("Data Replay Job Triggered")
 		jobcmd.ExecuteReplayJob(input)
+		logger.GetLogger().Info("Data Replay Job Completed")
 	case common.FLEET_HEALTH_CHECKER:
 		err = jobs.HealthCheckAlertForFleetNode(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER:
