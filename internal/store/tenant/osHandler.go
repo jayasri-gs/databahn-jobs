@@ -3,7 +3,6 @@ package tenant
 import (
 	"context"
 	"encoding/json"
-	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/go-logging/logger"
@@ -13,7 +12,6 @@ import (
 	"strings"
 )
 
-var appConfig = config.GetAppConfiguration()
 var _conf *os.OpenSearchConf
 var client *opensearch.Client
 
