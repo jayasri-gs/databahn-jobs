@@ -40,7 +40,6 @@ const AgentFunctionality = "endpoint health checker"
 const AgentHealthCheckTitle = "unhealthy agent nodes found"
 const AgentHealthCheckMessage = "health from agent not reported for more than 5 minutes, marking unhealthy"
 
-
 const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified connector for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 
 const FleetConnectorHealthCheckTitle = "No heartbeat received in the last 30 minutes"
