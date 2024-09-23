@@ -1,0 +1,11 @@
+version = 1
+
+[[analyzers]]
+name = "go"
+
+  [analyzers.meta]
+  import_root = "github.com/databahn-ai/databahn-jobs"
+  dependencies_vendored = true
+
+[[transformers]]
+name = "gofmt"
