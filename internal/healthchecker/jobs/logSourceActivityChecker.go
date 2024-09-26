@@ -20,6 +20,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -135,8 +136,8 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 	for key, value := range aggObj.Agg {
 		valueInt, ok := value.(float64)
 		if !ok {
-			logging.GetLoggerWithContext(ctx).Error("error while getting value of stats", zap.Error(err))
-			return err
+			logging.GetLoggerWithContext(ctx).Error("error while getting value of stats for destination", zap.Error(err), zap.String("type", reflect.TypeOf(value).String()))
+			continue
 		}
 		if valueInt > 0 {
 			_, err := uuid.Parse(key)
@@ -229,8 +230,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	for key, value := range aggObj.Agg {
 		valueInt, ok := value.(float64)
 		if !ok {
-			logging.GetLoggerWithContext(ctx).Error("error while getting value of stats", zap.Error(err))
-			return err
+			logging.GetLoggerWithContext(ctx).Error("error while getting value of stats for source", zap.Error(err), zap.String("type", reflect.TypeOf(value).String()))
+			continue
 		}
 		if valueInt > 0 {
 			_, err := uuid.Parse(key)
