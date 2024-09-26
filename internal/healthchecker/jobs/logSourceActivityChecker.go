@@ -20,6 +20,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -135,8 +136,8 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 	for key, value := range aggObj.Agg {
 		valueInt, ok := value.(float64)
 		if !ok {
-			logging.GetLoggerWithContext(ctx).Error("error while getting value of stats", zap.Error(err))
-			return err
+			logging.GetLoggerWithContext(ctx).Error("error while getting value of stats for destination", zap.Error(err), zap.String("type", reflect.TypeOf(value).String()))
+			continue
 		}
 		if valueInt > 0 {
 			_, err := uuid.Parse(key)
@@ -148,7 +149,7 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 	}
 
 	startTimeHistorical := endTime.Add(-time.Hour * 24 * 7)
-	historicalStats, err := getAggStatsForDestinations(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(startTimeHistorical.UnixMilli())))
+	historicalStats, err := getAggStatsForDestinations(ctx, strconv.Itoa(int(startTimeHistorical.UnixMilli())), strconv.Itoa(int(startTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
@@ -169,10 +170,17 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		}
 	}
 
+	var destinationIdsToAlert []string
+	for _, id := range destinationStats7Days {
+		if !util.Contains(destinationStatsReceived, id) {
+			destinationIdsToAlert = append(destinationIdsToAlert, id)
+		}
+	}
+
 	// getting logSources which are not active but did not report stats in last 15 minutes
 	var alertToBeRaisedDispenser []destination.Destination
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err = config.GetDB().Model(&destination.Destination{}).Where("id not in ? and status not in ? AND id in ?", destinationStatsReceived, checkStatus, destinationStats7Days).Find(&alertToBeRaisedDispenser).Debug().Error
+	err = config.GetDB().Model(&destination.Destination{}).Where("status not in ? AND id in ?", checkStatus, destinationIdsToAlert).Debug().Find(&alertToBeRaisedDispenser).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
@@ -199,6 +207,7 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 			return err
 		}
 	}
+	logging.GetLogger().Info("notification stats as follows", zap.Any("no_of_inactive_sources", len(destinationStatsReceived)), zap.Any("ids", destinationIdsToAlert))
 	return nil
 }
 
@@ -221,8 +230,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	for key, value := range aggObj.Agg {
 		valueInt, ok := value.(float64)
 		if !ok {
-			logging.GetLoggerWithContext(ctx).Error("error while getting value of stats", zap.Error(err))
-			return err
+			logging.GetLoggerWithContext(ctx).Error("error while getting value of stats for source", zap.Error(err), zap.String("type", reflect.TypeOf(value).String()))
+			continue
 		}
 		if valueInt > 0 {
 			_, err := uuid.Parse(key)
@@ -234,8 +243,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// getting logSources which are not active but did not report stats in last 7 days
-	startTimehistorical := endTime.Add(-time.Hour * 24 * 7)
-	historicalIds, err := getAggStatsForLogSource(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(startTimehistorical.UnixMilli())))
+	startTimeHistorical := endTime.Add(-(time.Hour * 24 * 7))
+	historicalIds, err := getAggStatsForLogSource(ctx, strconv.Itoa(int(startTimeHistorical.UnixMilli())), strconv.Itoa(int(startTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
@@ -251,11 +260,17 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 			statsExistsInLast7Days = append(statsExistsInLast7Days, key)
 		}
 	}
+	var sourceIdToAlert []string
+	for _, id := range statsExistsInLast7Days {
+		if !util.Contains(logsourceIdsStatsReceived, id) {
+			sourceIdToAlert = append(sourceIdToAlert, id)
+		}
+	}
 
 	// getting logSources which are not active but did not report stats in last 15 minutes
 	var alertToBeRaisedLogSources []source.Source // array of ids not receiving stats
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err = config.GetDB().Model(&source.Source{}).Where("id not in ? and status not in ? AND id in ?", logsourceIdsStatsReceived, checkStatus, statsExistsInLast7Days).Find(&alertToBeRaisedLogSources).Debug().Error
+	err = config.GetDB().Model(&source.Source{}).Where("status not in ? AND id in ?", checkStatus, sourceIdToAlert).Debug().Find(&alertToBeRaisedLogSources).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
@@ -315,5 +330,6 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 			return err
 		}
 	}
+	logging.GetLogger().Info("notification stats as follows", zap.Any("no_of_inactive_sources", len(logsourceIdsStatsReceived)), zap.Any("ids", sourceIdToAlert))
 	return nil
 }
