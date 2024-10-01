@@ -2,6 +2,8 @@ package jobs
 
 import (
 	"context"
+	"time"
+
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
@@ -12,7 +14,6 @@ import (
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"time"
 )
 
 func agentHealthChecker(ctx context.Context) error {
@@ -59,7 +60,7 @@ func fleetHealthChecker(ctx context.Context) error {
 	//getting fleet nodes having heartbeat less than 15 minutes
 	var fleetNodes []fleet.Node
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
-	err := config.GetDB().Where("(heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).Find(&fleetNodes).Error
+	err := config.GetDB().Where("(heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).Debug().Find(&fleetNodes).Error
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy fleet node query", zap.Error(err))
 		return err
