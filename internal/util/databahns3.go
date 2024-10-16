@@ -64,7 +64,6 @@ func UploadFileToS3(ctx context.Context, objectKey, filePath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 	buffer, err := io.ReadAll(file)
 	if err != nil {
 		return err
@@ -79,7 +78,7 @@ func UploadFileToS3(ctx context.Context, objectKey, filePath string) error {
 	if err != nil {
 		return err
 	}
-	return nil
+	return file.Close()
 }
 
 func UploadGzipFileToS3(ctx context.Context, objectKey, filePath string) error {
@@ -91,7 +90,6 @@ func UploadGzipFileToS3(ctx context.Context, objectKey, filePath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 	buffer, err := io.ReadAll(file)
 	if err != nil {
 		return err
@@ -108,5 +106,5 @@ func UploadGzipFileToS3(ctx context.Context, objectKey, filePath string) error {
 	if err != nil {
 		return err
 	}
-	return nil
+	return file.Close()
 }

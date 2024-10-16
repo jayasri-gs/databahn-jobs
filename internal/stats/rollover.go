@@ -82,7 +82,7 @@ func RolloverOlderStats(ctx context.Context) error {
 	if errrCount == 0 {
 		return nil
 	} else {
-		return errors.New(fmt.Sprintf("%d errors while rolling over indices", errrCount))
+		return fmt.Errorf("%d errors while rolling over indices", errrCount)
 	}
 }
 
@@ -104,7 +104,7 @@ func (in Index) aliasName() string {
 
 func (in Index) dailyTimeRanges() []timeRange {
 	var ranges []timeRange
-	//forth Jan of the year will always be in first week acc ISO 8601
+	// forth Jan of the year will always be in first week acc ISO 8601
 	fourthJan := time.Date(in.Year, 1, 4, 0, 0, 0, 0, time.UTC)
 	weekStart := fourthJan
 	for weekStart.Weekday() != time.Monday {
@@ -217,26 +217,11 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 		var after *After
 		for {
 			rolloverRequest := buildRolloverAggRequest(start, end, after)
-			resp, err := dbos.MakeSearchCall(ctx, index.Index, rolloverRequest, client)
-			if err != nil {
-				return err
-			}
-			bodyContent, err := io.ReadAll(resp.Body)
+			response, err := makeSearchCallAndParseResponse(ctx, index, rolloverRequest, client)
 			if err != nil {
 				return err
 			}
 
-			if resp.StatusCode != 200 {
-				return errors.New("failed to get successful response from opensearch, body:" + string(bodyContent))
-			}
-			response := RolloverAggResponse{}
-			err = json.Unmarshal(bodyContent, &response)
-			if err != nil {
-				return err
-			}
-			if response.Error != nil && response.Error.Reason != "" {
-				return errors.New(response.Error.Reason)
-			}
 			if len(response.Aggregations.CompositeBuckets.Buckets) == 0 {
 				logger.GetLogger().Debug("no more documents to process", zap.String("index", index.Index))
 				break
@@ -270,30 +255,54 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 	err := validateNewData(ctx, index, client)
 	if err != nil {
 		return err
-	} else {
-		logger.GetLogger().Info("rolled over index validated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor10MinRollover()))
 	}
+	logger.GetLogger().Info("rolled over index validated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor10MinRollover()))
 	err = uploadOlderStatsToS3(ctx, index, client)
 	if err != nil {
 		return err
-	} else {
-		logger.GetLogger().Info("rolled over original backed up", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor10MinRollover()))
 	}
-	err = updateAlias(ctx, index, client)
+	logger.GetLogger().Info("rolled over original backed up", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor10MinRollover()))
+	err = updateAlias(index, client)
 	if err != nil {
 		return err
 	}
+	logger.GetLogger().Info("rolled over alias updated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor10MinRollover()))
 	err = dbos.DeleteIndex(ctx, client, index.Index)
 	if err != nil {
 		return err
 	}
+	logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
 	logger.GetLogger().Info("rolled over index", zap.String("index", index.Index), zap.Int("new_index_values", newIndexValues))
 	return nil
 }
 
-func updateAlias(ctx context.Context, index Index, client *opensearch.Client) error {
+func makeSearchCallAndParseResponse(ctx context.Context, index Index, rolloverRequest RolloverAggRequest, client *opensearch.Client) (*RolloverAggResponse, error) {
+	resp, err := dbos.MakeSearchCall(ctx, index.Index, rolloverRequest, client)
+	if err != nil {
+		return nil, err
+	}
+	bodyContent, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New("failed to get successful response from opensearch, body:" + string(bodyContent))
+	}
+	response := RolloverAggResponse{}
+	err = json.Unmarshal(bodyContent, &response)
+	if err != nil {
+		return nil, err
+	}
+	if response.Error != nil && response.Error.Reason != "" {
+		return nil, errors.New(response.Error.Reason)
+	}
+	return &response, nil
+}
+
+func updateAlias(index Index, client *opensearch.Client) error {
 	alias := index.aliasName()
-	return dbos.UpdateAliases(ctx, client, alias, index.Index, index.newIndexNameFor10MinRollover())
+	return dbos.UpdateAliases(client, alias, index.Index, index.newIndexNameFor10MinRollover())
 }
 
 func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.Client) error {
@@ -313,7 +322,7 @@ func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.C
 		fileSuffix := strconv.Itoa(i / pageSize)
 		fileName := index.s3FileName(fileSuffix)
 		if zipFile == nil && zipWriter == nil {
-			f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 			if err != nil {
 				return err
 			}
@@ -463,11 +472,11 @@ func buildRolloverAggRequest(start int64, end int64, after *After) RolloverAggRe
 	rolloverRequest.Aggs.CompositeBuckets.Composite.Sources = requestSources
 	rolloverRequest.Aggs.CompositeBuckets.Composite.After = after
 
-	topHists := TopHists{
+	topHits := TopHits{
 		Source: "*",
 		Size:   1,
 	}
-	rolloverRequest.Aggs.CompositeBuckets.Aggregations.AllFields.TopHits = topHists
+	rolloverRequest.Aggs.CompositeBuckets.Aggregations.AllFields.TopHits = topHits
 	sum := Sum{
 		Field: "counter.value",
 	}
@@ -531,7 +540,7 @@ type RequestSourceTermsAgg struct {
 }
 
 func newRequestSourceTermsAgg(field string) RequestSourceTermsAgg {
-	script := fmt.Sprintf("if (doc['%s'].size() == 0) { return 'N/A'; } else { return doc['%s'].value; }", field, field)
+	script := fmt.Sprintf("if ((!doc.containsKey('%s')) || doc['%s'].size() == 0) { return 'N/A'; } else { return doc['%s'].value; }", field, field, field)
 	terms := ScripTerms{
 		Source: script,
 		Lang:   "painless",
@@ -564,7 +573,7 @@ type RequestSource struct {
 	TimeHistogramBuckets *RequestSourceTimeHistogramBuckets `json:"time_histogram_buckets,omitempty"`
 }
 
-type TopHists struct {
+type TopHits struct {
 	Source string `json:"_source"`
 	Size   int    `json:"size"`
 }
@@ -592,7 +601,7 @@ type RolloverAggRequest struct {
 			} `json:"composite"`
 			Aggregations struct {
 				AllFields struct {
-					TopHits TopHists `json:"top_hits"`
+					TopHits TopHits `json:"top_hits"`
 				} `json:"all_fields"`
 				TotalCount struct {
 					Sum Sum `json:"sum"`

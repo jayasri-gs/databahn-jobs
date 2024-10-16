@@ -39,7 +39,7 @@ func CatIndices(ctx context.Context, client *opensearch.Client) ([]string, error
 	return indexNames, nil
 }
 
-func UpdateAliases(ctx context.Context, client *opensearch.Client, alias, from, to string) error {
+func UpdateAliases(client *opensearch.Client, alias, from, to string) error {
 	aliasActions := `
 	{
 	  "actions": [
