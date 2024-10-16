@@ -119,8 +119,8 @@ func (in Index) dailyTimeRanges() []timeRange {
 	return ranges
 }
 
-func (in Index) newIndexNameFor10MinRollover() string {
-	return strings.ReplaceAll(in.Index, "db_statistics", "rolled_over_10m_db_statistics")
+func (in Index) newIndexNameFor1HourRollover() string {
+	return strings.ReplaceAll(in.Index, "db_statistics", "rolled_over_1h_db_statistics")
 }
 
 func (in Index) s3FileName(suffix string) string {
@@ -256,17 +256,17 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 	if err != nil {
 		return err
 	}
-	logger.GetLogger().Info("rolled over index validated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor10MinRollover()))
+	logger.GetLogger().Info("rolled over index validated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor1HourRollover()))
 	err = uploadOlderStatsToS3(ctx, index, client)
 	if err != nil {
 		return err
 	}
-	logger.GetLogger().Info("rolled over original backed up", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor10MinRollover()))
+	logger.GetLogger().Info("rolled over original backed up", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor1HourRollover()))
 	err = updateAlias(index, client)
 	if err != nil {
 		return err
 	}
-	logger.GetLogger().Info("rolled over alias updated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor10MinRollover()))
+	logger.GetLogger().Info("rolled over alias updated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor1HourRollover()))
 	err = dbos.DeleteIndex(ctx, client, index.Index)
 	if err != nil {
 		return err
@@ -302,7 +302,7 @@ func makeSearchCallAndParseResponse(ctx context.Context, index Index, rolloverRe
 
 func updateAlias(index Index, client *opensearch.Client) error {
 	alias := index.aliasName()
-	return dbos.UpdateAliases(client, alias, index.Index, index.newIndexNameFor10MinRollover())
+	return dbos.UpdateAliases(client, alias, index.Index, index.newIndexNameFor1HourRollover())
 }
 
 func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.Client) error {
@@ -412,7 +412,7 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 		return err
 	}
 	newIndexGroupBy := []string{"name.raw", "namespace"}
-	newIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, index.newIndexNameFor10MinRollover(), "*",
+	newIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, index.newIndexNameFor1HourRollover(), "*",
 		newIndexGroupBy, aggregations, nil)
 	if err != nil {
 		return err
@@ -437,7 +437,7 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 	}
 	if !reflect.DeepEqual(olderCounts, newCounts) {
 		logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
-			zap.String("new_index", index.newIndexNameFor10MinRollover()), zap.Any("older_index_total_agg", olderIndexTotalAgg),
+			zap.String("new_index", index.newIndexNameFor1HourRollover()), zap.Any("older_index_total_agg", olderIndexTotalAgg),
 			zap.Any("new_index_total_agg", newIndexTotalAgg))
 		return errors.New("new index data validation failed")
 	}
@@ -464,7 +464,7 @@ func buildRolloverAggRequest(start int64, end int64, after *After) RolloverAggRe
 	requestSourceFleetNodeId := RequestSource{FleetNodeId: &requestTermsAggFleetNodeId}
 	timeHistogramBuckets := RequestSourceTimeHistogramBuckets{}
 	timeHistogramBuckets.DateHistogram.Field = "tags.db_ts_win"
-	timeHistogramBuckets.DateHistogram.FixedInterval = "10m"
+	timeHistogramBuckets.DateHistogram.FixedInterval = "1h"
 	timeHistogramSource := RequestSource{
 		TimeHistogramBuckets: &timeHistogramBuckets,
 	}
@@ -488,7 +488,7 @@ func insertIntoNewIndex(ctx context.Context, index Index, documents []EsSource, 
 	if len(documents) == 0 {
 		return nil
 	}
-	indexName := index.newIndexNameFor10MinRollover()
+	indexName := index.newIndexNameFor1HourRollover()
 	buff := new(bytes.Buffer)
 	for _, doc := range documents {
 		_, err := fmt.Fprintf(buff, "{\"index\": {\"_id\": %s}}\n", strconv.Quote(doc.Id))
