@@ -232,7 +232,6 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 			for _, compositeBucket := range response.Aggregations.CompositeBuckets.Buckets {
 				timeHistogramBucket := compositeBucket.Key.TimeHistogramBuckets
 				newDocId := compositeBucket.Key.newDocKey()
-				counterSum := compositeBucket.TotalCount.Value
 				sampleValues := compositeBucket.AllFields.Hits.Hits
 				if len(sampleValues) == 0 {
 					logger.GetLogger().Error("no AllFields found for agg key", zap.Any("key", compositeBucket.Key), zap.String("index", index.Index))
@@ -241,7 +240,12 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 				sampleValue := sampleValues[0]
 				newSource := sampleValue.Source
 				newSource.Id = newDocId
-				newSource.Counter.Value = counterSum
+				counterSum := compositeBucket.TotalCount.Value
+				counterValue, err := parseCounter(counterSum)
+				if err != nil {
+					return err
+				}
+				newSource.Counter.Value = counterValue
 				newSource.Timestamp = timeHistogramBucket
 				newSource.Tags["db_ts_win"] = timeHistogramBucket
 				sources = append(sources, newSource)
@@ -275,6 +279,23 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 	logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
 	logger.GetLogger().Info("rolled over index", zap.String("index", index.Index), zap.Int("new_index_values", newIndexValues))
 	return nil
+}
+
+func parseCounter(counterSum any) (float64, error) {
+	counterStr, ok := counterSum.(string)
+	if ok {
+		counterFloat, err := strconv.ParseFloat(counterStr, 64)
+		if err != nil {
+			return 0, err
+		}
+		return counterFloat, nil
+	} else {
+		counterFloat, ok := counterSum.(float64)
+		if ok {
+			return counterFloat, nil
+		}
+		return 0, fmt.Errorf("counter value %v not a float or string", counterSum)
+	}
 }
 
 func findMinMaxTimestamp(ctx context.Context, index Index, client *opensearch.Client) (int64, int64, error) {
@@ -671,7 +692,7 @@ type EsSource struct {
 	Namespace string `json:"namespace"`
 	WindowKey string `json:"window_key"`
 	Counter   struct {
-		Value float64 `json:"value"`
+		Value any `json:"value"`
 	} `json:"counter"`
 	Id        string         `json:"id"`
 	Tags      map[string]any `json:"tags"`
@@ -729,7 +750,7 @@ type RolloverAggResponse struct {
 					} `json:"hits"`
 				} `json:"all_fields"`
 				TotalCount struct {
-					Value float64 `json:"value"`
+					Value any `json:"value"`
 				} `json:"total_count"`
 			} `json:"buckets"`
 		} `json:"composite_buckets"`
