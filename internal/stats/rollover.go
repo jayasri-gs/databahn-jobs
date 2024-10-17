@@ -71,7 +71,7 @@ func RolloverOlderStats(ctx context.Context) error {
 			err := rollover(ctx, anIndex, osClient)
 			if err != nil {
 				errrCount++
-				logger.GetLogger().Error("error while rolling over index", zap.Error(err), zap.Any("index", anIndex), zap.Int("index_number", j))
+				logger.GetLogger().Error("error while rolling over index "+anIndex.Index, zap.Error(err), zap.Int("index_number", j))
 			} else {
 				successCount++
 			}
@@ -277,7 +277,7 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 		return err
 	}
 	logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
-	logger.GetLogger().Info("rolled over index", zap.String("index", index.Index), zap.Int("new_index_values", newIndexValues))
+	logger.GetLogger().Info("rolled over index "+index.Index, zap.Int("new_index_values", newIndexValues))
 	return nil
 }
 
@@ -457,6 +457,10 @@ func writeToBackupFile(writer *gzip.Writer, docs []map[string]any) error {
 }
 
 func validateNewData(ctx context.Context, index Index, client *opensearch.Client) error {
+	err := dbos.RefreshIndex(ctx, client, index.newIndexNameFor1HourRollover())
+	if err != nil {
+		return err
+	}
 	olderIndexGroupBy := []string{"name.raw", "namespace"}
 	aggregations := []dbos.AggregationFunction{
 		dbos.AggregationFunction{
