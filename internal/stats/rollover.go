@@ -102,7 +102,7 @@ func (in Index) aliasName() string {
 	return fmt.Sprintf("db_statistics_alias_%s", in.Tenant)
 }
 
-func (in Index) dailyTimeRanges(minEpoch, maxEpoch int64) []timeRange {
+func dailyTimeRanges(minEpoch, maxEpoch int64) []timeRange {
 	var ranges []timeRange
 	startTime := time.UnixMilli(minEpoch).UTC()
 	endTime := time.UnixMilli(maxEpoch).UTC()
@@ -210,7 +210,7 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 	if err != nil {
 		return err
 	}
-	days := index.dailyTimeRanges(minVal, maxVal)
+	days := dailyTimeRanges(minVal, maxVal)
 	newIndexValues := 0
 	for _, day := range days {
 		start := day.start
