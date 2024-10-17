@@ -39,6 +39,26 @@ func CatIndices(ctx context.Context, client *opensearch.Client) ([]string, error
 	return indexNames, nil
 }
 
+func UpdateAliases(client *opensearch.Client, alias, from, to string) error {
+	aliasActions := `
+	{
+	  "actions": [
+	    { "remove": { "index": "%s", "alias": "%s" } },
+	    { "add":    { "index": "%s", "alias": "%s" } }
+	  ]
+	}`
+	aliasActionsRequest := []byte(fmt.Sprintf(aliasActions, from, alias, to, alias))
+	response, err := client.Indices.UpdateAliases(bytes.NewReader(aliasActionsRequest))
+	if err != nil {
+		return err
+	}
+	if response.IsError() {
+		msg := fmt.Sprintf("[%d] Status from OpenSearch body: %s", response.StatusCode, response.String())
+		return errors.New(msg)
+	}
+	return nil
+}
+
 func DeleteIndex(ctx context.Context, client *opensearch.Client, indexName string) error {
 	deleteIndex := opensearchapi.IndicesDeleteRequest{
 		Index: []string{indexName},
@@ -217,7 +237,7 @@ func BulkUpsert[T any](ctx context.Context, cli *opensearch.Client, indexName st
 		Index: indexName,
 		Body:  buff,
 	}
-	err := performBulkRequest(ctx, cli, &request)
+	err := PerformBulkRequest(ctx, cli, &request)
 	if err != nil {
 		return err
 	}
@@ -248,7 +268,7 @@ func BulkUpsertWithScript[T any](ctx context.Context, cli *opensearch.Client, in
 		Index: indexName,
 		Body:  buff,
 	}
-	err := performBulkRequest(ctx, cli, &request)
+	err := PerformBulkRequest(ctx, cli, &request)
 	if err != nil {
 		return err
 	}
@@ -261,7 +281,7 @@ func getUpdateRequestBody[T any](doc T, script string) ([]byte, error) {
 	return utils.ParseTemplate([]byte(b), doc)
 }
 
-func performBulkRequest(ctx context.Context, cli *opensearch.Client, request *opensearchapi.BulkRequest) error {
+func PerformBulkRequest(ctx context.Context, cli *opensearch.Client, request *opensearchapi.BulkRequest) error {
 	resp, err := request.Do(ctx, cli)
 	if err != nil {
 		return err

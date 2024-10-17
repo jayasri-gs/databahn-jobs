@@ -15,6 +15,7 @@ require (
 	github.com/google/uuid v1.3.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
+	github.com/twmb/murmur3 v1.1.8
 	go.uber.org/zap v1.24.0
 	gorm.io/datatypes v1.1.0
 	gorm.io/gorm v1.25.2
