@@ -102,20 +102,17 @@ func (in Index) aliasName() string {
 	return fmt.Sprintf("db_statistics_alias_%s", in.Tenant)
 }
 
-func (in Index) dailyTimeRanges() []timeRange {
+func dailyTimeRanges(minEpoch, maxEpoch int64) []timeRange {
 	var ranges []timeRange
-	// forth Jan of the year will always be in first week acc ISO 8601
-	fourthJan := time.Date(in.Year, 1, 4, 0, 0, 0, 0, time.UTC)
-	weekStart := fourthJan
-	for weekStart.Weekday() != time.Monday {
-		weekStart = weekStart.AddDate(0, 0, -1)
+	startTime := time.UnixMilli(minEpoch).UTC()
+	endTime := time.UnixMilli(maxEpoch).UTC()
+	startOfDay := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, time.UTC)
+	for startOfDay.Before(endTime) {
+		endOfDay := startOfDay.Add(24 * time.Hour)
+		ranges = append(ranges, timeRange{start: startOfDay.UnixMilli(), end: endOfDay.UnixMilli()})
+		startOfDay = endOfDay
 	}
-	weekStart = weekStart.AddDate(0, 0, (in.Week-1)*7)
-	for i := 0; i < 7; i++ {
-		start := weekStart.AddDate(0, 0, i)
-		end := start.AddDate(0, 0, 1)
-		ranges = append(ranges, timeRange{start: start.UnixMilli(), end: end.UnixMilli()})
-	}
+	ranges[len(ranges)-1].end = ranges[len(ranges)-1].end + 1
 	return ranges
 }
 
@@ -209,7 +206,11 @@ func parseIndexName(index string) (*Index, int, bool) {
 
 func rollover(ctx context.Context, index Index, client *opensearch.Client) error {
 	logger.GetLoggerWithContext(ctx).Info("rolling over index", zap.String("index", index.Index))
-	days := index.dailyTimeRanges()
+	minVal, maxVal, err := findMinMaxTimestamp(ctx, index, client)
+	if err != nil {
+		return err
+	}
+	days := dailyTimeRanges(minVal, maxVal)
 	newIndexValues := 0
 	for _, day := range days {
 		start := day.start
@@ -252,7 +253,7 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 			}
 		}
 	}
-	err := validateNewData(ctx, index, client)
+	err = validateNewData(ctx, index, client)
 	if err != nil {
 		return err
 	}
@@ -274,6 +275,43 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 	logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
 	logger.GetLogger().Info("rolled over index", zap.String("index", index.Index), zap.Int("new_index_values", newIndexValues))
 	return nil
+}
+
+func findMinMaxTimestamp(ctx context.Context, index Index, client *opensearch.Client) (int64, int64, error) {
+	req := MinMaxRequest{}
+	req.Size = 0
+	req.Aggs.MinVal.Min.Field = "tags.db_ts_win"
+	req.Aggs.MaxVal.Max.Field = "tags.db_ts_win"
+	resp, err := dbos.MakeSearchCall(ctx, index.Index, req, client)
+	if err != nil {
+		return 0, 0, err
+	}
+	response, err := parseMinMaxResponse(resp)
+	if err != nil {
+		return 0, 0, err
+	}
+	minVal := int64(response.Aggregations.MinVal.Value)
+	maxVal := int64(response.Aggregations.MaxVal.Value)
+	return minVal, maxVal, nil
+}
+
+func parseMinMaxResponse(resp *opensearchapi.Response) (*MinMaxResponse, error) {
+	bodyContent, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New("failed to get successful response from opensearch for min max, body:" + string(bodyContent))
+	}
+	response := MinMaxResponse{}
+	err = json.Unmarshal(bodyContent, &response)
+	if err != nil {
+		return nil, err
+	}
+	if response.Error != nil && response.Error.Reason != "" {
+		return nil, errors.New(response.Error.Reason)
+	}
+	return &response, nil
 }
 
 func makeSearchCallAndParseResponse(ctx context.Context, index Index, rolloverRequest RolloverAggRequest, client *opensearch.Client) (*RolloverAggResponse, error) {
@@ -695,5 +733,34 @@ type RolloverAggResponse struct {
 				} `json:"total_count"`
 			} `json:"buckets"`
 		} `json:"composite_buckets"`
+	} `json:"aggregations"`
+}
+
+type MinMaxRequest struct {
+	Size int `json:"size"`
+	Aggs struct {
+		MinVal struct {
+			Min struct {
+				Field string `json:"field"`
+			} `json:"min"`
+		} `json:"min_val"`
+		MaxVal struct {
+			Max struct {
+				Field string `json:"field"`
+			} `json:"max"`
+		} `json:"max_val"`
+	} `json:"aggs"`
+}
+
+type MinMaxResponse struct {
+	Error        *Error `json:"error"`
+	Status       int    `json:"status"`
+	Aggregations struct {
+		MaxVal struct {
+			Value float64 `json:"value"`
+		} `json:"max_val"`
+		MinVal struct {
+			Value float64 `json:"value"`
+		} `json:"min_val"`
 	} `json:"aggregations"`
 }
