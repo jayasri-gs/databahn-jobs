@@ -59,6 +59,21 @@ func UpdateAliases(client *opensearch.Client, alias, from, to string) error {
 	return nil
 }
 
+func RefreshIndex(ctx context.Context, client *opensearch.Client, indexName string) error {
+	refreshIndex := opensearchapi.IndicesRefreshRequest{
+		Index: []string{indexName},
+	}
+	response, err := refreshIndex.Do(ctx, client)
+	if err != nil {
+		return err
+	}
+	if response.IsError() {
+		msg := fmt.Sprintf("[%d] Status from OpenSearch body: %s", response.StatusCode, response.String())
+		return errors.New(msg)
+	}
+	return nil
+}
+
 func DeleteIndex(ctx context.Context, client *opensearch.Client, indexName string) error {
 	deleteIndex := opensearchapi.IndicesDeleteRequest{
 		Index: []string{indexName},
