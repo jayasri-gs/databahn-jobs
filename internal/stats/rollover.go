@@ -32,9 +32,30 @@ func RolloverOlderStats(ctx context.Context) error {
 	limit := utils.GetEnvInt("STATS_ROLLOVER_INDEX_LIMIT", 10)
 	specificIndex := utils.GetEnvOrDefault("STATS_ROLLOVER_SPECIFIC_INDEX", "")
 	skipIndices := utils.GetEnvOrDefault("STATS_ROLLOVER_SKIP_INDICES", "")
+	aggBatchSize := utils.GetEnvInt("STATS_ROLLOVER_AGG_BATCH_SIZE", 500)
+	aggQueryRange := utils.GetEnvOrDefault("STATS_ROLLOVER_AGG_QUERY_RANGE", "3h")
+	aggWindow := utils.GetEnvOrDefault("STATS_ROLLOVER_AGG_WINDOW", "1h")
+	s3BackupEnabled := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_S3_BACKUP_ENABLED", "true"), "true")
+	deleteExistingRolledOverIndex := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_DELETE_EXISTING_ROLLED_OVER_INDEX", "false"), "true")
+
+	aggQueryDuration, err := time.ParseDuration(aggQueryRange)
+	if err != nil {
+		logger.GetLogger().Error("error while parsing agg query range", zap.Error(err), zap.String("range", aggQueryRange))
+		return err
+	}
+	aggWindowDuration, err := time.ParseDuration(aggWindow)
+	if err != nil {
+		logger.GetLogger().Error("error while parsing agg window", zap.Error(err), zap.String("window", aggWindow))
+		return err
+	}
+	if aggQueryDuration <= aggWindowDuration {
+		logger.GetLogger().Error("agg query range should be greater than agg window", zap.String("range", aggQueryRange), zap.String("window", aggWindow))
+		return errors.New("agg query range should be greater than agg window")
+	}
 
 	logger.GetLogger().Info("starting stats rollover", zap.Int("weeks_older_than", weeksOlderThan),
-		zap.Int("parallelism", parallelism), zap.Int("limit", limit), zap.String("specific_index", specificIndex))
+		zap.Int("parallelism", parallelism), zap.Int("limit", limit), zap.String("specific_index", specificIndex), zap.String("skip_indices", skipIndices),
+		zap.Int("agg_batch_size", aggBatchSize), zap.String("agg_query_range", aggQueryRange), zap.String("agg_window", aggWindow))
 
 	var indexNames []string
 	osClient, err := dbos.NewClient(ctx, conf.Url, conf.Creds())
@@ -68,7 +89,7 @@ func RolloverOlderStats(ctx context.Context) error {
 				wg.Done()
 				<-parallelismCntrl
 			}()
-			err := rollover(ctx, anIndex, osClient)
+			err := rollover(ctx, anIndex, osClient, aggBatchSize, aggQueryDuration, aggWindowDuration, s3BackupEnabled, deleteExistingRolledOverIndex)
 			if err != nil {
 				errrCount++
 				logger.GetLogger().Error("error while rolling over index "+anIndex.Index, zap.Error(err), zap.Int("index_number", j))
@@ -102,22 +123,24 @@ func (in Index) aliasName() string {
 	return fmt.Sprintf("db_statistics_alias_%s", in.Tenant)
 }
 
-func dailyTimeRanges(minEpoch, maxEpoch int64) []timeRange {
+func splitByTimeRanges(minEpoch, maxEpoch int64, duration time.Duration) []timeRange {
 	var ranges []timeRange
 	startTime := time.UnixMilli(minEpoch).UTC()
 	endTime := time.UnixMilli(maxEpoch).UTC()
-	startOfDay := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, time.UTC)
-	for startOfDay.Before(endTime) {
-		endOfDay := startOfDay.Add(24 * time.Hour)
-		ranges = append(ranges, timeRange{start: startOfDay.UnixMilli(), end: endOfDay.UnixMilli()})
-		startOfDay = endOfDay
+	startOfRange := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, time.UTC)
+	for startOfRange.Before(endTime) {
+		endOfRange := startOfRange.Add(duration)
+		ranges = append(ranges, timeRange{start: startOfRange.UnixMilli(), end: endOfRange.UnixMilli()})
+		startOfRange = endOfRange
 	}
 	ranges[len(ranges)-1].end = ranges[len(ranges)-1].end + 1
 	return ranges
 }
 
-func (in Index) newIndexNameFor1HourRollover() string {
-	return strings.ReplaceAll(in.Index, "db_statistics", "rolled_over_1h_db_statistics")
+func (in Index) newIndexNameForRollover(duration time.Duration) string {
+	strDur := util.FormatDuration(duration)
+	name := fmt.Sprintf("rolled_over_%s_db_statistics", strDur)
+	return strings.ReplaceAll(in.Index, "db_statistics", name)
 }
 
 func (in Index) s3FileName(suffix string) string {
@@ -204,20 +227,30 @@ func parseIndexName(index string) (*Index, int, bool) {
 	}
 }
 
-func rollover(ctx context.Context, index Index, client *opensearch.Client) error {
+func rollover(ctx context.Context, index Index, client *opensearch.Client, batchSize int, queryWindowDuration, aggWindowDuration time.Duration, s3BackupEnabled, delRolledOverExistingIndex bool) error {
 	logger.GetLoggerWithContext(ctx).Info("rolling over index", zap.String("index", index.Index))
 	minVal, maxVal, err := findMinMaxTimestamp(ctx, index, client)
 	if err != nil {
 		return err
 	}
-	days := dailyTimeRanges(minVal, maxVal)
+	timeRanges := splitByTimeRanges(minVal, maxVal, queryWindowDuration)
 	newIndexValues := 0
-	for _, day := range days {
-		start := day.start
-		end := day.end
+	newIndexName := index.newIndexNameForRollover(aggWindowDuration)
+
+	if delRolledOverExistingIndex {
+		err = dbos.DeleteIndex(ctx, client, newIndexName)
+		if err != nil {
+			return err
+		}
+		logger.GetLogger().Info("deleted existing rolled over index", zap.String("index", newIndexName))
+	}
+
+	for _, tr := range timeRanges {
+		start := tr.start
+		end := tr.end
 		var after *After
 		for {
-			rolloverRequest := buildRolloverAggRequest(start, end, after)
+			rolloverRequest := buildRolloverAggRequest(start, end, after, batchSize, aggWindowDuration)
 			response, err := makeSearchCallAndParseResponse(ctx, index, rolloverRequest, client)
 			if err != nil {
 				return err
@@ -251,27 +284,32 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client) error
 				sources = append(sources, newSource)
 				newIndexValues++
 			}
-			err = insertIntoNewIndex(ctx, index, sources, client)
+			err = insertIntoNewIndex(ctx, sources, client, newIndexName)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	err = validateNewData(ctx, index, client)
+	err = validateNewData(ctx, index, client, newIndexName)
 	if err != nil {
 		return err
 	}
-	logger.GetLogger().Info("rolled over index validated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor1HourRollover()))
-	err = uploadOlderStatsToS3(ctx, index, client)
+
+	logger.GetLogger().Info("rolled over index validated", zap.String("index", index.Index), zap.String("rolled_over_index", newIndexName))
+	if s3BackupEnabled {
+		err = uploadOlderStatsToS3(ctx, index, client)
+		if err != nil {
+			return err
+		}
+		logger.GetLogger().Info("rolled over original backed up", zap.String("index", index.Index), zap.String("rolled_over_index", newIndexName))
+	} else {
+		logger.GetLogger().Info("s3 backup disabled", zap.String("index", index.Index))
+	}
+	err = updateAlias(index, client, newIndexName)
 	if err != nil {
 		return err
 	}
-	logger.GetLogger().Info("rolled over original backed up", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor1HourRollover()))
-	err = updateAlias(index, client)
-	if err != nil {
-		return err
-	}
-	logger.GetLogger().Info("rolled over alias updated", zap.String("index", index.Index), zap.String("rolled_over_index", index.newIndexNameFor1HourRollover()))
+	logger.GetLogger().Info("rolled over alias updated", zap.String("index", index.Index), zap.String("rolled_over_index", newIndexName))
 	err = dbos.DeleteIndex(ctx, client, index.Index)
 	if err != nil {
 		return err
@@ -359,9 +397,9 @@ func makeSearchCallAndParseResponse(ctx context.Context, index Index, rolloverRe
 	return &response, nil
 }
 
-func updateAlias(index Index, client *opensearch.Client) error {
+func updateAlias(index Index, client *opensearch.Client, newIndexName string) error {
 	alias := index.aliasName()
-	return dbos.UpdateAliases(client, alias, index.Index, index.newIndexNameFor1HourRollover())
+	return dbos.UpdateAliases(client, alias, index.Index, newIndexName)
 }
 
 func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.Client) error {
@@ -377,6 +415,7 @@ func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.C
 	var zipWriter *gzip.Writer
 	var zipFile *os.File
 	fileHadPendingData := false
+	start := time.Now()
 	for {
 		fileSuffix := strconv.Itoa(i / pageSize)
 		fileName := index.s3FileName(fileSuffix)
@@ -400,6 +439,8 @@ func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.C
 				return err
 			}
 			if (i+1)%pageSize == 0 {
+				end := time.Now()
+				logger.GetLogger().Info("processed page", zap.String("index", index.Index), zap.Int("page", i/pageSize), zap.Duration("duration", end.Sub(start)))
 				err = upload(ctx, index, zipFile, zipWriter)
 				if err != nil {
 					return err
@@ -407,6 +448,7 @@ func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.C
 				zipWriter = nil
 				zipFile = nil
 				fileHadPendingData = false
+				start = time.Now()
 			}
 		} else {
 			break
@@ -414,6 +456,8 @@ func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.C
 		i++
 	}
 	if zipFile != nil && fileHadPendingData {
+		end := time.Now()
+		logger.GetLogger().Info("processed last page", zap.String("index", index.Index), zap.Duration("duration", end.Sub(start)))
 		err := upload(ctx, index, zipFile, zipWriter)
 		if err != nil {
 			return err
@@ -423,6 +467,12 @@ func uploadOlderStatsToS3(ctx context.Context, index Index, client *opensearch.C
 }
 
 func upload(ctx context.Context, index Index, s3File *os.File, writer *gzip.Writer) error {
+	start := time.Now()
+	defer func() {
+		end := time.Now()
+		uploadDur := end.Sub(start)
+		logger.GetLogger().Info("uploaded file to s3", zap.String("index", index.Index), zap.Duration("upload_duration", uploadDur))
+	}()
 	fileBaseName := filepath.Base(s3File.Name())
 	err := writer.Close()
 	if err != nil {
@@ -456,8 +506,8 @@ func writeToBackupFile(writer *gzip.Writer, docs []map[string]any) error {
 	return nil
 }
 
-func validateNewData(ctx context.Context, index Index, client *opensearch.Client) error {
-	err := dbos.RefreshIndex(ctx, client, index.newIndexNameFor1HourRollover())
+func validateNewData(ctx context.Context, index Index, client *opensearch.Client, newIndexName string) error {
+	err := dbos.RefreshIndex(ctx, client, newIndexName)
 	if err != nil {
 		return err
 	}
@@ -475,7 +525,7 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 		return err
 	}
 	newIndexGroupBy := []string{"name.raw", "namespace"}
-	newIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, index.newIndexNameFor1HourRollover(), "*",
+	newIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, newIndexName, "*",
 		newIndexGroupBy, aggregations, nil)
 	if err != nil {
 		return err
@@ -500,19 +550,19 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 	}
 	if !reflect.DeepEqual(olderCounts, newCounts) {
 		logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
-			zap.String("new_index", index.newIndexNameFor1HourRollover()), zap.Any("older_index_total_agg", olderIndexTotalAgg),
+			zap.String("new_index", newIndexName), zap.Any("older_index_total_agg", olderIndexTotalAgg),
 			zap.Any("new_index_total_agg", newIndexTotalAgg))
 		return errors.New("new index data validation failed")
 	}
 	return nil
 }
 
-func buildRolloverAggRequest(start int64, end int64, after *After) RolloverAggRequest {
+func buildRolloverAggRequest(start int64, end int64, after *After, batchSize int, aggWindowDuration time.Duration) RolloverAggRequest {
 	rolloverRequest := RolloverAggRequest{}
 	rolloverRequest.Size = 0
 	rolloverRequest.Query.Range.TagsDbTsWin.Gte = start
 	rolloverRequest.Query.Range.TagsDbTsWin.Lt = end
-	rolloverRequest.Aggs.CompositeBuckets.Composite.Size = 1000
+	rolloverRequest.Aggs.CompositeBuckets.Composite.Size = batchSize
 	requestTermsAggName := newRequestSourceTermsAgg("name.raw")
 	requestSourceName := RequestSource{Name: &requestTermsAggName}
 	requestTermsAggNamespace := newRequestSourceTermsAgg("namespace")
@@ -527,7 +577,7 @@ func buildRolloverAggRequest(start int64, end int64, after *After) RolloverAggRe
 	requestSourceFleetNodeId := RequestSource{FleetNodeId: &requestTermsAggFleetNodeId}
 	timeHistogramBuckets := RequestSourceTimeHistogramBuckets{}
 	timeHistogramBuckets.DateHistogram.Field = "tags.db_ts_win"
-	timeHistogramBuckets.DateHistogram.FixedInterval = "1h"
+	timeHistogramBuckets.DateHistogram.FixedInterval = util.FormatDuration(aggWindowDuration)
 	timeHistogramSource := RequestSource{
 		TimeHistogramBuckets: &timeHistogramBuckets,
 	}
@@ -547,11 +597,10 @@ func buildRolloverAggRequest(start int64, end int64, after *After) RolloverAggRe
 	return rolloverRequest
 }
 
-func insertIntoNewIndex(ctx context.Context, index Index, documents []EsSource, client *opensearch.Client) error {
+func insertIntoNewIndex(ctx context.Context, documents []EsSource, client *opensearch.Client, newIndexName string) error {
 	if len(documents) == 0 {
 		return nil
 	}
-	indexName := index.newIndexNameFor1HourRollover()
 	buff := new(bytes.Buffer)
 	for _, doc := range documents {
 		_, err := fmt.Fprintf(buff, "{\"index\": {\"_id\": %s}}\n", strconv.Quote(doc.Id))
@@ -566,14 +615,14 @@ func insertIntoNewIndex(ctx context.Context, index Index, documents []EsSource, 
 		buff.Write([]byte("\n"))
 	}
 	request := opensearchapi.BulkRequest{
-		Index: indexName,
+		Index: newIndexName,
 		Body:  buff,
 	}
 	err := dbos.PerformBulkRequest(ctx, client, &request)
 	if err != nil {
 		return err
 	}
-	logger.GetLogger().Debug("indexed documents to rolled over index:"+indexName, zap.Int("count", len(documents)))
+	logger.GetLogger().Debug("indexed documents to rolled over index:"+newIndexName, zap.Int("count", len(documents)))
 	return nil
 }
 
