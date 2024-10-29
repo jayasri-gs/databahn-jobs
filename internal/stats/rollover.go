@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
 	dbos "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
@@ -25,8 +26,27 @@ import (
 	"time"
 )
 
+func tempGetConf() *dbos.OpenSearchConf {
+	osSecrets := &configuration.OpenSearchCredentials{
+		Url:            "https://search-restore-poc-opensearch-vm5dmkce4ttzf7pow7atgbphda.us-east-2.es.amazonaws.com",
+		Username:       "osadmin",
+		Password:       "DataBahn@2022",
+		StatsIndexName: "stats",
+	}
+	url := osSecrets.Url
+	user := osSecrets.Username
+	pass := osSecrets.Password
+	statsIndex := osSecrets.StatisticsIndexName
+	return &dbos.OpenSearchConf{
+		Url:        url,
+		Username:   user,
+		Password:   pass,
+		StatsIndex: statsIndex,
+	}
+}
+
 func RolloverOlderStats(ctx context.Context) error {
-	conf := dbos.GetConf()
+	conf := tempGetConf()
 	weeksOlderThan := utils.GetEnvInt("STATS_ROLLOVER_OLDER_THAN_WEEKS", 2)
 	parallelism := utils.GetEnvInt("STATS_ROLLOVER_PARALLELISM", 4)
 	limit := utils.GetEnvInt("STATS_ROLLOVER_INDEX_LIMIT", 10)
