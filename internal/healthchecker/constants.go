@@ -22,8 +22,8 @@ const (
 	StatusInactive = "INACTIVE"
 )
 
-var FleetHealthCheckTime = utils.GetEnvOrDefault(EnvFleetHealthCheckTime, "30")
-var AgentHealthCheckTime = utils.GetEnvOrDefault(EnvAgentHealthCheckTime, "30")
+var FleetHealthCheckTime = utils.GetEnvOrDefault(EnvFleetHealthCheckTime, "10")
+var AgentHealthCheckTime = utils.GetEnvOrDefault(EnvAgentHealthCheckTime, "10")
 var FleetHealthCheckIgnoreTime = utils.GetEnvOrDefault(EnvFleetHealthCheckIgnoreTime, "600")
 var LogSourceActivityCheckerTime = utils.GetEnvOrDefault(EnvLogSourceActivityCheckerTime, "30")
 var DestinationDeliveryCheckerTime = utils.GetEnvOrDefault(EnvLogSourceActivityCheckerTime, "30")
