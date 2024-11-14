@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
 	dbos "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
@@ -25,8 +26,27 @@ import (
 	"time"
 )
 
+func tempGetConf() *dbos.OpenSearchConf {
+	osSecrets := &configuration.OpenSearchCredentials{
+		Url:            "https://search-restore-poc-opensearch-vm5dmkce4ttzf7pow7atgbphda.us-east-2.es.amazonaws.com",
+		Username:       "osadmin",
+		Password:       "DataBahn@2022",
+		StatsIndexName: "stats",
+	}
+	url := osSecrets.Url
+	user := osSecrets.Username
+	pass := osSecrets.Password
+	statsIndex := osSecrets.StatisticsIndexName
+	return &dbos.OpenSearchConf{
+		Url:        url,
+		Username:   user,
+		Password:   pass,
+		StatsIndex: statsIndex,
+	}
+}
+
 func RolloverOlderStats(ctx context.Context) error {
-	conf := dbos.GetConf()
+	conf := tempGetConf()
 	weeksOlderThan := utils.GetEnvInt("STATS_ROLLOVER_OLDER_THAN_WEEKS", 2)
 	parallelism := utils.GetEnvInt("STATS_ROLLOVER_PARALLELISM", 4)
 	limit := utils.GetEnvInt("STATS_ROLLOVER_INDEX_LIMIT", 10)
@@ -34,6 +54,7 @@ func RolloverOlderStats(ctx context.Context) error {
 	skipIndices := utils.GetEnvOrDefault("STATS_ROLLOVER_SKIP_INDICES", "")
 	aggBatchSize := utils.GetEnvInt("STATS_ROLLOVER_AGG_BATCH_SIZE", 500)
 	aggQueryRange := utils.GetEnvOrDefault("STATS_ROLLOVER_AGG_QUERY_RANGE", "3h")
+	validationRange := utils.GetEnvOrDefault("STATS_ROLLOVER_VALIDATION_RANGE", "24h")
 	aggWindow := utils.GetEnvOrDefault("STATS_ROLLOVER_AGG_WINDOW", "1h")
 	s3BackupEnabled := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_S3_BACKUP_ENABLED", "true"), "true")
 	deleteExistingRolledOverIndex := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_DELETE_EXISTING_ROLLED_OVER_INDEX", "false"), "true")
@@ -46,6 +67,11 @@ func RolloverOlderStats(ctx context.Context) error {
 	aggWindowDuration, err := time.ParseDuration(aggWindow)
 	if err != nil {
 		logger.GetLogger().Error("error while parsing agg window", zap.Error(err), zap.String("window", aggWindow))
+		return err
+	}
+	validationRangeDuration, err := time.ParseDuration(validationRange)
+	if err != nil {
+		logger.GetLogger().Error("error while parsing validation window", zap.Error(err), zap.String("window", validationRange))
 		return err
 	}
 	if aggQueryDuration <= aggWindowDuration {
@@ -89,7 +115,8 @@ func RolloverOlderStats(ctx context.Context) error {
 				wg.Done()
 				<-parallelismCntrl
 			}()
-			err := rollover(ctx, anIndex, osClient, aggBatchSize, aggQueryDuration, aggWindowDuration, s3BackupEnabled, deleteExistingRolledOverIndex)
+			err := rollover(ctx, anIndex, osClient, aggBatchSize, aggQueryDuration,
+				aggWindowDuration, s3BackupEnabled, deleteExistingRolledOverIndex, validationRangeDuration)
 			if err != nil {
 				errrCount++
 				logger.GetLogger().Error("error while rolling over index "+anIndex.Index, zap.Error(err), zap.Int("index_number", j))
@@ -227,7 +254,8 @@ func parseIndexName(index string) (*Index, int, bool) {
 	}
 }
 
-func rollover(ctx context.Context, index Index, client *opensearch.Client, batchSize int, queryWindowDuration, aggWindowDuration time.Duration, s3BackupEnabled, delRolledOverExistingIndex bool) error {
+func rollover(ctx context.Context, index Index, client *opensearch.Client, batchSize int, queryWindowDuration,
+	aggWindowDuration time.Duration, s3BackupEnabled, delRolledOverExistingIndex bool, validationDuration time.Duration) error {
 	logger.GetLoggerWithContext(ctx).Info("rolling over index", zap.String("index", index.Index))
 	minVal, maxVal, err := findMinMaxTimestamp(ctx, index, client)
 	if err != nil {
@@ -290,7 +318,7 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client, batch
 			}
 		}
 	}
-	err = validateNewData(ctx, index, client, newIndexName)
+	err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, validationDuration)
 	if err != nil {
 		return err
 	}
@@ -506,11 +534,13 @@ func writeToBackupFile(writer *gzip.Writer, docs []map[string]any) error {
 	return nil
 }
 
-func validateNewData(ctx context.Context, index Index, client *opensearch.Client, newIndexName string) error {
+func validateNewData(ctx context.Context, index Index, client *opensearch.Client, newIndexName string,
+	minVal, maxVal int64, validationDuration time.Duration) error {
 	err := dbos.RefreshIndex(ctx, client, newIndexName)
 	if err != nil {
 		return err
 	}
+
 	olderIndexGroupBy := []string{"name.raw", "namespace"}
 	aggregations := []dbos.AggregationFunction{
 		dbos.AggregationFunction{
@@ -519,40 +549,46 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 			Function: "sum",
 		},
 	}
-	olderIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, index.Index, "*",
-		olderIndexGroupBy, aggregations, nil)
-	if err != nil {
-		return err
-	}
-	newIndexGroupBy := []string{"name.raw", "namespace"}
-	newIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, newIndexName, "*",
-		newIndexGroupBy, aggregations, nil)
-	if err != nil {
-		return err
-	}
-	olderCounts := make(map[string]map[string]float64)
-	for _, agg := range olderIndexTotalAgg {
-		name := agg.Key[olderIndexGroupBy[0]].(string)
-		namespace := agg.Key[olderIndexGroupBy[1]].(string)
-		if olderCounts[name] == nil {
-			olderCounts[name] = make(map[string]float64)
+
+	validationRanges := splitByTimeRanges(minVal, maxVal, validationDuration)
+	for _, vr := range validationRanges {
+		query := fmt.Sprintf("tags.db_ts_win:[%d TO %d}", vr.start, vr.end)
+		olderIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, index.Index, query,
+			olderIndexGroupBy, aggregations, nil)
+		if err != nil {
+			return err
 		}
-		olderCounts[name][namespace] = agg.Values["total_count"].(float64)
-	}
-	newCounts := make(map[string]map[string]float64)
-	for _, agg := range newIndexTotalAgg {
-		name := agg.Key[newIndexGroupBy[0]].(string)
-		namespace := agg.Key[newIndexGroupBy[1]].(string)
-		if newCounts[name] == nil {
-			newCounts[name] = make(map[string]float64)
+		newIndexGroupBy := []string{"name.raw", "namespace"}
+		newIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, newIndexName, query,
+			newIndexGroupBy, aggregations, nil)
+		if err != nil {
+			return err
 		}
-		newCounts[name][namespace] = agg.Values["total_count"].(float64)
-	}
-	if !reflect.DeepEqual(olderCounts, newCounts) {
-		logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
-			zap.String("new_index", newIndexName), zap.Any("older_index_total_agg", olderIndexTotalAgg),
-			zap.Any("new_index_total_agg", newIndexTotalAgg))
-		return errors.New("new index data validation failed")
+		olderCounts := make(map[string]map[string]float64)
+		for _, agg := range olderIndexTotalAgg {
+			name := agg.Key[olderIndexGroupBy[0]].(string)
+			namespace := agg.Key[olderIndexGroupBy[1]].(string)
+			if olderCounts[name] == nil {
+				olderCounts[name] = make(map[string]float64)
+			}
+			olderCounts[name][namespace] = agg.Values["total_count"].(float64)
+		}
+		newCounts := make(map[string]map[string]float64)
+		for _, agg := range newIndexTotalAgg {
+			name := agg.Key[newIndexGroupBy[0]].(string)
+			namespace := agg.Key[newIndexGroupBy[1]].(string)
+			if newCounts[name] == nil {
+				newCounts[name] = make(map[string]float64)
+			}
+			newCounts[name][namespace] = agg.Values["total_count"].(float64)
+		}
+		if !reflect.DeepEqual(olderCounts, newCounts) {
+			logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
+				zap.String("new_index", newIndexName), zap.Any("older_index_total_agg", olderIndexTotalAgg),
+				zap.Any("new_index_total_agg", newIndexTotalAgg), zap.Int64("timeRange.Start", vr.start),
+				zap.Int64("timeRange.End", vr.end))
+			return errors.New("new index data validation failed")
+		}
 	}
 	return nil
 }
