@@ -78,7 +78,12 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	}
 
 	if len(unparsedEventCounts) == 0 {
-		logging.GetLoggerWithContext(ctx).Info("No unparsed events detected. No alerts raised.")
+		logging.GetLoggerWithContext(ctx).Info("No unparsed events detected. Resolving existing alerts.")
+		err := resolveExistingAlerts(ctx)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while resolving existing alerts", zap.Error(err))
+			return err
+		}
 		return nil
 	}
 
@@ -102,8 +107,8 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 			FirstObservedAt:         time.Now(),
 			LastObservedAt:          time.Now(),
 			TenantUUID:              src.TenantID,
-			FunctionalityType:       "TBD",             //alerts_common.EventSourceFunctionality // Set appropriate functionality type
-			Functionality:           "UNPARSED_EVENTS", // Set specific functionality
+			FunctionalityType:       "UNPARSED_EVENTS",
+			Functionality:           "DAILY_UNPARSED_EVENTS",
 			FunctionalityEntityId:   src.ID.String(),
 			FunctionalityEntityName: src.Name,
 			Dismissed:               false,
@@ -114,7 +119,6 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 		alerts = append(alerts, alert)
 	}
 
-	// Raise alerts
 	for _, alert := range alerts {
 		err := helper.SendAlertToControlPlane(
 			ctx,
@@ -143,6 +147,32 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	logging.GetLogger().Info("Alert raised for unparsed events", zap.Int("alerted_sources_count", len(alertSources)))
 	return nil
 }
+
+func resolveExistingAlerts(ctx context.Context) error {
+	logging.GetLoggerWithContext(ctx).Info("Resolving existing alerts for unparsed events.")
+	var existingAlerts []alerts_common.Alert
+	err := config.GetDB().Model(&alerts_common.Alert{}).
+		Where("functionality = ? AND status = ?", "UNPARSED_EVENTS", alerts_common.AlertOpen).
+		Find(&existingAlerts).Error
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while fetching existing alerts", zap.Error(err))
+		return err
+	}
+
+	for _, alert := range existingAlerts {
+		alert.Status = alerts_common.AlertResolved
+		alert.UpdatedAt = time.Now()
+		err = config.GetDB().Save(&alert).Error
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while resolving alert", zap.Error(err), zap.String("alert_id", alert.FunctionalityEntityId))
+			return err
+		}
+		logging.GetLoggerWithContext(ctx).Info("Resolved alert", zap.String("alert_id", alert.FunctionalityEntityId))
+	}
+
+	return nil
+}
+
 func MapKeys(inputMap map[string]float64) []string {
 	keys := make([]string, 0, len(inputMap))
 	for key := range inputMap {
