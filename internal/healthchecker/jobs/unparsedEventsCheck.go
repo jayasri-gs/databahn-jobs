@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
-	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -90,13 +89,6 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	}
 
 	var alertSources []source.Source
-	err = config.GetDB().Model(&source.Source{}).
-		Where("status not in ? AND id in ?", []string{"inactive", "deleted"}, MapKeys(unparsedEventCounts)).
-		Debug().Find(&alertSources).Error
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching active sources with unparsed events", zap.Error(err))
-		return err
-	}
 
 	var toRaiseAlerts []alerts_common.AlertEntityObject
 	var toRaiseAlertsDetails []alerts_common.Alert
@@ -153,6 +145,11 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 
 func resolveExistingAlerts(ctx context.Context, sources []string) error {
 	logging.GetLoggerWithContext(ctx).Info("Resolving existing alerts for unparsed events in OpenSearch.")
+
+	if len(sources) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("No sources provided for resolving alerts. Skipping resolution.")
+		return nil
+	}
 
 	conf := os.GetConf()
 	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
