@@ -12,7 +12,7 @@ const LOG_SOURCE_REPUTATION_CHECKER = "log-source-reputation-checker"
 const TENANT_DAILY_DIGEST = "tenant-daily-digest"
 const AGENT_HEALTH_CHECKER = "agent-health-checker"
 const KAFKA_QUERY = "kafka_query"
-
+const UNPARSED_EVENTS = "unparsed-events"
 const EVENT_SEQUENCING = "event-sequencing"
 const InfoAlert = "info"
 const WarningAlert = "warning"
