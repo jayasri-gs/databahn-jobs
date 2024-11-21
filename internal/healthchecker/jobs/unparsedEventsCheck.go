@@ -3,9 +3,9 @@ package jobs
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -58,157 +58,122 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 		_ = logger.Sync()
 	}(logging.GetLogger())
 
-	logging.GetLoggerWithContext(ctx).Info("Handling hourly alerts for unparsed events")
+	logging.GetLoggerWithContext(ctx).Info("Stating job to raise alerts for unparsed events")
 
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Hour)
+
+	logging.GetLoggerWithContext(ctx).Info("pulling stats for", zap.Time("startTime", startTime), zap.Time("endTime", endTime))
 
 	aggObj, err := GetUnparsedEvents(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting unparsed events stats", zap.Error(err))
 		return err
 	}
-
-	unparsedEventCounts := make(map[string]float64)
+	// get source id to unparsed event count mapping
+	sourceIdToUnparsedEventCount := make(map[string]float64)
 	for sourceID, count := range aggObj.Agg {
 		valueInt, ok := count.(float64)
 		if !ok || valueInt <= 0 {
 			continue
 		}
-		unparsedEventCounts[sourceID] = valueInt
+		sourceIdToUnparsedEventCount[sourceID] = valueInt
 	}
 
-	if len(unparsedEventCounts) == 0 {
-		logging.GetLoggerWithContext(ctx).Info("No unparsed events detected. Resolving existing alerts.")
-		err := resolveExistingAlerts(ctx, MapKeys(unparsedEventCounts))
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while resolving existing alerts", zap.Error(err))
-			return err
-		}
-		return nil
+	// resolve alerts for sources which did not have unparsed events this time
+	err = resolveExistingAlerts(ctx, sourceIdToUnparsedEventCount)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while resolving existing alerts", zap.Error(err))
+		return err
 	}
 
-	var alertSources []source.Source
+	// get all logSources for which are active alert has to be raised
+	var alertToBeRaisedLogSources []source.Source
+	err = config.GetDB().Model(&source.Source{}).Where("id in ?", MapKeys(sourceIdToUnparsedEventCount)).Debug().Find(&alertToBeRaisedLogSources).Error
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
+		return err
+	}
 
+	// raise alerts for sources which have unparsed events
+
+	logging.GetLogger().Info("Raising alerts for sources which have unparsed events", zap.Any("alertToBeRaisedLogSources", MapKeys(sourceIdToUnparsedEventCount)))
 	var toRaiseAlerts []alerts_common.AlertEntityObject
-	var toRaiseAlertsDetails []alerts_common.Alert
-	for _, src := range alertSources {
-		count := unparsedEventCounts[src.ID.String()]
+	for _, ls := range alertToBeRaisedLogSources {
 		toRaiseAlerts = append(toRaiseAlerts, alerts_common.AlertEntityObject{
-			EntityName:       src.Name,
-			EntityId:         utils.UUIDFromStringOrNil(src.ID.String()),
-			EntityTenantUUId: src.TenantID,
-		})
-
-		toRaiseAlertsDetails = append(toRaiseAlertsDetails, alerts_common.Alert{
-			Title:                   "Unparsed Events Detected",
-			Message:                 fmt.Sprintf("Detected %v unparsed events for source '%s' in the last hour.", count, src.Name),
-			CreatedAt:               time.Now(),
-			UpdatedAt:               time.Now(),
-			FirstObservedAt:         time.Now(),
-			LastObservedAt:          time.Now(),
-			TenantUUID:              src.TenantID,
-			FunctionalityType:       "UNPARSED_EVENTS",
-			Functionality:           "DAILY_UNPARSED_EVENTS",
-			FunctionalityEntityId:   src.ID.String(),
-			FunctionalityEntityName: src.Name,
-			Dismissed:               false,
-			Criticality:             alerts_common.WarningAlert,
-			Status:                  alerts_common.AlertOpen,
-			UpdatedBy:               "system",
+			EntityName:       ls.Name,
+			EntityId:         ls.ID,
+			EntityTenantUUId: ls.TenantID,
 		})
 	}
 
 	if len(toRaiseAlerts) > 0 {
-		err := helper.SendAlertToControlPlane(
-			ctx,
-			toRaiseAlerts,
-			"Unparsed Events Detected",
-			"Unparsed events were detected for the specified sources in the last hour.",
-			"UNPARSED_EVENTS",
-			"DAILY_UNPARSED_EVENTS",
-			alerts_common.WarningAlert,
-			alerts_common.AlertOpen,
-			false,
-			"system",
-		)
+		err := helper.SendAlertToControlPlane(ctx, toRaiseAlerts, "Unparsed events detected", "Unparsed events were detected for the specified sources in the last hour.", "UNPARSED_EVENTS", "DAILY_UNPARSED_EVENTS", alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsed events", zap.Error(err))
+			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsedevents", zap.Error(err))
 			return err
 		}
-
 		logging.GetLoggerWithContext(ctx).Info("Alerts successfully raised for unparsed events", zap.Int("raised_alerts_count", len(toRaiseAlerts)))
 	}
 
 	return nil
 }
 
-func resolveExistingAlerts(ctx context.Context, sources []string) error {
-	logging.GetLoggerWithContext(ctx).Info("Resolving existing alerts for unparsed events in OpenSearch.")
-
-	if len(sources) == 0 {
-		logging.GetLoggerWithContext(ctx).Info("No sources provided for resolving alerts. Skipping resolution.")
+func resolveExistingAlerts(ctx context.Context, sources map[string]float64) error {
+	alerts, err := getExistingAlertsForUnparsedEvents(ctx, sources)
+	if err != nil {
+		return err
+	}
+	if len(alerts) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("no existing alerts found for unparsed events.")
 		return nil
 	}
+	var toDismissAlerts []alerts_common.AlertEntityObject
+	for _, alert := range alerts {
+		if _, ok := sources[alert.FunctionalityEntityId]; !ok {
+			// resolve the alert as it is not present in the current list of sources having unparsed events
+			toDismissAlerts = append(toDismissAlerts, alerts_common.AlertEntityObject{
+				EntityId:         utils.UUIDFromStringOrNil(alert.FunctionalityEntityId),
+				EntityTenantUUId: utils.UUIDFromStringOrNil(alert.TenantId),
+				EntityName:       alert.FunctionalityEntityName,
+			})
+		}
+	}
 
+	if len(toDismissAlerts) > 0 {
+		err = helper.SendAlertToControlPlane(ctx, toDismissAlerts, "Unparsed Events Resolved", "All unparsed events for the specified sources have been resolved.", "UNPARSED_EVENTS", "DAILY_UNPARSED_EVENTS", alerts_common.WarningAlert, alerts_common.AlertAutoResolved, true, "system")
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while dismissing alerts for unparsed events", zap.Error(err))
+			return err
+		}
+		return nil
+	}
+	logging.GetLoggerWithContext(ctx).Info("dismissed alert for sources which did not had unparsed events this time.", zap.Int("dismissed_alerts_count", len(toDismissAlerts)))
+	return nil
+}
+
+func getExistingAlertsForUnparsedEvents(ctx context.Context, sources map[string]float64) ([]statistics.AlertDocument, error) {
 	conf := os.GetConf()
 	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to OpenSearch", zap.Error(err))
-		return err
+		return nil, err
 	}
-
-	q := `dismissed:false AND functionalityEntityId:` + "(" + strings.Join(sources, " OR ") + ")" + ` AND functionalityType:UNPARSED_EVENTS`
-
+	q := `dismissed:false AND functionalityEntityId:` + "(" + strings.Join(MapKeys(sources), " OR ") + ")" + ` AND functionalityType:UNPARSED_EVENTS`
 	searchResponse, err := os.Search(ctx, client, common.AlertsIndex, q)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying OpenSearch for unresolved alerts", zap.Error(err), zap.String("query", q), zap.String("index", common.AlertsIndex))
-		return err
+		logging.GetLoggerWithContext(ctx).Error("error while querying openSearch for unresolved alerts", zap.Error(err))
+		return nil, err
 	}
 
 	var alerts []statistics.AlertDocument
 	decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
 	err = decoder.Decode(searchResponse)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while decoding OpenSearch response", zap.Error(err))
-		return err
+		logging.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err))
+		return nil, err
 	}
-
-	if len(alerts) == 0 {
-		logging.GetLoggerWithContext(ctx).Info("No unresolved alerts found in OpenSearch.")
-		return nil
-	}
-
-	var toDismissAlerts []alerts_common.AlertEntityObject
-	for _, alert := range alerts {
-		var temp alerts_common.AlertEntityObject
-		temp.EntityName = alert.FunctionalityEntityName
-		temp.EntityId = utils.UUIDFromStringOrNil(alert.FunctionalityEntityId)
-		temp.EntityTenantUUId = utils.UUIDFromStringOrNil(alert.TenantId)
-		toDismissAlerts = append(toDismissAlerts, temp)
-	}
-
-	if len(toDismissAlerts) > 0 {
-		err = helper.SendAlertToControlPlane(
-			ctx,
-			toDismissAlerts,
-			"Unparsed Events Resolved",
-			"All unparsed events for the specified sources have been resolved.",
-			"UNPARSED_EVENTS",
-			"DAILY_UNPARSED_EVENTS",
-			alerts_common.WarningAlert,
-			alerts_common.AlertAutoResolved,
-			true,
-			"system",
-		)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while dismissing alerts for unparsed events", zap.Error(err))
-			return err
-		}
-	}
-
-	logging.GetLoggerWithContext(ctx).Info("Successfully resolved alerts for unparsed events.", zap.Int("resolved_alerts_count", len(toDismissAlerts)))
-	return nil
+	return alerts, nil
 }
 
 func MapKeys(inputMap map[string]float64) []string {
