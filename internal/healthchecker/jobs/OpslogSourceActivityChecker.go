@@ -161,7 +161,7 @@ func CheckEntityStatsV2(ctx context.Context) error {
 				isTimeAfter := startTime.After(config.LastCheckedTime.Add(interval))
 				formattedMessage := fmt.Sprintf("Entity status isPresent: %t, isTimeAfter: %t", isPresent, isTimeAfter)
 				logging.GetLoggerWithContext(ctx).Info(formattedMessage)
-				if !isPresent && isTimeAfter {
+				if !isPresent && isTimeAfter && config.Disabled == false {
 					config.TenantName = tenantMap[config.TenantID.String()]
 					entityIdsToAlert = append(entityIdsToAlert, config)
 				}
