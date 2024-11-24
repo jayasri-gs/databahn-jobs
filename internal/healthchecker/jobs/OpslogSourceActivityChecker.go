@@ -51,8 +51,7 @@ func GetStatsByInterval(ctx context.Context, startTime string, endTime string) (
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	alias := conf.StatsIndex + "_alias_f5e31bb8-af80-40d8-a0e4-16f12187e4e4"
-	searchResponse, err := os.MakeSearchCall(ctx, alias, &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
 
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
