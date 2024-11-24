@@ -62,7 +62,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		evntjobCmd.ExecuteS3DataSequencing(input)
 	case common.ALERT_REPORT_PROCESSOR:
 		err = auditReport.GenerateAuditReport(ctx)
-	case common.ENNTITY_CHECKER_ALERT_GEN_V2:
+	case common.EntityCheckerAlertGenV2:
 		err = jobs.CheckEntityStatsV2(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))

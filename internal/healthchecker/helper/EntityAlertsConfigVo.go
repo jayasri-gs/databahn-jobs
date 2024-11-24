@@ -11,16 +11,20 @@ import (
 
 // EntityAlertsConfig represents the entity_alerts_config table
 type EntityAlertsConfig struct {
-	ID              uuid.UUID `gorm:"type:uuid;primary_key"`
-	EntityType      string    `gorm:"type:varchar(255)"`
-	EntityID        uuid.UUID `gorm:"type:uuid"`
+	Summary         string    `gorm:"-"`
+	TenantName      string    `gorm:"-"`
 	EntityName      string    `gorm:"type:varchar(255)"`
+	EntityType      string    `gorm:"type:varchar(255)"`
+	LastCheckedTime time.Time `gorm:"type:timestamp"`
+	ID              uuid.UUID `gorm:"type:uuid;primary_key"`
+	Interval        int       `gorm:"type:int"`
+	EntityID        uuid.UUID `gorm:"type:uuid"`
 	TenantID        uuid.UUID `gorm:"type:uuid"`
 	Criticality     string    `gorm:"type:varchar(255)"`
-	Interval        int       `gorm:"type:int"`
-	LastCheckedTime time.Time `gorm:"type:timestamp"`
 	Disabled        bool      `gorm:"type:boolean"`
-	TenantName      string    `gorm:"-"`
+	TenantType      string    `gorm:"type:varchar(255);default:'DEV'"`
+	CpGatewayUrl    string    `gorm:"type:varchar(255);default:'gateway.galaxy.dabahn.app'"`
+	DpGatewayUrl    string    `gorm:"type:varchar(255);default:'gateway-galaxy-dp01-nonprod.databahn.app'"`
 }
 
 // QueryEntityAlertsConfig queries the entity_alerts_config table based on tenantId, interval, and lastcheckedtime

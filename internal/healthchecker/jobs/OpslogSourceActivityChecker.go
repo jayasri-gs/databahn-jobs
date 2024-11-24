@@ -120,9 +120,26 @@ func CheckEntityStatsV2(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error creating EntityAlertsConfig map", zap.Error(err))
 		return err
 	}
+	//  Create a map to store the count of each interval
+	intervalCountMap := make(map[int]int)
 
-	// Iterate over predefined intervals
+	// Iterate over configMap to populate the interval count map
+	for _, conf := range configMap {
+		intervalCountMap[conf.Interval]++
+	}
+
+	//  Filter predefinedIntervals to exclude intervals with a count of 0
+	var filteredIntervals []time.Duration
 	for _, interval := range predefinedIntervals {
+		if intervalCountMap[int(interval.Minutes())] > 0 {
+			filteredIntervals = append(filteredIntervals, interval)
+		} else {
+			logging.GetLoggerWithContext(ctx).Info("No entities found for interval", zap.Reflect("interval", interval.Minutes()))
+		}
+	}
+
+	// Iterate over predefined filter filteredIntervals
+	for _, interval := range filteredIntervals {
 		// Calculate start and end time for the interval
 		endTime := time.Now()
 		startTime := endTime.Add(-interval)
@@ -191,18 +208,22 @@ func sendAlertsForInactivity(ctx context.Context, entityIdsToAlert []helper.Enti
 
 		var emailTo []string
 		emailTo = append(emailTo, config.GetAppConfiguration().GetString(awsemail.OPSGini))
-		configJSON, err := json.Marshal(configObject)
+		configObject.Summary = fmt.Sprintf("No data received for %.2f hr or %v minutes ", float64(configObject.Interval)/60, configObject.Interval)
+		//configJSON, err := json.Marshal(configObject)
+		formattedConfigObject, err := json.MarshalIndent(configObject, "", "  ")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error marshaling configObject to JSON", zap.Error(err))
 			continue
 		}
-		title := fmt.Sprintf("Inactivity Alert Gen:V2 [Criticality: %s], Tenant: %s, Type : %s, Name: %s, No Data since: %.2f hr(s)",
-			configObject.Criticality, configObject.TenantName, configObject.EntityType, configObject.EntityName, float64(configObject.Interval)/60)
+		//AlertName:CustomerName:LogSource:Duration
+		title := fmt.Sprintf("Ingestion:%s:%s", configObject.TenantName, configObject.EntityName)
+		//title := fmt.Sprintf("NoData:V2 [Criticality: %s], Tenant: %s, Type : %s, Name: %s, No Data since: %.2f hr(s)",
+		//	configObject.Criticality, configObject.TenantName, configObject.EntityType, configObject.EntityName, float64(configObject.Interval)/60)
 		var email = awsemail.EmailNotification{
 			Recipients: &awsemail.Recipient{
 				To: emailTo,
 			},
-			Body:    aws.String(string(configJSON)),
+			Body:    aws.String("<pre>" + string(formattedConfigObject) + "</pre>"),
 			Subject: aws.String(title),
 		}
 
