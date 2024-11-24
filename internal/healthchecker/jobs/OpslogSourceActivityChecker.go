@@ -81,6 +81,10 @@ func CheckEntityStats(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error creating EntityAlertsConfig map", zap.Error(err))
 		return err
 	}
+	sourceMapByTenant, err := helper.CreateLogSourceMapByTenant(ctx, db)
+	if err != nil {
+		return err
+	}
 
 	tenantMap, err := createTenantMap(ctx, db)
 	if err != nil {
@@ -91,7 +95,7 @@ func CheckEntityStats(ctx context.Context) error {
 	filteredIntervals := filterIntervals(intervalCountMap)
 
 	for _, interval := range filteredIntervals {
-		err = processInterval(ctx, endTime, interval, configMap, tenantMap)
+		err = processInterval(ctx, endTime, interval, configMap, tenantMap, sourceMapByTenant)
 		if err != nil {
 			return err
 		}
@@ -133,7 +137,7 @@ func filterIntervals(intervalCountMap map[int]int) []time.Duration {
 	return filteredIntervals
 }
 
-func processInterval(ctx context.Context, endTime time.Time, interval time.Duration, configMap map[string]helper.EntityAlertsConfig, tenantMap map[string]string) error {
+func processInterval(ctx context.Context, endTime time.Time, interval time.Duration, configMap map[string]helper.EntityAlertsConfig, tenantMap map[string]string, logSourceMap map[string]helper.LogSource) error {
 
 	startTime := endTime.Add(-interval)
 	aggObj, err := GetStatsByInterval(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
@@ -143,7 +147,7 @@ func processInterval(ctx context.Context, endTime time.Time, interval time.Durat
 	}
 	logging.GetLoggerWithContext(ctx).Info("got response from statistics store", zap.Reflect("interval", interval.Minutes()), zap.Reflect("response", aggObj))
 
-	entityIdsToAlert := compareResults(configMap, tenantMap, aggObj, interval, startTime)
+	entityIdsToAlert := compareResults(configMap, tenantMap, logSourceMap, aggObj, interval, startTime)
 	if len(entityIdsToAlert) > 0 {
 		err = sendAlertsForInactivity(ctx, entityIdsToAlert)
 		if err != nil {
@@ -153,8 +157,8 @@ func processInterval(ctx context.Context, endTime time.Time, interval time.Durat
 
 	return nil
 }
-func compareResults(configMap map[string]helper.EntityAlertsConfig, tenantMap map[string]string, aggObj statistics.AggregateResponse, interval time.Duration, startTime time.Time) []helper.EntityAlertsConfig {
-	var logsourceIdsStatsReceived []string
+func compareResults(configMap map[string]helper.EntityAlertsConfig, tenantMap map[string]string, logSourceMap map[string]helper.LogSource, aggObj statistics.AggregateResponse, interval time.Duration, startTime time.Time) []helper.EntityAlertsConfig {
+	var logSourceIdsStatsReceived []string
 	for key, value := range aggObj.Agg {
 		valueInt, ok := value.(float64)
 		if !ok {
@@ -166,7 +170,7 @@ func compareResults(configMap map[string]helper.EntityAlertsConfig, tenantMap ma
 			if err != nil {
 				continue
 			}
-			logsourceIdsStatsReceived = append(logsourceIdsStatsReceived, key)
+			logSourceIdsStatsReceived = append(logSourceIdsStatsReceived, key)
 		}
 	}
 
@@ -174,13 +178,18 @@ func compareResults(configMap map[string]helper.EntityAlertsConfig, tenantMap ma
 	for _, config := range configMap {
 		sourceId := config.EntityID.String()
 		if config.Interval == int(interval.Minutes()) {
-			isPresent := Contains(logsourceIdsStatsReceived, sourceId)
+			isPresent := Contains(logSourceIdsStatsReceived, sourceId)
 			isTimeAfter := startTime.After(config.LastCheckedTime.Add(interval))
 			formattedMessage := fmt.Sprintf("Entity status isPresent: %t, isTimeAfter: %t", isPresent, isTimeAfter)
 			logging.GetLogger().Info(formattedMessage)
 			if !isPresent && isTimeAfter && !config.Disabled {
-				config.TenantName = tenantMap[config.TenantID.String()]
-				entityIdsToAlert = append(entityIdsToAlert, config)
+				logSource, exists := logSourceMap[fmt.Sprintf("%s_%s", config.TenantID.String(), config.EntityID.String())]
+				if exists && logSource.Status != "DISABLED" {
+					config.TenantName = tenantMap[config.TenantID.String()]
+					entityIdsToAlert = append(entityIdsToAlert, config)
+				} else {
+					logging.GetLogger().Info("Skipping Alert as LogSource is disabled", zap.String("entityId", config.EntityID.String()))
+				}
 			}
 		}
 	}

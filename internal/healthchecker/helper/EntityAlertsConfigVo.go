@@ -2,6 +2,7 @@ package helper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/google/uuid"
@@ -88,4 +89,38 @@ func GetAllTenants(ctx context.Context, db *gorm.DB) (tenants []Tenants, err err
 		return tenants, nil
 	}
 	return tenants, err
+}
+
+type LogSource struct {
+	ID       uuid.UUID `gorm:"type:uuid"`
+	Name     string    `gorm:"type:varchar(255)"`
+	TenantID uuid.UUID `gorm:"type:uuid"`
+	Status   string    `gorm:"type:varchar(255)"`
+}
+
+// GetAllLogSources fetches all logSource records from the database
+func GetAllLogSources(ctx context.Context, db *gorm.DB) ([]LogSource, error) {
+	var logSources []LogSource
+	err := db.WithContext(ctx).Find(&logSources).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		logSources = []LogSource{}
+		return logSources, nil
+	}
+	return logSources, err
+}
+
+// CreateLogSourceMapByTenant creates a map with keys as tenantId_logSourceId and values as LogSource objects
+func CreateLogSourceMapByTenant(ctx context.Context, db *gorm.DB) (map[string]LogSource, error) {
+	logSources, err := GetAllLogSources(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	logSourceMap := make(map[string]LogSource)
+	for _, logsource := range logSources {
+		key := fmt.Sprintf("%s_%s", logsource.TenantID.String(), logsource.ID.String())
+		logSourceMap[key] = logsource
+	}
+
+	return logSourceMap, nil
 }
