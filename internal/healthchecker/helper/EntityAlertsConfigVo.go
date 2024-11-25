@@ -21,9 +21,10 @@ type EntityAlertsConfig struct {
 	Interval        int       `gorm:"type:int"`
 	EntityID        uuid.UUID `gorm:"type:uuid"`
 	TenantID        uuid.UUID `gorm:"type:uuid"`
+	CustomerD       uuid.UUID `gorm:"type:uuid"`
 	Criticality     string    `gorm:"type:varchar(255)"`
-	Disabled        bool      `gorm:"type:boolean"`
-	TenantType      string    `gorm:"type:varchar(255);default:'DEV'"`
+	Status          bool      `gorm:"type:boolean"`
+	EnvType         string    `gorm:"type:varchar(255);default:'DEV'"`
 	CpGatewayUrl    string    `gorm:"type:varchar(255);default:'gateway.galaxy.dabahn.app'"`
 	DpGatewayUrl    string    `gorm:"type:varchar(255);default:'gateway-galaxy-dp01-nonprod.databahn.app'"`
 }
@@ -92,16 +93,24 @@ func GetAllTenants(ctx context.Context, db *gorm.DB) (tenants []Tenants, err err
 }
 
 type LogSource struct {
-	ID       uuid.UUID `gorm:"type:uuid"`
-	Name     string    `gorm:"type:varchar(255)"`
-	TenantID uuid.UUID `gorm:"type:uuid"`
-	Status   string    `gorm:"type:varchar(255)"`
+	ID          uuid.UUID  `gorm:"type:uuid"`
+	Name        string     `gorm:"type:varchar(255)"`
+	TenantID    uuid.UUID  `gorm:"type:uuid"`
+	Status      string     `gorm:"type:varchar(255)"`
+	DataPlaneID uuid.UUID  `gorm:"type:uuid"`
+	DataPlanes  DataPlanes `gorm:"foreignKey:DataPlaneID;references:ID"`
+}
+type DataPlanes struct {
+	ID           uuid.UUID `gorm:"type:uuid;primary_key"`
+	Name         string    `gorm:"type:varchar(255)"`
+	CPGatewayUrl string    `gorm:"type:varchar(255);not null"`
+	DPGatewayUrl string    `gorm:"type:varchar(255);not null"`
 }
 
 // GetAllLogSources fetches all logSource records from the database
 func GetAllLogSources(ctx context.Context, db *gorm.DB) ([]LogSource, error) {
 	var logSources []LogSource
-	err := db.WithContext(ctx).Find(&logSources).Error
+	err := db.WithContext(ctx).Preload("DataPlanes").Find(&logSources).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		logSources = []LogSource{}
 		return logSources, nil
@@ -122,5 +131,20 @@ func CreateLogSourceMapByTenant(ctx context.Context, db *gorm.DB) (map[string]Lo
 		logSourceMap[key] = logsource
 	}
 
+	return logSourceMap, nil
+}
+
+func GetLogSourcesByIds(ctx context.Context, db *gorm.DB, ids []uuid.UUID) (map[string]LogSource, error) {
+	var logSources []LogSource
+	err := db.WithContext(ctx).Where("id IN ?", ids).Preload("DataPlanes").Find(&logSources).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		logSources = []LogSource{}
+		return nil, err
+	}
+	logSourceMap := make(map[string]LogSource)
+	for _, logsource := range logSources {
+		key := fmt.Sprintf("%s_%s", logsource.TenantID.String(), logsource.ID.String())
+		logSourceMap[key] = logsource
+	}
 	return logSourceMap, nil
 }

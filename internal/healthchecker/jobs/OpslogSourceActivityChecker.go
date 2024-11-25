@@ -182,10 +182,13 @@ func compareResults(configMap map[string]helper.EntityAlertsConfig, tenantMap ma
 			isTimeAfter := startTime.After(config.LastCheckedTime.Add(interval))
 			formattedMessage := fmt.Sprintf("Entity status isPresent: %t, isTimeAfter: %t", isPresent, isTimeAfter)
 			logging.GetLogger().Info(formattedMessage)
-			if !isPresent && isTimeAfter && !config.Disabled {
+			if !isPresent && isTimeAfter && config.Status {
 				logSource, exists := logSourceMap[fmt.Sprintf("%s_%s", config.TenantID.String(), config.EntityID.String())]
 				if exists && logSource.Status != "DISABLED" {
 					config.TenantName = tenantMap[config.TenantID.String()]
+					config.EntityName = logSource.Name
+					config.CpGatewayUrl = logSource.DataPlanes.CPGatewayUrl
+					config.DpGatewayUrl = logSource.DataPlanes.DPGatewayUrl
 					entityIdsToAlert = append(entityIdsToAlert, config)
 				} else {
 					logging.GetLogger().Info("Skipping Alert as LogSource is disabled", zap.String("entityId", config.EntityID.String()))
