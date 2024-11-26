@@ -47,3 +47,5 @@ const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud ha
 const FleetConnectorHealthCheckTitle = "No heartbeat received in the last 30 minutes"
 
 const ALERT_REPORT_PROCESSOR = "alert_report_processor"
+
+const DATA_HEALTH_SCORE_JOB = "data_health_score_job"

@@ -1,0 +1,6 @@
+violations:
+  - functionality: "DATA_QUALITY"
+    functionalityType: "UNPARSED_EVENTS_DETECTED"
+    severity: "High"
+    percentageReduction: "10"
+    message: "Unparsed events detected"

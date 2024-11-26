@@ -8,6 +8,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore"
 	evntjobCmd "github.com/databahn-ai/databahn-jobs/internal/eventsequencing/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/insights"
@@ -62,6 +63,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		evntjobCmd.ExecuteS3DataSequencing(input)
 	case common.ALERT_REPORT_PROCESSOR:
 		err = auditReport.GenerateAuditReport(ctx)
+	case common.DATA_HEALTH_SCORE_JOB:
+		err = datahealthscore.CalculateDataHealthScore(ctx)
 	case common.ENTITY_CHECKER_ALERT_GEN_V2:
 		err = jobs.CheckEntityStats(ctx)
 	default:
