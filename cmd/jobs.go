@@ -14,6 +14,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/kafkaquery"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
+	"github.com/databahn-ai/databahn-jobs/internal/stats"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
@@ -25,6 +26,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.INSIGHTS_AGGREGATION:
 		parallelism := utils.GetEnvInt("INSIGHTS_PROCESSING_PARALLELISM", 4)
 		err = insights.AggregateInsightsAndStore(ctx, parallelism)
+	case common.ROLLOVER_OLDER_STATS:
+		err = stats.RolloverOlderStats(ctx)
 	case common.DEVICE_INVENTORY_HEALTH:
 		runFor := utils.GetEnvOrDefault("DEVICE_INVENTORY_HEALTH_RUN_FOR", insights.HEALTH_CALCULATION_YESTERDAY)
 		statuses, err2 := insights.CalculateDeviceInventoryHealth(ctx, runFor)

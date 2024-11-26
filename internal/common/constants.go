@@ -1,6 +1,7 @@
 package common
 
 const INSIGHTS_AGGREGATION = "insights_aggregation"
+const ROLLOVER_OLDER_STATS = "rollover_older_stats"
 const DATA_REPLAY = "data-replay"
 const DEVICE_INVENTORY_HEALTH = "device_inventory_health"
 const ACK_PROCESSOR = "ack_processor"
@@ -39,7 +40,6 @@ const AgentHealthCheck = "agent health check"
 const AgentFunctionality = "endpoint health checker"
 const AgentHealthCheckTitle = "unhealthy agent nodes found"
 const AgentHealthCheckMessage = "health from agent not reported for more than 5 minutes, marking unhealthy"
-
 
 const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified connector for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 
