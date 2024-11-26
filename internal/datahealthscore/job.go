@@ -2,7 +2,6 @@ package datahealthscore
 
 import (
 	"context"
-	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore/models"
@@ -13,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"os"
 	"strconv"
 	"time"
 )
@@ -22,12 +20,12 @@ func CalculateDataHealthScore(ctx context.Context) error {
 
 	logging.GetLogger().Info("calculating data health scores")
 
-	dir, err := os.Getwd()
-	if err != nil {
-		fmt.Println("Error getting current directory:", err)
-		return err
-	}
-	violations, functionalitiesToConsider := utils.ReadViolationsFromConfig(dir + "/databahn-jobs/internal/datahealthscore/config.yaml")
+	//dir, err := os.Getwd()
+	//if err != nil {
+	//	fmt.Println("Error getting current directory:", err)
+	//	return err
+	//}
+	violations, functionalitiesToConsider := utils.ReadViolationsFromConfig("/home/databahn/service/config.yaml")
 
 	var logSources []source.Source
 	if err := config.GetDB().Model(&source.Source{}).Scan(&logSources).Error; err != nil {
