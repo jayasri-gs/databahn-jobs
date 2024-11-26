@@ -153,6 +153,10 @@ func resolveExistingAlerts(ctx context.Context, sources map[string]float64) erro
 }
 
 func getExistingAlertsForUnparsedEvents(ctx context.Context, sources map[string]float64) ([]statistics.AlertDocument, error) {
+	if len(sources) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("No sources provided. Skipping resolution.")
+		return []statistics.AlertDocument{}, nil
+	}
 	conf := os.GetConf()
 	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
