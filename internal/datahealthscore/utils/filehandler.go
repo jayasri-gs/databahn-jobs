@@ -13,7 +13,7 @@ type Config struct {
 	Violations []models.Violation `yaml:"violations"`
 }
 
-func ReadViolationsFromConfig(filePath string) map[string]models.Violation {
+func ReadViolationsFromConfig(filePath string) (map[string]models.Violation, []string) {
 	config := Config{}
 	data, err := ioutil.ReadFile(filePath)
 	if err != nil {
@@ -27,5 +27,10 @@ func ReadViolationsFromConfig(filePath string) map[string]models.Violation {
 	for _, v := range config.Violations {
 		violationMap[v.FunctionalityType] = v
 	}
-	return violationMap
+
+	var functionalitiesToConsider []string
+	for _, v := range config.Violations {
+		functionalitiesToConsider = append(functionalitiesToConsider, v.FunctionalityType)
+	}
+	return violationMap, functionalitiesToConsider
 }
