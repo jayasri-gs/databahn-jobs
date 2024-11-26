@@ -13,4 +13,6 @@ RUN apk add librdkafka-dev
 ENV SERVICE_NAME="databahn-jobs"
 
 COPY --from=builder /go/app/databahn-jobs .
+COPY internal/datahealthscore/config.yaml /home/databahn/service/config.yaml
+
 ENTRYPOINT /home/databahn/service/databahn-jobs
