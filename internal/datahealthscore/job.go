@@ -18,27 +18,27 @@ import (
 	"time"
 )
 
-func CalculateDataHealthScore(ctx context.Context) {
+func CalculateDataHealthScore(ctx context.Context) error {
 
 	logging.GetLogger().Info("calculating data health scores")
 
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Println("Error getting current directory:", err)
-		return
+		return err
 	}
 	violations, functionalitiesToConsider := utils.ReadViolationsFromConfig(dir + "/internal/datahealthscore/config.yaml")
 
 	var logSources []source.Source
 	if err := config.GetDB().Model(&source.Source{}).Scan(&logSources).Error; err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
-		return
+		return err
 	}
 
 	alerts, err := utils.GetAllAlertsFromOpenSearch(ctx, functionalitiesToConsider)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting alerts from OpenSearch", zap.Error(err))
-		return
+		return err
 	}
 
 	sourceToAlertsMap := getSourceToAlertMap(alerts)
@@ -46,8 +46,10 @@ func CalculateDataHealthScore(ctx context.Context) {
 
 	if err := saveDataHealthScores(ctx, dbDataHealthScores, dbDataHealthScoreRecords); err != nil {
 		logging.GetLoggerWithContext(ctx).Error("transaction failed", zap.Error(err))
+		return err
 	}
 	logging.GetLogger().Info("data health scores calculation completed", zap.Time("time", time.Now()), zap.Int("count", len(dbDataHealthScores)), zap.Int("records", len(dbDataHealthScoreRecords)))
+	return nil
 }
 
 func getSourceToAlertMap(alerts []statistics.AlertDocument) map[string][]statistics.AlertDocument {

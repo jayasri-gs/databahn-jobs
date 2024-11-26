@@ -64,7 +64,9 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.ALERT_REPORT_PROCESSOR:
 		err = auditReport.GenerateAuditReport(ctx)
 	case common.DATA_HEALTH_SCORE_JOB:
-		datahealthscore.CalculateDataHealthScore(ctx)
+		err = datahealthscore.CalculateDataHealthScore(ctx)
+	case common.ENTITY_CHECKER_ALERT_GEN_V2:
+		err = jobs.CheckEntityStats(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
