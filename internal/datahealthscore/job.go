@@ -27,7 +27,7 @@ func CalculateDataHealthScore(ctx context.Context) error {
 		fmt.Println("Error getting current directory:", err)
 		return err
 	}
-	violations, functionalitiesToConsider := utils.ReadViolationsFromConfig(dir + "/internal/datahealthscore/config.yaml")
+	violations, functionalitiesToConsider := utils.ReadViolationsFromConfig(dir + "/databahn-jobs/internal/datahealthscore/config.yaml")
 
 	var logSources []source.Source
 	if err := config.GetDB().Model(&source.Source{}).Scan(&logSources).Error; err != nil {
