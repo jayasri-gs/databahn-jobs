@@ -4,3 +4,21 @@ violations:
     severity: "High"
     percentageReduction: "10"
     message: "Unparsed events detected"
+
+  - functionality: "DATA_STATUS"
+    functionalityType: "noisy-log-source-alert"
+    severity: "High"
+    percentageReduction: "10"
+    message: "noisy log source detected"
+
+  - functionality: "DATA_STATUS"
+    functionalityType: "whispering-log-source-alert"
+    severity: "High"
+    percentageReduction: "10"
+    message: "whispering log source detected"
+
+  - functionality: "DATA_STATUS"
+    functionalityType: "silent-log-source-alert"
+    severity: "High"
+    percentageReduction: "10"
+    message: "silent log source detected"

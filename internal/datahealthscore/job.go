@@ -84,7 +84,7 @@ func calculateScores(ctx context.Context, logSources []source.Source, sourceToAl
 					}
 
 					if alert.Dismissed {
-						score -= (percentageInt * score / 100) / 2
+						score += percentageInt * (100 - score) / 100
 					} else {
 						score -= percentageInt * score / 100
 					}
