@@ -68,13 +68,13 @@ const DestinationUnavailable = "Destination unavailable"
 
 const WhisperingAlertTitle = "Whispering Log Source"
 const WhisperingAlertMessage = "Log source is whispering"
-const WhisperingAlertType = "whispering-log-source-alert"
+const WhisperingAlertType = "WHISPERING_LOG_SOURCE_DETECTED"
 const NoisyAlertTitle = "Noisy Log Source"
 const NoisyAlertMessage = "Log source is noisy"
-const NoisyAlertType = "noisy-log-source-alert"
+const NoisyAlertType = "NOISY_LOG_SOURCE_DETECTED"
 const SilentAlertTitle = "Silent Log Source"
 const SilentAlertMessage = "Log source is silent"
-const SilentAlertType = "silent-log-source-alert"
+const SilentAlertType = "SILENT_LOG_SOURCE_DETECTED"
 
 const (
 	AlertOpen         = 1
