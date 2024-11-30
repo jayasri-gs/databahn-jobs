@@ -20,11 +20,6 @@ func CalculateDataHealthScore(ctx context.Context) error {
 
 	logging.GetLogger().Info("calculating data health scores")
 
-	//dir, err := os.Getwd()
-	//if err != nil {
-	//	fmt.Println("Error getting current directory:", err)
-	//	return err
-	//}
 	violations, functionalitiesToConsider := utils.ReadViolationsFromConfig("/home/databahn/service/config.yaml")
 
 	var logSources []source.Source
@@ -83,9 +78,7 @@ func calculateScores(ctx context.Context, logSources []source.Source, sourceToAl
 						continue
 					}
 
-					if alert.Dismissed {
-						score += percentageInt * (100 - score) / 100
-					} else {
+					if !alert.Dismissed {
 						score -= percentageInt * score / 100
 					}
 
