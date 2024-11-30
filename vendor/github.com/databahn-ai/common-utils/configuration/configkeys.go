@@ -9,6 +9,7 @@ const (
 	StagingEnrichment                  = "enrichment"
 	StagingVc                          = "vc"
 	StagingTransform                   = "transform"
+	StagingSensitive                   = "sensitive"
 	StagingAggregation                 = "aggregation"
 	DestinationTopicAggregationMapping = "topic_aggregation_mapping"
 
