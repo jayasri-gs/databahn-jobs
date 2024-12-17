@@ -2,6 +2,7 @@ package datahealthscore
 
 import (
 	"context"
+	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore/models"
@@ -89,7 +90,7 @@ func calculateScores(ctx context.Context, logSources []source.Source, sourceToAl
 						CreatedAt:           time.Now(),
 						ViolationType:       violation.Functionality,
 						ViolationSubtype:    violation.FunctionalityType,
-						Message:             violation.Message,
+						Message:             fmt.Sprint(violation.Message, ls.Name),
 						PercentageReduction: float32(percentageInt),
 						ResolutionStatus:    constants.STATUS_OPEN,
 						Details:             map[string]interface{}{},
