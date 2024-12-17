@@ -59,9 +59,15 @@ func RolloverOlderStats(ctx context.Context) error {
 		return errors.New("agg query range should be greater than agg window")
 	}
 
+	if validationRangeDuration < aggWindowDuration {
+		logger.GetLogger().Error("validation range should be greater than agg window", zap.String("validation", validationRange), zap.String("window", aggWindow))
+		return errors.New("validation range should be greater than agg window")
+	}
+
 	logger.GetLogger().Info("starting stats rollover", zap.Int("weeks_older_than", weeksOlderThan),
 		zap.Int("parallelism", parallelism), zap.Int("limit", limit), zap.String("specific_index", specificIndex), zap.String("skip_indices", skipIndices),
-		zap.Int("agg_batch_size", aggBatchSize), zap.String("agg_query_range", aggQueryRange), zap.String("agg_window", aggWindow))
+		zap.Int("agg_batch_size", aggBatchSize), zap.String("agg_query_range", aggQueryRange),
+		zap.String("agg_window", aggWindow), zap.String("validation_range", validationRange))
 
 	var indexNames []string
 	osClient, err := dbos.NewClient(ctx, conf.Url, conf.Creds())
@@ -521,7 +527,7 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 		return err
 	}
 
-	olderIndexGroupBy := []string{"name.raw", "namespace"}
+	olderIndexGroupBy := []string{"tags.db_tenant_id.keyword", "tags.db_event_source_id.keyword", "name.raw", "namespace"}
 	aggregations := []dbos.AggregationFunction{
 		dbos.AggregationFunction{
 			Name:     "total_count",
@@ -533,44 +539,65 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 	validationRanges := splitByTimeRanges(minVal, maxVal, validationDuration)
 	for _, vr := range validationRanges {
 		query := fmt.Sprintf("tags.db_ts_win:[%d TO %d}", vr.start, vr.end)
-		olderIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, index.Index, query,
-			olderIndexGroupBy, aggregations, nil)
-		if err != nil {
-			return err
-		}
-		newIndexGroupBy := []string{"name.raw", "namespace"}
-		newIndexTotalAgg, _, err := dbos.CompositePaginatedAggregate(ctx, client, 500, newIndexName, query,
-			newIndexGroupBy, aggregations, nil)
-		if err != nil {
-			return err
-		}
-		olderCounts := make(map[string]map[string]float64)
-		for _, agg := range olderIndexTotalAgg {
-			name := agg.Key[olderIndexGroupBy[0]].(string)
-			namespace := agg.Key[olderIndexGroupBy[1]].(string)
-			if olderCounts[name] == nil {
-				olderCounts[name] = make(map[string]float64)
+		olderCounts := make(map[string]map[string]map[string]map[string]float64)
+		var searchAfter map[string]any = nil
+		for {
+			olderIndexTotalAgg, newSearchAfter, err := dbos.CompositePaginatedAggregate(ctx, client, 100, index.Index, query,
+				olderIndexGroupBy, aggregations, searchAfter)
+			if err != nil {
+				return err
 			}
-			olderCounts[name][namespace] = agg.Values["total_count"].(float64)
-		}
-		newCounts := make(map[string]map[string]float64)
-		for _, agg := range newIndexTotalAgg {
-			name := agg.Key[newIndexGroupBy[0]].(string)
-			namespace := agg.Key[newIndexGroupBy[1]].(string)
-			if newCounts[name] == nil {
-				newCounts[name] = make(map[string]float64)
+			if len(olderIndexTotalAgg) == 0 {
+				break
 			}
-			newCounts[name][namespace] = agg.Values["total_count"].(float64)
+			countStats(olderIndexTotalAgg, olderIndexGroupBy, olderCounts)
+			searchAfter = newSearchAfter
 		}
+		searchAfter = nil
+		newCounts := make(map[string]map[string]map[string]map[string]float64)
+		newIndexGroupBy := []string{"tags.db_tenant_id.keyword", "tags.db_event_source_id.keyword", "name.raw", "namespace"}
+		for {
+			newIndexTotalAgg, newSearchAfter, err := dbos.CompositePaginatedAggregate(ctx, client, 100, newIndexName, query,
+				newIndexGroupBy, aggregations, searchAfter)
+			if err != nil {
+				return err
+			}
+			if len(newIndexTotalAgg) == 0 {
+				break
+			}
+			countStats(newIndexTotalAgg, newIndexGroupBy, newCounts)
+			searchAfter = newSearchAfter
+		}
+
 		if !reflect.DeepEqual(olderCounts, newCounts) {
 			logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
-				zap.String("new_index", newIndexName), zap.Any("older_index_total_agg", olderIndexTotalAgg),
-				zap.Any("new_index_total_agg", newIndexTotalAgg), zap.Int64("timeRange.Start", vr.start),
+				zap.String("new_index", newIndexName), zap.Any("older_index_total_agg", olderCounts),
+				zap.Any("new_index_total_agg", newCounts), zap.Int64("timeRange.Start", vr.start),
 				zap.Int64("timeRange.End", vr.end))
 			return errors.New("new index data validation failed")
 		}
 	}
 	return nil
+}
+
+func countStats(indexTotalAgg []dbos.AggResponse, newIndexGroupBy []string, counts map[string]map[string]map[string]map[string]float64) {
+	for _, agg := range indexTotalAgg {
+		tenant := agg.Key[newIndexGroupBy[0]].(string)
+		source := agg.Key[newIndexGroupBy[1]].(string)
+		name := agg.Key[newIndexGroupBy[2]].(string)
+		namespace := agg.Key[newIndexGroupBy[3]].(string)
+
+		if counts[tenant] == nil {
+			counts[tenant] = make(map[string]map[string]map[string]float64)
+		}
+		if counts[tenant][source] == nil {
+			counts[tenant][source] = make(map[string]map[string]float64)
+		}
+		if counts[tenant][source][name] == nil {
+			counts[tenant][source][name] = make(map[string]float64)
+		}
+		counts[tenant][source][name][namespace] = agg.Values["total_count"].(float64)
+	}
 }
 
 func buildRolloverAggRequest(start int64, end int64, after *After, batchSize int, aggWindowDuration time.Duration) RolloverAggRequest {
