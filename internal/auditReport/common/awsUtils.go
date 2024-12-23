@@ -1,0 +1,88 @@
+package common
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/databahn-ai/common-utils/aws"
+	"github.com/databahn-ai/common-utils/configuration"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
+	logging "github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
+	"io"
+	"os"
+	"time"
+)
+
+func UploadFileToS3(ctx context.Context, file *os.File, req models.AuditReport, bucketName string, objectKey string) error {
+	// upload the file to s3
+	err := uploadFile(ctx, file.Name(), bucketName, objectKey)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
+		return err
+	}
+
+	// get pre-signed link for the uploaded file
+	downloadLink, err := getPresignedUrl(bucketName, objectKey)
+	err = os.Remove(file.Name())
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while deleting temp file", zap.Error(err))
+		return err
+	}
+
+	err = models.UpdateRequestStatusAndDownloadLink(config.GetDB(), req.Id.String(), consts.COMPLETED, downloadLink, time.Now().Add(time.Hour*168))
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while updating status to completed", zap.Error(err))
+		return err
+	}
+	return err
+}
+func uploadFile(ctx context.Context, filePath string, bucketName string, objectKey string) error {
+
+	// Open the file
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Get file size and content type
+	fileInfo, _ := file.Stat()
+	size := fileInfo.Size()
+	buffer := make([]byte, size)
+	_, err = file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	s3PutObject := s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+		Body:   bytes.NewReader(buffer),
+	}
+	_, err = aws.UploadFileToS3(ctx, &s3PutObject)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func getPresignedUrl(bucketName string, objectKey string) (string, error) {
+	downloadLink, err := aws.CreatePresignedLink(bucketName, objectKey, time.Hour*168)
+	if err != nil {
+		return "", err
+	}
+	return downloadLink.URL, nil
+}
+
+func GetBucketNameAndObjectKey(requestId string) (string, string) {
+	//region := config.GetAppConfiguration().GetString(configuration.Region)
+	//bucketName := "galaxy-databahn-report-bucket"
+	bucketName := config.GetAppConfiguration().GetString(configuration.ArtifactsS3Bucket)
+	timestamp := time.Now().UTC()
+	objectKey := fmt.Sprintf("audit-reports/%d/%02d/%02d/%02d/%s.csv", timestamp.Year(), timestamp.Month(), timestamp.Day(), timestamp.Hour(), requestId)
+
+	return bucketName, objectKey
+}
