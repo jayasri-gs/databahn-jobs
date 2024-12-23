@@ -17,7 +17,7 @@ import (
 
 func GenerateAuditReport(ctx context.Context) error {
 
-	parallelism := utils.GetEnvInt("STATS_ROLLOVER_PARALLELISM", 4)
+	parallelism := utils.GetEnvInt("AUDIT_REPORT_PARALLELISM_CONTROL", 4)
 
 	defer func(logger *zap.Logger) {
 		_ = logger.Sync()
