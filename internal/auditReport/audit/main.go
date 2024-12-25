@@ -35,12 +35,72 @@ func FetchAuditReport(ctx context.Context, req models.AuditReport, wg *sync.Wait
 		logging.GetLoggerWithContext(ctx).Error("error while updating status to in progress", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
+		return
 	}
 
+	err = gatherDataAndWriteToFile(ctx, req, file, failedRequests, writer)
+	if err != nil {
+		return
+	}
+	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
+	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		failedRequests = append(failedRequests, errRequest)
+		return
+	} else {
+		successAlerts = append(successAlerts, alerts_common.AlertEntityObject{EntityName: req.Id.String(), EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId)})
+	}
+}
+
+func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file *os.File, failedRequests []models.FailedRequests, writer *csv.Writer) error {
 	pageSize := utils.GetEnvInt("AUDIT_REPORT_PAGE_SIZE", 1000)
 	offset := 0
+	startTime, endTime, err := getFileAndRequestConfig(ctx, req, file, failedRequests)
+	if err != nil {
+		return err
+	}
+	writeHeader := true
 
-	file, err = common.CreateTempFile(req.Id.String())
+	for {
+		writeHeader = writeHeader && offset == 0
+		rows, columns, err := getRowsAndColumnsFromAuditTable(pageSize, offset, startTime, endTime)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while fetching data from audit table", zap.Error(err))
+			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+			failedRequests = append(failedRequests, errRequest)
+			return err
+		}
+		fetchedRowsCount := 0
+
+		if writeHeader {
+			writer = csv.NewWriter(file)
+			err = writer.Write(columns)
+			if err != nil {
+				logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
+				errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+				failedRequests = append(failedRequests, errRequest)
+				return err
+			}
+		}
+
+		fetchedRowsCount, err = writeRowToTheFileOneByOne(columns, rows, writer, fetchedRowsCount)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
+			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+			failedRequests = append(failedRequests, errRequest)
+			return err
+		}
+		if fetchedRowsCount < pageSize {
+			break
+		}
+		offset += pageSize + 1
+	}
+	return nil
+}
+func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *os.File, failedRequests []models.FailedRequests) (string, string, error) {
+	file, err := common.CreateTempFile(req.Id.String())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
@@ -60,52 +120,7 @@ func FetchAuditReport(ctx context.Context, req models.AuditReport, wg *sync.Wait
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
 	}
-	writeHeader := true
-
-	for {
-		writeHeader = writeHeader && offset == 0
-		rows, columns, err := getRowsAndColumnsFromAuditTable(pageSize, offset, startTime, endTime)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while fetching data from audit table", zap.Error(err))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-			failedRequests = append(failedRequests, errRequest)
-			continue
-		}
-		fetchedRowsCount := 0
-
-		if writeHeader {
-			writer = csv.NewWriter(file)
-			err = writer.Write(columns)
-			if err != nil {
-				logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
-				errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-				failedRequests = append(failedRequests, errRequest)
-				continue
-			}
-		}
-
-		fetchedRowsCount, err = writeRowToTheFileOneByOne(columns, rows, writer, fetchedRowsCount)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-			failedRequests = append(failedRequests, errRequest)
-			continue
-		}
-		if fetchedRowsCount < pageSize {
-			break
-		}
-		offset += pageSize + 1
-	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
-
-	err = common.UploadFileToS3(ctx, file, req, bucketName, objectKey)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-		failedRequests = append(failedRequests, errRequest)
-	} else {
-		successAlerts = append(successAlerts, alerts_common.AlertEntityObject{EntityName: req.Id.String(), EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId)})
-	}
+	return startTime, endTime, err
 }
 func getRowsAndColumnsFromAuditTable(pageSize int, offset int, startTime string, endTime string) (*sql.Rows, []string, error) {
 	rows, err := config.GetDB().Table("db_audit").Limit(pageSize).Offset(offset).Where("timestamp >= ? and timestamp <= ?", startTime, endTime).Order("timestamp").Rows()

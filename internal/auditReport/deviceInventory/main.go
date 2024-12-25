@@ -35,58 +35,45 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 	}()
 
 	logging.GetLogger().Info("Fetching device inventory report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
+	err := models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while updating status to in progress", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		failedRequests = append(failedRequests, errRequest)
+	}
+	err = gatherDataAndWriteToFile(ctx, req, failedRequests, file, writer)
+	if err != nil {
+		return
+	}
+	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
+
+	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		failedRequests = append(failedRequests, errRequest)
+	} else {
+		successAlerts = append(successAlerts, alerts_common.AlertEntityObject{EntityName: req.Id.String(), EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId)})
+	}
+
+}
+
+func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, failedRequests []models.FailedRequests, file *os.File, writer *csv.Writer) error {
+
 	conf := opensearch.GetConf()
 	client, err := opensearch.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
+		return err
 	}
-
-	err = models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
+	sourceIdsToNames, query, err := getFileAndRequestConfig(ctx, req, failedRequests, file, writer)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while updating status to in progress", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-		failedRequests = append(failedRequests, errRequest)
+		return err
 	}
-
-	pageSize := utils.GetEnvInt("DEVICE_INVENTORY_REPORT_PAGE_SIZE", 1000)
-
-	file, err = common.CreateTempFile(req.Id.String())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-		failedRequests = append(failedRequests, errRequest)
-	}
-
-	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching log sources", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-		failedRequests = append(failedRequests, errRequest)
-	}
-	var sourceIdsToNames = make(map[string]string)
-	for _, source := range logSources {
-		sourceIdsToNames[source.ID.String()] = source.Name
-	}
-
-	headers := []string{"Hostname", "First Seen", "Last Seen", "Source Name", "Reputation"}
-	writer = csv.NewWriter(file)
-	err = writer.Write(headers)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-		failedRequests = append(failedRequests, errRequest)
-	}
-
-	sources, startTime, endTime, err := getDeviceInventoryReportConfigFromRequest(req)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
-		failedRequests = append(failedRequests, errRequest)
-	}
-	query, err := getQueryFromFilters(sources, startTime, endTime, req.TenantId)
 	var searchAfter []any
+	pageSize := utils.GetEnvInt("DEVICE_INVENTORY_REPORT_PAGE_SIZE", 1000)
 	index := "db_insights_sights_sourcehostname_" + req.TenantId
 	for {
 		res, newSearchAfter, err := opensearch.SearchPaginated(ctx, client, index, query, pageSize, searchAfter, []opensearch.Sort{{Field: "updated_at", Order: "asc"}})
@@ -94,7 +81,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", index))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 			failedRequests = append(failedRequests, errRequest)
-			continue
+			return err
 		}
 
 		var deviceInventoryList []statistics.DeviceInventoryDocument
@@ -104,7 +91,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 			logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 			failedRequests = append(failedRequests, errRequest)
-			continue
+			return err
 		}
 
 		err = writeDeviceInventoryRowsToFile(deviceInventoryList, sourceIdsToNames, writer)
@@ -112,7 +99,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 			failedRequests = append(failedRequests, errRequest)
-			continue
+			return err
 		}
 
 		if len(res) == 0 || newSearchAfter == nil {
@@ -120,17 +107,47 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 		}
 		searchAfter = newSearchAfter
 	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
+	return nil
+}
 
-	err = common.UploadFileToS3(ctx, file, req, bucketName, objectKey)
+func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failedRequests []models.FailedRequests, file *os.File, writer *csv.Writer) (map[string]string, string, error) {
+	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
+		logging.GetLoggerWithContext(ctx).Error("error while fetching log sources", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
-	} else {
-		successAlerts = append(successAlerts, alerts_common.AlertEntityObject{EntityName: req.Id.String(), EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId)})
+		return map[string]string{}, "", err
+	}
+	var sourceIdsToNames = make(map[string]string)
+	for _, source := range logSources {
+		sourceIdsToNames[source.ID.String()] = source.Name
+	}
+	file, err = common.CreateTempFile(req.Id.String())
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		failedRequests = append(failedRequests, errRequest)
+		return map[string]string{}, "", err
+	}
+	headers := []string{"Hostname", "First Seen", "Last Seen", "Source Name", "Reputation"}
+	writer = csv.NewWriter(file)
+	err = writer.Write(headers)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		failedRequests = append(failedRequests, errRequest)
+		return map[string]string{}, "", err
 	}
 
+	sources, startTime, endTime, err := getDeviceInventoryReportConfigFromRequest(req)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		failedRequests = append(failedRequests, errRequest)
+		return map[string]string{}, "", err
+	}
+	query, err := getQueryFromFilters(sources, startTime, endTime, req.TenantId)
+	return sourceIdsToNames, query, err
 }
 func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInventoryDocument, sourceIdsToNames map[string]string, writer *csv.Writer) error {
 	for _, deviceInventory := range deviceInventoryList {

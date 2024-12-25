@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-func UploadFileToS3(ctx context.Context, file *os.File, req models.AuditReport, bucketName string, objectKey string) error {
+func UploadFileToS3AndUpdateInDb(ctx context.Context, file *os.File, req models.AuditReport, bucketName string, objectKey string) error {
 	// upload the file to s3
 	err := uploadFile(ctx, file.Name(), bucketName, objectKey)
 	if err != nil {
