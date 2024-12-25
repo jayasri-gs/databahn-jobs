@@ -194,7 +194,7 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		temp.EntityName = ls.Name
 		temp.EntityId = ls.ID
 		temp.EntityTenantUUId = ls.TenantID
-		temp.DataPlaneId = ls.Data
+		temp.DataPlaneId = ls.DataPlaneId
 		logsourcesEntityArray = append(logsourcesEntityArray, temp)
 
 		silentLogsources = append(silentLogsources, ls.ID.String())
@@ -302,9 +302,9 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// get alerts array for dismissal
-	var toDismissAlerts []alerts_common.AlertEntityObject
+	var toDismissAlerts []alerts_common.AlertBaseObjectV2
 	for _, alert := range alerts {
-		var temp alerts_common.AlertEntityObject
+		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = alert.FunctionalityEntityName
 		temp.EntityId = utils.UUIDFromStringOrNil(alert.FunctionalityEntityId)
 		temp.EntityTenantUUId = utils.UUIDFromStringOrNil(alert.TenantId)

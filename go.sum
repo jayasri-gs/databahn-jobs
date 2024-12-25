@@ -941,12 +941,8 @@ github.com/d2g/dhcp4 v0.0.0-20170904100407-a1d1b6c41b1c/go.mod h1:Ct2BUK8SB0YC1S
 github.com/d2g/dhcp4client v1.0.0/go.mod h1:j0hNfjhrt2SxUOw55nL0ATM/z4Yt3t2Kd1mW34z5W5s=
 github.com/d2g/dhcp4server v0.0.0-20181031114812-7d4a0a7f59a5/go.mod h1:Eo87+Kg/IX2hfWJfwxMzLyuSZyxSoAug2nGa1G2QAi8=
 github.com/d2g/hardwareaddr v0.0.0-20190221164911-e7d9fbe030e4/go.mod h1:bMl4RjIciD2oAxI7DmWRx6gbeqrkoLqv3MV0vzNad+I=
-github.com/databahn-ai/common-utils v0.111.0 h1:XKY57lZvmC2rs45XvM0M3U9YWImDYGKH8VCgES1aNb0=
-github.com/databahn-ai/common-utils v0.111.0/go.mod h1:V7HDu72MEqZAEyGasSCCMHNfSrd0ER5pMYeYW7VEiS8=
 github.com/databahn-ai/common-utils v0.121.0 h1:2RyRtfIPeRnMVCev3OEhbuk8cxWqLb8+FfeL2Gna0nE=
 github.com/databahn-ai/common-utils v0.121.0/go.mod h1:V7HDu72MEqZAEyGasSCCMHNfSrd0ER5pMYeYW7VEiS8=
-github.com/databahn-ai/db-models v0.131.0 h1:uzCVB6GovgXTym/JpfrkQLpm7ohcCzsLTx1zt+tgBwM=
-github.com/databahn-ai/db-models v0.131.0/go.mod h1:7RtXQpvLtTS6BwQJb4ivch/wy6N16hogELBFGBBDEIM=
 github.com/databahn-ai/db-models v0.135.0 h1:L+KcKaMDS045cjNBFWLDQGnE79tRHupPg/N790UzYJY=
 github.com/databahn-ai/db-models v0.135.0/go.mod h1:7RtXQpvLtTS6BwQJb4ivch/wy6N16hogELBFGBBDEIM=
 github.com/databahn-ai/go-logging v0.5.0 h1:t1Uy1k+E8/HLTuwFnuBoE+evvViF4CA6AjWBD8fvbmw=

@@ -30,6 +30,7 @@ type Agent struct {
 	Uptime        int64     `gorm:"type:bigint" json:"uptime"`
 	FleetId       uuid.UUID `gorm:"type:uuid;not null" json:"fleet_id"`
 	LogsourceId   uuid.UUID `gorm:"type:uuid" json:"logsource_id"`
+	DataPlaneId   uuid.UUID `gorm:"type:uuid" json:"data_plane_id"`
 	Port          int       `gorm:"type:int" json:"port"`
 }
 
