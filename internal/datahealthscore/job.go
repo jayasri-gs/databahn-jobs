@@ -90,7 +90,7 @@ func calculateScores(ctx context.Context, logSources []source.Source, sourceToAl
 						CreatedAt:           time.Now(),
 						ViolationType:       violation.Functionality,
 						ViolationSubtype:    violation.FunctionalityType,
-						Message:             fmt.Sprint(violation.Message, ls.Name),
+						Message:             fmt.Sprintf(violation.Message, ls.Name),
 						PercentageReduction: float32(percentageInt),
 						ResolutionStatus:    constants.STATUS_OPEN,
 						Details:             map[string]interface{}{},
