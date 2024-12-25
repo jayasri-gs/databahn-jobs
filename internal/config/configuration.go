@@ -10,11 +10,12 @@ import (
 	"sync"
 )
 
-var appConfigLoader, secretsLoader, destinationConfigLoader sync.Once
+var appConfigLoader, secretsLoader, destinationConfigLoader, alertConfigLoader sync.Once
 var appConfigReader configuration.ConfigReader
 var destinationConfigReader configuration.ConfigReader
 var databaseConnection *databases.Connection
 var openSearchCreds *configuration.OpenSearchCredentials
+var alertConfigReader configuration.ConfigReader
 
 var db *gorm.DB
 
@@ -86,4 +87,16 @@ func GetDB() *gorm.DB {
 		connectDB()
 	}
 	return db
+}
+
+func GetAlertConfiguration() configuration.ConfigReader {
+	alertConfigLoader.Do(loadAlertConfigReader)
+	return alertConfigReader
+}
+func loadAlertConfigReader() {
+	conf, err := configuration.NewConfig("alert")
+	if err != nil {
+		logger.GetLogger().Panic("failed to read alert configuration", zap.Error(err))
+	}
+	alertConfigReader = conf
 }
