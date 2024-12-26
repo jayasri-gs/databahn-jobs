@@ -1,6 +1,7 @@
-package auditReport
+package models
 
 import (
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -11,9 +12,10 @@ type AuditReport struct {
 	Id                 uuid.UUID      `json:"id"`
 	Name               string         `json:"name"`
 	Description        string         `json:"description"`
+	ReportType         string         `json:"report_type"`
 	Status             string         `json:"status"`
 	TenantId           string         `json:"tenant_id"`
-	Configuration      datatypes.JSON `json:"configuration"`
+	AuditReportFilter  datatypes.JSON `json:"audit_report_filter"`
 	DownloadLink       string         `json:"download_link"`
 	DownloadLinkExpiry string         `json:"download_link_expiry"`
 	Retries            int            `json:"retries"`
@@ -34,31 +36,31 @@ func NewFailedRequest(reqId string, tenantId string, retry int, err string) Fail
 	}
 }
 
-func getAllReportRequests(db *gorm.DB) ([]AuditReport, error) {
+func GetAllReportRequests(db *gorm.DB) ([]AuditReport, error) {
 	var auditReportRequests []AuditReport
-	var status = []string{STATUS_REQUESTED, STATUS_FAILED}
-	err := db.Table("audit_report").Where("status in ? and retries < ? ", status, maxRetries).Find(&auditReportRequests).Error
+	var status = []string{consts.REQUESTED, consts.FAILED}
+	err := db.Table("audit_report").Where("status in ? and retries < ? ", status, consts.MaxRetries).Find(&auditReportRequests).Error
 	if err != nil {
 		return nil, err
 	}
 	return auditReportRequests, nil
 }
 
-func updateRequestStatus(db *gorm.DB, id string, status string) error {
+func UpdateRequestStatus(db *gorm.DB, id string, status string) error {
 	err := db.Table("audit_report").Where("id = ?", id).Update("status", status).Error
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func updateRequestStatusAndDownloadLink(db *gorm.DB, id string, status string, link string, expiry time.Time) error {
+func UpdateRequestStatusAndDownloadLink(db *gorm.DB, id string, status string, link string, expiry time.Time) error {
 	err := db.Table("audit_report").Where("id = ?", id).Updates(map[string]interface{}{"status": status, "download_link": link, "download_link_expiry": expiry}).Error
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func updateRequestStatusAndRetries(db *gorm.DB, id string, status string, retry int) error {
+func UpdateRequestStatusAndRetries(db *gorm.DB, id string, status string, retry int) error {
 	err := db.Table("audit_report").Where("id = ?", id).Updates(map[string]interface{}{"status": status, "retries": retry}).Error
 	if err != nil {
 		return err
