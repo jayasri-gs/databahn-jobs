@@ -112,6 +112,9 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 			temp.EntityId = ls.ID
 			temp.EntityTenantUUId = ls.TenantID
 			temp.DataPlaneId = ls.DataPlaneId
+			temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+			temp.ErrorCode = alerts_common.AlertTypeExternalAndExternal
+			temp.ErrorCode = healthchecker.DNDW10001
 			whisperingAlertsEntityArray = append(whisperingAlertsEntityArray, temp)
 			whisperingLs = append(whisperingLs, ls.ID.String())
 		} else if reputation == common.NOISY {
@@ -120,6 +123,9 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 			temp.EntityId = ls.ID
 			temp.EntityTenantUUId = ls.TenantID
 			temp.DataPlaneId = ls.DataPlaneId
+			temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+			temp.ErrorCode = alerts_common.AlertTypeExternalAndExternal
+			temp.ErrorCode = healthchecker.DNDW10001
 			noisyAlertsEntityArray = append(noisyAlertsEntityArray, temp)
 			noisyLs = append(noisyLs, ls.ID.String())
 		}
