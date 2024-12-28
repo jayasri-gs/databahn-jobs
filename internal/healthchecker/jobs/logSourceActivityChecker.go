@@ -196,7 +196,6 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		temp.EntityTenantUUId = ls.TenantID
 		temp.DataPlaneId = ls.DataPlaneId
 		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
-		temp.ErrorCode = alerts_common.AlertTypeExternalAndExternal
 		temp.ErrorCode = healthchecker.DNDW10001
 		logsourcesEntityArray = append(logsourcesEntityArray, temp)
 
