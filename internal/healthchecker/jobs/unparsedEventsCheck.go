@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -58,7 +59,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 		_ = logger.Sync()
 	}(logging.GetLogger())
 
-	logging.GetLoggerWithContext(ctx).Info("Stating job to raise alerts for unparsed events")
+	logging.GetLoggerWithContext(ctx).Info("Starting job to raise alerts for unparsed events")
 
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Hour)
@@ -70,6 +71,12 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while getting unparsed events stats", zap.Error(err))
 		return err
 	}
+
+	totalEventsObj, err := GetEventDeliveryStats(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while getting total events stats", zap.Error(err))
+		return err
+	}
 	// get source id to unparsed event count mapping
 	sourceIdToUnparsedEventCount := make(map[string]float64)
 	for sourceID, count := range aggObj.Agg {
@@ -78,6 +85,14 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 			continue
 		}
 		sourceIdToUnparsedEventCount[sourceID] = valueInt
+	}
+	sourceIdToEventsCount := make(map[string]float64)
+	for sourceID, count := range totalEventsObj.Agg {
+		valueInt, ok := count.(float64)
+		if !ok || valueInt <= 0 {
+			continue
+		}
+		sourceIdToEventsCount[sourceID] = valueInt
 	}
 
 	// resolve alerts for sources which did not have unparsed events this time
@@ -99,7 +114,13 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 
 	logging.GetLogger().Info("Raising alerts for sources which have unparsed events", zap.Any("alertToBeRaisedLogSources", MapKeys(sourceIdToUnparsedEventCount)))
 	var toRaiseAlerts []alerts_common.AlertBaseObjectV2
+	var alertMessages []string
 	for _, ls := range alertToBeRaisedLogSources {
+		unparsedCount := sourceIdToUnparsedEventCount[ls.ID.String()]
+		eventsCount := sourceIdToEventsCount[ls.ID.String()]
+		percentageUnparsed := (unparsedCount / eventsCount) * 100
+		alertMessage := fmt.Sprintf("Source %s has unparsed events, accounting for %.2f%% of the total events.", ls.Name, percentageUnparsed)
+		alertMessages = append(alertMessages, alertMessage)
 		toRaiseAlerts = append(toRaiseAlerts, alerts_common.AlertBaseObjectV2{
 			EntityName:       ls.Name,
 			EntityId:         ls.ID,
@@ -109,7 +130,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	}
 
 	if len(toRaiseAlerts) > 0 {
-		err := helper.SendAlertToControlPlane(ctx, toRaiseAlerts, "Unparsed events detected", "Unparsed events were detected for the specified sources in the last hour.", "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
+		err := helper.SendAlertToControlPlane(ctx, toRaiseAlerts, "Unparsed events detected", strings.Join(alertMessages, "\n"), "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsedevents", zap.Error(err))
 			return err
@@ -179,6 +200,37 @@ func getExistingAlertsForUnparsedEvents(ctx context.Context, sources map[string]
 		return nil, err
 	}
 	return alerts, nil
+}
+func GetEventDeliveryStats(ctx context.Context, startTime string, endTime string) (statistics.AggregateResponse, error) {
+	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
+	query := statistics.AddDateRange(q, startTime, endTime)
+	agg := "tags.db_event_source_id.keyword"
+	conf := os.GetConf()
+	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
+		return statistics.AggregateResponse{}, err
+	}
+
+	searchBody := &statistics.AggregateQueryRequest{}
+	searchBody.Size = 0
+	searchBody.Query.QueryString.Query = query
+
+	aggList := strings.Split(agg, ",")
+	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
+
+	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+		return statistics.AggregateResponse{}, err
+	}
+	bodyContent, _ := io.ReadAll(searchResponse.Body)
+
+	resp := &statistics.AggregateQueryResponse{}
+	err = json.Unmarshal(bodyContent, resp)
+	aggObj := statistics.NewAggregateResponse(resp)
+	logging.GetLoggerWithContext(ctx).Info("got response from statistics store")
+	return aggObj, err
 }
 
 func MapKeys(inputMap map[string]float64) []string {
