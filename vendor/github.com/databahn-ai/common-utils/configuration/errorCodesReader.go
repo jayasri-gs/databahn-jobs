@@ -7,16 +7,20 @@ import (
 	"strings"
 )
 
+const prefix = "alerts_mapping."
+
 func GetErrorMessage(ct context.Context, alertConfigReader ConfigReader, errorCode string, params string) string {
 
-	message := alertConfigReader.GetString(errorCode)
+	key := prefix + errorCode
+	message := alertConfigReader.GetString(key)
 	if message == "" {
 		logger.GetLoggerWithContext(ct).Error("Error code not found in configuration", zap.String("error_code", errorCode))
-		return ""
+		return params
 	}
 	if params == "" {
-		return message
+		message = strings.ReplaceAll(message, "{0}", "")
+	} else {
+		message = strings.ReplaceAll(message, "{0}", params)
 	}
-	message = strings.ReplaceAll(message, "{0}", params)
 	return message
 }
