@@ -2,12 +2,10 @@ package logger
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strconv"
 	"sync"
 
-	"github.com/apex/gateway"
 	"github.com/databahn-ai/go-logging/logger/constants"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -17,11 +15,12 @@ var (
 	logger      *zap.Logger
 	loggerOnce  sync.Once
 	loggerReady = false
+	path        = []string{"stderr"}
 )
 
 // GetLogger - gets logging instance
 func GetLogger() *zap.Logger {
-	logger, _ = initLogger()
+	logger, _ = initServiceLogger()
 	return logger
 }
 
@@ -31,7 +30,7 @@ func GetLoggerWithContext(ctx context.Context) (newLogger *zap.Logger) {
 	if ctx == nil {
 		panic("GetLoggerWithContext called with nil context.")
 	}
-	newLogger, _ = initLogger()
+	newLogger, _ = initServiceLogger()
 
 	if userUUID := ctx.Value(constants.UserUuid); userUUID != nil {
 		newLogger = newLogger.With(zap.Any("user_uuid", userUUID))
@@ -57,7 +56,7 @@ func IsLoggerReady() bool {
 }
 
 // getLogger - actual singleton for logging infrastructure
-func initLogger() (*zap.Logger, error) {
+func initServiceLogger() (*zap.Logger, error) {
 	var err error
 	loggerOnce.Do(func() {
 		cfg := NewDbConfig()
@@ -82,8 +81,8 @@ func NewDbConfig() zap.Config {
 		Development:      false,
 		Encoding:         encoding,
 		EncoderConfig:    NewDbEncoderConfig(),
-		OutputPaths:      []string{"stderr"},
-		ErrorOutputPaths: []string{"stderr"},
+		OutputPaths:      path,
+		ErrorOutputPaths: path,
 	}
 	if isSamplingEnabled() {
 		initial, thereafter := getSamplingConfig()
@@ -142,37 +141,8 @@ func NewDbEncoderConfig() zapcore.EncoderConfig {
 	}
 }
 
-// Init - ensures we're able to invoke logging before getting further into code.
-// Returns error if something's amiss.
-func init() {
-	_, err := initLogger()
-	if err != nil {
-		fmt.Printf("issue setting up logger: %s", err.Error())
-	}
-}
-
-// SetLoggingContexts sets up several commonly used logging contexts (userid,
-// requestid, tenantid) for later logging.
-func SetLoggingContexts(ctx context.Context) context.Context {
-	requestContext, ok := gateway.RequestContext(ctx)
-	if ok {
-		ctx = context.WithValue(ctx, constants.LctxLambdaRequestId, requestContext.RequestID)
-	}
-
-	// I'm not calling util.GetTenantIDFromContext() etc here so that we don't have an import loop.
-	var tenantUUID string
-	var userUUID string
-	id := ctx.Value(constants.TenantUuid)
-	if id != nil {
-		tenantUUID = id.(string)
-	}
-	id = ctx.Value(constants.UserUuid)
-	if id != nil {
-		userUUID = id.(string)
-	}
-	ctx = context.WithValue(ctx, constants.TenantUuid, tenantUUID)
-	ctx = context.WithValue(ctx, constants.UserUuid, userUUID)
-	return ctx
+func SetLoggingPath(newPath string) {
+	path = []string{newPath}
 }
 
 func isSamplingEnabled() bool {
