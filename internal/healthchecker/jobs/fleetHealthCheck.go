@@ -39,7 +39,7 @@ func agentHealthChecker(ctx context.Context) error {
 		temp.EntityTenantUUId = ed.TenantId
 		temp.DataPlaneId = ed.DataPlaneId
 		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
-		temp.ErrorCode = ""
+		temp.ErrorCode = healthchecker.DNDE10003
 		agentAlerts = append(agentAlerts, temp)
 	}
 
@@ -82,6 +82,8 @@ func fleetHealthChecker(ctx context.Context) error {
 		temp.EntityName = ed.Name
 		temp.EntityId = ed.Id
 		temp.EntityTenantUUId = ed.TenantId
+		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+		temp.ErrorCode = healthchecker.DNDE10003
 		fleetEntityArray = append(fleetEntityArray, temp)
 	}
 
@@ -121,6 +123,8 @@ func connectorHealthChecker(ctx context.Context) error {
 		temp.EntityName = ed.Name
 		temp.EntityId = ed.ID
 		temp.EntityTenantUUId = ed.TenantID
+		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+		temp.ErrorCode = healthchecker.DNDE10003
 		connectorEntity = append(connectorEntity, temp)
 	}
 
