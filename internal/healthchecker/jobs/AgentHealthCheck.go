@@ -9,6 +9,7 @@ import (
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/agent"
 	"github.com/databahn-ai/db-models/alerts_common"
@@ -190,7 +191,10 @@ func processLogFiles(ctx context.Context, prefix string, bucket string, tenantId
 			temp.Status = 1
 			temp.UpdatedBy = "system"
 			temp.Dismissed = false
-
+			temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+			temp.ErrorMessage = "Agent Node Health Data Reporting"
+			temp.ErrorCode = healthchecker.DNDW10003
+			temp.DataPlaneId = agentObject.DataPlaneId
 			agentEntityArray = append(agentEntityArray, temp)
 		}
 	}

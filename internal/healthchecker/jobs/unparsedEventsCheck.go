@@ -7,6 +7,7 @@ import (
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -125,6 +126,9 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 			EntityName:       ls.Name,
 			EntityId:         ls.ID,
 			EntityTenantUUId: ls.TenantID,
+			AlertType:        alerts_common.AlertTypeExternalAndExternal,
+			DataPlaneId:      ls.DataPlaneId,
+			ErrorCode:        healthchecker.DNDW10001,
 		})
 	}
 
