@@ -20,6 +20,8 @@ const (
 	StatusDeleted  = "DELETED"
 	StatusCreated  = "CREATED"
 	StatusInactive = "INACTIVE"
+	DNDW10001      = "DNDW10001"
+	DNDW10002      = "DNDW10002"
 )
 
 var FleetHealthCheckTime = utils.GetEnvOrDefault(EnvFleetHealthCheckTime, "10")

@@ -6,4 +6,5 @@ const (
 	DestinationConfig = "destination"
 	SourceConfig      = "source"
 	RuleConfig        = "rule"
+	AlertConfig       = "alert"
 )

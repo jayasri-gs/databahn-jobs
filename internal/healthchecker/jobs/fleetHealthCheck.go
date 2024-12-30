@@ -31,12 +31,15 @@ func agentHealthChecker(ctx context.Context) error {
 		return nil
 	}
 	//creating fleet alert object for fleets
-	var agentAlerts []alerts_common.AlertEntityObject
+	var agentAlerts []alerts_common.AlertBaseObjectV2
 	for _, ed := range agents {
-		var temp alerts_common.AlertEntityObject
+		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = ed.Name
 		temp.EntityId = ed.ID
 		temp.EntityTenantUUId = ed.TenantId
+		temp.DataPlaneId = ed.DataPlaneId
+		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+		temp.ErrorCode = ""
 		agentAlerts = append(agentAlerts, temp)
 	}
 
@@ -73,9 +76,9 @@ func fleetHealthChecker(ctx context.Context) error {
 	logging.GetLogger().Info("found unhealthy fleet nodes", zap.Any("no_unhealthy_nodes", len(fleetNodes)))
 
 	//creating fleet alert object for fleets
-	var fleetEntityArray []alerts_common.AlertEntityObject
+	var fleetEntityArray []alerts_common.AlertBaseObjectV2
 	for _, ed := range fleetNodes {
-		var temp alerts_common.AlertEntityObject
+		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = ed.Name
 		temp.EntityId = ed.Id
 		temp.EntityTenantUUId = ed.TenantId
@@ -112,9 +115,9 @@ func connectorHealthChecker(ctx context.Context) error {
 
 	logging.GetLogger().Info("found unhealthy fleet connector", zap.Any("no_unhealthy_nodes", len(connectors)))
 
-	var connectorEntity []alerts_common.AlertEntityObject
+	var connectorEntity []alerts_common.AlertBaseObjectV2
 	for _, ed := range connectors {
-		var temp alerts_common.AlertEntityObject
+		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = ed.Name
 		temp.EntityId = ed.ID
 		temp.EntityTenantUUId = ed.TenantID

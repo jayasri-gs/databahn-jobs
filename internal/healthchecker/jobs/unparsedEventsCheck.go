@@ -113,7 +113,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	// raise alerts for sources which have unparsed events
 
 	logging.GetLogger().Info("Raising alerts for sources which have unparsed events", zap.Any("alertToBeRaisedLogSources", MapKeys(sourceIdToUnparsedEventCount)))
-	var toRaiseAlerts []alerts_common.AlertEntityObject
+	var toRaiseAlerts []alerts_common.AlertBaseObjectV2
 	var alertMessages []string
 	for _, ls := range alertToBeRaisedLogSources {
 		unparsedCount := sourceIdToUnparsedEventCount[ls.ID.String()]
@@ -121,7 +121,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 		percentageUnparsed := (unparsedCount / eventsCount) * 100
 		alertMessage := fmt.Sprintf("Source %s has unparsed events, accounting for %.2f%% of the total events.", ls.Name, percentageUnparsed)
 		alertMessages = append(alertMessages, alertMessage)
-		toRaiseAlerts = append(toRaiseAlerts, alerts_common.AlertEntityObject{
+		toRaiseAlerts = append(toRaiseAlerts, alerts_common.AlertBaseObjectV2{
 			EntityName:       ls.Name,
 			EntityId:         ls.ID,
 			EntityTenantUUId: ls.TenantID,
@@ -149,11 +149,11 @@ func resolveExistingAlerts(ctx context.Context, sources map[string]float64) erro
 		logging.GetLoggerWithContext(ctx).Info("no existing alerts found for unparsed events.")
 		return nil
 	}
-	var toDismissAlerts []alerts_common.AlertEntityObject
+	var toDismissAlerts []alerts_common.AlertBaseObjectV2
 	for _, alert := range alerts {
 		if _, ok := sources[alert.FunctionalityEntityId]; !ok {
 			// resolve the alert as it is not present in the current list of sources having unparsed events
-			toDismissAlerts = append(toDismissAlerts, alerts_common.AlertEntityObject{
+			toDismissAlerts = append(toDismissAlerts, alerts_common.AlertBaseObjectV2{
 				EntityId:         utils.UUIDFromStringOrNil(alert.FunctionalityEntityId),
 				EntityTenantUUId: utils.UUIDFromStringOrNil(alert.TenantId),
 				EntityName:       alert.FunctionalityEntityName,

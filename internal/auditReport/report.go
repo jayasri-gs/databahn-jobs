@@ -31,7 +31,7 @@ func GenerateAuditReport(ctx context.Context) error {
 	}
 
 	var failedRequests []FailedRequests
-	var successAlerts []alerts_common.AlertEntityObject
+	var successAlerts []alerts_common.AlertBaseObjectV2
 
 	var file *os.File
 	defer file.Close()
@@ -136,7 +136,7 @@ func GenerateAuditReport(ctx context.Context) error {
 			continue
 		}
 		// create alert entity object
-		alertEntity := alerts_common.AlertEntityObject{
+		alertEntity := alerts_common.AlertBaseObjectV2{
 			EntityName:       req.Name,
 			EntityId:         req.Id,
 			EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId),
@@ -180,7 +180,7 @@ func validateConfig(startTime string, endTime string) error {
 	}
 	return nil
 }
-func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertEntityObject, errorAlerts []alerts_common.AlertEntityObject) error {
+func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertBaseObjectV2, errorAlerts []alerts_common.AlertBaseObjectV2) error {
 
 	if len(successAlerts) > 0 {
 		err := helper.SendAlertToControlPlane(ctx, successAlerts, SuccessTitle, SuccessTitle, AuditReportFunctionalityType, AuditReportFunctionality, alerts_common.InfoAlert, alerts_common.AlertOpen, false, "system")
@@ -196,9 +196,9 @@ func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertEntity
 	}
 	return nil
 }
-func handleErrorRequests(requests []FailedRequests) ([]alerts_common.AlertEntityObject, error) {
+func handleErrorRequests(requests []FailedRequests) ([]alerts_common.AlertBaseObjectV2, error) {
 
-	var errorAlerts []alerts_common.AlertEntityObject
+	var errorAlerts []alerts_common.AlertBaseObjectV2
 	for _, req := range requests {
 		if req.Retry <= maxRetries {
 			err := updateRequestStatusAndRetries(config.GetDB(), req.RequestId, STATUS_FAILED, req.Retry)
@@ -207,7 +207,7 @@ func handleErrorRequests(requests []FailedRequests) ([]alerts_common.AlertEntity
 			}
 		}
 		if req.Retry == maxRetries {
-			alertEntity := alerts_common.AlertEntityObject{
+			alertEntity := alerts_common.AlertBaseObjectV2{
 				EntityName:       req.RequestId,
 				EntityId:         utils.UUIDFromStringOrNil(req.RequestId),
 				EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId),

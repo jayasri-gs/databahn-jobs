@@ -25,11 +25,12 @@ const (
 	OpenSearchSecretName              = "open_search.os_secret_name"
 	OAuthClientCredentialsSecretName  = configs.OAuthClientCredentialsSecretName
 
-	OpenTelemetryCollectorUrl = "urls.optl_collector"
-	RedisUrl                  = "urls.redis"
-	GatewayUrl                = "urls.gateway"
-	ControlPlaneBaseUrl       = "urls.control_plane_base_url"
-	KsqlDbUrl                 = configs.KSqlDbUrl
+	OpenTelemetryCollectorUrl     = "urls.optl_collector"
+	OpenTelemetryCollectorGrpcUrl = "urls.optl_collector_grpc"
+	RedisUrl                      = "urls.redis"
+	GatewayUrl                    = "urls.gateway"
+	ControlPlaneBaseUrl           = "urls.control_plane_base_url"
+	KsqlDbUrl                     = configs.KSqlDbUrl
 	// DataBahnApiUrl used to get the api url from app config
 	DataBahnApiUrl = "urls.databahn_api"
 	DataBahnAppUrl = "urls.databahn_app"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/databahn-ai/common-utils/alert"
+	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
@@ -14,9 +15,10 @@ import (
 	"time"
 )
 
-func SendAlertToControlPlane(ctx context.Context, entityArray []alerts_common.AlertEntityObject, title string, message string, functionalityType string, functionality string, severity string, status int, dismissed bool, updatedBy string) error {
+func SendAlertToControlPlane(ctx context.Context, entityArray []alerts_common.AlertBaseObjectV2, title string, message string, functionalityType string, functionality string, severity string, status int, dismissed bool, updatedBy string) error {
 	var alerts []alerts_common.Alert
 	for _, entity := range entityArray {
+		eMsg := configuration.GetErrorMessage(context.Background(), config.GetAlertConfiguration(), entity.ErrorCode, message)
 		temp := alerts_common.Alert{
 			Title:                   title,
 			Message:                 message,
@@ -33,6 +35,10 @@ func SendAlertToControlPlane(ctx context.Context, entityArray []alerts_common.Al
 			Criticality:             severity,
 			Status:                  status,
 			UpdatedBy:               updatedBy,
+			AlertType:               entity.AlertType,
+			DataPlaneId:             entity.DataPlaneId,
+			ErrorMessage:            eMsg,
+			ErrorCode:               entity.ErrorCode,
 		}
 		alerts = append(alerts, temp)
 	}
