@@ -23,8 +23,9 @@ const (
 	DNDW10001      = "DNDW10001"
 	DNDW10002      = "DNDW10002"
 	DNDW10003      = "DNDW10003"
-	DNDE10003      = "DNDE10003"
-	DNDE10001      = "DNDE10001"
+
+	DNDE10001 = "DNDE10001"
+	DNDE10002 = "DNDE10002"
 )
 
 var FleetHealthCheckTime = utils.GetEnvOrDefault(EnvFleetHealthCheckTime, "10")
