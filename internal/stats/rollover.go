@@ -171,8 +171,7 @@ func contains(arr []string, str string) bool {
 }
 
 func filterStatsValidIndices(indexNames []string, weeksOlderThan int, limit int, skip []string) []Index {
-	thisWeek := getWeekOfYear()
-	thisYear := time.Now().Year()
+	thisYear, thisWeek := getWeekOfYear()
 	thisYearWeekNumber := yearWeekNumber(thisYear, thisWeek)
 	var indicesToRollover []Index
 	for _, index := range indexNames {
@@ -669,9 +668,9 @@ func insertIntoNewIndex(ctx context.Context, documents []EsSource, client *opens
 	return nil
 }
 
-func getWeekOfYear() int {
-	_, week := time.Now().ISOWeek()
-	return week
+func getWeekOfYear() (int, int) {
+	year, week := time.Now().ISOWeek()
+	return year, week
 }
 
 func yearWeekNumber(year, week int) int {
