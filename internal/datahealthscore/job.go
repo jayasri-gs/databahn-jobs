@@ -24,7 +24,7 @@ func CalculateDataHealthScore(ctx context.Context) error {
 	violations, functionalitiesToConsider := utils.ReadViolationsFromConfig("/home/databahn/service/config.yaml")
 
 	var logSources []source.Source
-	if err := config.GetDB().Model(&source.Source{}).Scan(&logSources).Error; err != nil {
+	if err := config.GetDB().Model(&source.Source{}).Where("replay_source != ?", true).Scan(&logSources).Error; err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
 		return err
 	}
