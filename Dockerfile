@@ -5,7 +5,7 @@ COPY . .
 ENV CGO_ENABLED=1
 RUN go build -tags musl -o databahn-jobs main.go
 
-FROM alpine:3.20.3 AS runner
+FROM alpine:3.20.3 as runner
 WORKDIR /home/databahn/service
 
 RUN apk add librdkafka-dev
