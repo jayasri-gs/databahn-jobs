@@ -218,10 +218,7 @@ func prepareMapOfEntityIdToRequestIdToAck(acks []db.ChangeFlagAck) map[string]ma
 func updateStatus(ack db.ChangeFlagAck) error {
 	// handle destination cf separately
 	if strings.HasPrefix(ack.EntityType, "destination_") {
-		err := updateDestination(ack)
-		if err != nil {
-			return err
-		}
+		return updateDestination(ack)
 	}
 
 	switch ack.EntityType {
