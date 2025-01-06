@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 func uploadFileToS3ForSearch(ctx context.Context, index *IndexMetadata, fileName string) error {
@@ -67,5 +68,5 @@ func getAttributes(index IndexMetadata) (map[string]string, error) {
 }
 
 func getS3FileName(index IndexMetadata) string {
-	return os.TempDir() + "/" + index.String() + ".txt"
+	return os.TempDir() + "/" + index.String() + "_" + strconv.FormatInt(time.Now().UnixMilli(), 10) + ".txt"
 }
