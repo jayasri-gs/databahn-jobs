@@ -32,7 +32,7 @@ func GenerateAuditReport(ctx context.Context) error {
 	}
 
 	var failedRequests []models.FailedRequests
-	var successAlerts []alerts_common.AlertEntityObject
+	var successAlerts []alerts_common.AlertBaseObjectV2
 
 	wg := sync.WaitGroup{}
 	parallelismCntrl := make(chan struct{}, parallelism)
@@ -63,7 +63,7 @@ func GenerateAuditReport(ctx context.Context) error {
 	return nil
 }
 
-func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertEntityObject, errorAlerts []alerts_common.AlertEntityObject) error {
+func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertBaseObjectV2, errorAlerts []alerts_common.AlertBaseObjectV2) error {
 
 	if len(successAlerts) > 0 {
 		err := helper.SendAlertToControlPlane(ctx, successAlerts, consts.SuccessTitle, consts.SuccessTitle, consts.AuditReportFunctionalityType, consts.AuditReportFunctionality, alerts_common.InfoAlert, alerts_common.AlertOpen, false, "system")
@@ -79,9 +79,9 @@ func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertEntity
 	}
 	return nil
 }
-func handleErrorRequests(requests []models.FailedRequests) ([]alerts_common.AlertEntityObject, error) {
+func handleErrorRequests(requests []models.FailedRequests) ([]alerts_common.AlertBaseObjectV2, error) {
 
-	var errorAlerts []alerts_common.AlertEntityObject
+	var errorAlerts []alerts_common.AlertBaseObjectV2
 	for _, req := range requests {
 		if req.Retry <= consts.MaxRetries {
 			err := models.UpdateRequestStatusAndRetries(config.GetDB(), req.RequestId, consts.FAILED, req.Retry)
@@ -90,10 +90,11 @@ func handleErrorRequests(requests []models.FailedRequests) ([]alerts_common.Aler
 			}
 		}
 		if req.Retry == consts.MaxRetries {
-			alertEntity := alerts_common.AlertEntityObject{
+			alertEntity := alerts_common.AlertBaseObjectV2{
 				EntityName:       req.RequestId,
 				EntityId:         utils.UUIDFromStringOrNil(req.RequestId),
 				EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId),
+				AlertType:        alerts_common.AlertTypeExternalAndExternal,
 			}
 			errorAlerts = append(errorAlerts, alertEntity)
 		}
