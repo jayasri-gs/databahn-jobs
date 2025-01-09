@@ -26,6 +26,10 @@ type Alert struct {
 	Status                  int       `json:"status"`
 	UpdatedBy               string    `gorm:"type:VARCHAR(100)" validate:"required"`
 	Dismissed               bool      `json:"dismissed"`
+	AlertType               string    `gorm:"type:VARCHAR(64)" json:"alertType"`
+	ErrorMessage            string    `gorm:"type:text" json:"errorMessage"`
+	ErrorCode               string    `gorm:"type:VARCHAR(128)" json:"errorCode"`
+	DataPlaneId             uuid.UUID `gorm:"type:uuid" validate:"required" json:"dataPlaneId"`
 }
 
 func (at *Alert) Migrate(db *gorm.DB) error {

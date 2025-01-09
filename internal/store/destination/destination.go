@@ -18,6 +18,7 @@ type Destination struct {
 	TenantID         uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
 	Count            string    `json:"count" gorm:"-"`
 	Stats            float64   `json:"-" gorm:"-"`
+	DataPlaneId      uuid.UUID `gorm:"type:uuid" json:"data_plane_id"`
 }
 
 func (s *Destination) TableName() string {

@@ -79,7 +79,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	startTime := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTime)))
 	startTimeThreshold := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTimeThreshold)))
 
-	var whisperingAlertsEntityArray, noisyAlertsEntityArray []alerts_common.AlertEntityObject
+	var whisperingAlertsEntityArray, noisyAlertsEntityArray []alerts_common.AlertBaseObjectV2
 	var whisperingLs, noisyLs []string
 	for _, ls := range logSources {
 		thresholdAggObj, err := getHistogramForLogSource(ctx, strconv.Itoa(int(startTimeThreshold.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), "1h", ls.ID.String())
@@ -107,17 +107,23 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		reputation := classifySources(zScoreMean)
 
 		if reputation == common.WHISPERING {
-			var temp alerts_common.AlertEntityObject
+			var temp alerts_common.AlertBaseObjectV2
 			temp.EntityName = ls.Name
 			temp.EntityId = ls.ID
 			temp.EntityTenantUUId = ls.TenantID
+			temp.DataPlaneId = ls.DataPlaneId
+			temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+			temp.ErrorCode = healthchecker.DNDE10001
 			whisperingAlertsEntityArray = append(whisperingAlertsEntityArray, temp)
 			whisperingLs = append(whisperingLs, ls.ID.String())
 		} else if reputation == common.NOISY {
-			var temp alerts_common.AlertEntityObject
+			var temp alerts_common.AlertBaseObjectV2
 			temp.EntityName = ls.Name
 			temp.EntityId = ls.ID
 			temp.EntityTenantUUId = ls.TenantID
+			temp.DataPlaneId = ls.DataPlaneId
+			temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+			temp.ErrorCode = healthchecker.DNDE10001
 			noisyAlertsEntityArray = append(noisyAlertsEntityArray, temp)
 			noisyLs = append(noisyLs, ls.ID.String())
 		}
@@ -130,7 +136,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	return err
 }
 
-func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAlertsEntityArray []alerts_common.AlertEntityObject, whisperingLs []string, whisperingAlertsEntityArray []alerts_common.AlertEntityObject) error {
+func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAlertsEntityArray []alerts_common.AlertBaseObjectV2, whisperingLs []string, whisperingAlertsEntityArray []alerts_common.AlertBaseObjectV2) error {
 	// mark reputation for whispering
 	err := config.GetDB().Model(&source.Source{}).Where("id in ? ", whisperingLs).Updates(map[string]interface{}{"reputation": common.WHISPERING}).Error
 	if err != nil {
