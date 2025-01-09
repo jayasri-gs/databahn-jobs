@@ -30,7 +30,6 @@ const LogModeDebug = "DEBUG"
 const LogModeInfo = "INFO"
 const LogModeWarn = "WARN"
 const LogModeError = "ERROR"
-
 const LoggingEncoding = "LOG_ENCODING"
 const LoggingJsonEncoding = "json"
 const LoggingConsoleEncoding = "console"

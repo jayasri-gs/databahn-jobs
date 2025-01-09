@@ -34,6 +34,7 @@ type Source struct {
 	Vendor                       string                 `gorm:"type:varchar(30)" json:"vendor"`
 	Version                      string                 `gorm:"type:varchar(36)" json:"version"`
 	Config                       map[string]interface{} `gorm:"-" json:"-"`
+	DataPlaneId                  uuid.UUID              `gorm:"type:uuid" json:"data_plane_id"`
 }
 
 func (s *Source) TableName() string {

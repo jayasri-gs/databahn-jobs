@@ -187,13 +187,16 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 	}
 
 	//creating alertEntityArray for all logSources for which alert needs to be raised
-	var logsourcesEntityArray []alerts_common.AlertEntityObject
+	var logsourcesEntityArray []alerts_common.AlertBaseObjectV2
 	var silentLogsources []string
 	for _, ls := range alertToBeRaisedDispenser {
-		var temp alerts_common.AlertEntityObject
+		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = ls.Name
 		temp.EntityId = ls.ID
 		temp.EntityTenantUUId = ls.TenantID
+		temp.DataPlaneId = ls.DataPlaneId
+		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+		temp.ErrorCode = healthchecker.DNDW10002
 		logsourcesEntityArray = append(logsourcesEntityArray, temp)
 
 		silentLogsources = append(silentLogsources, ls.ID.String())
@@ -277,13 +280,16 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	//creating alertEntityArray for all logSources for which alert needs to be raised
-	var logsourcesEntityArray []alerts_common.AlertEntityObject
+	var logsourcesEntityArray []alerts_common.AlertBaseObjectV2
 	var silentLogsources []string
 	for _, ls := range alertToBeRaisedLogSources {
-		var temp alerts_common.AlertEntityObject
+		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = ls.Name
 		temp.EntityId = ls.ID
 		temp.EntityTenantUUId = ls.TenantID
+		temp.DataPlaneId = ls.DataPlaneId
+		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+		temp.ErrorCode = healthchecker.DNDW10001
 		logsourcesEntityArray = append(logsourcesEntityArray, temp)
 
 		silentLogsources = append(silentLogsources, ls.ID.String())
@@ -297,9 +303,9 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 
 	// get alerts array for dismissal
-	var toDismissAlerts []alerts_common.AlertEntityObject
+	var toDismissAlerts []alerts_common.AlertBaseObjectV2
 	for _, alert := range alerts {
-		var temp alerts_common.AlertEntityObject
+		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = alert.FunctionalityEntityName
 		temp.EntityId = utils.UUIDFromStringOrNil(alert.FunctionalityEntityId)
 		temp.EntityTenantUUId = utils.UUIDFromStringOrNil(alert.TenantId)
