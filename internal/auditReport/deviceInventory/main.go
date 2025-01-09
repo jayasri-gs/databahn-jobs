@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests []models.FailedRequests, successAlerts []alerts_common.AlertEntityObject) {
+func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests []models.FailedRequests, successAlerts []alerts_common.AlertBaseObjectV2) {
 	var file *os.File
 	var writer *csv.Writer
 	defer func() {
@@ -53,7 +53,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
 	} else {
-		successAlerts = append(successAlerts, alerts_common.AlertEntityObject{EntityName: req.Id.String(), EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId)})
+		successAlerts = append(successAlerts, alerts_common.AlertBaseObjectV2{EntityName: req.Id.String(), EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
 	}
 
 }
