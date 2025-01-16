@@ -41,7 +41,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
 	}
-	err = gatherDataAndWriteToFile(ctx, req, failedRequests, file, writer)
+	file, writer, err = gatherDataAndWriteToFile(ctx, req, failedRequests, file, writer)
 	if err != nil {
 		return
 	}
@@ -58,7 +58,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 
 }
 
-func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, failedRequests []models.FailedRequests, file *os.File, writer *csv.Writer) error {
+func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, failedRequests []models.FailedRequests, file *os.File, writer *csv.Writer) (*os.File, *csv.Writer, error) {
 
 	conf := opensearch.GetConf()
 	client, err := opensearch.NewClient(ctx, conf.Url, conf.Creds())
@@ -66,11 +66,11 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
-		return err
+		return nil, nil, err
 	}
-	sourceIdsToNames, query, err := getFileAndRequestConfig(ctx, req, failedRequests, file, writer)
+	sourceIdsToNames, query, file, writer, err := getFileAndRequestConfig(ctx, req, failedRequests, file, writer)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	var searchAfter []any
 	pageSize := utils.GetEnvInt("DEVICE_INVENTORY_REPORT_PAGE_SIZE", 1000)
@@ -81,7 +81,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", index))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 			failedRequests = append(failedRequests, errRequest)
-			return err
+			return nil, nil, err
 		}
 
 		var deviceInventoryList []statistics.DeviceInventoryDocument
@@ -91,7 +91,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 			logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 			failedRequests = append(failedRequests, errRequest)
-			return err
+			return nil, nil, err
 		}
 
 		err = writeDeviceInventoryRowsToFile(deviceInventoryList, sourceIdsToNames, writer)
@@ -99,7 +99,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 			failedRequests = append(failedRequests, errRequest)
-			return err
+			return nil, nil, err
 		}
 
 		if len(res) == 0 || newSearchAfter == nil {
@@ -107,16 +107,16 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 		}
 		searchAfter = newSearchAfter
 	}
-	return nil
+	return file, writer, nil
 }
 
-func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failedRequests []models.FailedRequests, file *os.File, writer *csv.Writer) (map[string]string, string, error) {
+func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failedRequests []models.FailedRequests, file *os.File, writer *csv.Writer) (map[string]string, string, *os.File, *csv.Writer, error) {
 	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while fetching log sources", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
-		return map[string]string{}, "", err
+		return map[string]string{}, "", nil, nil, err
 	}
 	var sourceIdsToNames = make(map[string]string)
 	for _, source := range logSources {
@@ -127,7 +127,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failed
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
-		return map[string]string{}, "", err
+		return map[string]string{}, "", nil, nil, err
 	}
 	headers := []string{"Hostname", "First Seen", "Last Seen", "Source Name", "Reputation"}
 	writer = csv.NewWriter(file)
@@ -136,7 +136,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failed
 		logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
-		return map[string]string{}, "", err
+		return map[string]string{}, "", nil, nil, err
 	}
 
 	sources, startTime, endTime, err := getDeviceInventoryReportConfigFromRequest(req)
@@ -144,10 +144,10 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failed
 		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
 		failedRequests = append(failedRequests, errRequest)
-		return map[string]string{}, "", err
+		return map[string]string{}, "", nil, nil, err
 	}
 	query, err := getQueryFromFilters(sources, startTime, endTime, req.TenantId)
-	return sourceIdsToNames, query, err
+	return sourceIdsToNames, query, file, writer, err
 }
 func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInventoryDocument, sourceIdsToNames map[string]string, writer *csv.Writer) error {
 	for _, deviceInventory := range deviceInventoryList {
