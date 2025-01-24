@@ -138,6 +138,47 @@ func connectorHealthChecker(ctx context.Context) error {
 	return nil
 }
 
+func fleetComponentHealthCheck(ctx context.Context) error {
+	currentTime := time.Now()
+	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckTime)))
+	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
+	logging.GetLogger().Info("checking fleet connector health")
+
+	var unhealthyComponents []fleet.Components
+	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
+	err := config.GetDB().Find(&unhealthyComponents, "(heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).Debug().Error
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("Error in running get unhealthy fleet component query", zap.Error(err))
+		return err
+	}
+	if len(unhealthyComponents) <= 0 {
+		logging.GetLoggerWithContext(ctx).Info("no unhealthy fleet Connector found")
+		return err
+	}
+
+	logging.GetLogger().Info("found unhealthy fleet components", zap.Any("no_unhealthy_components", len(unhealthyComponents)))
+
+	var connectorEntity []alerts_common.AlertBaseObjectV2
+	for _, ed := range unhealthyComponents {
+		var temp alerts_common.AlertBaseObjectV2
+		temp.EntityName = ed.ServiceName
+		temp.EntityId = ed.FleetNodeId
+		temp.EntityTenantUUId = ed.TenantId
+		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+		temp.ErrorCode = healthchecker.DNDE10002
+		connectorEntity = append(connectorEntity, temp)
+	}
+
+	// raise alert and save it to opensearch
+	err = helper.SendAlertToControlPlane(ctx, connectorEntity, common.FleetComponentHealthCheckTitle, common.FleetComponentHealthCheckMessage, alerts_common.FleetConnectorHealthCheck, alerts_common.FleetFunctionality, alerts_common.CriticalAlert, alerts_common.AlertOpen, false, "system")
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while raising alert connector inactivity", zap.Error(err))
+		return err
+	}
+	logging.GetLogger().Info("alert raised successfully for unhealthy fleet component", zap.Int("no_of_unhealthy_component", len(connectorEntity)))
+	return nil
+}
+
 func HealthCheckAlertForFleetNode(ctx context.Context) error {
 	defer logging.GetLogger().Sync()
 
@@ -149,6 +190,12 @@ func HealthCheckAlertForFleetNode(ctx context.Context) error {
 		return err
 	}
 	err = connectorHealthChecker(ctx)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while handling alerts for unhealthy connectors", zap.Error(err))
+		return err
+	}
+
+	err = fleetComponentHealthCheck(ctx)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while handling alerts for unhealthy connectors", zap.Error(err))
 		return err
