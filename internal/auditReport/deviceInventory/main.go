@@ -40,7 +40,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 	err := models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while updating status to in progress", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		failedRequestsTemp = append(failedRequestsTemp, errRequest)
 	}
 	file, writer, err = gatherDataAndWriteToFile(ctx, req, failedRequests, file, writer)
@@ -52,10 +52,10 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		failedRequestsTemp = append(failedRequestsTemp, errRequest)
 	} else {
-		successAlertsTemp = append(successAlertsTemp, alerts_common.AlertBaseObjectV2{EntityName: req.Id.String(), EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
+		successAlertsTemp = append(successAlertsTemp, alerts_common.AlertBaseObjectV2{EntityName: req.Name, EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
 	}
 
 	// Lock the mutex before updating the success alerts
@@ -75,7 +75,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 	client, err := opensearch.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
 		return nil, nil, err
 	}
@@ -90,7 +90,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 		res, newSearchAfter, err := opensearch.SearchPaginated(ctx, client, index, query, pageSize, searchAfter, []opensearch.Sort{{Field: "updated_at", Order: "asc"}})
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", index))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 			*failedRequests = append(*failedRequests, errRequest)
 			return nil, nil, err
 		}
@@ -100,7 +100,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 		err = decoder.Decode(res)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 			*failedRequests = append(*failedRequests, errRequest)
 			return nil, nil, err
 		}
@@ -108,7 +108,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 		err = writeDeviceInventoryRowsToFile(deviceInventoryList, sourceIdsToNames, writer)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 			*failedRequests = append(*failedRequests, errRequest)
 			return nil, nil, err
 		}
@@ -125,7 +125,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failed
 	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while fetching log sources", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
 		return map[string]string{}, "", nil, nil, err
 	}
@@ -136,7 +136,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failed
 	file, err = common.CreateTempFile(req.Id.String())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
 		return map[string]string{}, "", nil, nil, err
 	}
@@ -145,7 +145,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failed
 	err = writer.Write(headers)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
 		return map[string]string{}, "", nil, nil, err
 	}
@@ -153,7 +153,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failed
 	sources, startTime, endTime, err := getDeviceInventoryReportConfigFromRequest(req)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.TenantId, req.Retries+1, err.Error())
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
 		return map[string]string{}, "", nil, nil, err
 	}
