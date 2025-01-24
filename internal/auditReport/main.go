@@ -34,6 +34,9 @@ func GenerateAuditReport(ctx context.Context) error {
 	var failedRequests []models.FailedRequests
 	var successAlerts []alerts_common.AlertBaseObjectV2
 
+	failedRequestMutex := sync.Mutex{}
+	successAlertsMutex := sync.Mutex{}
+
 	wg := sync.WaitGroup{}
 	parallelismCntrl := make(chan struct{}, parallelism)
 	for _, req := range auditReportRequests {
@@ -41,9 +44,9 @@ func GenerateAuditReport(ctx context.Context) error {
 		parallelismCntrl <- struct{}{}
 		switch req.ReportType {
 		case consts.AUDIT_REPORT:
-			go audit.FetchAuditReport(ctx, req, &wg, parallelismCntrl, failedRequests, successAlerts)
+			go audit.FetchAuditReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
 		case consts.DEVICE_INVENTORY_REPORT:
-			go deviceInventory.FetchDeviceInventory(ctx, req, &wg, parallelismCntrl, failedRequests, successAlerts)
+			go deviceInventory.FetchDeviceInventory(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
 		default:
 			logging.GetLoggerWithContext(ctx).Error("invalid report type", zap.String("reportType", req.ReportType))
 		}
