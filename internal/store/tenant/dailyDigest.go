@@ -3,14 +3,19 @@ package tenant
 import (
 	"context"
 	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 type Digest struct {
@@ -178,4 +183,56 @@ func (d *Digest) GetSensitiveDataTrackingStats() error {
 		}
 	}
 	return nil
+}
+func (d *Digest) GetAlerts(ctx context.Context, tenantId string) error {
+	alerts, err := GetAlertsFromOpenSearch(ctx, tenantId)
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while getting alerts", zap.Error(err))
+	}
+	for _, alert := range alerts {
+		alertDetails := fmt.Sprintf("Message: %s, First Observed At: %d, Last Observed At: %d", alert.Message, alert.FirstObservedAt, alert.LastObservedAt)
+		logger.GetLoggerWithContext(ctx).Debug("alert details", zap.String("alert", alertDetails))
+		d.Alerts = append(d.Alerts, alertDetails)
+	}
+	return nil
+}
+func GetAlertsFromOpenSearch(ctx context.Context, tenantId string) ([]statistics.AlertDocument, error) {
+	conf := os.GetConf()
+	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
+		return nil, err
+	}
+
+	checkTime := time.Now().Add(-24 * time.Hour)
+	q := `updatedAt:>` + strconv.FormatInt(checkTime.UnixMilli(), 10) + ` AND tenantId:` + tenantId
+
+	var allAlerts []statistics.AlertDocument
+	var searchAfter []any
+
+	for {
+		res, newSearchAfter, err := os.SearchPaginated(ctx, client, common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "updatedAt", Order: "asc"}})
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", common.AlertsIndex))
+			return nil, err
+		}
+
+		var alerts []statistics.AlertDocument
+		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+		err = decoder.Decode(res)
+
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
+			return allAlerts, err
+		}
+
+		allAlerts = append(allAlerts, alerts...)
+
+		if len(res) == 0 || newSearchAfter == nil {
+			break
+		}
+
+		searchAfter = newSearchAfter
+	}
+	return allAlerts, nil
 }

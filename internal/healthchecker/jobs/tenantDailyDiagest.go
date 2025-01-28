@@ -55,6 +55,11 @@ func TenantDailyDigest(ctx context.Context) error {
 			continue
 		}
 		digest.GetVolumeReductionAchievements()
+		err = digest.GetAlerts(ctx, t.Id.String())
+		if err != nil {
+			logger.GetLogger().Error("error while getting alerts", zap.Error(err))
+			continue
+		}
 		h := helper.Notification{
 			TenantId:                digest.TenantId.String(),
 			Subject:                 "Daily Digest - " + time.Now().Format(time.DateOnly),
