@@ -118,6 +118,17 @@ func GetAllLogSources(ctx context.Context, db *gorm.DB) ([]LogSource, error) {
 	return logSources, err
 }
 
+// GetAllLogSourcesByTenantId fetches all logSource for given tenant records from the database
+func GetAllLogSourcesByTenantId(ctx context.Context, db *gorm.DB, tenantId string) ([]LogSource, error) {
+	var logSources []LogSource
+	err := db.WithContext(ctx).Where("tenant_id = ?", tenantId).Preload("DataPlanes").Find(&logSources).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		logSources = []LogSource{}
+		return logSources, nil
+	}
+	return logSources, err
+}
+
 // CreateLogSourceMapByTenant creates a map with keys as tenantId_logSourceId and values as LogSource objects
 func CreateLogSourceMapByTenant(ctx context.Context, db *gorm.DB) (map[string]LogSource, error) {
 	logSources, err := GetAllLogSources(ctx, db)

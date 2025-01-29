@@ -133,7 +133,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	}
 
 	if len(toRaiseAlerts) > 0 {
-		err := helper.SendAlertToControlPlane(ctx, toRaiseAlerts, "Unparsed events detected", "Unparsed events were detected for the specified sources in the last hour.", "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
+		err := helper.SendAlertToControlPlane(ctx, toRaiseAlerts, "Unparsed events detected", strings.Join(alertMessages, "\n"), "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsedevents", zap.Error(err))
 			return err

@@ -196,3 +196,16 @@ type AlertDocument struct {
 	DismissedAt             int64  `json:"dismissedAt"`
 	DismissedBy             string `json:"dismissedBy"`
 }
+
+type DeviceInventoryDocument struct {
+	Id         string `json:"id"`
+	Hostname   string `json:"key1"`
+	Key2       string `json:"key2"`
+	TenantId   string `json:"tenant_id"`
+	MinTime    int64  `json:"min_time"`
+	MaxTime    int64  `json:"max_time"`
+	SourceId   string `json:"source_id"`
+	Timestamp  int64  `json:"timestamp"`
+	UpdatedAt  int64  `json:"updated_at"`
+	Reputation string `json:"reputation"`
+}
