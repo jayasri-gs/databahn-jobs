@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/go-logging/logger"
 	"strconv"
@@ -30,6 +31,12 @@ func TenantDailyDigest(ctx context.Context) error {
 		return err
 	}
 
+	alertsByTenant, err := tenant.GetAlertsFromOpenSearch(ctx)
+	if err != nil {
+		logger.GetLogger().Error("error while getting alerts from OpenSearch", zap.Error(err))
+		return err
+	}
+
 	for _, t := range tenants {
 		logger.GetLogger().Info("processing tenant", zap.String("tenantId", t.Name))
 		digest := tenant.GetDailyDigest(t.Id, t.Name, startTime, endTime)
@@ -55,10 +62,13 @@ func TenantDailyDigest(ctx context.Context) error {
 			continue
 		}
 		digest.GetVolumeReductionAchievements()
-		err = digest.GetAlerts(ctx, t.Id.String())
-		if err != nil {
-			logger.GetLogger().Error("error while getting alerts", zap.Error(err))
-			continue
+
+		if tenantAlerts, ok := alertsByTenant[t.Id.String()]; ok {
+			for _, alert := range tenantAlerts {
+				alertDetails := fmt.Sprintf("Message: %s, First Observed: %d, Last Observed At: %d", alert.Message, alert.FirstObservedAt, alert.LastObservedAt)
+				logger.GetLoggerWithContext(ctx).Debug("alert details", zap.String("alert", alertDetails))
+				digest.Alerts = append(digest.Alerts, alertDetails)
+			}
 		}
 		h := helper.Notification{
 			TenantId:                digest.TenantId.String(),

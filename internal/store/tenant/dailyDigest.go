@@ -184,19 +184,8 @@ func (d *Digest) GetSensitiveDataTrackingStats() error {
 	}
 	return nil
 }
-func (d *Digest) GetAlerts(ctx context.Context, tenantId string) error {
-	alerts, err := GetAlertsFromOpenSearch(ctx, tenantId)
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while getting alerts", zap.Error(err))
-	}
-	for _, alert := range alerts {
-		alertDetails := fmt.Sprintf("Message: %s, First Observed At: %d, Last Observed At: %d", alert.Message, alert.FirstObservedAt, alert.LastObservedAt)
-		logger.GetLoggerWithContext(ctx).Debug("alert details", zap.String("alert", alertDetails))
-		d.Alerts = append(d.Alerts, alertDetails)
-	}
-	return nil
-}
-func GetAlertsFromOpenSearch(ctx context.Context, tenantId string) ([]statistics.AlertDocument, error) {
+
+func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.AlertDocument, error) {
 	conf := os.GetConf()
 	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
 	if err != nil {
@@ -205,13 +194,13 @@ func GetAlertsFromOpenSearch(ctx context.Context, tenantId string) ([]statistics
 	}
 
 	checkTime := time.Now().Add(-24 * time.Hour)
-	q := `updatedAt:>` + strconv.FormatInt(checkTime.UnixMilli(), 10) + ` AND tenantId:` + tenantId
+	q := `lastObservedAt:>` + strconv.FormatInt(checkTime.UnixMilli(), 10)
 
 	var allAlerts []statistics.AlertDocument
 	var searchAfter []any
 
 	for {
-		res, newSearchAfter, err := os.SearchPaginated(ctx, client, common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "updatedAt", Order: "asc"}})
+		res, newSearchAfter, err := os.SearchPaginated(ctx, client, common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "asc"}})
 		if err != nil {
 			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", common.AlertsIndex))
 			return nil, err
@@ -223,7 +212,7 @@ func GetAlertsFromOpenSearch(ctx context.Context, tenantId string) ([]statistics
 
 		if err != nil {
 			logger.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
-			return allAlerts, err
+			return nil, err
 		}
 
 		allAlerts = append(allAlerts, alerts...)
@@ -234,5 +223,10 @@ func GetAlertsFromOpenSearch(ctx context.Context, tenantId string) ([]statistics
 
 		searchAfter = newSearchAfter
 	}
-	return allAlerts, nil
+
+	alertsByTenant := make(map[string][]statistics.AlertDocument)
+	for _, alert := range allAlerts {
+		alertsByTenant[alert.TenantId] = append(alertsByTenant[alert.TenantId], alert)
+	}
+	return alertsByTenant, nil
 }
