@@ -1,0 +1,11 @@
+name: Tag Master
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  tag:
+    uses: databahn-ai/ci-github-workflows/.github/workflows/tag-master.yaml@master
+    secrets: inherit

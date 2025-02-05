@@ -1,15 +1,14 @@
-name: Production Release Workflow
+name: Release CI Workflow
 
 on:
-  release:
-    types: [ published ]
   push:
     branches:
       - release/*
+
 jobs:
-  release:
+  build-service:
     uses: databahn-ai/ci-github-workflows/.github/workflows/build-go-service.yaml@master
     with:
       service_name: ${{ github.event.repository.name }}
-      service_version: ${{ github.event.release.name }}
+      service_version: "v${{ github.sha }}"
     secrets: inherit
