@@ -33,7 +33,7 @@ func UploadFileToS3AndUpdateInDb(ctx context.Context, file *os.File, req models.
 		return err
 	}
 
-	err = models.UpdateRequestStatusAndDownloadLink(config.GetDB(), req.Id.String(), consts.COMPLETED, downloadLink, time.Now().Add(time.Hour*168))
+	err = models.UpdateRequestStatusAndDownloadLink(config.GetDB(), req.Id.String(), consts.COMPLETED, downloadLink, time.Now().Add(time.Hour*12))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while updating status to completed", zap.Error(err))
 		return err
