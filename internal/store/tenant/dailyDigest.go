@@ -3,14 +3,19 @@ package tenant
 import (
 	"context"
 	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 type Digest struct {
@@ -178,4 +183,50 @@ func (d *Digest) GetSensitiveDataTrackingStats() error {
 		}
 	}
 	return nil
+}
+
+func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.AlertDocument, error) {
+	conf := os.GetConf()
+	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
+		return nil, err
+	}
+
+	checkTime := time.Now().Add(-24 * time.Hour)
+	q := `lastObservedAt:>` + strconv.FormatInt(checkTime.UnixMilli(), 10)
+
+	var allAlerts []statistics.AlertDocument
+	var searchAfter []any
+
+	for {
+		res, newSearchAfter, err := os.SearchPaginated(ctx, client, common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "asc"}})
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", common.AlertsIndex))
+			return nil, err
+		}
+
+		var alerts []statistics.AlertDocument
+		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+		err = decoder.Decode(res)
+
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
+			return nil, err
+		}
+
+		allAlerts = append(allAlerts, alerts...)
+
+		if len(res) == 0 || newSearchAfter == nil {
+			break
+		}
+
+		searchAfter = newSearchAfter
+	}
+
+	alertsByTenant := make(map[string][]statistics.AlertDocument)
+	for _, alert := range allAlerts {
+		alertsByTenant[alert.TenantId] = append(alertsByTenant[alert.TenantId], alert)
+	}
+	return alertsByTenant, nil
 }
