@@ -2,13 +2,14 @@ package jobs
 
 import (
 	"context"
-	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
-	"github.com/databahn-ai/go-logging/logger"
 	"strconv"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
+	"github.com/databahn-ai/go-logging/logger"
+
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"go.uber.org/zap"
 )
@@ -38,8 +39,14 @@ func TenantDailyDigest(ctx context.Context) error {
 	}
 
 	for _, t := range tenants {
+		var tenantAlerts []statistics.AlertDocument
+
+		if alerts, ok := alertsByTenant[t.Id.String()]; ok {
+			tenantAlerts = alerts
+		}
+
 		logger.GetLogger().Info("processing tenant", zap.String("tenantId", t.Name))
-		digest := tenant.GetDailyDigest(t.Id, t.Name, startTime, endTime)
+		digest := tenant.GetDailyDigest(t.Id, t.Name, startTime, endTime, tenantAlerts)
 		if err != nil {
 			logger.GetLogger().Error("error while getting daily digest", zap.Error(err))
 			continue
@@ -63,13 +70,6 @@ func TenantDailyDigest(ctx context.Context) error {
 		}
 		digest.GetVolumeReductionAchievements()
 
-		if tenantAlerts, ok := alertsByTenant[t.Id.String()]; ok {
-			for _, alert := range tenantAlerts {
-				alertDetails := fmt.Sprintf("Message: %s, First Observed: %d, Last Observed At: %d", alert.Message, alert.FirstObservedAt, alert.LastObservedAt)
-				logger.GetLoggerWithContext(ctx).Debug("alert details", zap.String("alert", alertDetails))
-				digest.Alerts = append(digest.Alerts, alertDetails)
-			}
-		}
 		h := helper.Notification{
 			TenantId:                digest.TenantId.String(),
 			Subject:                 "Daily Digest - " + time.Now().Format(time.DateOnly),

@@ -3,6 +3,10 @@ package tenant
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strconv"
+	"time"
+
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
@@ -13,27 +17,24 @@ import (
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
-	"reflect"
-	"strconv"
-	"time"
 )
 
 type Digest struct {
-	TenantId                    uuid.UUID                 `json:"tenant_id"`
-	Name                        string                    `json:"name"`
-	IngestionHealth             string                    `json:"ingestion_health"`
-	DeliveryHealth              string                    `json:"delivery_health"`
-	TotalEventsIngested         string                    `json:"total_events_ingested"`
-	NoOfEventsIngested          float64                   `json:"-"`
-	TotalDataIngested           string                    `json:"total_data_ingested"`
-	AverageEPS                  string                    `json:"average_eps"`
-	EventDeliveryBreakdown      []destination.Destination `json:"event_delivery_breakdown"`
-	SensitiveDataTracking       map[string]string         `json:"sensitive_data_tracking"`
-	EventsIngestionBreakdown    map[string]float64        `json:"events_ingestion_breakdown"`
-	VolumeReductionAchievements map[string]int            `json:"volume_reduction_achievements"`
-	Alerts                      []string                  `json:"alerts"`
-	StartTime                   string                    `json:"start_time"`
-	EndTime                     string                    `json:"end_time"`
+	TenantId                    uuid.UUID                  `json:"tenant_id"`
+	Name                        string                     `json:"name"`
+	IngestionHealth             string                     `json:"ingestion_health"`
+	DeliveryHealth              string                     `json:"delivery_health"`
+	TotalEventsIngested         string                     `json:"total_events_ingested"`
+	NoOfEventsIngested          float64                    `json:"-"`
+	TotalDataIngested           string                     `json:"total_data_ingested"`
+	AverageEPS                  string                     `json:"average_eps"`
+	EventDeliveryBreakdown      []destination.Destination  `json:"event_delivery_breakdown"`
+	SensitiveDataTracking       map[string]string          `json:"sensitive_data_tracking"`
+	EventsIngestionBreakdown    map[string]float64         `json:"events_ingestion_breakdown"`
+	VolumeReductionAchievements map[string]int             `json:"volume_reduction_achievements"`
+	Alerts                      []statistics.AlertDocument `json:"alerts"`
+	StartTime                   string                     `json:"start_time"`
+	EndTime                     string                     `json:"end_time"`
 }
 
 func formatNumber(num float64) string {
@@ -49,12 +50,13 @@ func formatNumber(num float64) string {
 	}
 }
 
-func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string) *Digest {
+func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string, alerts []statistics.AlertDocument) *Digest {
 	return &Digest{
 		TenantId:  tenantId,
 		Name:      tenantName,
 		StartTime: startTime,
 		EndTime:   endTime,
+		Alerts:    alerts,
 	}
 
 }
