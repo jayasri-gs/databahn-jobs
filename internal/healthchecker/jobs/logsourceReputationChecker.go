@@ -75,6 +75,12 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		return err
 	}
 
+	configLogSources, err := source.GetConfigLogSourceIds(ctx)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while fetching config log source ids", zap.Error(err))
+		return err
+	}
+
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTime)))
 	startTimeThreshold := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTimeThreshold)))
@@ -128,15 +134,48 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 			noisyLs = append(noisyLs, ls.ID.String())
 		}
 	}
-	err = markReputationAndRaiseAlert(ctx, noisyLs, noisyAlertsEntityArray, whisperingLs, whisperingAlertsEntityArray)
+	err = markReputation(ctx, noisyLs, whisperingLs)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while marking log sources as disabled", zap.Error(err))
+		logging.GetLoggerWithContext(ctx).Error("error while marking log sources", zap.Error(err))
 		return err
 	}
+
+	if len(configLogSources) > 0 {
+		var filteredWhisperingAlertsEntityArray, filteredNoisyAlertsEntityArray []alerts_common.AlertBaseObjectV2
+		for _, alert := range whisperingAlertsEntityArray {
+			for _, configLogSource := range configLogSources {
+				if alert.EntityTenantUUId.String() == configLogSource.TenantID && alert.EntityId.String() == configLogSource.SourceID {
+					filteredWhisperingAlertsEntityArray = append(filteredWhisperingAlertsEntityArray, alert)
+				}
+			}
+		}
+		for _, alert := range noisyAlertsEntityArray {
+			for _, configLogSource := range configLogSources {
+				if alert.EntityTenantUUId.String() == configLogSource.TenantID && alert.EntityId.String() == configLogSource.SourceID {
+					filteredNoisyAlertsEntityArray = append(filteredNoisyAlertsEntityArray, alert)
+				}
+			}
+		}
+		if len(filteredNoisyAlertsEntityArray) > 0 {
+			noisyAlertsEntityArray = filteredNoisyAlertsEntityArray
+		}
+
+		if len(filteredWhisperingAlertsEntityArray) > 0 {
+			whisperingAlertsEntityArray = filteredWhisperingAlertsEntityArray
+		}
+
+	}
+
+	err = raiseAlerts(ctx, noisyAlertsEntityArray, whisperingAlertsEntityArray)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while raising alerts", zap.Error(err))
+		return err
+	}
+
 	return err
 }
 
-func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAlertsEntityArray []alerts_common.AlertBaseObjectV2, whisperingLs []string, whisperingAlertsEntityArray []alerts_common.AlertBaseObjectV2) error {
+func markReputation(ctx context.Context, noisyLs []string, whisperingLs []string) error {
 	// mark reputation for whispering
 	err := config.GetDB().Model(&source.Source{}).Where("id in ? ", whisperingLs).Updates(map[string]interface{}{"reputation": common.WHISPERING}).Error
 	if err != nil {
@@ -151,22 +190,28 @@ func markReputationAndRaiseAlert(ctx context.Context, noisyLs []string, noisyAle
 		return err
 	}
 
+	return nil
+}
+
+func raiseAlerts(ctx context.Context, noisyAlertsEntityArray []alerts_common.AlertBaseObjectV2, whisperingAlertsEntityArray []alerts_common.AlertBaseObjectV2) error {
 	// raise alert for whispering
 	if len(whisperingAlertsEntityArray) > 0 {
-		err = helper.SendAlertToControlPlane(ctx, whisperingAlertsEntityArray, alerts_common.WhisperingAlertTitle, alerts_common.WhisperingAlertMessage, alerts_common.WhisperingAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
+		err := helper.SendAlertToControlPlane(ctx, whisperingAlertsEntityArray, alerts_common.WhisperingAlertTitle, alerts_common.WhisperingAlertMessage, alerts_common.WhisperingAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alerts for whispering log sources", zap.Error(err))
 			return err
 		}
 	}
+
 	// raise alert for noisy log sources
 	if len(noisyAlertsEntityArray) > 0 {
-		err = helper.SendAlertToControlPlane(ctx, noisyAlertsEntityArray, alerts_common.NoisyAlertTitle, alerts_common.NoisyAlertMessage, alerts_common.NoisyAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
+		err := helper.SendAlertToControlPlane(ctx, noisyAlertsEntityArray, alerts_common.NoisyAlertTitle, alerts_common.NoisyAlertMessage, alerts_common.NoisyAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alerts for noisy log sources", zap.Error(err))
 			return err
 		}
 	}
+
 	return nil
 }
 
