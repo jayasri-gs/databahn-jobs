@@ -145,6 +145,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		for _, alert := range whisperingAlertsEntityArray {
 			for _, configLogSource := range configLogSources {
 				if alert.EntityTenantUUId.String() == configLogSource.TenantID && alert.EntityId.String() == configLogSource.SourceID {
+					logging.GetLoggerWithContext(ctx).Info("whispering log source found in config", zap.String("tenantId", configLogSource.TenantID), zap.String("sourceId", configLogSource.SourceID))
 					filteredWhisperingAlertsEntityArray = append(filteredWhisperingAlertsEntityArray, alert)
 				}
 			}
@@ -152,6 +153,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		for _, alert := range noisyAlertsEntityArray {
 			for _, configLogSource := range configLogSources {
 				if alert.EntityTenantUUId.String() == configLogSource.TenantID && alert.EntityId.String() == configLogSource.SourceID {
+					logging.GetLoggerWithContext(ctx).Info("noisy log source found in config", zap.String("tenantId", configLogSource.TenantID), zap.String("sourceId", configLogSource.SourceID))
 					filteredNoisyAlertsEntityArray = append(filteredNoisyAlertsEntityArray, alert)
 				}
 			}

@@ -291,6 +291,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		for _, ls := range alertToBeRaisedLogSources {
 			for _, configLogSource := range configLogSources {
 				if ls.TenantID.String() == configLogSource.TenantID && ls.ID.String() == configLogSource.SourceID {
+					logging.GetLoggerWithContext(ctx).Info("log source is in config log source", zap.String("tenant_id", ls.TenantID.String()), zap.String("source_id", ls.ID.String()))
 					filteredAlertToBeRaisedLogSources = append(filteredAlertToBeRaisedLogSources, ls)
 				}
 			}
