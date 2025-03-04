@@ -81,7 +81,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		return err
 	}
 
-	logging.GetLogger().Info("config log sources", zap.Any("configlogSources", configLogSources))
+	logging.GetLogger().Info("config log sources", zap.Any("config logSources", configLogSources))
 
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTime)))
