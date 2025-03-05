@@ -245,6 +245,12 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		}
 	}
 
+	configLogSources, err := source.GetConfigLogSourceIds(ctx)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while fetching config log source ids", zap.Error(err))
+		return err
+	}
+
 	// getting logSources which are not active but did not report stats in last 7 days
 	startTimeHistorical := endTime.Add(-(time.Hour * 24 * 7))
 	historicalIds, err := getAggStatsForLogSource(ctx, strconv.Itoa(int(startTimeHistorical.UnixMilli())), strconv.Itoa(int(startTime.UnixMilli())))
@@ -277,6 +283,35 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
+	}
+
+	// Filter alerts to be raised based on configLogSourceIds
+	if len(configLogSources) > 0 {
+		var filteredAlertToBeRaisedLogSources []source.Source
+		configLogSourceMap := make(map[string]bool)
+
+		for _, configLogSource := range configLogSources {
+			configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] = false
+		}
+
+		for _, ls := range alertToBeRaisedLogSources {
+			for _, configLogSource := range configLogSources {
+				if ls.TenantID.String() == configLogSource.TenantID && ls.ID.String() == configLogSource.SourceID {
+					logging.GetLoggerWithContext(ctx).Info("log source is in config log source", zap.String("tenant_id", ls.TenantID.String()), zap.String("source_id", ls.ID.String()))
+					filteredAlertToBeRaisedLogSources = append(filteredAlertToBeRaisedLogSources, ls)
+					configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] = true
+				}
+			}
+		}
+
+		for _, configLogSource := range configLogSources {
+			if !configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] {
+				logging.GetLoggerWithContext(ctx).Info("configured log source has no alert", zap.String("tenant_id", configLogSource.TenantID), zap.String("source_id", configLogSource.SourceID))
+			}
+		}
+		if len(filteredAlertToBeRaisedLogSources) > 0 {
+			alertToBeRaisedLogSources = filteredAlertToBeRaisedLogSources
+		}
 	}
 
 	//creating alertEntityArray for all logSources for which alert needs to be raised

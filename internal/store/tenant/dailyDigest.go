@@ -3,32 +3,38 @@ package tenant
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strconv"
+	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
-	"reflect"
-	"strconv"
 )
 
 type Digest struct {
-	TenantId                    uuid.UUID                 `json:"tenant_id"`
-	Name                        string                    `json:"name"`
-	IngestionHealth             string                    `json:"ingestion_health"`
-	DeliveryHealth              string                    `json:"delivery_health"`
-	TotalEventsIngested         string                    `json:"total_events_ingested"`
-	NoOfEventsIngested          float64                   `json:"-"`
-	TotalDataIngested           string                    `json:"total_data_ingested"`
-	AverageEPS                  string                    `json:"average_eps"`
-	EventDeliveryBreakdown      []destination.Destination `json:"event_delivery_breakdown"`
-	SensitiveDataTracking       map[string]string         `json:"sensitive_data_tracking"`
-	EventsIngestionBreakdown    map[string]float64        `json:"events_ingestion_breakdown"`
-	VolumeReductionAchievements map[string]int            `json:"volume_reduction_achievements"`
-	Alerts                      []string                  `json:"alerts"`
-	StartTime                   string                    `json:"start_time"`
-	EndTime                     string                    `json:"end_time"`
+	TenantId                    uuid.UUID                  `json:"tenant_id"`
+	Name                        string                     `json:"name"`
+	IngestionHealth             string                     `json:"ingestion_health"`
+	DeliveryHealth              string                     `json:"delivery_health"`
+	TotalEventsIngested         string                     `json:"total_events_ingested"`
+	NoOfEventsIngested          float64                    `json:"-"`
+	TotalDataIngested           string                     `json:"total_data_ingested"`
+	AverageEPS                  string                     `json:"average_eps"`
+	EventDeliveryBreakdown      []destination.Destination  `json:"event_delivery_breakdown"`
+	SensitiveDataTracking       map[string]string          `json:"sensitive_data_tracking"`
+	EventsIngestionBreakdown    map[string]float64         `json:"events_ingestion_breakdown"`
+	VolumeReductionAchievements map[string]int             `json:"volume_reduction_achievements"`
+	Alerts                      []statistics.AlertDocument `json:"alerts"`
+	StartTime                   string                     `json:"start_time"`
+	EndTime                     string                     `json:"end_time"`
 }
 
 func formatNumber(num float64) string {
@@ -44,12 +50,13 @@ func formatNumber(num float64) string {
 	}
 }
 
-func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string) *Digest {
+func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string, alerts []statistics.AlertDocument) *Digest {
 	return &Digest{
 		TenantId:  tenantId,
 		Name:      tenantName,
 		StartTime: startTime,
 		EndTime:   endTime,
+		Alerts:    alerts,
 	}
 
 }
@@ -178,4 +185,50 @@ func (d *Digest) GetSensitiveDataTrackingStats() error {
 		}
 	}
 	return nil
+}
+
+func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.AlertDocument, error) {
+	conf := os.GetConf()
+	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
+		return nil, err
+	}
+
+	checkTime := time.Now().Add(-24 * time.Hour)
+	q := `lastObservedAt:>` + strconv.FormatInt(checkTime.UnixMilli(), 10)
+
+	var allAlerts []statistics.AlertDocument
+	var searchAfter []any
+
+	for {
+		res, newSearchAfter, err := os.SearchPaginated(ctx, client, common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "asc"}})
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", common.AlertsIndex))
+			return nil, err
+		}
+
+		var alerts []statistics.AlertDocument
+		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+		err = decoder.Decode(res)
+
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
+			return nil, err
+		}
+
+		allAlerts = append(allAlerts, alerts...)
+
+		if len(res) == 0 || newSearchAfter == nil {
+			break
+		}
+
+		searchAfter = newSearchAfter
+	}
+
+	alertsByTenant := make(map[string][]statistics.AlertDocument)
+	for _, alert := range allAlerts {
+		alertsByTenant[alert.TenantId] = append(alertsByTenant[alert.TenantId], alert)
+	}
+	return alertsByTenant, nil
 }

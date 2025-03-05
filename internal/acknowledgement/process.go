@@ -257,6 +257,11 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		if err != nil {
 			return err
 		}
+	case utilConst.EntitySensitiveData:
+		err := handleSensitiveData(ack)
+		if err != nil {
+			return err
+		}
 	default:
 		return errors.New("Ack does not support entity type:" + ack.EntityType)
 	}
@@ -296,6 +301,18 @@ func handleRouteProcessor(ack db.ChangeFlagAck) error {
 		return err
 	}
 	logger.GetLogger().Debug("route processor  status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
+	return nil
+}
+
+func handleSensitiveData(ack db.ChangeFlagAck) error {
+	statusV2 := getStatusString(ack)
+	err := config.GetDB().Table("sensitive_data_config").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
+		Update("status", statusV2).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating sensitive data config status", zap.Error(err))
+		return err
+	}
+	logger.GetLogger().Debug("sensitive data config status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
 	return nil
 }
 
