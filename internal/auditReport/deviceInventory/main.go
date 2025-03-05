@@ -218,7 +218,7 @@ func getQueryFromFilters(sources []string, startTime string, endTime string, ten
 			return "", err
 		}
 		startTimeEpoch := t.UnixMilli()
-		q += ` AND min_time:>` + strconv.FormatInt(startTimeEpoch, 10)
+		q += ` AND max_time:>` + strconv.FormatInt(startTimeEpoch, 10)
 	}
 	if endTime != "" {
 		// convert endTime to epoch
