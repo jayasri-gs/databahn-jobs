@@ -67,6 +67,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = datahealthscore.CalculateDataHealthScore(ctx)
 	case common.ENTITY_CHECKER_ALERT_GEN_V2:
 		err = jobs.CheckEntityStats(ctx)
+	case common.SILENT_DEVICE_ALERT:
+		err = jobs.ProcessSilentDevices(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
