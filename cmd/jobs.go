@@ -29,6 +29,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = insights.AggregateInsightsAndStore(ctx, parallelism)
 	case common.ROLLOVER_OLDER_STATS:
 		err = stats.RolloverOlderStats(ctx)
+	case common.STATS_LIFECYCLE:
+		err = stats.RolloverLifecycle(ctx)
 	case common.DEVICE_INVENTORY_HEALTH:
 		runFor := utils.GetEnvOrDefault("DEVICE_INVENTORY_HEALTH_RUN_FOR", insights.HEALTH_CALCULATION_YESTERDAY)
 		statuses, err2 := insights.CalculateDeviceInventoryHealth(ctx, runFor)
