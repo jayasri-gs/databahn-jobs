@@ -37,6 +37,7 @@ const (
 	EntityInsightsRule                  = "insights_rule"
 	EntityDestinationOverride           = "destination_override"
 	EntitySensitiveData                 = "sensitive_data"
+	EntityGlobalDestination             = "global_destination"
 
 	ChangeFlagTopic         = "db.management.change.flag"
 	ChangeFlagAckTopic      = "db.management.ack"

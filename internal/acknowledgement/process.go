@@ -2,6 +2,9 @@ package acknowledgement
 
 import (
 	"errors"
+	"strings"
+	"time"
+
 	ackPkg "github.com/databahn-ai/common-utils/ack"
 	utilConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/utils"
@@ -11,8 +14,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"strings"
-	"time"
 )
 
 /*
@@ -177,7 +178,7 @@ func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[stri
 	}
 
 	// prepare queries in batches
-	batches := len(entities) / 100
+	batches := len(entities) / ackConst.QueryBatchSize
 	for i := 0; i < batches; i++ {
 		cf, err := db.GetChangeFlagRequest(entities[i*ackConst.QueryBatchSize : (i+1)*ackConst.QueryBatchSize])
 		if err != nil {
@@ -187,7 +188,7 @@ func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[stri
 	}
 
 	// get remaining records from batches
-	remaining, err1 := db.GetChangeFlagRequest(entities[batches*100:])
+	remaining, err1 := db.GetChangeFlagRequest(entities[batches*ackConst.QueryBatchSize:])
 	if err1 != nil {
 		return nil, err1
 	}
@@ -254,6 +255,11 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		}
 	case utilConst.EntityRouteProcessor:
 		err := handleRouteProcessor(ack)
+		if err != nil {
+			return err
+		}
+	case utilConst.EntityGlobalDestination:
+		err := handleGlobalDestination(ack)
 		if err != nil {
 			return err
 		}
@@ -354,5 +360,17 @@ func handleRule(ack db.ChangeFlagAck) error {
 		return err
 	}
 	logger.GetLogger().Debug("rule status updated", zap.String("entityId", ack.EntityId), zap.String("status", ruleStatusV2))
+	return nil
+}
+
+func handleGlobalDestination(ack db.ChangeFlagAck) error {
+	StatusV2 := getStatusString(ack)
+	err := config.GetDB().Table("global_destination_config").Where("id = ? and status not in (?,?)", ack.EntityId, StatusV2, constants.StatusDeleted).
+		Update("status", StatusV2).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating global destination status", zap.Error(err))
+		return err
+	}
+	logger.GetLogger().Debug("global destination status updated", zap.String("entityId", ack.EntityId), zap.String("status", StatusV2))
 	return nil
 }
