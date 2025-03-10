@@ -60,6 +60,7 @@ func RolloverLifecycle(ctx context.Context) error {
 		config.aggWindow = 1 * time.Hour
 		return runRolloverIndexToIndex(ctx, config, indicesToRollover, osClient)
 	} else if indexLifeCycleMigration == Migrate_P2_P3 {
+		logger.GetLogger().Info("performing p2 to p3 migration")
 		return mergeP2Indices(ctx, config, indexNames, osClient)
 	}
 	return errors.New("invalid lifecycle migration, only p1_p2 and p2_p3 supported")
@@ -67,23 +68,24 @@ func RolloverLifecycle(ctx context.Context) error {
 
 func filterStatsIndicesForP1Migration(indexNames []string) []Index {
 	var indicesToRollover []Index
+	dayDiffConfig := utils.GetEnvInt("ROLLOVER_P1_P2_DAY_DIFFERENCE", 3)
 	for _, index := range indexNames {
 		if strings.HasPrefix(index, "db_statistics_") {
 			indexObj, ok := parseIndexName(index)
 			if ok {
-				if shouldMigrateP1ToP2(*indexObj) {
+				if shouldMigrateP1ToP2(*indexObj, dayDiffConfig) {
 					indicesToRollover = append(indicesToRollover, *indexObj)
 				}
 			}
 		}
 	}
 	sort.Slice(indicesToRollover, func(i, j int) bool {
-		return yearDayNumber(indicesToRollover[i].Year, indicesToRollover[i].Week) < yearDayNumber(indicesToRollover[j].Year, indicesToRollover[j].Week)
+		return yearDayNumber(indicesToRollover[i].Year, indicesToRollover[i].Day) < yearDayNumber(indicesToRollover[j].Year, indicesToRollover[j].Day)
 	})
 	return indicesToRollover
 }
 
-func shouldMigrateP1ToP2(index Index) bool {
+func shouldMigrateP1ToP2(index Index, dayDiffToConsiderForRollback int) bool {
 	thisYear, thisDay := getYearAndDay()
 	thisDayNumber := yearDayNumber(thisYear, thisDay)
 	if index.Schema != Schema_V2 || index.Phase != Phase_P1 {
@@ -91,7 +93,7 @@ func shouldMigrateP1ToP2(index Index) bool {
 	}
 	indexDayNumber := yearDayNumber(index.Year, index.Day)
 	dayDifference := thisDayNumber - indexDayNumber
-	return dayDifference > 3
+	return dayDifference > dayDiffToConsiderForRollback
 }
 
 func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []string, client *opensearch.Client) error {
@@ -99,6 +101,7 @@ func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []st
 	var nonRolledOverIndices []Index
 	rolledOverIndicesByTenantAndWeek := make(map[string]map[int][]Index)
 	nonRolledOverIndicesByTenantAndWeek := make(map[string]map[int][]Index)
+	weekDiff := utils.GetEnvInt("ROLLOVER_P2_P3_WEEK_DIFFERENCE", 0)
 
 	for _, indexName := range allIndices {
 		if strings.HasPrefix(indexName, "rolled_over") {
@@ -109,7 +112,7 @@ func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []st
 		} else if strings.HasPrefix(indexName, "db_statistics") {
 			index, ok := parseIndexName(indexName)
 			if ok {
-				if index.Schema == Schema_V2 && index.Phase == Phase_P2 {
+				if index.Schema == Schema_V2 && index.Phase == Phase_P1 {
 					nonRolledOverIndices = append(nonRolledOverIndices, *index)
 				}
 			}
@@ -133,12 +136,17 @@ func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []st
 		nonRolledOverIndicesByTenantAndWeek[index.Tenant][yearWeekId] = append(nonRolledOverIndicesByTenantAndWeek[index.Tenant][yearWeekId], index)
 	}
 
+	logger.GetLogger().Info("found valid rolled over indices", zap.Int("size", len(rolledOverIndices)), zap.Any("indices", rolledOverIndices))
+	logger.GetLogger().Info("found valid non-rolled over indices", zap.Int("size", len(nonRolledOverIndices)), zap.Any("indices", nonRolledOverIndices))
+
 	currentYear, currentDay := getYearAndDay()
 	thisYear, thisWeek := yearWeekFromYearDay(currentYear, currentDay)
 	thisWeekId := yearWeekNumber(thisYear, thisWeek)
+	logger.GetLogger().Info("this week :", zap.Int("thisWeekId", thisWeekId))
+
 	for tenant, theRolledOverIndicesByWeek := range rolledOverIndicesByTenantAndWeek {
 		for weekId, theRolledOverIndices := range theRolledOverIndicesByWeek {
-			if thisWeekId-weekId > 2 {
+			if thisWeekId-weekId > weekDiff {
 				nonRolledIndicesByWeek, ok := nonRolledOverIndicesByTenantAndWeek[tenant]
 				if ok {
 					nonRolledIndices, ok := nonRolledIndicesByWeek[weekId]
@@ -152,6 +160,8 @@ func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []st
 				}
 				if len(theRolledOverIndices) > 0 {
 					newIndexYear, newIndexWeek := splitYearWeekNumber(weekId)
+					logger.GetLogger().Info("will rollover p2-p3 indices", zap.Int("weekId", weekId),
+						zap.String("tenant", tenant), zap.Any("rolledOverIndices", theRolledOverIndices))
 					err := mergeP2IndicesIntoP3(ctx, config, tenant, theRolledOverIndices, newIndexYear, newIndexWeek, client)
 					if err != nil {
 						logger.GetLogger().Error("error while merging p2 indices into p3", zap.Error(err), zap.Any("indices", theRolledOverIndices))
@@ -182,7 +192,7 @@ func mergeP2IndicesIntoP3(ctx context.Context, config *RolloverConfig, tenantId 
 	if err != nil {
 		return err
 	}
-	logger.GetLogger().Info("rolled over alias updated", zap.Any("older indices", olderIndices), zap.String("rolled_over_index", newIndexToMergeInto))
+	logger.GetLogger().Info("rolled over and alias updated", zap.Any("older indices", olderIndices), zap.String("rolled_over_index", newIndexToMergeInto))
 	for _, index := range indicesToRollOver {
 		err = dbos.DeleteIndex(ctx, client, index.Index)
 		if err != nil {

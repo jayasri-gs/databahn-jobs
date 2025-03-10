@@ -57,8 +57,8 @@ func main() {
 		logger.GetLoggerWithContext(ctx).Panic("error while connecting to statistics store", zap.Error(err))
 	}
 	thisYear, thisDay := getYearAndDay()
-	updateOlderDays := 6
-	olderDays := 4
+	updateOlderDays := 23
+	olderDays := 3
 	for i := olderDays; i < updateOlderDays; i++ {
 		year, day := thisYear, thisDay-i
 		if day <= 0 {

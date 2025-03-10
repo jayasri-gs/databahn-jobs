@@ -249,7 +249,7 @@ func parseRolledOverV2P2IndexName(index string) (*Index, bool) {
 				logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", split[5]))
 				return nil, false
 			}
-			dDay := split[6]
+			dDay := split[9]
 			if !strings.HasPrefix(dDay, "d") {
 				logger.GetLogger().Error("stats index name parsing: unexpected day format", zap.String("day", dDay), zap.String("index", index))
 				return nil, false
