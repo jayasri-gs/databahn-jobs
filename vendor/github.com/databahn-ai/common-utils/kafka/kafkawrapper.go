@@ -381,13 +381,13 @@ func (c Cluster) createConsumer(config ConsumerConfig) (*kafka.Consumer, error) 
 
 func adaptToDBHeaders(headers []kafka.Header) []Header {
 	kafkaHeaders := make([]Header, len(headers))
-	for _, header := range headers {
+	for i, header := range headers {
 		key := header.Key
 		values := header.Value
-		kafkaHeaders = append(kafkaHeaders, Header{
+		kafkaHeaders[i] = Header{
 			Key:   key,
 			Value: values,
-		})
+		}
 	}
 	return kafkaHeaders
 }
