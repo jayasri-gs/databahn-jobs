@@ -24,6 +24,22 @@ type Connector struct {
 	Version            string    `gorm:"type:varchar(255)" json:"version"`
 }
 
+type Components struct {
+	Id          uuid.UUID `json:"id" gorm:"primary_key"`
+	HeartbeatAt time.Time `json:"heartbeat_at"`
+	ServiceName string    `json:"service_name"`
+	Status      string    `json:"status"`
+	Type        string    `json:"type"`
+	Version     string    `json:"version"`
+	FleetNodeId uuid.UUID `json:"fleet_node_id"`
+	TenantId    uuid.UUID `json:"tenant_id"`
+	StartedAt   time.Time `json:"started_at"`
+}
+
 func (c *Connector) TableName() string {
 	return "connector"
+}
+
+func (*Components) TableName() string {
+	return "fleet_components"
 }

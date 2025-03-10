@@ -23,14 +23,17 @@ type AuditReport struct {
 
 type FailedRequests struct {
 	RequestId string `json:"requestId"`
+	Name      string `json:"name"`
 	TenantId  string `json:"tenantId"`
 	Retry     int    `json:"retry"`
 	Error     string `json:"error"`
 }
 
-func NewFailedRequest(reqId string, tenantId string, retry int, err string) FailedRequests {
+func NewFailedRequest(reqId string, name string, tenantId string, retry int, err string) FailedRequests {
 	return FailedRequests{
 		RequestId: reqId,
+		Name:      name,
+		TenantId:  tenantId,
 		Retry:     retry,
 		Error:     err,
 	}

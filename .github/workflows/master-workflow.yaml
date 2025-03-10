@@ -1,26 +1,13 @@
-name: Master Branch CI
+name: Master Build
 
 on:
-  push:
-    branches:
-      - master
+  release:
+    types: [ published ]
 
 jobs:
-  master:
+  master-build:
     uses: databahn-ai/ci-github-workflows/.github/workflows/build-go-service.yaml@master
     with:
       service_name: ${{ github.event.repository.name }}
-      service_version: "v${{ github.sha }}"
+      service_version: "${{ github.event.release.tag_name }}"
     secrets: inherit
-
-  update-gitops-repo:
-    needs:
-      - master
-    uses: databahn-ai/ci-github-workflows/.github/workflows/update-gitops-repo.yaml@master
-    with:
-      service_name: ${{ github.event.repository.name }}
-      service_version: "v${{ github.sha }}"
-      gitops_repo: "master"
-      service_type: "scheduled"
-    secrets: inherit
-    
