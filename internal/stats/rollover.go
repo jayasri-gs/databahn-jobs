@@ -154,6 +154,11 @@ func splitByTimeRanges(minEpoch, maxEpoch int64, duration time.Duration) []timeR
 	var ranges []timeRange
 	startTime := time.UnixMilli(minEpoch).UTC()
 	endTime := time.UnixMilli(maxEpoch).UTC()
+	if endTime.Sub(startTime) <= duration {
+		ranges = append(ranges, timeRange{start: startTime.UnixMilli(), end: endTime.UnixMilli()})
+		ranges[len(ranges)-1].end = ranges[len(ranges)-1].end + 1
+		return ranges
+	}
 	startOfRange := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, time.UTC)
 	for startOfRange.Before(endTime) {
 		endOfRange := startOfRange.Add(duration)
@@ -262,7 +267,7 @@ func doRolloverAndValidate(ctx context.Context, index Index, client *opensearch.
 			var sources []EsSource
 			for _, compositeBucket := range response.Aggregations.CompositeBuckets.Buckets {
 				timeHistogramBucket := compositeBucket.Key.TimeHistogramBuckets
-				newDocId := compositeBucket.Key.newDocKey()
+				newDocId := compositeBucket.Key.newDocKey(index.Index)
 				sampleValues := compositeBucket.AllFields.Hits.Hits
 				if len(sampleValues) == 0 {
 					logger.GetLogger().Error("no AllFields found for agg key", zap.Any("key", compositeBucket.Key), zap.String("index", index.Index))

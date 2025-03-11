@@ -469,8 +469,8 @@ type Key struct {
 	TimeHistogramBuckets int64  `json:"time_histogram_buckets"`
 }
 
-func (k Key) newDocKey() string {
-	val := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%d", k.Name, k.Namespace, k.SourceId, k.DestinationId, k.RuleId, k.FleetNodeId, k.TimeHistogramBuckets)
+func (k Key) newDocKey(srcIndexName string) string {
+	val := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s:%d", k.Name, k.Namespace, k.SourceId, k.DestinationId, k.RuleId, k.FleetNodeId, srcIndexName, k.TimeHistogramBuckets)
 	return util.Hash(val)
 }
 

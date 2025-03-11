@@ -58,9 +58,14 @@ func RolloverLifecycle(ctx context.Context) error {
 		}
 		logger.GetLogger().Info("indices to rollover for p1_p2", zap.Any("indices", indicesToRollover))
 		config.aggWindow = 1 * time.Hour
+		config.aggQueryRange = 1 * time.Hour
+		config.validationRange = 1 * time.Hour
 		return runRolloverIndexToIndex(ctx, config, indicesToRollover, osClient)
 	} else if indexLifeCycleMigration == Migrate_P2_P3 {
 		logger.GetLogger().Info("performing p2 to p3 migration")
+		config.aggWindow = 24 * time.Hour
+		config.aggQueryRange = 24 * time.Hour
+		config.validationRange = 24 * time.Hour
 		return mergeP2Indices(ctx, config, indexNames, osClient)
 	}
 	return errors.New("invalid lifecycle migration, only p1_p2 and p2_p3 supported")

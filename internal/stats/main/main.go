@@ -57,8 +57,8 @@ func main() {
 		logger.GetLoggerWithContext(ctx).Panic("error while connecting to statistics store", zap.Error(err))
 	}
 	thisYear, thisDay := getYearAndDay()
-	updateOlderDays := 23
-	olderDays := 3
+	updateOlderDays := 24
+	olderDays := 4
 	for i := olderDays; i < updateOlderDays; i++ {
 		year, day := thisYear, thisDay-i
 		if day <= 0 {
@@ -75,7 +75,7 @@ func main() {
 		for timeStamp := startRange; timeStamp < endRange; {
 			sourceId := randomItem(sourceIds)
 			destinationId := randomItem(destinationIds)
-			count := 1 + rand.Intn(5)
+			count := 1 + rand.Intn(10)
 			for j := 0; j < count; j++ {
 				doc := randomDoc(tenantId, timeStamp, sourceId, destinationId)
 				docs = append(docs, &doc)
