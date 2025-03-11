@@ -23,6 +23,8 @@ func GetDayEndTimestamp(millis int64) int64 {
 }
 
 func FormatDuration(d time.Duration) string {
+	days := d / (24 * time.Hour)
+	d -= days * (24 * time.Hour)
 	hours := d / time.Hour
 	d -= hours * time.Hour
 	minutes := d / time.Minute
@@ -30,6 +32,9 @@ func FormatDuration(d time.Duration) string {
 	seconds := d / time.Second
 
 	result := ""
+	if days > 0 {
+		result += fmt.Sprintf("%dd", days)
+	}
 	if hours > 0 {
 		result += fmt.Sprintf("%dh", hours)
 	}
