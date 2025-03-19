@@ -28,8 +28,13 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 	var file *os.File
 	var writer *csv.Writer
 	defer func() {
-		file.Close()
 		writer.Flush()
+		if err := writer.Error(); err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while flushing writer", zap.Error(err))
+		}
+		if err := file.Close(); err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while closing file", zap.Error(err))
+		}
 		wg.Done()
 		<-parallelismCntrl
 	}()
