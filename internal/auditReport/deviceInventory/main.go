@@ -173,10 +173,13 @@ func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInven
 		row := []string{deviceInventory.Hostname, firstSeen, lastSeen, sourceName, deviceInventory.Reputation}
 		err := writer.Write(row)
 		if err != nil {
+			logging.GetLogger().Error("error while writing row to the file", zap.Error(err))
 			return err
 		}
 	}
-	return nil
+	logging.GetLogger().Info("Writing rows to the file completed")
+	writer.Flush()
+	return writer.Error()
 }
 func getDeviceInventoryReportConfigFromRequest(req models.AuditReport) ([]string, string, string, error) {
 	var deviceInventoryReportConfiguration map[string]interface{}
