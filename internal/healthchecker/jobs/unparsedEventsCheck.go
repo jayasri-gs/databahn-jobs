@@ -116,10 +116,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	logging.GetLogger().Info("Raising alerts for sources which have unparsed events", zap.Any("alertToBeRaisedLogSources", MapKeys(sourceIdToUnparsedEventCount)))
 
 	for _, ls := range alertToBeRaisedLogSources {
-		unparsedCount := sourceIdToUnparsedEventCount[ls.ID.String()]
-		eventsCount := sourceIdToEventsCount[ls.ID.String()]
-		percentageUnparsed := (unparsedCount / eventsCount) * 100
-		alertMessageStr := fmt.Sprintf("Source %s has unparsed events, accounting for %.2f%% of the total events.", ls.Name, percentageUnparsed)
+		alertMessageStr := fmt.Sprintf("Source %s has unparsed events", ls.Name)
 
 		alert := alerts_common.AlertBaseObjectV2{
 			EntityName:       ls.Name,
