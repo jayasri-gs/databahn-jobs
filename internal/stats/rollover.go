@@ -38,6 +38,7 @@ func RolloverOlderStats(ctx context.Context) error {
 	aggWindow := utils.GetEnvOrDefault("STATS_ROLLOVER_AGG_WINDOW", "1h")
 	s3BackupEnabled := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_S3_BACKUP_ENABLED", "true"), "true")
 	deleteExistingRolledOverIndex := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_DELETE_EXISTING_ROLLED_OVER_INDEX", "false"), "true")
+	skipValidation := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_SKIP_VALIDATION", "false"), "true")
 
 	aggQueryDuration, err := time.ParseDuration(aggQueryRange)
 	if err != nil {
@@ -82,7 +83,8 @@ func RolloverOlderStats(ctx context.Context) error {
 			return err
 		}
 	} else {
-		indexNames = []string{specificIndex}
+		indices := strings.Split(specificIndex, ",")
+		indexNames = indices
 	}
 	indicesToSkip := strings.Split(skipIndices, ",")
 	indicesToRollover := filterStatsValidIndices(indexNames, weeksOlderThan, limit, indicesToSkip)
@@ -102,7 +104,7 @@ func RolloverOlderStats(ctx context.Context) error {
 				<-parallelismCntrl
 			}()
 			err := rollover(ctx, anIndex, osClient, aggBatchSize, aggQueryDuration,
-				aggWindowDuration, s3BackupEnabled, deleteExistingRolledOverIndex, validationRangeDuration)
+				aggWindowDuration, s3BackupEnabled, deleteExistingRolledOverIndex, validationRangeDuration, skipValidation)
 			if err != nil {
 				errrCount++
 				logger.GetLogger().Error("error while rolling over index "+anIndex.Index, zap.Error(err), zap.Int("index_number", j))
@@ -239,8 +241,7 @@ func parseIndexName(index string) (*Index, int, bool) {
 	}
 }
 
-func rollover(ctx context.Context, index Index, client *opensearch.Client, batchSize int, queryWindowDuration,
-	aggWindowDuration time.Duration, s3BackupEnabled, delRolledOverExistingIndex bool, validationDuration time.Duration) error {
+func rollover(ctx context.Context, index Index, client *opensearch.Client, batchSize int, queryWindowDuration, aggWindowDuration time.Duration, s3BackupEnabled, delRolledOverExistingIndex bool, validationDuration time.Duration, skipValidation bool) error {
 	logger.GetLoggerWithContext(ctx).Info("rolling over index", zap.String("index", index.Index))
 	minVal, maxVal, err := findMinMaxTimestamp(ctx, index, client)
 	if err != nil {
@@ -303,9 +304,13 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client, batch
 			}
 		}
 	}
-	err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, validationDuration)
-	if err != nil {
-		return err
+	if !skipValidation {
+		err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, validationDuration)
+		if err != nil {
+			return err
+		}
+	} else {
+		logger.GetLogger().Info("skipping validation", zap.String("index", index.Index))
 	}
 
 	logger.GetLogger().Info("rolled over index validated", zap.String("index", index.Index), zap.String("rolled_over_index", newIndexName))
