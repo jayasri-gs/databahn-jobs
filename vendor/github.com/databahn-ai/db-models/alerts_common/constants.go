@@ -49,6 +49,10 @@ const GoogleStorageBucketNotExistsMessage = "Google storage bucket doesn't exist
 const GooglePubsubTopicNotExistsTitle = "Google pubsub topic doesn't exist"
 const GooglePubsubTopicNotExistsMessage = "Google pubsub topic doesn't exist"
 
+const CheckpointUpdateFailed = "checkpoint-update-failed"
+const CheckpointUpdateFailedTitle = "Failed to update cloud source checkpoint"
+const CheckpointUpdateFailedMessage = "Failed to update cloud source checkpoint"
+
 const S3SqsConnectorOnboarding = "s3-sqs-onboarding"
 
 const S3SqsCredentialsInvalidTitle = "Invalid Credentials. Disabling cloud log-source"

@@ -27,6 +27,7 @@ const NormalizationSandboxTopicPrefix = "db.raw.sandbox"
 const NormalizationCloudTopicPrefix = "db.raw.cloud"
 const TransformerTopicPrefix = "db.staging.transform"
 const InputTopicPrefix = "db.raw.input"
+const PreprocessingTopicPrefix = "db.staging.preprocessing"
 const NormalizationTopicPrefix = "db.staging.norm"
 const SensitiveDataDetectionTopicPrefix = "db.staging.sensitive"
 

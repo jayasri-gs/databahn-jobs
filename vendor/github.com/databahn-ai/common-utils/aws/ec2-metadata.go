@@ -23,7 +23,7 @@ var headerAuthKey = "X-aws-ec2-metadata-token"
 func GetAvailabilityZoneId(ctx context.Context) (string, error) {
 	resp, statusCode, err := getData(constants.EndpointAvailabilityZoneId)
 	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while making request for availablity zone id", zap.Error(err))
+		logger.GetLoggerWithContext(ctx).Info("error while making request for availablity zone id", zap.String("reason", err.Error()))
 		return "", err
 	}
 	if statusCode != http.StatusOK {
