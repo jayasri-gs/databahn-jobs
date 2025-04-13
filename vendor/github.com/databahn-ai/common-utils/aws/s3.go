@@ -9,10 +9,13 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"io"
 	"time"
 )
+
+var logging = logger.GetLogger()
 
 func getS3Client() (*s3.Client, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())

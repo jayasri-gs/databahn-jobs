@@ -13,17 +13,29 @@ const (
 	StagingAggregation                 = "aggregation"
 	DestinationTopicAggregationMapping = "topic_aggregation_mapping"
 
-	DatabaseName   = "database.database"
-	DatabaseSchema = "database.schema"
-	DatabaseHost   = "database.host"
-	DatabasePort   = "database.port"
+	SecretBackend      = "secret.backend"
+	SecretBackendAWS   = "aws"
+	SecretBackendVault = "vault"
+
+	DatabaseName       = "database.database"
+	DatabaseSchema     = "database.schema"
+	DatabaseHost       = "database.host"
+	DatabasePort       = "database.port"
+	DataBaseSecretName = "database.secret_name"
+
+	VaultAddress = "vault.address"
+	VaultToken   = "vault.token"
 
 	//for backend service to read from both old and new config
-	KafkaBootstrapServers             = configs.KafkaBootstrapServer
-	InputKafkaClusterBootstrapServers = "kafka.input.bootstrap_brokers"
-	OpenSearchUrl                     = "open_search.url"
-	OpenSearchSecretName              = "open_search.os_secret_name"
-	OAuthClientCredentialsSecretName  = configs.OAuthClientCredentialsSecretName
+	KafkaBootstrapServers               = configs.KafkaBootstrapServer
+	InputKafkaClusterBootstrapServers   = "kafka.input.bootstrap_brokers"
+	ProcessKafkaClusterBootstrapServers = "kafka.processing.bootstrap_brokers"
+
+	OpenSearchUrl        = "open_search.url"
+	OpenSearchSecretName = "open_search.os_secret_name"
+	OpenSearchSkipTls    = "open_search.skip_tls"
+
+	OAuthClientCredentialsSecretName = configs.OAuthClientCredentialsSecretName
 
 	OpenTelemetryCollectorUrl     = "urls.optl_collector"
 	OpenTelemetryCollectorGrpcUrl = "urls.optl_collector_grpc"
