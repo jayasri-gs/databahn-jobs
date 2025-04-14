@@ -57,31 +57,20 @@ func GetDestinationConfiguration() configuration.ConfigReader {
 }
 
 func connectDB() {
-	secretName := appConfigReader.GetString("database.secret_name")
-	region := appConfigReader.GetString(configuration.Region)
-	dbSecrets, err := databases.ReadDBSecrets(context.Background(), secretName, region)
-	if err != nil {
-		logger.GetLoggerWithContext(context.Background()).Error("error while fetching database credentials", zap.Error(err))
-	}
 	databaseConnection = &databases.Connection{
 		Host:         appConfigReader.GetString(configuration.DatabaseHost),
 		Port:         appConfigReader.GetString(configuration.DatabasePort),
 		SchemaName:   appConfigReader.GetString(configuration.DatabaseSchema),
 		DatabaseName: appConfigReader.GetString(configuration.DatabaseName),
-		Credentials:  *dbSecrets,
 	}
-	dbConnection, err := databaseConnection.Connect(context.Background(), false)
+	dbConnection, err := databaseConnection.ConnectWithSecrets(context.Background(), false, appConfigReader)
 	if err != nil {
-		logger.GetLoggerWithContext(context.Background()).Error("error while connecting to database", zap.Error(err))
+		logger.GetLoggerWithContext(context.Background()).Panic("error while connecting to database", zap.Error(err))
 		return
 	}
 	db = dbConnection
 }
 
-func GetOpenSearchSecrets() configuration.OpenSearchCredentials {
-	secretsLoader.Do(readOpenSearchConfigs)
-	return *openSearchCreds
-}
 func GetDB() *gorm.DB {
 	if db == nil {
 		connectDB()

@@ -26,7 +26,6 @@ import (
 )
 
 func RolloverOlderStats(ctx context.Context) error {
-	conf := dbos.GetConf()
 	config, err := parseConfig()
 	if err != nil {
 		logger.GetLogger().Error("error while parsing config", zap.Error(err))
@@ -40,13 +39,9 @@ func RolloverOlderStats(ctx context.Context) error {
 		zap.Any("agg_window", config.aggWindow), zap.Any("validation_range", config.validationRange))
 
 	var indexNames []string
-	osClient, err := dbos.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return err
-	}
+
 	if config.olderRolloverConfig.specificIndex == "" {
-		indexNames, err = dbos.CatIndices(ctx, osClient)
+		indexNames, err = dbos.CatIndices(ctx, dbos.GetClient())
 		if err != nil {
 			logger.GetLogger().Error("error while fetching indices", zap.Error(err))
 			return err
@@ -58,7 +53,7 @@ func RolloverOlderStats(ctx context.Context) error {
 	indicesToRollover := filterStatsValidIndices(indexNames, config.olderRolloverConfig.weeksOlderThan, config.limit, config.olderRolloverConfig.skipIndices)
 	logger.GetLogger().Info("indices to rollover", zap.Any("indices", indicesToRollover))
 
-	return runRolloverIndexToIndex(ctx, config, indicesToRollover, osClient)
+	return runRolloverIndexToIndex(ctx, config, indicesToRollover, dbos.GetClient())
 }
 
 func runRolloverIndexToIndex(ctx context.Context, config *RolloverConfig, indicesToRollover []Index, osClient *opensearch.Client) error {

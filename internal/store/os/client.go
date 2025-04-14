@@ -1,34 +1,29 @@
 package os
 
 import (
-	"context"
-	"crypto/tls"
-	"net/http"
-
+	"fmt"
+	osUtils "github.com/databahn-ai/common-utils/opensearch"
+	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 )
 
-type Creds struct {
-	Username string
-	Password string
+var client *opensearch.Client
+var StatsIndex = "db_statistics_"
+
+func GetClient() *opensearch.Client {
+	if client == nil {
+		c, err := osUtils.Connect(appConfig.GetAlertConfiguration())
+		if err != nil {
+			logger.GetLogger().Error("error while creating opensearch connection", zap.Error(err))
+			return nil
+		}
+		client = c
+	}
+	return client
 }
 
-func NewClient(ctx context.Context, host string, creds *Creds) (*opensearch.Client, error) {
-	client, err := opensearch.NewClient(opensearch.Config{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: false,
-				MinVersion:         tls.VersionTLS12,
-			},
-		},
-		Addresses: []string{host},
-		Username:  creds.Username,
-		Password:  creds.Password,
-	})
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("Failed to create Open search client", zap.Error(err))
-	}
-	return client, err
+func StatisticsIndexAlias(tenantId string) string {
+	return fmt.Sprintf("%s_alias_%s", StatsIndex, tenantId)
 }

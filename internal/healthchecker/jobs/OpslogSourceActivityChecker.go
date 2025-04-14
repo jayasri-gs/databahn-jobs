@@ -36,14 +36,6 @@ func GetStatsByInterval(ctx context.Context, startTime string, endTime string) (
 	query := statistics.AddDateRange(q, startTime, endTime)
 	agg := "tags.db_event_source_id.keyword"
 
-	conf := os.GetConf()
-
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return statistics.AggregateResponse{}, err
-	}
-
 	searchBody := &statistics.AggregateQueryRequest{}
 	searchBody.Size = 0
 	searchBody.Query.QueryString.Query = query
@@ -51,10 +43,10 @@ func GetStatsByInterval(ctx context.Context, startTime string, endTime string) (
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
 
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", os.StatsIndex))
 		return statistics.AggregateResponse{}, err
 	}
 	bodyContent, _ := io.ReadAll(searchResponse.Body)

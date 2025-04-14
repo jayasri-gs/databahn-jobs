@@ -14,12 +14,6 @@ import (
 )
 
 func GetAllAlertsFromOpenSearch(ctx context.Context, functionalitiesToConsider []string) ([]statistics.AlertDocument, error) {
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
 
 	checkTime := time.Now().Add(-24 * time.Hour)
 	q := `updatedAt:>` + strconv.FormatInt(checkTime.UnixMilli(), 10) + ` AND functionalityType:` + "(" + strings.Join(functionalitiesToConsider, " OR ") + ")"
@@ -28,9 +22,9 @@ func GetAllAlertsFromOpenSearch(ctx context.Context, functionalitiesToConsider [
 	var searchAfter []any
 
 	for {
-		res, newSearchAfter, err := os.SearchPaginated(ctx, client, common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "updatedAt", Order: "asc"}})
+		res, newSearchAfter, err := os.SearchPaginated(ctx, os.GetClient(), common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "updatedAt", Order: "asc"}})
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", common.AlertsIndex))
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", common.AlertsIndex))
 			return nil, err
 		}
 
