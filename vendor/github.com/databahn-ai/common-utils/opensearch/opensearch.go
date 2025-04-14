@@ -16,12 +16,15 @@ import (
 )
 
 type Credentials struct {
-	Username string `json:"open_search.username"`
-	Password string `json:"open_search.password"`
+	OpenSearchUsername            string `json:"open_search.username"`
+	OpenSearchPassword            string `json:"open_search.password"`
+	OpenSearchUrl                 string `json:"open_search.url"`
+	OpenSearchStatisticsIndexName string `json:"open_search.statisticsIndexName"`
+	OpenSearchEnableSsl           bool   `json:"open_search.enable_ssl"`
+	Client                        *opensearch.Client
 }
 
 type Connection struct {
-	Url        string `json:"opensearch_url"`
 	SecretName string `json:"secret_name"`
 	SkipTls    bool   `json:"skip_tls"`
 }
@@ -29,16 +32,7 @@ type Connection struct {
 // Connect create connection with opensearch
 func Connect(config configuration.ConfigReader) (*opensearch.Client, error) {
 	var err error
-	url := config.GetString(configuration.OpenSearchUrl)
-	if url == "" {
-		logger.GetLogger().Error("opensearch url is empty")
-		return nil, errors.New("opensearch url is empty")
-	}
-	if !strings.HasPrefix(url, "http") {
-		url = "https://" + url
-	}
-
-	creds, err := readCredentials(config)
+	creds, err := readOsDetails(config)
 	if err != nil {
 		logger.GetLogger().Error("error while reading opensearch credentials", zap.Error(err))
 		return nil, err
@@ -48,19 +42,50 @@ func Connect(config configuration.ConfigReader) (*opensearch.Client, error) {
 	if err != nil {
 		skipTls = false
 	}
-	logger.GetLogger().Info("creating connection with opensearch", zap.String("url", url))
+	logger.GetLogger().Info("creating connection with opensearch", zap.String("url", creds.OpenSearchUrl), zap.String("username", creds.OpenSearchUsername))
 
 	return opensearch.NewClient(opensearch.Config{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTls},
 		},
-		Addresses: strings.Split(url, ","),
-		Username:  creds.Username,
-		Password:  creds.Password,
+		Addresses: strings.Split(creds.OpenSearchUrl, ","),
+		Username:  creds.OpenSearchUsername,
+		Password:  creds.OpenSearchPassword,
 	})
 }
 
-func readCredentials(config configuration.ConfigReader) (*Credentials, error) {
+// GetConnection create connection with opensearch
+func GetConnection(config configuration.ConfigReader) (*Credentials, error) {
+	var err error
+	creds, err := readOsDetails(config)
+	if err != nil {
+		logger.GetLogger().Error("error while reading opensearch credentials", zap.Error(err))
+		return nil, err
+	}
+
+	skipTls, err := strconv.ParseBool(config.GetString(configuration.OpenSearchSkipTls))
+	if err != nil {
+		skipTls = false
+	}
+	logger.GetLogger().Info("creating connection with opensearch", zap.String("url", creds.OpenSearchUrl), zap.String("username", creds.OpenSearchUsername))
+
+	client, err := opensearch.NewClient(opensearch.Config{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTls},
+		},
+		Addresses: strings.Split(creds.OpenSearchUrl, ","),
+		Username:  creds.OpenSearchUsername,
+		Password:  creds.OpenSearchPassword,
+	})
+	if err != nil {
+		logger.GetLogger().Error("error while creating opensearch connection", zap.Error(err))
+		return nil, err
+	}
+	creds.Client = client
+	return creds, nil
+}
+
+func readOsDetails(config configuration.ConfigReader) (*Credentials, error) {
 	secretName := config.GetString(configuration.OpenSearchSecretName)
 	if secretName == "" {
 		logger.GetLogger().Error("opensearch secret name is empty")
@@ -97,15 +122,27 @@ func readCredentials(config configuration.ConfigReader) (*Credentials, error) {
 			return nil, err
 		}
 		if username, ok := data["open_search.username"].(string); ok {
-			creds.Username = username
+			creds.OpenSearchUsername = username
 		} else {
 			return nil, errors.New("username is missing or not a string in secret data")
 		}
 
 		if password, ok := data["open_search.password"].(string); ok {
-			creds.Password = password
+			creds.OpenSearchPassword = password
 		} else {
 			return nil, errors.New("password is missing or not a string in secret data")
+		}
+
+		if osUrl, ok := data["open_search.url"].(string); ok {
+			creds.OpenSearchUrl = osUrl
+		} else {
+			return nil, errors.New("url is missing or not a string in secret data")
+		}
+
+		if index, ok := data["open_search.statisticsIndexName"].(string); ok {
+			creds.OpenSearchStatisticsIndexName = index
+		} else {
+			return nil, errors.New("statistics index name is missing or not a string in secret data")
 		}
 	}
 	return &creds, nil

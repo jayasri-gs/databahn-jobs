@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.72
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.2
 	github.com/aws/aws-sdk-go-v2/service/ses v1.30.2
-	github.com/databahn-ai/common-utils v0.147.0
+	github.com/databahn-ai/common-utils v0.149.0
 	github.com/databahn-ai/db-models v0.152.0
 	github.com/databahn-ai/go-logging v0.18.0
 	github.com/dustin/go-humanize v1.0.1

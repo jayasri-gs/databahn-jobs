@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -29,10 +28,9 @@ type Client struct {
 	_client          *s3.Client
 }
 
-func (c *Client) Connect() {
+func (c *Client) Connect() (err error) {
 	var (
 		cfg aws.Config
-		err error
 	)
 
 	ctx := context.TODO()
@@ -45,13 +43,13 @@ func (c *Client) Connect() {
 			config.WithCredentialsProvider(creds),
 		)
 		if err != nil {
-			log.Fatalf("failed to load config with static creds: %v", err)
+			return err
 		}
 	} else {
 		// Default credential chain (IAM roles, environment, etc.)
 		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
 		if err != nil {
-			log.Fatalf("failed to load default config: %v", err)
+			return err
 		}
 	}
 
@@ -74,9 +72,10 @@ func (c *Client) Connect() {
 			o.BaseEndpoint = aws.String(c.URL)
 		}
 	})
+	return nil
 }
 
-func (c *Client) UploadFile(ctx context.Context, bucketName, key, filePath string) error {
+func (c *Client) UploadFileFromLocation(ctx context.Context, bucketName, key, filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -94,7 +93,19 @@ func (c *Client) UploadFile(ctx context.Context, bucketName, key, filePath strin
 	return nil
 }
 
-func (c *Client) DownloadFile(ctx context.Context, bucketName, key, destinationPath string) error {
+func (c *Client) UploadFile(ctx context.Context, bucketName, key string, file io.Reader) error {
+	_, err := c._client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+		Body:   file,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload file: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) DownloadFileToLocation(ctx context.Context, bucketName, key, destinationPath string) error {
 	output, err := c._client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucketName,
 		Key:    &key,
@@ -115,6 +126,17 @@ func (c *Client) DownloadFile(ctx context.Context, bucketName, key, destinationP
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) DownloadFile(ctx context.Context, bucketName, key string) (io.ReadCloser, error) {
+	output, err := c._client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download file: %w", err)
+	}
+	return output.Body, nil
 }
 
 func (c *Client) BucketExists(ctx context.Context, bucketName string) (bool, error) {

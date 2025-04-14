@@ -172,7 +172,7 @@ github.com/cenkalti/backoff/v4
 ## explicit; go 1.21
 github.com/confluentinc/confluent-kafka-go/v2/kafka
 github.com/confluentinc/confluent-kafka-go/v2/kafka/librdkafka_vendor
-# github.com/databahn-ai/common-utils v0.147.0
+# github.com/databahn-ai/common-utils v0.149.0
 ## explicit; go 1.24
 github.com/databahn-ai/common-utils/ack
 github.com/databahn-ai/common-utils/alert
