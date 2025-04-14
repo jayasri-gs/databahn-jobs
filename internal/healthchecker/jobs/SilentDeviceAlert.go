@@ -99,12 +99,6 @@ func ProcessSilentDevices(ctx context.Context) error {
 	return nil
 }
 func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string, sources []string) ([]Device, error) {
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
 
 	// Build the query using getQueryFromFilters
 	query, err := getQueryFromFilters(sources, tenantId)
@@ -119,9 +113,9 @@ func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string,
 
 	var allSilentDevices []Device
 	for {
-		silentDevices, newSearchAfter, err := getSilentDevices(ctx, client, index, query, pageSize, searchAfter, tenantName)
+		silentDevices, newSearchAfter, err := getSilentDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", index))
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
 			return nil, err
 		}
 

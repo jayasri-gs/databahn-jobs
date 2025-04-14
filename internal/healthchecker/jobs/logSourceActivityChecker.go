@@ -30,12 +30,6 @@ func getAggStatsForDestinations(ctx context.Context, startTime string, endTime s
 	q := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
 	agg := "tags.destination_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return statistics.AggregateResponse{}, err
-	}
 
 	searchBody := &statistics.AggregateQueryRequest{}
 	searchBody.Size = 0
@@ -44,10 +38,10 @@ func getAggStatsForDestinations(ctx context.Context, startTime string, endTime s
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
 
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", os.StatsIndex))
 		return statistics.AggregateResponse{}, err
 	}
 	bodyContent, _ := io.ReadAll(searchResponse.Body)
@@ -63,12 +57,6 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
 	agg := "tags.db_event_source_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return statistics.AggregateResponse{}, err
-	}
 
 	searchBody := &statistics.AggregateQueryRequest{}
 	searchBody.Size = 0
@@ -77,10 +65,10 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
 
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", os.StatsIndex))
 		return statistics.AggregateResponse{}, err
 	}
 	bodyContent, _ := io.ReadAll(searchResponse.Body)
@@ -93,17 +81,11 @@ func getAggStatsForLogSource(ctx context.Context, startTime string, endTime stri
 }
 
 func checkInactivityAlertExistsForGivenLogSources(ctx context.Context, logsources []string) ([]statistics.AlertDocument, error) {
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
 	q := `dismissed:false AND functionalityEntityId:` + "(" + strings.Join(logsources, " OR ") + ")" + ` AND functionalityType:` + alerts_common.LogSourceStatsNotReceived
 
-	res, err := os.Search(ctx, client, common.AlertsIndex, q)
+	res, err := os.Search(ctx, os.GetClient(), common.AlertsIndex, q)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", common.AlertsIndex))
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", common.AlertsIndex))
 		return nil, err
 	}
 

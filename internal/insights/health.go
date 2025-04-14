@@ -6,7 +6,6 @@ import (
 	os "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
-	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
@@ -43,16 +42,7 @@ type HealthJobStatus struct {
 }
 
 func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]HealthJobStatus, error) {
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics os", zap.Error(err))
-		return nil, err
-	}
-	if err != nil {
-		return nil, err
-	}
-	indices, err := os.CatIndices(ctx, client)
+	indices, err := os.CatIndices(ctx, os.GetClient())
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +74,7 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 			TenantId: tenantId,
 			Action:   "SILENT_MARKING",
 		}
-		err = calculateDeviceInventoryHealthForTenant(ctx, client, tenantId, index, runningFor)
+		err = calculateDeviceInventoryHealthForTenant(ctx, os.GetClient(), tenantId, index, runningFor)
 		if err != nil {
 			logger.GetLogger().Error("failed to calculate silent device health for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
 			statusHealth.Status = STATUS_ERROR
@@ -111,7 +101,7 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 			TenantId: tenantId,
 			Action:   "NOISE_MARKING",
 		}
-		err = calculateNoiseOfDevices(ctx, client, tenantId, index, runningFor)
+		err = calculateNoiseOfDevices(ctx, os.GetClient(), tenantId, index, runningFor)
 		if err != nil {
 			logger.GetLogger().Error("failed to calculate noise of device for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
 			statusNoise.Status = STATUS_ERROR

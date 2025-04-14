@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	dbos "github.com/databahn-ai/databahn-jobs/internal/store/os"
+	os "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
@@ -15,7 +16,6 @@ import (
 )
 
 func RolloverLifecycle(ctx context.Context) error {
-	conf := dbos.GetConf()
 	lifeCycleMigration := utils.GetEnvOrDefault("ROLLOVER_LIFECYCLE_MIGRATION", "")
 	var indexLifeCycleMigration IndexLifeCycleMigration
 	if lifeCycleMigration == string(Migrate_P1_P2) {
@@ -38,13 +38,7 @@ func RolloverLifecycle(ctx context.Context) error {
 		zap.Int("agg_batch_size", config.aggBatchSize), zap.Any("agg_query_range", config.aggQueryRange),
 		zap.Any("agg_window", config.aggWindow), zap.Any("validation_range", config.validationRange))
 
-	osClient, err := dbos.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return err
-	}
-
-	indexNames, err := dbos.CatIndices(ctx, osClient)
+	indexNames, err := dbos.CatIndices(ctx, os.GetClient())
 	if err != nil {
 		logger.GetLogger().Error("error while fetching indices", zap.Error(err))
 		return err
@@ -60,13 +54,13 @@ func RolloverLifecycle(ctx context.Context) error {
 		config.aggWindow = 1 * time.Hour
 		config.aggQueryRange = 1 * time.Hour
 		config.validationRange = 1 * time.Hour
-		return runRolloverIndexToIndex(ctx, config, indicesToRollover, osClient)
+		return runRolloverIndexToIndex(ctx, config, indicesToRollover, os.GetClient())
 	} else if indexLifeCycleMigration == Migrate_P2_P3 {
 		logger.GetLogger().Info("performing p2 to p3 migration")
 		config.aggWindow = 24 * time.Hour
 		config.aggQueryRange = 24 * time.Hour
 		config.validationRange = 24 * time.Hour
-		return mergeP2Indices(ctx, config, indexNames, osClient)
+		return mergeP2Indices(ctx, config, indexNames, os.GetClient())
 	}
 	return errors.New("invalid lifecycle migration, only p1_p2 and p2_p3 supported")
 }
