@@ -14,7 +14,7 @@ var StatsIndex = "db_statistics_"
 
 func GetClient() *opensearch.Client {
 	if client == nil {
-		c, err := osUtils.Connect(appConfig.GetAlertConfiguration())
+		c, err := osUtils.Connect(appConfig.GetAppConfiguration())
 		if err != nil {
 			logger.GetLogger().Error("error while creating opensearch connection", zap.Error(err))
 			return nil
