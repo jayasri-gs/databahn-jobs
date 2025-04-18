@@ -108,12 +108,10 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	// raise alerts for sources which have unparsed events
 
 	logging.GetLogger().Info("Raising alerts for sources which have unparsed events", zap.Any("alertToBeRaisedLogSources", MapKeys(sourceIdToUnparsedEventCount)))
-
+	var toRaiseAlerts []alerts_common.AlertBaseObjectV2
+	var alertMessages []string
 	for _, ls := range alertToBeRaisedLogSources {
-		unparsedCount := sourceIdToUnparsedEventCount[ls.ID.String()]
-		eventsCount := sourceIdToEventsCount[ls.ID.String()]
-		percentageUnparsed := (unparsedCount / eventsCount) * 100
-		alertMessageStr := fmt.Sprintf("Source %s has unparsed events, accounting for %.2f%% of the total events.", ls.Name, percentageUnparsed)
+		alertMessageStr := fmt.Sprintf("Source %s has unparsed events", ls.Name)
 
 		alert := alerts_common.AlertBaseObjectV2{
 			EntityName:       ls.Name,
@@ -121,19 +119,20 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 			EntityTenantUUId: ls.TenantID,
 			AlertType:        alerts_common.AlertTypeExternalAndExternal,
 			DataPlaneId:      ls.DataPlaneId,
-			ErrorCode:        healthchecker.DNDW10001,
+			ErrorCode:        healthchecker.DNDW10004,
 		}
 
 		logging.GetLoggerWithContext(ctx).Info("Sending alert to control panel", zap.Any("alert", alert), zap.String("alertMessage", alertMessageStr))
 
-		err = helper.SendAlertToControlPlane(ctx, []alerts_common.AlertBaseObjectV2{alert}, "Unparsed events detected", alertMessageStr, "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")
+		err = helper.SendAlertToControlPlane(ctx, []alerts_common.AlertBaseObjectV2{alert}, "Unparsed events detected", alertMessageStr, "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.CriticalAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsed events", zap.Error(err))
-			continue
+			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsedevents", zap.Error(err))
+			return err
 		}
-		logging.GetLoggerWithContext(ctx).Info("Alert successfully raised for unparsed events", zap.String("sourceID", ls.ID.String()), zap.String("sourceName", ls.Name))
+		logging.GetLoggerWithContext(ctx).Info("Alerts successfully raised for unparsed events", zap.Int("raised_alerts_count", len(toRaiseAlerts)))
 	}
-	return err
+
+	return nil
 }
 
 func resolveExistingAlerts(ctx context.Context, sources map[string]float64) error {
@@ -158,7 +157,7 @@ func resolveExistingAlerts(ctx context.Context, sources map[string]float64) erro
 	}
 
 	if len(toDismissAlerts) > 0 {
-		err = helper.SendAlertToControlPlane(ctx, toDismissAlerts, "Unparsed Events Resolved", "All unparsed events for the specified sources have been resolved.", "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.WarningAlert, alerts_common.AlertAutoResolved, true, "system")
+		err = helper.SendAlertToControlPlane(ctx, toDismissAlerts, "Unparsed Events Resolved", "All unparsed events for the specified sources have been resolved.", "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.CriticalAlert, alerts_common.AlertAutoResolved, true, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while dismissing alerts for unparsed events", zap.Error(err))
 			return err

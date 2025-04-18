@@ -47,7 +47,8 @@ func RolloverOlderStats(ctx context.Context) error {
 			return err
 		}
 	} else {
-		indexNames = []string{config.olderRolloverConfig.specificIndex}
+		indices := strings.Split(specificIndex, ",")
+		indexNames = indices
 	}
 
 	indicesToRollover := filterStatsValidIndices(indexNames, config.olderRolloverConfig.weeksOlderThan, config.limit, config.olderRolloverConfig.skipIndices)
@@ -288,10 +289,13 @@ func doRolloverAndValidate(ctx context.Context, index Index, client *opensearch.
 			}
 		}
 	}
-	logger.GetLogger().Info("rolled over index, will validate "+index.Index, zap.Int("new_index_values", newIndexValues))
-	err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, config.validationRange)
-	if err != nil {
-		return err
+	if !skipValidation {
+		err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, validationDuration)
+		if err != nil {
+			return err
+		}
+	} else {
+		logger.GetLogger().Info("skipping validation", zap.String("index", index.Index))
 	}
 	return nil
 }
