@@ -109,7 +109,6 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 
 	logging.GetLogger().Info("Raising alerts for sources which have unparsed events", zap.Any("alertToBeRaisedLogSources", MapKeys(sourceIdToUnparsedEventCount)))
 	var toRaiseAlerts []alerts_common.AlertBaseObjectV2
-	var alertMessages []string
 	for _, ls := range alertToBeRaisedLogSources {
 		alertMessageStr := fmt.Sprintf("Source %s has unparsed events", ls.Name)
 

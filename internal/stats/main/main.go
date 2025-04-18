@@ -51,11 +51,7 @@ var destinationIds = []string{"28c543e4-1b34-44c8-ad16-6d6adfaebc11", "28c543e4-
 
 func main() {
 	ctx := context.Background()
-	conf := dbos.GetConf()
-	osClient, err := dbos.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Panic("error while connecting to statistics store", zap.Error(err))
-	}
+	osClient := dbos.GetClient()
 	thisYear, thisDay := getYearAndDay()
 	updateOlderDays := 24
 	olderDays := 4
