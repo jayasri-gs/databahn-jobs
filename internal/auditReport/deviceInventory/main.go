@@ -28,8 +28,13 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 	var file *os.File
 	var writer *csv.Writer
 	defer func() {
-		file.Close()
 		writer.Flush()
+		if err := writer.Error(); err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while flushing writer", zap.Error(err))
+		}
+		if err := file.Close(); err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while closing file", zap.Error(err))
+		}
 		wg.Done()
 		<-parallelismCntrl
 	}()
@@ -159,10 +164,13 @@ func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInven
 		row := []string{deviceInventory.Hostname, firstSeen, lastSeen, sourceName, deviceInventory.Reputation}
 		err := writer.Write(row)
 		if err != nil {
+			logging.GetLogger().Error("error while writing row to the file", zap.Error(err))
 			return err
 		}
 	}
-	return nil
+	logging.GetLogger().Info("Writing rows to the file completed")
+	writer.Flush()
+	return writer.Error()
 }
 func getDeviceInventoryReportConfigFromRequest(req models.AuditReport) ([]string, string, string, error) {
 	var deviceInventoryReportConfiguration map[string]interface{}
@@ -209,7 +217,7 @@ func getQueryFromFilters(sources []string, startTime string, endTime string, ten
 			return "", err
 		}
 		startTimeEpoch := t.UnixMilli()
-		q += ` AND min_time:>` + strconv.FormatInt(startTimeEpoch, 10)
+		q += ` AND max_time:>` + strconv.FormatInt(startTimeEpoch, 10)
 	}
 	if endTime != "" {
 		// convert endTime to epoch

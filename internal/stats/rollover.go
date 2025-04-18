@@ -47,7 +47,8 @@ func RolloverOlderStats(ctx context.Context) error {
 			return err
 		}
 	} else {
-		indexNames = []string{config.olderRolloverConfig.specificIndex}
+		indices := strings.Split(config.olderRolloverConfig.specificIndex, ",")
+		indexNames = indices
 	}
 
 	indicesToRollover := filterStatsValidIndices(indexNames, config.olderRolloverConfig.weeksOlderThan, config.limit, config.olderRolloverConfig.skipIndices)
@@ -100,6 +101,7 @@ func parseConfig() (*RolloverConfig, error) {
 	aggWindow := utils.GetEnvOrDefault("STATS_ROLLOVER_AGG_WINDOW", "1m")
 	s3BackupEnabled := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_S3_BACKUP_ENABLED", "true"), "true")
 	deleteExistingRolledOverIndex := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_DELETE_EXISTING_ROLLED_OVER_INDEX", "false"), "true")
+	skipValidation := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_SKIP_VALIDATION", "false"), "true")
 
 	aggQueryDuration, err := time.ParseDuration(aggQueryRange)
 	if err != nil {
@@ -141,6 +143,7 @@ func parseConfig() (*RolloverConfig, error) {
 		aggWindow:                     aggWindowDuration,
 		s3BackupEnabled:               s3BackupEnabled,
 		deleteExistingRolledOverIndex: deleteExistingRolledOverIndex,
+		skipValidation:                skipValidation,
 	}
 	return &rolloverConf, nil
 }
@@ -288,10 +291,13 @@ func doRolloverAndValidate(ctx context.Context, index Index, client *opensearch.
 			}
 		}
 	}
-	logger.GetLogger().Info("rolled over index, will validate "+index.Index, zap.Int("new_index_values", newIndexValues))
-	err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, config.validationRange)
-	if err != nil {
-		return err
+	if !config.skipValidation {
+		err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, config.validationRange)
+		if err != nil {
+			return err
+		}
+	} else {
+		logger.GetLogger().Info("skipping validation", zap.String("index", index.Index))
 	}
 	return nil
 }

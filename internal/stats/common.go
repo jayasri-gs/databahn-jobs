@@ -28,6 +28,7 @@ type RolloverConfig struct {
 	aggWindow                     time.Duration
 	s3BackupEnabled               bool
 	deleteExistingRolledOverIndex bool
+	skipValidation                bool
 }
 
 type IndexSchema string

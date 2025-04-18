@@ -270,12 +270,25 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	// Filter alerts to be raised based on configLogSourceIds
 	if len(configLogSources) > 0 {
 		var filteredAlertToBeRaisedLogSources []source.Source
+		configLogSourceMap := make(map[string]bool)
+
+		for _, configLogSource := range configLogSources {
+			configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] = false
+		}
+
 		for _, ls := range alertToBeRaisedLogSources {
 			for _, configLogSource := range configLogSources {
 				if ls.TenantID.String() == configLogSource.TenantID && ls.ID.String() == configLogSource.SourceID {
 					logging.GetLoggerWithContext(ctx).Info("log source is in config log source", zap.String("tenant_id", ls.TenantID.String()), zap.String("source_id", ls.ID.String()))
 					filteredAlertToBeRaisedLogSources = append(filteredAlertToBeRaisedLogSources, ls)
+					configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] = true
 				}
+			}
+		}
+
+		for _, configLogSource := range configLogSources {
+			if !configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] {
+				logging.GetLoggerWithContext(ctx).Info("configured log source has no alert", zap.String("tenant_id", configLogSource.TenantID), zap.String("source_id", configLogSource.SourceID))
 			}
 		}
 		if len(filteredAlertToBeRaisedLogSources) > 0 {
