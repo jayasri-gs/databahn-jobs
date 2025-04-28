@@ -3,10 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	awsemail "github.com/databahn-ai/databahn-jobs/internal/healthchecker/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
@@ -15,7 +12,6 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"io"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -65,14 +61,6 @@ func GetStatsByInterval(ctx context.Context, startTime string, endTime string) (
 	return aggObj, err
 }
 
-func Contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
 func CheckEntityStats(ctx context.Context) error {
 	endTime := time.Now()
 	db := config.GetDB()
@@ -81,40 +69,51 @@ func CheckEntityStats(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error creating EntityAlertsConfig map", zap.Error(err))
 		return err
 	}
-	sourceMapByTenant, err := helper.CreateLogSourceMapByTenant(ctx, db)
-	if err != nil {
-		return err
-	}
 
-	tenantMap, err := createTenantMap(ctx, db)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("Error while fetching TenantMap", zap.Error(err))
-		return err
-	}
 	intervalCountMap := populateIntervalCountMap(configMap)
 	filteredIntervals := filterIntervals(intervalCountMap)
 
+	updatedConfigs := make(map[uuid.UUID]time.Time)
+	var entitiesToAlert []helper.EntityAlertsConfig
+
 	for _, interval := range filteredIntervals {
-		err = processInterval(ctx, endTime, interval, configMap, tenantMap, sourceMapByTenant)
+		startTime := endTime.Add(-interval)
+		aggObj, err := GetStatsByInterval(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
 		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error getting stats by interval", zap.Error(err))
+			return err
+		}
+		logging.GetLoggerWithContext(ctx).Info("got response from statistics store", zap.Reflect("interval", interval.Minutes()), zap.Reflect("response", aggObj))
+
+		updated, alerted := compareResultsAndUpdate(configMap, aggObj, interval, startTime)
+		for entityID, lastCheckedTime := range updated {
+			updatedConfigs[entityID] = lastCheckedTime
+		}
+		entitiesToAlert = append(entitiesToAlert, alerted...)
+	}
+
+	// Update LastCheckedTime in DB for entities with data
+	if len(updatedConfigs) > 0 {
+		err = updateLastCheckedTimeInDB(ctx, db, updatedConfigs)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error updating LastCheckedTime in database", zap.Error(err), zap.Reflect("updates", updatedConfigs))
+			return err
+		}
+		logging.GetLoggerWithContext(ctx).Info("Successfully updated LastCheckedTime in database", zap.Reflect("count", len(updatedConfigs)))
+	}
+
+	logging.GetLoggerWithContext(ctx).Info("Entities to alert (LastCheckedTime not updated):", zap.Reflect("count", len(entitiesToAlert)))
+	return nil
+}
+func updateLastCheckedTimeInDB(ctx context.Context, db *gorm.DB, updatedConfigs map[uuid.UUID]time.Time) error {
+	for entityID, lastCheckedTime := range updatedConfigs {
+		err := db.Model(&helper.EntityAlertsConfig{}).Where("entity_id = ?", entityID).Update("last_checked_time", lastCheckedTime).Error
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error updating LastCheckedTime for entity", zap.Error(err), zap.String("entityId", entityID.String()), zap.Time("lastCheckedTime", lastCheckedTime))
 			return err
 		}
 	}
-
 	return nil
-}
-
-func createTenantMap(ctx context.Context, db *gorm.DB) (map[string]string, error) {
-	tenants, err := helper.GetAllTenants(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-
-	tenantMap := make(map[string]string)
-	for _, tenant := range tenants {
-		tenantMap[tenant.ID.String()] = tenant.Name
-	}
-	return tenantMap, nil
 }
 
 func populateIntervalCountMap(configMap map[string]helper.EntityAlertsConfig) map[int]int {
@@ -137,109 +136,40 @@ func filterIntervals(intervalCountMap map[int]int) []time.Duration {
 	return filteredIntervals
 }
 
-func processInterval(ctx context.Context, endTime time.Time, interval time.Duration, configMap map[string]helper.EntityAlertsConfig, tenantMap map[string]string, logSourceMap map[string]helper.LogSource) error {
+func compareResultsAndUpdate(configMap map[string]helper.EntityAlertsConfig, aggObj statistics.AggregateResponse, interval time.Duration, startTime time.Time) (map[uuid.UUID]time.Time, []helper.EntityAlertsConfig) {
+	updatedConfigs := make(map[uuid.UUID]time.Time)
+	var entitiesToAlert []helper.EntityAlertsConfig
+	currentTime := time.Now()
+	logSourceIdsStatsReceived := make(map[string]bool)
 
-	startTime := endTime.Add(-interval)
-	aggObj, err := GetStatsByInterval(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error getting stats by interval", zap.Error(err))
-		return err
-	}
-	logging.GetLoggerWithContext(ctx).Info("got response from statistics store", zap.Reflect("interval", interval.Minutes()), zap.Reflect("response", aggObj))
-
-	entityIdsToAlert := compareResults(configMap, tenantMap, logSourceMap, aggObj, interval, startTime)
-	if len(entityIdsToAlert) > 0 {
-		err = sendAlertsForInactivity(ctx, entityIdsToAlert)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-func compareResults(configMap map[string]helper.EntityAlertsConfig, tenantMap map[string]string, logSourceMap map[string]helper.LogSource, aggObj statistics.AggregateResponse, interval time.Duration, startTime time.Time) []helper.EntityAlertsConfig {
-	var logSourceIdsStatsReceived []string
 	for key, value := range aggObj.Agg {
 		valueInt, ok := value.(float64)
-		if !ok {
-			logging.GetLogger().Error("error while getting value of stats for source", zap.String("type", reflect.TypeOf(value).String()))
-			continue
-		}
-		if valueInt > 0 {
-			_, err := uuid.Parse(key)
-			if err != nil {
-				continue
+		if ok && valueInt > 0 {
+			if _, err := uuid.Parse(key); err == nil {
+				logSourceIdsStatsReceived[key] = true
 			}
-			logSourceIdsStatsReceived = append(logSourceIdsStatsReceived, key)
 		}
 	}
 
-	var entityIdsToAlert []helper.EntityAlertsConfig
-	for _, config := range configMap {
-		sourceId := config.EntityID.String()
-		if config.Interval == int(interval.Minutes()) {
-			isPresent := Contains(logSourceIdsStatsReceived, sourceId)
-			isTimeAfter := startTime.After(config.LastCheckedTime.Add(interval))
-			formattedMessage := fmt.Sprintf("Entity status isPresent: %t, isTimeAfter: %t", isPresent, isTimeAfter)
-			logging.GetLogger().Info(formattedMessage)
-			if !isPresent && isTimeAfter && config.Status {
-				logSource, exists := logSourceMap[fmt.Sprintf("%s_%s", config.TenantID.String(), config.EntityID.String())]
-				if exists && logSource.Status != "DISABLED" {
-					config.TenantName = tenantMap[config.TenantID.String()]
-					config.EntityName = logSource.Name
-					config.CpGatewayUrl = logSource.DataPlanes.CPGatewayUrl
-					config.DpGatewayUrl = logSource.DataPlanes.DPGatewayUrl
-					entityIdsToAlert = append(entityIdsToAlert, config)
+	for _, configmap := range configMap {
+		sourceId := configmap.EntityID.String()
+		if configmap.Interval == int(interval.Minutes()) {
+			if logSourceIdsStatsReceived[sourceId] {
+				// Data received, update LastCheckedTime
+				updatedConfigs[configmap.EntityID] = currentTime
+				logging.GetLogger().Info("Data received, updated LastCheckedTime in memory", zap.String("entityId", sourceId), zap.Time("lastCheckedTime", currentTime))
+			} else {
+				// No data received, check for alert condition
+				alertThreshold := configmap.LastCheckedTime.Add(interval)
+				if startTime.After(alertThreshold) && configmap.Status {
+					// Alert condition met, add to entitiesToAlert
+					entitiesToAlert = append(entitiesToAlert, configmap)
+					logging.GetLogger().Warn("Inactivity detected, added to alert list", zap.String("entityId", sourceId), zap.Time("lastCheckedTime", configmap.LastCheckedTime), zap.Time("alertThreshold", alertThreshold), zap.Time("startTime", startTime))
 				} else {
-					logging.GetLogger().Info("Skipping Alert as LogSource is disabled", zap.String("entityId", config.EntityID.String()))
+					logging.GetLogger().Debug("No data, but within alert threshold", zap.String("entityId", sourceId), zap.Time("lastCheckedTime", configmap.LastCheckedTime), zap.Time("alertThreshold", alertThreshold), zap.Time("startTime", startTime))
 				}
 			}
 		}
 	}
-
-	return entityIdsToAlert
-}
-
-func sendAlertsForInactivity(ctx context.Context, entityIdsToAlert []helper.EntityAlertsConfig) error {
-
-	for _, configObject := range entityIdsToAlert {
-
-		var emailTo []string
-		emailTo = append(emailTo, config.GetAppConfiguration().GetString(awsemail.OPSGini))
-		configObject.Summary = fmt.Sprintf("No data received for %.2f hr or %v minutes ", float64(configObject.Interval)/60, configObject.Interval)
-		formattedConfigObject, err := json.MarshalIndent(configObject, "", "  ")
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error marshaling configObject to JSON", zap.Error(err))
-			continue
-		}
-
-		title := fmt.Sprintf("Ingestion:%s:%s", configObject.TenantName, configObject.EntityName)
-		var email = awsemail.EmailNotification{
-			Recipients: &awsemail.Recipient{
-				To: emailTo,
-			},
-			Body:    aws.String("<pre>" + string(formattedConfigObject) + "</pre>"),
-			Subject: aws.String(title),
-		}
-
-		err = awsemail.SendEmail(ctx, email)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Info("Error sending notification")
-			return err
-		}
-
-		logging.GetLoggerWithContext(ctx).Info("sent notification")
-
-		//Update in DB
-		logging.GetLoggerWithContext(ctx).Info("Updating LastCheckedTime", zap.String("entityId", configObject.EntityID.String()))
-		err = config.GetDB().Model(&helper.EntityAlertsConfig{}).Where("entity_id = ?", configObject.EntityID).Update("last_checked_time", time.Now().UTC()).Error
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error updating LastCheckedTime", zap.Error(err), zap.String("entityId", configObject.EntityID.String()))
-			return err
-		}
-		logging.GetLoggerWithContext(ctx).Info("Successfully updated LastCheckedTime", zap.String("entityId", configObject.EntityID.String()))
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	return nil
+	return updatedConfigs, entitiesToAlert
 }

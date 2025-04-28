@@ -44,9 +44,9 @@ func CreateEntityAlertsConfigMapByType(db *gorm.DB) (map[string]EntityAlertsConf
 	}
 
 	configMap := make(map[string]EntityAlertsConfig)
-	for _, config := range configs {
-		key := fmt.Sprintf("%s_%s", config.EntityType, config.EntityID.String())
-		configMap[key] = config
+	for _, configmap := range configs {
+		key := fmt.Sprintf("%s_%s", configmap.EntityType, configmap.EntityID.String())
+		configMap[key] = configmap
 	}
 
 	return configMap, nil
