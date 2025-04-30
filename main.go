@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
+	"strings"
+
 	"github.com/databahn-ai/databahn-jobs/cmd"
-	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"strings"
 )
 
 func main() {
@@ -19,10 +20,7 @@ func main() {
 	input := ReadInputData()
 	//flag.Parse()
 	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
-	if *job != common.DATA_REPLAY {
-		config.GetAppConfiguration()
-	}
-
+	config.GetAppConfiguration()
 	cmd.RunJob(ctx, *job, input)
 }
 
@@ -49,8 +47,19 @@ func ReadInputData() model.Message {
 	flag.StringVar(&sampleMessage.ConnectId, "connectId", uuid.Nil.String(), "aws region ")
 	flag.StringVar(&sampleMessage.AckId, "ackId", uuid.Nil.String(), "ackId Is ")
 
+	flag.StringVar(&sampleMessage.DataStore, "dataStore", "", "data store type")
+	flag.StringVar(&sampleMessage.SourceName, "sourceName", "", "source name")
+
+	additionalConfigString := flag.String("additionalConfig", "", "additional config")
+
 	flag.Parse()
 	sampleMessage.FileName = strings.Split(fileName, ",")
-
+	sampleMessage.AdditionalConfig = make(map[string]string)
+	if *additionalConfigString != "" {
+		err := json.Unmarshal([]byte(*additionalConfigString), &sampleMessage.AdditionalConfig)
+		if err != nil {
+			panic(err)
+		}
+	}
 	return sampleMessage
 }

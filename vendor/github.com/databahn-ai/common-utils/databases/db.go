@@ -170,6 +170,10 @@ func readDBSecretsFromVault(ctx context.Context, secretName, vaultAddress, vault
 	logging.GetLoggerWithContext(ctx).Info("Attempting to read database credentials",
 		zap.String("secret name", secretName), zap.String("vault address", vaultAddress),
 		zap.String("vault token", utils.GetMaskedString(vaultToken, 4)))
+	if strings.HasPrefix(secretName, "vault://") {
+		secretName = strings.TrimPrefix(secretName, "vault://")
+	}
+
 	secret, err := vault.ReadSecrets(vaultAddress, vaultToken, secretName)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while reading secret from vault", zap.Error(err))
