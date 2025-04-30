@@ -2,12 +2,13 @@ package config
 
 import (
 	"context"
+	"sync"
+
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/databases"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"sync"
 )
 
 var appConfigLoader, secretsLoader, destinationConfigLoader, alertConfigLoader sync.Once
@@ -88,4 +89,17 @@ func loadAlertConfigReader() {
 		logger.GetLogger().Panic("failed to read alert configuration", zap.Error(err))
 	}
 	alertConfigReader = conf
+}
+
+func GetDataReplayConfiguration() configuration.ConfigReader {
+	appConfigLoader.Do(loadDataReplayConfigReader)
+	return appConfigReader
+}
+
+func loadDataReplayConfigReader() {
+	conf, err := newDataReplayConfig()
+	if err != nil {
+		logger.GetLogger().Panic("failed to read data replay configuration", zap.Error(err))
+	}
+	appConfigReader = conf
 }
