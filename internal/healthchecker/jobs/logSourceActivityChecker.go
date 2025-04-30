@@ -295,11 +295,32 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 			alertToBeRaisedLogSources = filteredAlertToBeRaisedLogSources
 		}
 	}
+	configMap, err := helper.CreateEntityAlertsConfigMapByType(config.GetDB())
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while creating config map", zap.Error(err))
+		return err
+	}
+	var filteredAlertCandidates []source.Source
+	for _, ls := range alertToBeRaisedLogSources {
+		if configEntry, ok := configMap[fmt.Sprintf("LOG_SOURCE_%s", ls.ID.String())]; ok {
+			alertThreshold := configEntry.LastCheckedTime.Add(time.Minute * time.Duration(configEntry.Interval))
+			logging.GetLogger().Info("Alert threshold", zap.Time("alert_threshold", alertThreshold))
+			if startTime.After(alertThreshold) {
+				filteredAlertCandidates = append(filteredAlertCandidates, ls)
+				logging.GetLoggerWithContext(ctx).Info("Interval-based alert kept for source", zap.String("source_id", ls.ID.String()), zap.Time("last_checked_time", configEntry.LastCheckedTime), zap.Time("alert_threshold", alertThreshold), zap.Time("start_time_short", startTime))
+			} else {
+				logging.GetLoggerWithContext(ctx).Info("Short-term alert discarded for source due to interval threshold not met", zap.String("source_id", ls.ID.String()), zap.Time("last_checked_time", configEntry.LastCheckedTime), zap.Time("alert_threshold", alertThreshold), zap.Time("start_time_short", startTime))
+			}
+		} else {
+			filteredAlertCandidates = append(filteredAlertCandidates, ls)
+			logging.GetLoggerWithContext(ctx).Info("No interval configured, keeping short-term alert for source", zap.String("source_id", ls.ID.String()))
+		}
+	}
+	logging.GetLoggerWithContext(ctx).Info("Log sources after interval filtering", zap.Any("filteredAlertCandidates", filteredAlertCandidates))
 
-	//creating alertEntityArray for all logSources for which alert needs to be raised
 	var logsourcesEntityArray []alerts_common.AlertBaseObjectV2
 	var silentLogsources []string
-	for _, ls := range alertToBeRaisedLogSources {
+	for _, ls := range filteredAlertCandidates {
 		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = ls.Name
 		temp.EntityId = ls.ID
