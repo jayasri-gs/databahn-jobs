@@ -17,16 +17,6 @@ import (
 	"time"
 )
 
-var predefinedIntervals = []time.Duration{
-	15 * time.Minute, //INTERNAL DEV ONLY
-	30 * time.Minute,
-	60 * time.Minute,
-	180 * time.Minute,
-	360 * time.Minute,
-	720 * time.Minute,
-	1440 * time.Minute,
-}
-
 func GetStatsByInterval(ctx context.Context, startTime string, endTime string) (statistics.AggregateResponse, error) {
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
@@ -63,12 +53,12 @@ func CheckEntityStats(ctx context.Context) error {
 	}
 
 	intervalCountMap := populateIntervalCountMap(configMap)
-	filteredIntervals := filterIntervals(intervalCountMap)
 
 	updatedConfigs := make(map[uuid.UUID]time.Time)
 	var entitiesToAlert []helper.EntityAlertsConfig
 
-	for _, interval := range filteredIntervals {
+	for intervalInMinutes := range intervalCountMap {
+		interval := time.Duration(intervalInMinutes) * time.Minute
 		startTime := endTime.Add(-interval)
 		aggObj, err := GetStatsByInterval(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
 		if err != nil {
@@ -114,18 +104,6 @@ func populateIntervalCountMap(configMap map[string]helper.EntityAlertsConfig) ma
 		intervalCountMap[conf.Interval]++
 	}
 	return intervalCountMap
-}
-
-func filterIntervals(intervalCountMap map[int]int) []time.Duration {
-	var filteredIntervals []time.Duration
-	for _, interval := range predefinedIntervals {
-		if intervalCountMap[int(interval.Minutes())] > 0 {
-			filteredIntervals = append(filteredIntervals, interval)
-		} else {
-			logging.GetLogger().Info("No entities found for interval", zap.Reflect("interval", interval.Minutes()))
-		}
-	}
-	return filteredIntervals
 }
 
 func compareResultsAndUpdate(configMap map[string]helper.EntityAlertsConfig, aggObj statistics.AggregateResponse, interval time.Duration, startTime time.Time) (map[uuid.UUID]time.Time, []helper.EntityAlertsConfig) {
