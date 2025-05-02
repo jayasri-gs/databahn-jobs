@@ -211,6 +211,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
 	}
+	logging.GetLoggerWithContext(ctx).Info("Fetched stats for log sources", zap.Any("stats", aggObj.Agg))
 	var logsourceIdsStatsReceived []string
 	for key, value := range aggObj.Agg {
 		valueInt, ok := value.(float64)
@@ -233,6 +234,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		return err
 	}
 
+	logging.GetLoggerWithContext(ctx).Info("Fetched config log sources", zap.Any("configLogSources", configLogSources))
+
 	// getting logSources which are not active but did not report stats in last 7 days
 	startTimeHistorical := endTime.Add(-(time.Hour * 24 * 7))
 	historicalIds, err := getAggStatsForLogSource(ctx, strconv.Itoa(int(startTimeHistorical.UnixMilli())), strconv.Itoa(int(startTime.UnixMilli())))
@@ -251,12 +254,14 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 			statsExistsInLast7Days = append(statsExistsInLast7Days, key)
 		}
 	}
+	logging.GetLoggerWithContext(ctx).Info("Log source IDs with stats in last 7 days", zap.Any("stats", statsExistsInLast7Days))
 	var sourceIdToAlert []string
 	for _, id := range statsExistsInLast7Days {
 		if !util.Contains(logsourceIdsStatsReceived, id) {
 			sourceIdToAlert = append(sourceIdToAlert, id)
 		}
 	}
+	logging.GetLoggerWithContext(ctx).Info("Log source IDs to alert", zap.Any("sourceIdToAlert", sourceIdToAlert))
 
 	// getting logSources which are not active but did not report stats in last 15 minutes
 	var alertToBeRaisedLogSources []source.Source // array of ids not receiving stats
@@ -266,6 +271,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
 		return err
 	}
+	logging.GetLoggerWithContext(ctx).Info("Log sources to raise alerts before filtering", zap.Any("alertToBeRaisedLogSources", alertToBeRaisedLogSources))
 
 	// Filter alerts to be raised based on configLogSourceIds
 	if len(configLogSources) > 0 {
@@ -295,6 +301,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 			alertToBeRaisedLogSources = filteredAlertToBeRaisedLogSources
 		}
 	}
+	logging.GetLoggerWithContext(ctx).Info("Log sources to raise alerts after filtering", zap.Any("alertToBeRaisedLogSources", alertToBeRaisedLogSources))
 	configMap, err := helper.CreateEntityAlertsConfigMapByType(config.GetDB())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating config map", zap.Error(err))
@@ -332,6 +339,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 		silentLogsources = append(silentLogsources, ls.ID.String())
 	}
+	logging.GetLoggerWithContext(ctx).Info("Log sources entity array for alerts", zap.Any("logsourcesEntityArray", logsourcesEntityArray))
+	logging.GetLoggerWithContext(ctx).Info("Silent log sources", zap.Strings("silentLogsources", silentLogsources))
 
 	// check if any logsource whose stats came back but alert exists
 	alerts, err := checkInactivityAlertExistsForGivenLogSources(ctx, logsourceIdsStatsReceived)
@@ -339,6 +348,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while checking inactivity alert exists", zap.Error(err))
 		return err
 	}
+	logging.GetLoggerWithContext(ctx).Info("Existing alerts for dismissal", zap.Any("alerts", alerts))
 
 	// get alerts array for dismissal
 	var toDismissAlerts []alerts_common.AlertBaseObjectV2
@@ -349,6 +359,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		temp.EntityTenantUUId = utils.UUIDFromStringOrNil(alert.TenantId)
 		toDismissAlerts = append(toDismissAlerts, temp)
 	}
+	logging.GetLoggerWithContext(ctx).Info("Alerts to dismiss", zap.Any("toDismissAlerts", toDismissAlerts))
 
 	// send dismiss alerts to change flag
 	if len(toDismissAlerts) > 0 {
@@ -359,6 +370,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		}
 	}
 
+	logging.GetLoggerWithContext(ctx).Info("Log sources dismissed", zap.Any("DismissedLogSources", toDismissAlerts))
+
 	// update logsource mark silent
 	err = config.GetDB().Model(&source.Source{}).Where("id in ? ", silentLogsources).Updates(map[string]interface{}{"reputation": common.SILENT}).Error
 	if err != nil {
@@ -366,7 +379,10 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		return err
 	}
 
+	logging.GetLoggerWithContext(ctx).Info("Log sources marked silent", zap.Strings("silentLogSources", silentLogsources))
+
 	// raise alert and save it to opensearch
+	logging.GetLoggerWithContext(ctx).Info("Raising alert for log sources", zap.Any("logsourcesEntityArray", logsourcesEntityArray))
 	if len(logsourcesEntityArray) > 0 {
 		err = helper.SendAlertToControlPlane(ctx, logsourcesEntityArray, fmt.Sprintf(alerts_common.LogSourceStatsNotReceivedTitle, healthchecker.LogSourceActivityCheckerTime), fmt.Sprintf(alerts_common.LogSourceStatsNotReceivedMessage, healthchecker.LogSourceActivityCheckerTime), alerts_common.LogSourceStatsNotReceived, alerts_common.LogSourceFunctionality, alerts_common.SevereAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
