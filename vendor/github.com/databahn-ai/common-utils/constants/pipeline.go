@@ -31,6 +31,7 @@ const PreprocessingTopicPrefix = "db.staging.preprocessing"
 const PreprocessingTopicBackupDlqPrefix = "db.staging.preprocessing.backup.dlq"
 const NormalizationTopicPrefix = "db.staging.norm"
 const SensitiveDataDetectionTopicPrefix = "db.staging.sensitive"
+const DataReplayTopicPrefix = "db.raw.input.replay"
 
 const DestinationForwardTypeRaw = "RAW"
 const DestinationForwardTypeParsed = "PARSED"

@@ -130,6 +130,8 @@ github.com/cpuguy83/dockercfg v0.3.2 h1:DlJTyZGBDlXqUZ2Dk2Q3xHs/FtnooJJVaad2S9GK
 github.com/cpuguy83/dockercfg v0.3.2/go.mod h1:sugsbF4//dDlL/i+S+rtpIWp+5h0BHJHfjj5/jFyUJc=
 github.com/databahn-ai/common-utils v0.161.0 h1:7Q02sxrQ3FPKFna6NUCmA7WaULiTYDNFzE57nhUgFAY=
 github.com/databahn-ai/common-utils v0.161.0/go.mod h1:R+vJN/lU7qF//0Y5dzYQlOcYDoHn9diEjYF5sbRKbZQ=
+github.com/databahn-ai/common-utils v0.162.0 h1:tBfdW0/sSHwIIZuslU64xPtpl2Ua+NuAlBMNTfUtmsI=
+github.com/databahn-ai/common-utils v0.162.0/go.mod h1:R+vJN/lU7qF//0Y5dzYQlOcYDoHn9diEjYF5sbRKbZQ=
 github.com/databahn-ai/db-models v0.154.0 h1:3yBSFnkttHnWmigiUrq/oJoVa8VmcLflif7AqTWAMgM=
 github.com/databahn-ai/db-models v0.154.0/go.mod h1:MSqyyMju3wVkleb6rmw9O5zSGM5uyI4A5gyFpNzwSpY=
 github.com/databahn-ai/go-logging v0.19.0 h1:+Y/I0VEiMeJFH2y+FTmMKsMVEElMaR7la6oQcDKTCbk=

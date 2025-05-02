@@ -29,7 +29,7 @@ func ExecuteReplayJob(input model.Message) {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
-	input.DestinationTopic = commConst.InputTopicPrefix
+	input.DestinationTopic = commConst.DataReplayTopicPrefix
 	_, exit, code := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 	if exit {
 		logger.GetLogger().Info("shutdown started  with error code", zap.Int("code", code))

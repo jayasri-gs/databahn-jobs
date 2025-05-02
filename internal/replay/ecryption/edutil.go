@@ -9,14 +9,14 @@ import (
 )
 
 func DecryptKeys(input *model.Message) error {
-	awsSecretKey := input.AdditionalConfig["secret_id"]
+	secretManagerKey := input.AdditionalConfig["secret_id"]
 	// keys are not encrypted
-	if awsSecretKey == "" {
+	if secretManagerKey == "" {
 		return nil
 	}
 
 	tenantIdSecretIdMap := map[string][]string{
-		input.TenantId: {awsSecretKey},
+		input.TenantId: {secretManagerKey},
 	}
 	secrets, err := changeflag.LoadSecrets(appConfig.GetAppConfiguration(), tenantIdSecretIdMap)
 	if err != nil {
