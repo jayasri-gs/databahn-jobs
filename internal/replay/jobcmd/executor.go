@@ -3,21 +3,24 @@ package jobcmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
 	commConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/kafka"
+	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/lookup"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/processor"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/source/dbaws"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
 )
 
 func ExecuteReplayJob(input model.Message) {
@@ -26,7 +29,7 @@ func ExecuteReplayJob(input model.Message) {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
-	input.DestinationTopic = commConst.InputTopicPrefix
+	input.DestinationTopic = commConst.DataReplayTopicPrefix
 	_, exit, code := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 	if exit {
 		logger.GetLogger().Info("shutdown started  with error code", zap.Int("code", code))
@@ -43,7 +46,8 @@ func ExecuteReplayJob(input model.Message) {
 }
 
 func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
-
+	throughPutLimit := utils.GetEnvInt(constants.THROUGHPUT_ENV_VARIABLE, constants.THROUGHPUT_DEFAULT_RATE)
+	throughPutController := util.NewThroughputController(throughPutLimit)
 	var wg sync.WaitGroup
 	mst.UpdateMetaData(constants.Global, constants.StatusInProgress, 0, 0, 0, 0, "")
 	totalFiles := len(mst.GetProcessList())
@@ -66,12 +70,12 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 			fileName := mst.GetProcessList()[i]
 			metaValue := mst.GetMetaMap()[fileName]
 			logger.GetLogger().Info("spawning thread :", zap.String("traceId", inputReq.RequestId), zap.Int("thread", i), zap.String("FileName : ", fileName))
-			err, status := dbaws.S3FileDownloader(inputReq, i, mst, fileName, metaValue)
+			err, status := dbaws.FileDownloader(inputReq, i, mst, fileName, metaValue)
 			if err != nil {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
 			}
-			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.DestinationTopic, inputReq)
+			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.DestinationTopic, inputReq, throughPutController)
 			if err != nil {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
@@ -81,6 +85,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	}
 	logger.GetLogger().Info("waiting for threads to complete ")
 	wg.Wait()
+	throughPutController.Stop()
 	logger.GetLogger().Info("input message : ", zap.Reflect("Input data : ", inputReq))
 	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetMetaMap()))
 	logger.GetLogger().Info("Headers ", zap.Reflect("Headers ", processor.GetHeader(inputReq)))

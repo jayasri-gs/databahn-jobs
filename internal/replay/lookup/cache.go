@@ -4,6 +4,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/utils"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+	"sync"
 )
 
 var Cache FiFoCache
@@ -11,6 +12,7 @@ var Cache FiFoCache
 type FiFoCache struct {
 	Keys   []string
 	Values map[string]any
+	mx     sync.RWMutex
 }
 
 // Init function that initialises the cache and logger
@@ -25,6 +27,7 @@ func InitCache() {
 
 func (fc *FiFoCache) Set(key string, value any, traceId string) {
 
+	fc.mx.Lock()
 	if len(fc.Keys) >= 10 {
 
 		delete(fc.Values, fc.Keys[0])
@@ -36,9 +39,12 @@ func (fc *FiFoCache) Set(key string, value any, traceId string) {
 		logger.GetLogger().Info("Adding new key to cache", zap.String("key", utils.ReplaceChars(key)), zap.String("traceId", traceId))
 	}
 	fc.Values[key] = value
+	fc.mx.Unlock()
 }
 
 func (fc *FiFoCache) Get(key string, traceId string) (any, bool) {
+	fc.mx.RLock()
+	defer fc.mx.RUnlock()
 	value, exists := fc.Values[key]
 	logger.GetLogger().Info("Getting key from cache", zap.String("key", utils.ReplaceChars(key)), zap.String("traceId", traceId))
 	return value, exists
@@ -46,6 +52,8 @@ func (fc *FiFoCache) Get(key string, traceId string) (any, bool) {
 
 func (fc *FiFoCache) Delete(key string, traceId string) {
 	logger.GetLogger().Info("Deleting key from cache", zap.String("key", key), zap.String("traceId", traceId))
+	fc.mx.Lock()
+	defer fc.mx.Unlock()
 	delete(fc.Values, key)
 }
 

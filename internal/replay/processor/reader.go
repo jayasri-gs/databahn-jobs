@@ -4,6 +4,13 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/databahn-ai/common-utils/ack"
 	commConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/kafka"
@@ -11,16 +18,13 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"os"
-	"path/filepath"
-	"strconv"
-	"time"
 )
 
-func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaDataStore, reqId string, threadId int, topic string, req model.Message) (error, string) {
+func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaDataStore, reqId string, threadId int, topic string, req model.Message, throughPutController *util.ThroughputController) (error, string) {
 
 	filePath := filepath.Join(mst.GetPath("dataDir"), fileName)
 	logger.GetLogger().Info(" starting for    ", zap.String("filePath", filePath), zap.String("traceId", reqId), zap.Int("thread ", threadId))
@@ -43,18 +47,41 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	logger.GetLogger().Info("getting producer", zap.String("traceId", reqId), zap.Int("thread ", threadId))
 	var producer = GetProducer(reqId, topic)
 
-	gzipReader, err := gzip.NewReader(file)
-	if err != nil {
-		logger.GetLogger().Error("failed to create gzip reader, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
-		return err, constants.StatusFailed
-	}
-	defer gzipReader.Close()
+	var scanner *bufio.Scanner
 
-	scanner := bufio.NewScanner(gzipReader)
-	if err = scanner.Err(); err != nil {
-		logger.GetLogger().Error("error reading file, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
-		return err, constants.StatusFailed
+	switch strings.ToLower(req.DataStore) {
+	case constants.S3_STORAGE_TYPE, "":
+		gzipReader, err := gzip.NewReader(file)
+		if err != nil {
+			if err.Error() == "gzip: invalid header" {
+				newErr := fmt.Errorf(fileName + " :- file is not gZip ")
+				logger.GetLogger().Error("failed to create gzip reader, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+				return newErr, constants.StatusFailed
+			}
 
+			logger.GetLogger().Error("failed to create gzip reader, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+		}
+		defer func(gzipReader *gzip.Reader) {
+			err := gzipReader.Close()
+			if err != nil {
+				logger.GetLogger().Error("Error while closing gzip reader", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+			}
+		}(gzipReader)
+
+		scanner = bufio.NewScanner(gzipReader)
+		if err = scanner.Err(); err != nil {
+			logger.GetLogger().Error("error reading file, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+			return err, constants.StatusFailed
+		}
+	case constants.AZURE_BLOB_STORAGE_TYPE:
+		scanner = bufio.NewScanner(file)
+		if err = scanner.Err(); err != nil {
+			logger.GetLogger().Error("error reading file, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+			return err, constants.StatusFailed
+		}
+	default:
+		logger.GetLogger().Error("unsupported file type", zap.String("fileType", req.DataStore), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+		return fmt.Errorf("unsupported file type"), constants.StatusFailed
 	}
 
 	//var lineSlice string
@@ -76,6 +103,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			Message: []byte(line),
 			Headers: GetHeader(req),
 		}
+		throughPutController.IncrementOrWait()
 		producer.SendAsyncTopic(message, utils.GetDynamicTopicName(commConst.InputTopicPrefix), func(err error) {
 			logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
 		})
@@ -146,7 +174,7 @@ func PrepareAck(status []ack.Status, inputReq model.Message) ack.Ack {
 
 func GetHeader(request model.Message) []kafka.Header {
 
-	headers := make([]kafka.Header, 12)
+	headers := make([]kafka.Header, 13)
 	headers[0] = kafka.Header{Key: commConst.DeviceType, Value: []byte(request.DeviceType)}
 	headers[1] = kafka.Header{Key: commConst.DeviceVendor, Value: []byte(request.DeviceVendor)}
 	headers[2] = kafka.Header{Key: commConst.LogType, Value: []byte(request.LogType)}
@@ -159,6 +187,7 @@ func GetHeader(request model.Message) []kafka.Header {
 	headers[9] = kafka.Header{Key: commConst.EdgeTimestamp, Value: []byte(strconv.FormatInt(time.Now().UnixMilli(), 10))}
 	headers[10] = kafka.Header{Key: "db_component_name", Value: []byte("replay_data")}
 	headers[11] = kafka.Header{Key: commConst.PipelineDone, Value: []byte(commConst.DataReplayStage)}
+	headers[12] = kafka.Header{Key: commConst.SourceName, Value: []byte(request.SourceName)}
 
 	return headers
 }

@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	logger      *zap.Logger
-	loggerOnce  sync.Once
-	loggerReady = false
-	path        = []string{"stderr"}
+	logger                   *zap.Logger
+	loggerOnce               sync.Once
+	loggerOnceEndpointLogger sync.Once
+	loggerReady              = false
+	path                     = []string{"stderr"}
 )
 
 // GetLogger - gets logging instance

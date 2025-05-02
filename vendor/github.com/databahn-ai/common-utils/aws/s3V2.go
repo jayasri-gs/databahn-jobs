@@ -2,9 +2,11 @@ package aws
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,15 +19,16 @@ import (
 )
 
 type Client struct {
-	AuthType         string
-	AccessKeyID      string
-	SecretAccessKey  string
-	Region           string
-	RoleArn          string
-	ExternalID       string
-	URL              string
-	S3ForcePathStyle bool
-	_client          *s3.Client
+	AuthType           string
+	AccessKeyID        string
+	SecretAccessKey    string
+	Region             string
+	RoleArn            string
+	ExternalID         string
+	URL                string
+	S3ForcePathStyle   bool
+	InsecureSkipVerify bool
+	_client            *s3.Client
 }
 
 func (c *Client) Connect() (err error) {
@@ -36,7 +39,7 @@ func (c *Client) Connect() (err error) {
 	ctx := context.TODO()
 
 	// Static credentials
-	if c.AuthType == "static" {
+	if c.AuthType == "KEY_BASED_AUTH" {
 		creds := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, ""))
 		cfg, err = config.LoadDefaultConfig(ctx,
 			config.WithRegion(c.Region),
@@ -70,6 +73,13 @@ func (c *Client) Connect() (err error) {
 		o.UsePathStyle = c.S3ForcePathStyle
 		if c.URL != "" {
 			o.BaseEndpoint = aws.String(c.URL)
+		}
+		o.HTTPClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: c.InsecureSkipVerify,
+				},
+			},
 		}
 	})
 	return nil

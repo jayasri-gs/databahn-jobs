@@ -4,15 +4,16 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/vault"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
-	"net/http"
-	"strconv"
-	"strings"
 )
 
 type Credentials struct {
@@ -93,12 +94,12 @@ func readOsDetails(config configuration.ConfigReader) (*Credentials, error) {
 	}
 	secretBackend := config.GetString(configuration.SecretBackend)
 	if secretBackend == "" {
-		logger.GetLogger().Error("opensearch secret backend is empty")
-		return nil, errors.New("opensearch secret backend is empty")
+		logger.GetLogger().Info("No secret backend configured. selecting default")
+		secretBackend = configuration.SecretBackendAWS
 	}
 	var creds Credentials
 	switch secretBackend {
-	case "aws":
+	case configuration.SecretBackendAWS:
 		region := config.GetString(configuration.Region)
 		data, err := aws.ReadSecretByName(secretName, region)
 		if err != nil {
@@ -109,7 +110,7 @@ func readOsDetails(config configuration.ConfigReader) (*Credentials, error) {
 		if err != nil {
 			return nil, err
 		}
-	case "vault":
+	case configuration.SecretBackendVault:
 		vaultAddress := config.GetString(configuration.VaultAddress)
 		vaultToken := config.GetString(configuration.VaultToken)
 		if vaultAddress == "" || vaultToken == "" {
