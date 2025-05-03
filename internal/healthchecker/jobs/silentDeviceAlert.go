@@ -30,6 +30,36 @@ type Device struct {
 	Summary    string `json:"summary,omitempty"`
 }
 
+type SilentDevicesConfig struct {
+	ID         uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
+	SourceId   uuid.UUID `gorm:"type:uuid" json:"source_id"`
+	TenantID   uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
+	CustomerID uuid.UUID `gorm:"type:uuid" json:"customer_id"`
+	CreatedAt  time.Time `gorm:"type:timestamp" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"-" json:"updated_at"`
+}
+
+func GetLogSourceIdsFromSilentDeviceConfig(ctx context.Context) (map[string][]string, error) {
+	db := config.GetDB()
+	var silentDeviceConfigs []SilentDevicesConfig
+	err := db.Model(&SilentDevicesConfig{}).Find(&silentDeviceConfigs).Error
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error fetching silent device configs", zap.Error(err))
+		return nil, err
+	}
+	logging.GetLoggerWithContext(ctx).Info("silent device configs fetched", zap.Int("count", len(silentDeviceConfigs)))
+	sourceIds := make(map[string][]string)
+	for _, con := range silentDeviceConfigs {
+		tenantId := con.TenantID.String()
+		sourceId := con.SourceId.String()
+		if _, ok := sourceIds[tenantId]; !ok {
+			sourceIds[tenantId] = []string{}
+		}
+		sourceIds[tenantId] = append(sourceIds[tenantId], sourceId)
+	}
+	return sourceIds, nil
+}
+
 func getSilentDevices(ctx context.Context, client *opensearch.Client, index string, query string, pageSize int, searchAfter []any, tenantName string) ([]Device, []any, error) {
 
 	var silentDevices []Device
@@ -69,15 +99,15 @@ func ProcessSilentDevices(ctx context.Context) error {
 		return err
 	}
 
-	//logSourceIds, err := GetLogSourceIdsFromCollectionProfile(ctx)
-	//if err != nil {
-	//	logging.GetLoggerWithContext(ctx).Error("error fetching log source IDs", zap.Error(err))
-	//	return err
-	//}
+	logSourceIds, err := GetLogSourceIdsFromSilentDeviceConfig(ctx)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error fetching log source IDs", zap.Error(err))
+		return err
+	}
 
 	for _, t := range tenants {
 
-		silentDevices, err := FetchSilentDevices(ctx, t.Id.String(), t.Name, logSourceIds)
+		silentDevices, err := FetchSilentDevices(ctx, t.Id.String(), t.Name, logSourceIds[t.Id.String()])
 		if err != nil {
 			return fmt.Errorf("failed to fetch silent devices: %w", err)
 		}
