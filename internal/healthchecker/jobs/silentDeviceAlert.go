@@ -199,51 +199,46 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 		return err
 	}
 
-	for _, configObject := range silentDevices {
-		var emailTo []string
-		emailTo = append(emailTo, config.GetAppConfiguration().GetString(awsemail.OPSGini))
-
-		configObject.MinTimeFormatted = formatUnixMillis(configObject.MinTime)
-		configObject.MaxTimeFormatted = formatUnixMillis(configObject.MaxTime)
-		configObject.SourceName = sourceNames[configObject.SourceID]
-
-		emailData := EmailData{
-			Title:           fmt.Sprintf("Device :%s:%s", configObject.Hostname, configObject.TenantName),
-			BulkDataRequest: []Device{configObject},
-		}
-
-		tmpl, err := template.New("emailTemplate").Parse(emailTemplate)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error parsing email template", zap.Error(err))
-			continue
-		}
-
-		var body bytes.Buffer
-		err = tmpl.Execute(&body, emailData)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error executing email template", zap.Error(err))
-			continue
-		}
-
-		var emailNotification = awsemail.EmailNotification{
-			Recipients: &awsemail.Recipient{
-				To: emailTo,
-			},
-			Body:    aws.String(body.String()),
-			Subject: aws.String(emailData.Title),
-		}
-
-		err = awsemail.SendEmail(ctx, emailNotification)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Info("Error sending notification")
-			return err
-		}
-
-		logging.GetLoggerWithContext(ctx).Info("sent notification")
-
-		time.Sleep(500 * time.Millisecond)
+	for i := range silentDevices {
+		silentDevices[i].MinTimeFormatted = formatUnixMillis(silentDevices[i].MinTime)
+		silentDevices[i].MaxTimeFormatted = formatUnixMillis(silentDevices[i].MaxTime)
+		silentDevices[i].SourceName = sourceNames[silentDevices[i].SourceID]
 	}
 
+	emailData := EmailData{
+		Title:           fmt.Sprintf("Silent Devices Alert for Tenant: %s", tenantId),
+		BulkDataRequest: silentDevices,
+	}
+
+	tmpl, err := template.New("emailTemplate").Parse(emailTemplate)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error parsing email template", zap.Error(err))
+		return err
+	}
+
+	var body bytes.Buffer
+	err = tmpl.Execute(&body, emailData)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error executing email template", zap.Error(err))
+		return err
+	}
+
+	emailTo := []string{config.GetAppConfiguration().GetString(awsemail.OPSGini)}
+	emailNotification := awsemail.EmailNotification{
+		Recipients: &awsemail.Recipient{
+			To: emailTo,
+		},
+		Body:    aws.String(body.String()),
+		Subject: aws.String(emailData.Title),
+	}
+
+	err = awsemail.SendEmail(ctx, emailNotification)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error sending notification", zap.Error(err))
+		return err
+	}
+
+	logging.GetLoggerWithContext(ctx).Info("sent notification for tenant", zap.String("tenantId", tenantId))
 	return nil
 }
 
