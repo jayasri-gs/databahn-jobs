@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
+	awsemail "github.com/databahn-ai/databahn-jobs/internal/healthchecker/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	source "github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
+	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
@@ -307,6 +310,20 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while creating config map", zap.Error(err))
 		return err
 	}
+
+	getTenants, err := tenant.GetTenants(ctx, config.GetDB())
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while getting tenants", zap.Error(err))
+		return err
+	}
+
+	// send email to opsgini
+	err = sendEmail(ctx, alertToBeRaisedLogSources, getTenants)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while sending email", zap.Error(err))
+		return err
+	}
+
 	var filteredAlertCandidates []source.Source
 	for _, ls := range alertToBeRaisedLogSources {
 		if configEntry, ok := configMap[fmt.Sprintf("LOG_SOURCE_%s", ls.ID.String())]; ok {
@@ -391,5 +408,50 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		}
 	}
 	logging.GetLogger().Info("notification stats as follows", zap.Any("no_of_inactive_sources", len(logsourceIdsStatsReceived)), zap.Any("ids", sourceIdToAlert))
+	return nil
+}
+
+func sendEmail(ctx context.Context, alertsToBeRaised []source.Source, tenantList []tenant.Tenant) error {
+	tenantMap := make(map[string]string)
+	for _, currentTenant := range tenantList {
+		tenantMap[currentTenant.Id.String()] = currentTenant.Name
+	}
+	var emailTo []string
+	emailTo = append(emailTo, config.GetAppConfiguration().GetString(awsemail.OPSGini))
+
+	var logSourceDetails []map[string]string
+	for _, configObject := range alertsToBeRaised {
+		logSourceDetails = append(logSourceDetails, map[string]string{
+			"ID":         configObject.ID.String(),
+			"TenantID":   configObject.TenantID.String(),
+			"TenantName": tenantMap[configObject.TenantID.String()],
+			"Name":       configObject.Name,
+		})
+	}
+
+	// Format the collected information as JSON
+	formattedLogSourceDetails, err := json.MarshalIndent(logSourceDetails, "", "  ")
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error marshaling log source details to JSON", zap.Error(err))
+		return err
+	}
+
+	// Prepare the email
+	title := "Log sources for which alerts to be raised for inactivity"
+	var email = awsemail.EmailNotification{
+		Recipients: &awsemail.Recipient{
+			To: emailTo,
+		},
+		Body:    aws.String("<pre>" + string(formattedLogSourceDetails) + "</pre>"),
+		Subject: aws.String(title),
+	}
+
+	// Send the email
+	err = awsemail.SendEmail(ctx, email)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Info("Error sending notification")
+		return err
+	}
+
 	return nil
 }
