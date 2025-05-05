@@ -106,7 +106,12 @@ func ProcessSilentDevices(ctx context.Context) error {
 	}
 
 	for _, t := range tenants {
-
+		logging.GetLoggerWithContext(ctx).Info("processing tenant", zap.String("tenantId", t.Id.String()))
+		logging.GetLoggerWithContext(ctx).Info("log sources for the tenant ", zap.String("tenantId", t.Id.String()), zap.Any("logSourceIds", logSourceIds[t.Id.String()]))
+		if _, ok := logSourceIds[t.Id.String()]; !ok {
+			logging.GetLoggerWithContext(ctx).Info("no log source IDs found for tenant", zap.String("tenantId", t.Id.String()))
+			continue
+		}
 		silentDevices, err := FetchSilentDevices(ctx, t.Id.String(), t.Name, logSourceIds[t.Id.String()])
 		if err != nil {
 			return fmt.Errorf("failed to fetch silent devices: %w", err)
@@ -186,8 +191,6 @@ func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 
 	return q, nil
 }
-
-// Write a function to get configured log sources
 
 func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device) error {
 
