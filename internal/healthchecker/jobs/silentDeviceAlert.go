@@ -206,7 +206,7 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	}
 
 	emailData := EmailData{
-		Title:           fmt.Sprintf("Silent Devices Alert for Tenant: %s", tenantId),
+		Title:           fmt.Sprintf("Silent Devices Alert for Tenant: %s", silentDevices[0].TenantName),
 		BulkDataRequest: silentDevices,
 	}
 
