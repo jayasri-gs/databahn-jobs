@@ -2,8 +2,6 @@ module github.com/databahn-ai/databahn-jobs
 
 go 1.24
 
-toolchain go1.24.2
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
 	github.com/aws/aws-sdk-go-v2 v1.36.3
@@ -23,7 +21,7 @@ require (
 	github.com/twmb/murmur3 v1.1.8
 	go.uber.org/zap v1.27.0
 	gopkg.in/yaml.v3 v3.0.1
-	gorm.io/datatypes v1.2.5
+	gorm.io/datatypes v1.1.0
 	gorm.io/gorm v1.26.0
 )
 

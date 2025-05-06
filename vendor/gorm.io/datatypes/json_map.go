@@ -1,7 +1,6 @@
 package datatypes
 
 import (
-	"bytes"
 	"context"
 	"database/sql/driver"
 	"encoding/json"
@@ -43,10 +42,7 @@ func (m *JSONMap) Scan(val interface{}) error {
 		return errors.New(fmt.Sprint("Failed to unmarshal JSONB value:", val))
 	}
 	t := map[string]interface{}{}
-	rd := bytes.NewReader(ba)
-	decoder := json.NewDecoder(rd)
-	decoder.UseNumber()
-	err := decoder.Decode(&t)
+	err := json.Unmarshal(ba, &t)
 	*m = t
 	return err
 }
