@@ -205,10 +205,10 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 		return err
 	}
 
-	for _, device := range silentDevices {
-		device.MinTimeFormatted = formatUnixMillis(device.MinTime)
-		device.MaxTimeFormatted = formatUnixMillis(device.MaxTime)
-		device.SourceName = sourceNames[device.SourceID]
+	for i := range silentDevices {
+		silentDevices[i].MinTimeFormatted = formatUnixMillis(silentDevices[i].MinTime)
+		silentDevices[i].MaxTimeFormatted = formatUnixMillis(silentDevices[i].MaxTime)
+		silentDevices[i].SourceName = sourceNames[silentDevices[i].SourceID]
 	}
 
 	emailData := EmailData{
