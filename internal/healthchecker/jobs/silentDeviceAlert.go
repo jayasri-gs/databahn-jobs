@@ -191,7 +191,6 @@ func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 
 	return q, nil
 }
-
 func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, logSourceIds map[string][]string, tenantId string) error {
 	sourceNames, err := GetSourceNames(ctx, config.GetDB(), logSourceIds[tenantId])
 	if err != nil {
@@ -208,6 +207,7 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	emailData := EmailData{
 		Title:           fmt.Sprintf("Silent Devices Alert for Tenant: %s", silentDevices[0].TenantName),
 		BulkDataRequest: silentDevices,
+		GroupedDevices:  groupDevicesBySource(silentDevices),
 	}
 
 	tmpl, err := template.New("emailTemplate").Parse(emailTemplate)
@@ -245,6 +245,15 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 type EmailData struct {
 	Title           string
 	BulkDataRequest []Device
+	GroupedDevices  map[string][]Device
+}
+
+func groupDevicesBySource(devices []Device) map[string][]Device {
+	groupedDevices := make(map[string][]Device)
+	for _, device := range devices {
+		groupedDevices[device.SourceName] = append(groupedDevices[device.SourceName], device)
+	}
+	return groupedDevices
 }
 
 func formatUnixMillis(ms int64) string {
@@ -267,200 +276,135 @@ func GetSourceNames(ctx context.Context, db *gorm.DB, sourceIDs []string) (map[s
 }
 
 const emailTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-		        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-		<html xmlns="http://www.w3.org/1999/xhtml">
-		<head>
-		    <style>
-		        body {
-		            background-color: #282F3B;
-		            font-family: Arial, sans-serif;
-		            color: #ffffff;
-		        }
-		
-		        .left {
-		            text-align: left;
-		        }
-		
-		        td {
-		            padding: 20px 50px 30px 50px;
-		        }
-		
-		        small,
-		        .small {
-		            font-size: 12px;
-		        }
-		
-		        a,
-		        a:hover,
-		        a:visited {
-		            color: #000000;
-		            text-decoration: underline;
-		        }
-		
-		        h1,
-		        h2 {
-		            font-size: 22px;
-		            color: #404040;
-		            font-weight: normal;
-		            padding-top: 25px;
-		        }
-		
-		        p {
-		            font-size: 15px;
-		            color: #606060;
-		        }
-		
-		        .general {
-		            background-color: #ffffff;
-		        }
-		
-		        .icon {
-		            margin: -40px 0px 15px 0px;
-		            width: 60px;
-		            height: 60px;
-		            line-height: 60px;
-		            display: inline-block;
-		            text-align: center;
-		            border-radius: 30px;
-		            color: #ffa523;
-		            font-style: oblique;
-		            font-size: 24px;
-		            font-weight: bold;
-		            font-family: serif;
-		        }
-		
-		        .information p {
-		            color: #273c47;
-		        }
-		
-		        .information .icon {
-		            font-family: Georgia, "Times New Roman", Times, serif;
-		            font-style: italic;
-		            color: black;
-		        }
-		
-		        .content {
-		            width: 600px;
-		        }
-		
-		        @media only screen and (max-width: 600px) {
-		            .content {
-		                width: 100%;
-		            }
-		        }
-		
-		        @media only screen and (max-width: 400px) {
-		            td {
-		                padding: 15px 25px;
-		            }
-		
-		            h1,
-		            h2 {
-		                font-size: 20px;
-		            }
-		
-		            p {
-		                font-size: 12px;
-		            }
-		
-		            small,
-		            .small {
-		                font-size: 12px;
-		            }
-		
-		            .icon {
-		                display: block;
-		                margin: 10px auto 10px auto;
-		            }
-		        }
-		    </style>
-		    <link rel="stylesheet"
-		          href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.5/font/bootstrap-icons.min.css">
-		</head>
-		
-		<body style="margin: 0; padding: 0">
-		<table style="border: none" cellpadding="0" cellspacing="0" width="100%">
-		    <tr>
-		        <td style="padding: 15px 0">
-		            <table
-		                    style="border: none; margin-left: auto; margin-right: auto"
-		                    cellpadding="0"
-		                    cellspacing="0"
-		                    width="600"
-		                    class="content"
-		            >
-		                <!-- Start: Small header text in pale grey email background -->
-		                <tr>
-		                    <td style="padding: 0px 0px 0px 0px; text-align: center;">
-		                        <img src="https://databahn.ai/wp-content/uploads/2024/02/DB-logo-reversed-final-1024x237-1-1.webp"
-		                             alt="DataBahn Inc" style="max-width: 500px;">
-		                    </td>
-		                </tr>
-		                <!-- End: Small header text in pale grey email background -->
-		
-		                <!-- Start: Notice line with icon -->
-		                <tr>
-		                    <td class="general left">
-		                        <span class="information icon"><i class="bi bi-info-circle"></i></span>
-		                        <p class="infocolor" style="color: #ffa523">{{.Title}}</p>
-		                    </td>
-		                </tr>
-		                <!-- End: Notice line with icon -->
-		
-		                <!-- Start: Iterate through all items in the email to be notified -->
-		                {{range .BulkDataRequest}}
-		                <tr align="left">
-		                    <td class="general" style="padding: 10px 20px">
-		                        <p>
-		                            <span style="font-size: 14px; font-weight: 600">Device Hostname</span>:
-		                            {{.Hostname}}
-		                        </p>
-		                        <p>
-		                            <span style="font-size: 14px; font-weight: 600">Tenant Name</span>: {{.TenantName}}
-		                        </p>
-		                        <p>
-		                            <span style="font-size: 14px; font-weight: 600">Source ID</span>: {{.SourceID}}
-		                        </p>
-		                        <p>
-		                            <span style="font-size: 14px; font-weight: 600">Source Name</span>: {{.SourceName}}
-		                        </p>
-		                        <p>
-		                            <span style="font-size: 14px; font-weight: 600">First Seen</span>: {{.MinTimeFormatted}}
-		                        </p>
-		                        <p>
-		                            <span style="font-size: 14px; font-weight: 600">Last Seen</span>: {{.MaxTimeFormatted}}
-		                        </p>
-		                        <p>
-		                            <span style="font-size: 14px; font-weight: 600">Message</span>: Silent device detected
-		                        </p>
-		                    </td>
-		                </tr>
-		                <tr>
-		                    <td class="general" style="padding: 10px 20px">
-		                        <hr width="80%" color="#fc5858" size="1">
-		                    </td>
-		                </tr>
-		                {{end}}
-		                <!-- End: Iterate through all items in the email to be notified -->
-		
-		                <!-- Start: Closeout line and contact -->
-		                <tr>
-		                    <td class="general left">
-		                        <p>
-		                            Please investigate the source and take necessary actions.
-		                        </p>
-		                    </td>
-		                </tr>
-		                <tr>
-		                    <td class="general left">
-		                        <p class="small">Regards,</p>
-		                        <p class="small">DataBahn Team</p>
-		                    </td>
-		                </tr>
-		                <!-- End: Closeout line and contact -->
-		            </table>
-		        </td>
-		    </tr>
-		</table>
-		</body>
-		</html>`
+          "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <style>
+        body {
+            background-color: #282F3B;
+            font-family: Arial, sans-serif;
+            color: #ffffff;
+        }
+
+        .left {
+            text-align: left;
+        }
+
+        td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #ffffff;
+            color: #000000;
+        }
+
+        th {
+            background-color: #f4f4f4;
+            font-weight: bold;
+            text-align: left;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+
+        .summary {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .content {
+            width: 600px;
+        }
+
+        @media only screen and (max-width: 600px) {
+            .content {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body style="margin: 0; padding: 0">
+<table style="border: none" cellpadding="0" cellspacing="0" width="100%">
+    <tr>
+        <td style="padding: 15px 0">
+            <table
+                    style="border: none; margin-left: auto; margin-right: auto"
+                    cellpadding="0"
+                    cellspacing="0"
+                    width="600"
+                    class="content"
+            >
+                <!-- Start: Header -->
+                <tr>
+                    <td style="padding: 0px 0px 0px 0px; text-align: center;">
+                        <img src="https://databahn.ai/wp-content/uploads/2024/02/DB-logo-reversed-final-1024x237-1-1.webp"
+                             alt="DataBahn Inc" style="max-width: 500px;">
+                    </td>
+                </tr>
+                <tr>
+                    <td class="summary">
+                        {{.Title}}
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <p>Total Silent Devices Detected: {{len .BulkDataRequest}}</p>
+                        <ul>
+                            {{range $sourceName, $devices := .GroupedDevices}}
+                            <li>{{len $devices}} silent devices detected for source: {{$sourceName}}</li>
+                            {{end}}
+                        </ul>
+                    </td>
+                </tr>
+                <!-- End: Header -->
+
+                <!-- Start: Grouped Device Details -->
+                {{range $sourceName, $devices := .GroupedDevices}}
+                <tr>
+                    <td>
+                        <h3>Source Name: {{$sourceName}}</h3>
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>Device Hostname</th>
+                                <th>First Seen</th>
+                                <th>Last Seen</th>
+                                <th>Message</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {{range $devices}}
+                            <tr>
+                                <td>{{.Hostname}}</td>
+                                <td>{{.MinTimeFormatted}}</td>
+                                <td>{{.MaxTimeFormatted}}</td>
+                                <td>Silent device detected</td>
+                            </tr>
+                            {{end}}
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+                {{end}}
+                <!-- End: Grouped Device Details -->
+
+                <!-- Start: Footer -->
+                <tr>
+                    <td>
+                        <p>Please investigate the source and take necessary actions.</p>
+                        <p>Regards,</p>
+                        <p>DataBahn Team</p>
+                    </td>
+                </tr>
+                <!-- End: Footer -->
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>`
