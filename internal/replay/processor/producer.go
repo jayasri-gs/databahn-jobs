@@ -45,7 +45,7 @@ func InitProducer(reqId string, topic string) {
 	}
 	Producer[topic] = producer
 
-	processingBrokers := utils.GetEnvOrDefault(constants.KafkaBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
+	processingBrokers := utils.GetEnvOrDefault(constants.KafkaInputBootstrapServers, "") //common.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 	AckProducer, err = ack.NewAckProducer(context.Background(), processingBrokers)
 	if err != nil {
 		logger.GetLogger().Error("error while initialising status ack producer ", zap.String("traceId", reqId), zap.Int("thread ", -1), zap.String("error", err.Error()))
