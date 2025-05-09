@@ -34,6 +34,7 @@ type Device struct {
 	TenantName       string `json:"tenant_name"`
 	SourceName       string `json:"source_name"`
 	Summary          string `json:"summary,omitempty"`
+	Duration         string `json:"duration,omitempty"`
 }
 
 type SilentDevicesConfig struct {
@@ -198,16 +199,26 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 		return err
 	}
 
+	// Group devices by SourceName
+	groupedDevices := make(map[string][]Device)
 	for i := range silentDevices {
 		silentDevices[i].MinTimeFormatted = formatUnixMillis(silentDevices[i].MinTime)
 		silentDevices[i].MaxTimeFormatted = formatUnixMillis(silentDevices[i].MaxTime)
 		silentDevices[i].SourceName = sourceNames[silentDevices[i].SourceID]
+
+		// Calculate duration
+		duration := time.Duration(silentDevices[i].MaxTime-silentDevices[i].MinTime) * time.Millisecond
+		silentDevices[i].Duration = fmt.Sprintf("%dh %dm", int(duration.Hours()), int(duration.Minutes())%60)
+
+		groupedDevices[silentDevices[i].SourceName] = append(groupedDevices[silentDevices[i].SourceName], silentDevices[i])
 	}
 
-	emailData := EmailData{
-		Title:           fmt.Sprintf("Silent Devices Alert for Tenant: %s", silentDevices[0].TenantName),
-		BulkDataRequest: silentDevices,
-		GroupedDevices:  groupDevicesBySource(silentDevices),
+	emailData := struct {
+		Title          string
+		GroupedDevices map[string][]Device
+	}{
+		Title:          fmt.Sprintf("Silent Devices Alert for Tenant: %s", silentDevices[0].TenantName),
+		GroupedDevices: groupedDevices,
 	}
 
 	tmpl, err := template.New("emailTemplate").Parse(emailTemplate)
@@ -245,15 +256,6 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 type EmailData struct {
 	Title           string
 	BulkDataRequest []Device
-	GroupedDevices  map[string][]Device
-}
-
-func groupDevicesBySource(devices []Device) map[string][]Device {
-	groupedDevices := make(map[string][]Device)
-	for _, device := range devices {
-		groupedDevices[device.SourceName] = append(groupedDevices[device.SourceName], device)
-	}
-	return groupedDevices
 }
 
 func formatUnixMillis(ms int64) string {
@@ -275,136 +277,20 @@ func GetSourceNames(ctx context.Context, db *gorm.DB, sourceIDs []string) (map[s
 	return sourceMap, nil
 }
 
-const emailTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-          "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-    <style>
-        body {
-            background-color: #282F3B;
-            font-family: Arial, sans-serif;
-            color: #ffffff;
-        }
+const emailTemplate = `Silent Devices Alert for Tenant: {{.Title}}
 
-        .left {
-            text-align: left;
-        }
+{{range $sourceName, $devices := .GroupedDevices}}
+Log Source: {{$sourceName}} ({{$devices | len}} devices silent)
 
-        td {
-            padding: 10px;
-            border: 1px solid #ddd;
-        }
+| Device Hostname   | Tenant Name     | First Seen          | Last Seen           | Duration   |
+|-------------------|-----------------|---------------------|---------------------|------------|
+{{range $devices}}
+| {{.Hostname | printf "%-17s"}} | {{.TenantName | printf "%-15s"}} | {{.MinTimeFormatted | printf "%-20s"}} | {{.MaxTimeFormatted | printf "%-20s"}} | {{.Duration | printf "%-10s"}} |
+{{end}}
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background-color: #ffffff;
-            color: #000000;
-        }
+{{end}}
 
-        th {
-            background-color: #f4f4f4;
-            font-weight: bold;
-            text-align: left;
-            padding: 10px;
-            border: 1px solid #ddd;
-        }
+Please investigate the source and take necessary actions.
 
-        .summary {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 20px;
-        }
-
-        .content {
-            width: 600px;
-        }
-
-        @media only screen and (max-width: 600px) {
-            .content {
-                width: 100%;
-            }
-        }
-    </style>
-</head>
-
-<body style="margin: 0; padding: 0">
-<table style="border: none" cellpadding="0" cellspacing="0" width="100%">
-    <tr>
-        <td style="padding: 15px 0">
-            <table
-                    style="border: none; margin-left: auto; margin-right: auto"
-                    cellpadding="0"
-                    cellspacing="0"
-                    width="600"
-                    class="content"
-            >
-                <!-- Start: Header -->
-                <tr>
-                    <td style="padding: 0px 0px 0px 0px; text-align: center;">
-                        <img src="https://databahn.ai/wp-content/uploads/2024/02/DB-logo-reversed-final-1024x237-1-1.webp"
-                             alt="DataBahn Inc" style="max-width: 500px;">
-                    </td>
-                </tr>
-                <tr>
-                    <td class="summary">
-                        {{.Title}}
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <p>Total Silent Devices Detected: {{len .BulkDataRequest}}</p>
-                        <ul>
-                            {{range $sourceName, $devices := .GroupedDevices}}
-                            <li>{{len $devices}} silent devices detected for source: {{$sourceName}}</li>
-                            {{end}}
-                        </ul>
-                    </td>
-                </tr>
-                <!-- End: Header -->
-
-                <!-- Start: Grouped Device Details -->
-                {{range $sourceName, $devices := .GroupedDevices}}
-                <tr>
-                    <td>
-                        <h3>Source Name: {{$sourceName}}</h3>
-                        <table>
-                            <thead>
-                            <tr>
-                                <th>Device Hostname</th>
-                                <th>First Seen</th>
-                                <th>Last Seen</th>
-                                <th>Message</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {{range $devices}}
-                            <tr>
-                                <td>{{.Hostname}}</td>
-                                <td>{{.MinTimeFormatted}}</td>
-                                <td>{{.MaxTimeFormatted}}</td>
-                                <td>Silent device detected</td>
-                            </tr>
-                            {{end}}
-                            </tbody>
-                        </table>
-                    </td>
-                </tr>
-                {{end}}
-                <!-- End: Grouped Device Details -->
-
-                <!-- Start: Footer -->
-                <tr>
-                    <td>
-                        <p>Please investigate the source and take necessary actions.</p>
-                        <p>Regards,</p>
-                        <p>DataBahn Team</p>
-                    </td>
-                </tr>
-                <!-- End: Footer -->
-            </table>
-        </td>
-    </tr>
-</table>
-</body>
-</html>`
+Regards,
+DataBahn Team`
