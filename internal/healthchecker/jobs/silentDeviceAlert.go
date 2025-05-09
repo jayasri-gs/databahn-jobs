@@ -185,7 +185,7 @@ func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 	}
 
 	// Set endTime to 24 hours before the current time (previous day)
-	endTime := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+	endTime := time.Now().Add(-4 * time.Hour).Format(time.RFC3339)
 
 	// Parse endTime and add it to the query
 	t, err := time.Parse(time.RFC3339, endTime)
