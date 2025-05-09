@@ -277,7 +277,7 @@ func GetSourceNames(ctx context.Context, db *gorm.DB, sourceIDs []string) (map[s
 	return sourceMap, nil
 }
 
-const emailTemplate = `Silent Devices Alert for Tenant: {{.Title}}
+const emailTemplate = `{{.Title}}
 
 {{range $sourceName, $devices := .GroupedDevices}}
 Log Source: {{$sourceName}} ({{$devices | len}} devices silent)
