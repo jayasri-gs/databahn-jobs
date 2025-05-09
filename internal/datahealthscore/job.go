@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+const batchSize = 1000
+
 func CalculateDataHealthScore(ctx context.Context) error {
 
 	logging.GetLogger().Info("calculating data health scores")
@@ -106,20 +108,32 @@ func calculateScores(ctx context.Context, logSources []source.Source, sourceToAl
 	return dbDataHealthScores, dbDataHealthScoreRecords
 }
 
+func insertInBatches[T any](tx *gorm.DB, data []T, batchSize int) error {
+	for i := 0; i < len(data); i += batchSize {
+		end := i + batchSize
+		if end > len(data) {
+			end = len(data)
+		}
+		if err := tx.Create(data[i:end]).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func saveDataHealthScores(ctx context.Context, dbDataHealthScores []models.DataHealthScore, dbDataHealthScoreRecords []models.DataHealthScoreRecord) error {
 	return config.GetDB().Transaction(func(tx *gorm.DB) error {
-		if len(dbDataHealthScores) > 0 {
-			if err := tx.Create(&dbDataHealthScores).Error; err != nil {
-				logging.GetLoggerWithContext(ctx).Error("error while creating data health scores", zap.Error(err))
-				return err
-			}
+
+		if err := insertInBatches(tx, dbDataHealthScores, batchSize); err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while inserting data health scores", zap.Error(err))
+			return err
 		}
-		if len(dbDataHealthScoreRecords) > 0 {
-			if err := tx.Create(&dbDataHealthScoreRecords).Error; err != nil {
-				logging.GetLoggerWithContext(ctx).Error("error while creating data health score records", zap.Error(err))
-				return err
-			}
+
+		if err := insertInBatches(tx, dbDataHealthScoreRecords, batchSize); err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while inserting data health score records", zap.Error(err))
+			return err
 		}
+
 		logging.GetLogger().Info("data health scores and records created successfully")
 		return nil
 	})
