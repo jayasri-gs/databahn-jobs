@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,10 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
+
+type DatabahnParsedData struct {
+	RawEvent string `json:"rawevent"`
+}
 
 func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaDataStore, reqId string, threadId int, topic string, req model.Message, throughPutController *util.ThroughputController) (error, string) {
 
@@ -87,6 +92,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	//var lineSlice string
 	lineCounter := 0
 	var byteSize int64 = 0
+	forwardDataType := req.AdditionalConfig["forward_data_type"]
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -99,12 +105,19 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		if offsetSeek == lineCounter {
 			logger.GetLogger().Info("seek to line completed", zap.Int("offset", offsetSeek), zap.Int("lineCounter", lineCounter), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 		}
+
+		if strings.ToLower(forwardDataType) == "parsed" {
+			line, err = getRawDataFromDataBahnParsedObject(line)
+			if err != nil {
+				return err, constants.StatusFailed
+			}
+		}
 		message := kafka.Message{
 			Message: []byte(line),
 			Headers: GetHeader(req),
 		}
 		throughPutController.IncrementOrWait()
-		producer.SendAsyncTopic(message, utils.GetDynamicTopicName(commConst.InputTopicPrefix), func(err error) {
+		producer.SendAsyncTopic(message, utils.GetDynamicTopicName(topic), func(err error) {
 			logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
 		})
 
@@ -190,4 +203,13 @@ func GetHeader(request model.Message) []kafka.Header {
 	headers[12] = kafka.Header{Key: commConst.SourceName, Value: []byte(request.SourceName)}
 
 	return headers
+}
+
+func getRawDataFromDataBahnParsedObject(line string) (string, error) {
+	var parsedData DatabahnParsedData
+	if err := json.Unmarshal([]byte(line), &parsedData); err != nil {
+		err = fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: %v", err)
+		return "", err
+	}
+	return parsedData.RawEvent, nil
 }
