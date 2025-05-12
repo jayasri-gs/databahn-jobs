@@ -204,9 +204,8 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 		silentDevices[i].MinTimeFormatted = formatUnixMillis(silentDevices[i].MinTime)
 		silentDevices[i].MaxTimeFormatted = formatUnixMillis(silentDevices[i].MaxTime)
 		silentDevices[i].SourceName = sourceNames[silentDevices[i].SourceID]
-		// Calculate duration and add it to the device
-		duration := time.Duration(silentDevices[i].MaxTime-silentDevices[i].MinTime) * time.Millisecond
-		silentDevices[i].Summary = duration.String()
+		durationDays := (silentDevices[i].MaxTime - silentDevices[i].MinTime) / (24 * 60 * 60 * 1000)
+		silentDevices[i].Summary = fmt.Sprintf("%d days", durationDays)
 	}
 
 	emailData := EmailData{
@@ -218,8 +217,8 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	// Register the calculateDuration function
 	tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
 		"calculateDuration": func(minTime, maxTime int64) string {
-			duration := time.Duration(maxTime-minTime) * time.Millisecond
-			return duration.String()
+			durationDays := (maxTime - minTime) / (24 * 60 * 60 * 1000)
+			return fmt.Sprintf("%d days", durationDays)
 		},
 	}).Parse(emailTemplate)
 	if err != nil {
