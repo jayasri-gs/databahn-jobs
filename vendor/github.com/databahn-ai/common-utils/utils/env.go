@@ -3,6 +3,7 @@ package utils
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -47,4 +48,12 @@ func UseOrAddProtocol(url string) string {
 		}
 	}
 	return url
+}
+
+func GetMaskedString(token string, length int) string {
+	if len(token) <= length {
+		return token // If the token is 4 characters or less, return it as is
+	}
+	masked := strings.Repeat("*", len(token)-length) + token[len(token)-length:]
+	return masked
 }

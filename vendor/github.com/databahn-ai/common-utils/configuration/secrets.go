@@ -3,6 +3,7 @@ package configuration
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/databahn-ai/common-utils/aws"
 )
 

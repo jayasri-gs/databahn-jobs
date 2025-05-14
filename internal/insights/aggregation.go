@@ -18,16 +18,11 @@ import (
 )
 
 func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
-	conf := os.GetConf()
-	osClient, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return err
-	}
+
 	lastWindowTime := time.Now().Add(-time.Minute * INSIGHTS_INTERVAL_MINUTES)
 	lastTime, _ := util.FindWindow(lastWindowTime, time.Minute*INSIGHTS_INTERVAL_MINUTES)
 
-	indexNames, err := os.CatIndices(ctx, osClient)
+	indexNames, err := os.CatIndices(ctx, os.GetClient())
 	if err != nil {
 		return err
 	}
@@ -78,14 +73,14 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {
 				wg.Done()
 			}()
 			for _, indexMetadata := range indexMetadatas {
-				err := aggregateInsights(ctx, osClient, indexMetadata, sourceIdToNameMap)
+				err := aggregateInsights(ctx, os.GetClient(), indexMetadata, sourceIdToNameMap)
 				indexName := INSIGHTS_STAGING_INDEX_PREFIX + indexMetadata.String()
 				if err != nil {
 					errCount++
 					logger.GetLogger().Error("failed to aggregate insights", zap.Error(err), zap.String("index", indexName))
 				} else {
 					logger.GetLogger().Info("successfully aggregated insights", zap.String("index", indexName))
-					err := os.DeleteIndex(ctx, osClient, indexName)
+					err := os.DeleteIndex(ctx, os.GetClient(), indexName)
 					if err != nil {
 						logger.GetLogger().Error("failed to delete index", zap.Error(err), zap.String("index", indexName))
 						errCount++

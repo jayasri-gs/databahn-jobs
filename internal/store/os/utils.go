@@ -59,6 +59,31 @@ func UpdateAliases(client *opensearch.Client, alias, from, to string) error {
 	return nil
 }
 
+func UpdateMultipleAliases(client *opensearch.Client, alias string, from []string, to string) error {
+	var removeActions []string
+	for _, f := range from {
+		removeActions = append(removeActions, fmt.Sprintf(`{ "remove": { "index": "%s", "alias": "%s" } }`, f, alias))
+	}
+	removeActionJoined := strings.Join(removeActions, ",\n")
+	aliasActions := `
+	{
+	  "actions": [
+	    %s,
+	    { "add":    { "index": "%s", "alias": "%s" } }
+	  ]
+	}`
+	aliasActionsRequest := []byte(fmt.Sprintf(aliasActions, removeActionJoined, to, alias))
+	response, err := client.Indices.UpdateAliases(bytes.NewReader(aliasActionsRequest))
+	if err != nil {
+		return err
+	}
+	if response.IsError() {
+		msg := fmt.Sprintf("[%d] Status from OpenSearch body: %s", response.StatusCode, response.String())
+		return errors.New(msg)
+	}
+	return nil
+}
+
 func RefreshIndex(ctx context.Context, client *opensearch.Client, indexName string) error {
 	refreshIndex := opensearchapi.IndicesRefreshRequest{
 		Index: []string{indexName},

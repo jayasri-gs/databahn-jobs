@@ -1,0 +1,164 @@
+package aws
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+)
+
+type Client struct {
+	AuthType           string
+	AccessKeyID        string
+	SecretAccessKey    string
+	Region             string
+	RoleArn            string
+	ExternalID         string
+	URL                string
+	S3ForcePathStyle   bool
+	InsecureSkipVerify bool
+	_client            *s3.Client
+}
+
+func (c *Client) Connect() (err error) {
+	var (
+		cfg aws.Config
+	)
+
+	ctx := context.TODO()
+
+	// Static credentials
+	if c.AuthType == "KEY_BASED_AUTH" {
+		creds := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, ""))
+		cfg, err = config.LoadDefaultConfig(ctx,
+			config.WithRegion(c.Region),
+			config.WithCredentialsProvider(creds),
+		)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Default credential chain (IAM roles, environment, etc.)
+		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
+		if err != nil {
+			return err
+		}
+	}
+
+	// Assume role if specified
+	if c.RoleArn != "" {
+		stsClient := sts.NewFromConfig(cfg)
+		options := func(o *stscreds.AssumeRoleOptions) {
+			if c.ExternalID != "" {
+				o.ExternalID = &c.ExternalID
+			}
+		}
+		creds := aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(stsClient, c.RoleArn, options))
+		cfg.Credentials = creds
+	}
+
+	// Create S3 client with custom endpoint and path style if needed
+	c._client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = c.S3ForcePathStyle
+		if c.URL != "" {
+			o.BaseEndpoint = aws.String(c.URL)
+		}
+		o.HTTPClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: c.InsecureSkipVerify,
+				},
+			},
+		}
+	})
+	return nil
+}
+
+func (c *Client) UploadFileFromLocation(ctx context.Context, bucketName, key, filePath string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = c._client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+		Body:   file,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload file: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) UploadFile(ctx context.Context, bucketName, key string, file io.Reader) error {
+	_, err := c._client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+		Body:   file,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload file: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) DownloadFileToLocation(ctx context.Context, bucketName, key, destinationPath string) error {
+	output, err := c._client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to download file: %w", err)
+	}
+	defer output.Body.Close()
+
+	file, err := os.Create(destinationPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, output.Body)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) DownloadFile(ctx context.Context, bucketName, key string) (io.ReadCloser, error) {
+	output, err := c._client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucketName,
+		Key:    &key,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download file: %w", err)
+	}
+	return output.Body, nil
+}
+
+func (c *Client) BucketExists(ctx context.Context, bucketName string) (bool, error) {
+	_, err := c._client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: &bucketName,
+	})
+	if err != nil {
+		var notFound *types.NotFound
+		if errors.As(err, &notFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check bucket existence: %w", err)
+	}
+	return true, nil
+}

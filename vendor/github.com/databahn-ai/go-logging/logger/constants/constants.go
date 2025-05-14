@@ -16,6 +16,8 @@ var ConnectorType = []string{SyslogConnector}
 var _ = []int{EdgeStatusCreated, EdgeStatusInactive, EdgeStatusDeleted}
 
 const HeaderTenantUuid = "tenant_uuid"
+const SourceId = "source_id"
+const Vendor = "vendor"
 const TenantUuid = "TENANT_UUID"
 const EdgeUuid = "EDGE_UUID"
 const FleetId = "FLEET_ID"

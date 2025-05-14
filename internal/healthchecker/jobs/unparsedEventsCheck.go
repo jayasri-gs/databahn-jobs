@@ -27,12 +27,6 @@ func GetUnparsedEvents(ctx context.Context, startTime string, endTime string) (s
 	q := `tags.component_name: "parser" AND name: "total_events_delivered" AND namespace:"parsing-service-unparsed"`
 	query := statistics.AddDateRange(q, startTime, endTime)
 	agg := "tags.db_event_source_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return statistics.AggregateResponse{}, err
-	}
 
 	searchBody := &statistics.AggregateQueryRequest{}
 	searchBody.Size = 0
@@ -41,10 +35,10 @@ func GetUnparsedEvents(ctx context.Context, startTime string, endTime string) (s
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
 
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", os.StatsIndex))
 		return statistics.AggregateResponse{}, err
 	}
 	bodyContent, _ := io.ReadAll(searchResponse.Body)
@@ -114,7 +108,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	// raise alerts for sources which have unparsed events
 
 	logging.GetLogger().Info("Raising alerts for sources which have unparsed events", zap.Any("alertToBeRaisedLogSources", MapKeys(sourceIdToUnparsedEventCount)))
-
+	var toRaiseAlerts []alerts_common.AlertBaseObjectV2
 	for _, ls := range alertToBeRaisedLogSources {
 		alertMessageStr := fmt.Sprintf("Source %s has unparsed events", ls.Name)
 
@@ -131,12 +125,13 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 
 		err = helper.SendAlertToControlPlane(ctx, []alerts_common.AlertBaseObjectV2{alert}, "Unparsed events detected", alertMessageStr, "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.CriticalAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsed events", zap.Error(err))
-			continue
+			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsedevents", zap.Error(err))
+			return err
 		}
-		logging.GetLoggerWithContext(ctx).Info("Alert successfully raised for unparsed events", zap.String("sourceID", ls.ID.String()), zap.String("sourceName", ls.Name))
+		logging.GetLoggerWithContext(ctx).Info("Alerts successfully raised for unparsed events", zap.Int("raised_alerts_count", len(toRaiseAlerts)))
 	}
-	return err
+
+	return nil
 }
 
 func resolveExistingAlerts(ctx context.Context, sources map[string]float64) error {
@@ -177,14 +172,9 @@ func getExistingAlertsForUnparsedEvents(ctx context.Context, sources map[string]
 		logging.GetLoggerWithContext(ctx).Info("No sources provided. Skipping resolution.")
 		return []statistics.AlertDocument{}, nil
 	}
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to OpenSearch", zap.Error(err))
-		return nil, err
-	}
+
 	q := `dismissed:false AND functionalityEntityId:` + "(" + strings.Join(MapKeys(sources), " OR ") + ")" + ` AND functionalityType:UNPARSED_EVENTS`
-	searchResponse, err := os.Search(ctx, client, common.AlertsIndex, q)
+	searchResponse, err := os.Search(ctx, os.GetClient(), common.AlertsIndex, q)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying openSearch for unresolved alerts", zap.Error(err))
 		return nil, err
@@ -203,12 +193,6 @@ func GetEventDeliveryStats(ctx context.Context, startTime string, endTime string
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
 	agg := "tags.db_event_source_id.keyword"
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return statistics.AggregateResponse{}, err
-	}
 
 	searchBody := &statistics.AggregateQueryRequest{}
 	searchBody.Size = 0
@@ -217,9 +201,9 @@ func GetEventDeliveryStats(ctx context.Context, startTime string, endTime string
 	aggList := strings.Split(agg, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, conf.StatsIndex+"*", &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", conf.StatsIndex))
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", os.StatsIndex))
 		return statistics.AggregateResponse{}, err
 	}
 	bodyContent, _ := io.ReadAll(searchResponse.Body)

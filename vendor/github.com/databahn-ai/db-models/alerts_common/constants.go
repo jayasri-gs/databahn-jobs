@@ -29,6 +29,7 @@ const TokenValidationFailedMessage = "Marking Ingestion for log source temporari
 const S3DispenserOnboarding = "s3-dispenser-onboarding"
 const GooglePubsubDispenserOnboarding = "google-pubsub-dispenser-onboarding"
 const GoogleStorageDispenserOnboarding = "google-storage-dispenser-onboarding"
+const AzureBlobDispenserOnboarding = "azure-blob-dispenser-onboarding"
 
 const DestinationFunctionality = "destination"
 const DestinationStatsNotReceived = "delivery-checker"
@@ -41,6 +42,8 @@ const GoogleStorageCredentialsInvalidTitle = "Invalid Credentials. Disabling goo
 const GoogleStorageCredentialsInvalidMessage = "Invalid google storage credentials"
 const GooglePubsubCredentialsInvalidTitle = "Invalid Credentials. Disabling google pubsub destination"
 const GooglePubsubCredentialsInvalidMessage = "Invalid google pubsub credentials"
+const AzureBlobCredentialsInvalidTitle = "Invalid Credentials. Disabling azure blob destination"
+const AzureBlobCredentialsInvalidMessage = "Invalid azure blob credentials"
 
 const S3BucketNotExistsTitle = "S3 bucket doesn't exist"
 const S3BucketNotExistsMessage = "S3 bucket doesn't exist"
@@ -48,6 +51,12 @@ const GoogleStorageBucketNotExistsTitle = "Google storage bucket doesn't exist"
 const GoogleStorageBucketNotExistsMessage = "Google storage bucket doesn't exist"
 const GooglePubsubTopicNotExistsTitle = "Google pubsub topic doesn't exist"
 const GooglePubsubTopicNotExistsMessage = "Google pubsub topic doesn't exist"
+const AzureBlobContainerNotExistsTitle = "Azure blob container doesn't exist"
+const AzureBlobContainerNotExistsMessage = "Azure blob container doesn't exist"
+
+const CheckpointUpdateFailed = "checkpoint-update-failed"
+const CheckpointUpdateFailedTitle = "Failed to update cloud source checkpoint"
+const CheckpointUpdateFailedMessage = "Failed to update cloud source checkpoint"
 
 const S3SqsConnectorOnboarding = "s3-sqs-onboarding"
 

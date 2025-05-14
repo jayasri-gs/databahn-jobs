@@ -28,6 +28,8 @@ const (
 	EntityAwsSecurityLakeDestination    = "destination_aws_security_lake"
 	EntitySplunkHECDestination          = "destination_splunk_hec"
 	EntityDestinationSentinelOneDataSet = "destination_sentinel_one_data_set"
+	EntityExabeam                       = "destination_exabeam"
+	EntityAnomaliDestination            = "destination_anomali"
 	EntitySource                        = "source"
 	EntityTransformer                   = "transformer"
 	EntityCustomNormalization           = "custom_normalization"
@@ -37,6 +39,7 @@ const (
 	EntityInsightsRule                  = "insights_rule"
 	EntityDestinationOverride           = "destination_override"
 	EntitySensitiveData                 = "sensitive_data"
+	EntityGlobalDestination             = "global_destination"
 
 	ChangeFlagTopic         = "db.management.change.flag"
 	ChangeFlagAckTopic      = "db.management.ack"

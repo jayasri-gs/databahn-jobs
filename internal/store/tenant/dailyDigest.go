@@ -87,14 +87,10 @@ func (d *Digest) GetVolumeReductionAchievements() {
 }
 
 func (d *Digest) GetIngestionBreakdown() error {
-	c, err := getClient()
-	if err != nil {
-		return err
-	}
 	q := fmt.Sprintf(`tags.component_name: "ingestion" AND name: "total_events_delivered" AND tags.db_tenant_id.keyword: "%s"`, d.TenantId.String())
 	agg := "tags.db_event_source_id.keyword"
 
-	ingestionStats, err := ExecuteAggQuery(context.Background(), c, q, agg, d.StartTime, d.EndTime)
+	ingestionStats, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime)
 	if err != nil {
 		return err
 	}
@@ -113,14 +109,10 @@ func (d *Digest) GetEventDeliveryBreakdown() error {
 	if err != nil {
 		return err
 	}
-	c, err := getClient()
-	if err != nil {
-		return err
-	}
 	q := fmt.Sprintf(`tags.component_name: "dispenser" AND name: "total_events_delivered" AND tags.db_tenant_id.keyword: "%s"`, d.TenantId.String())
 	agg := "tags.destination_id.keyword"
 
-	destinationStats, err := ExecuteAggQuery(context.Background(), c, q, agg, d.StartTime, d.EndTime)
+	destinationStats, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime)
 	if err != nil {
 		return err
 	}
@@ -168,14 +160,10 @@ func (d *Digest) GetIngestionStats(eventsIngested any, sizeIngested any) {
 }
 
 func (d *Digest) GetSensitiveDataTrackingStats() error {
-	c, err := getClient()
-	if err != nil {
-		return err
-	}
 	d.SensitiveDataTracking = make(map[string]string)
 	q := fmt.Sprintf(`name: "sensitive_total" AND tags.db_tenant_id.keyword: "%s"`, d.TenantId.String())
 	agg := "tags.sensitive_type.keyword"
-	s, err := ExecuteAggQuery(context.Background(), c, q, agg, d.StartTime, d.EndTime)
+	s, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime)
 	if err != nil {
 		return err
 	}
@@ -188,13 +176,6 @@ func (d *Digest) GetSensitiveDataTrackingStats() error {
 }
 
 func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.AlertDocument, error) {
-	conf := os.GetConf()
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
-
 	checkTime := time.Now().Add(-24 * time.Hour)
 	q := `lastObservedAt:>` + strconv.FormatInt(checkTime.UnixMilli(), 10)
 
@@ -202,9 +183,9 @@ func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.Alert
 	var searchAfter []any
 
 	for {
-		res, newSearchAfter, err := os.SearchPaginated(ctx, client, common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "asc"}})
+		res, newSearchAfter, err := os.SearchPaginated(ctx, os.GetClient(), common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "asc"}})
 		if err != nil {
-			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", common.AlertsIndex))
+			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", common.AlertsIndex))
 			return nil, err
 		}
 

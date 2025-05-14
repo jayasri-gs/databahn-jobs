@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	logger      *zap.Logger
-	loggerOnce  sync.Once
-	loggerReady = false
-	path        = []string{"stderr"}
+	logger                   *zap.Logger
+	loggerOnce               sync.Once
+	loggerOnceEndpointLogger sync.Once
+	loggerReady              = false
+	path                     = []string{"stderr"}
 )
 
 // GetLogger - gets logging instance
@@ -45,6 +46,10 @@ func GetLoggerWithContext(ctx context.Context) (newLogger *zap.Logger) {
 
 	if activationKey := ctx.Value(constants.ActivationCode); activationKey != nil {
 		newLogger = newLogger.With(zap.Any("activation_code", activationKey))
+	}
+
+	if sourceIdKey := ctx.Value(constants.SourceId); sourceIdKey != nil {
+		newLogger = newLogger.With(zap.Any(constants.SourceId, sourceIdKey))
 	}
 
 	return newLogger

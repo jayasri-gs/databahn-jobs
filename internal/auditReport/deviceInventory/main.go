@@ -75,15 +75,6 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 }
 
 func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests, file *os.File, writer *csv.Writer) (*os.File, *csv.Writer, error) {
-
-	conf := opensearch.GetConf()
-	client, err := opensearch.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return nil, nil, err
-	}
 	sourceIdsToNames, query, file, writer, err := getFileAndRequestConfig(ctx, req, failedRequests, file, writer)
 	if err != nil {
 		return nil, nil, err
@@ -92,9 +83,9 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, faile
 	pageSize := utils.GetEnvInt("DEVICE_INVENTORY_REPORT_PAGE_SIZE", 1000)
 	index := "db_insights_sights_sourcehostname_" + req.TenantId
 	for {
-		res, newSearchAfter, err := opensearch.SearchPaginated(ctx, client, index, query, pageSize, searchAfter, []opensearch.Sort{{Field: "updated_at", Order: "asc"}})
+		res, newSearchAfter, err := opensearch.SearchPaginated(ctx, opensearch.GetClient(), index, query, pageSize, searchAfter, []opensearch.Sort{{Field: "updated_at", Order: "asc"}})
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("url", conf.Url), zap.String("index", index))
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 			*failedRequests = append(*failedRequests, errRequest)
 			return nil, nil, err

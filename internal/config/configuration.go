@@ -2,12 +2,13 @@ package config
 
 import (
 	"context"
+	"sync"
+
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/databases"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"sync"
 )
 
 var appConfigLoader, secretsLoader, destinationConfigLoader, alertConfigLoader sync.Once
@@ -57,31 +58,20 @@ func GetDestinationConfiguration() configuration.ConfigReader {
 }
 
 func connectDB() {
-	secretName := appConfigReader.GetString("database.secret_name")
-	region := appConfigReader.GetString(configuration.Region)
-	dbSecrets, err := databases.ReadDBSecrets(context.Background(), secretName, region)
-	if err != nil {
-		logger.GetLoggerWithContext(context.Background()).Error("error while fetching database credentials", zap.Error(err))
-	}
 	databaseConnection = &databases.Connection{
 		Host:         appConfigReader.GetString(configuration.DatabaseHost),
 		Port:         appConfigReader.GetString(configuration.DatabasePort),
 		SchemaName:   appConfigReader.GetString(configuration.DatabaseSchema),
 		DatabaseName: appConfigReader.GetString(configuration.DatabaseName),
-		Credentials:  *dbSecrets,
 	}
-	dbConnection, err := databaseConnection.Connect(context.Background(), false)
+	dbConnection, err := databaseConnection.ConnectWithSecrets(context.Background(), false, appConfigReader)
 	if err != nil {
-		logger.GetLoggerWithContext(context.Background()).Error("error while connecting to database", zap.Error(err))
+		logger.GetLoggerWithContext(context.Background()).Panic("error while connecting to database", zap.Error(err))
 		return
 	}
 	db = dbConnection
 }
 
-func GetOpenSearchSecrets() configuration.OpenSearchCredentials {
-	secretsLoader.Do(readOpenSearchConfigs)
-	return *openSearchCreds
-}
 func GetDB() *gorm.DB {
 	if db == nil {
 		connectDB()
@@ -99,4 +89,17 @@ func loadAlertConfigReader() {
 		logger.GetLogger().Panic("failed to read alert configuration", zap.Error(err))
 	}
 	alertConfigReader = conf
+}
+
+func GetDataReplayConfiguration() configuration.ConfigReader {
+	appConfigLoader.Do(loadDataReplayConfigReader)
+	return appConfigReader
+}
+
+func loadDataReplayConfigReader() {
+	conf, err := newDataReplayConfig()
+	if err != nil {
+		logger.GetLogger().Panic("failed to read data replay configuration", zap.Error(err))
+	}
+	appConfigReader = conf
 }

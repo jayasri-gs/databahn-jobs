@@ -2,8 +2,9 @@ package dbaws
 
 import (
 	"context"
+	"strings"
+
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
-	"github.com/databahn-ai/databahn-jobs/internal/replay/ecryption"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/lookup"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
@@ -11,38 +12,62 @@ import (
 
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	utilsc "github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
-	"path/filepath"
 )
 
 func createAwsConnection(input model.Message) (*s3.Client, error) {
+	authType := input.AdditionalConfig["auth_type"]
 
-	traceId := input.RequestId
-	key, secret := ecryption.DecryptKeys(input.AccessKeyID, input.SecretAccessKey, "")
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		// Hard coded credentials
-		config.WithCredentialsProvider(credentials.StaticCredentialsProvider{
+	var cfg aws.Config
+	var err error
+	if authType == "role_based" {
+		roleArn := input.AdditionalConfig["role_arn"]
+		cfg, err = config.LoadDefaultConfig(context.TODO())
+		if err != nil {
+			return nil, err
+		}
+		cfg, err = config.LoadDefaultConfig(context.TODO(),
+			config.WithCredentialsProvider(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), roleArn, func(o *stscreds.AssumeRoleOptions) {
+				if input.AdditionalConfig["external_id"] != "" {
+					o.ExternalID = aws.String(input.AdditionalConfig["external_id"])
+				}
+			})), config.WithRegion(input.Region))
+		if err != nil {
+			err = fmt.Errorf("error while creating aws session using roleArn: %v", err)
+			return nil, err
+		}
+	} else {
+		accessKey := input.AdditionalConfig["access_key_id"]
+		secretKey := input.AdditionalConfig["secret_access_key"]
+		cfg, err = config.LoadDefaultConfig(context.TODO(),
+			// Hard coded credentials
+			config.WithCredentialsProvider(credentials.StaticCredentialsProvider{
 
-			Value: aws.Credentials{
-				AccessKeyID: key, SecretAccessKey: secret, SessionToken: "",
-				Source: "from kafka topic",
-			},
-		}), config.WithRegion(input.Region))
-	if err != nil {
-		logger.GetLogger().Info("failed to load Config", zap.Error(err), zap.String("raceId", traceId))
-		return nil, err
+				Value: aws.Credentials{
+					AccessKeyID: accessKey, SecretAccessKey: secretKey, SessionToken: "",
+					Source: "from kafka topic",
+				},
+			}), config.WithRegion(input.Region))
+		if err != nil {
+			err = fmt.Errorf("error while creating aws session using access keys : %v", err)
+			return nil, err
+		}
 	}
+
 	client := s3.NewFromConfig(cfg)
 	return client, nil
-
 }
 
 func getOrCreateS3Connection(input model.Message) (*s3.Client, error) {
@@ -130,7 +155,7 @@ func downloadFileFromS3(s3Client *s3.Client, input model.Message, fileName strin
 //The download manager gets the data in parts and writes them to a buffer until complete
 //the data has been downloaded.
 
-func S3FileDownloader(input model.Message, threadId int, mst *replaymanager.MetaDataStore, fileName string, metaValue model.MetaDataValue) (error, string) {
+func FileDownloader(input model.Message, threadId int, mst *replaymanager.MetaDataStore, fileName string, metaValue model.MetaDataValue) (error, string) {
 
 	if metaValue.Retry >= constants.MaxRetry {
 		logger.GetLogger().Info(fmt.Sprintf("max retries exceeded skipping file {%d}", threadId), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
@@ -139,19 +164,28 @@ func S3FileDownloader(input model.Message, threadId int, mst *replaymanager.Meta
 	if metaValue.Status != constants.StatusDownloaded {
 		logger.GetLogger().Info(fmt.Sprintf("file is not downloaded trying to download {%d}", threadId), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
 
-		s3Client, er := getOrCreateS3Connection(input)
-		if er != nil {
-			logger.GetLogger().Error("error: while creating aws session  ", zap.Error(er), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
-			return er, constants.StatusDownloadFailed
-		}
-
-		err := downloadFileFromS3(s3Client, input, fileName, mst, threadId)
-		if err != nil {
-			logger.GetLogger().Error(" error while downloading file from s3  ", zap.Error(err), zap.String("filename", fileName), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
-			return err, constants.StatusDownloadFailed
+		switch strings.ToLower(input.DataStore) {
+		case constants.S3_STORAGE_TYPE, "":
+			s3Client, err := getOrCreateS3Connection(input)
+			if err != nil {
+				logger.GetLogger().Error("error: while creating aws session  ", zap.Error(err), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
+				return err, constants.StatusDownloadFailed
+			}
+			err = downloadFileFromS3(s3Client, input, fileName, mst, threadId)
+			if err != nil {
+				logger.GetLogger().Error(" error while downloading file from s3  ", zap.Error(err), zap.String("filename", fileName), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
+				return err, constants.StatusDownloadFailed
+			}
+		case constants.AZURE_BLOB_STORAGE_TYPE:
+			err := downloadFileFromAzureBlob(input, fileName, mst, threadId)
+			if err != nil {
+				logger.GetLogger().Error(" error while downloading file from azure blob  ", zap.Error(err), zap.String("filename", fileName), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
+				return err, constants.StatusDownloadFailed
+			}
+		default:
+			logger.GetLogger().Error("error: invalid job type ", zap.String("jobType", input.DataStore), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
 		}
 		mst.UpdateMetaData(fileName, constants.StatusDownloaded, 0, 0, 0, 0, "")
-
 		logger.GetLogger().Info(fmt.Sprintf("download is completed"), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
 	} else {
 		logger.GetLogger().Info(fmt.Sprintf("no need to downloaded file, already found in system"), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))

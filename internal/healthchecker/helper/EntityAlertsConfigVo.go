@@ -19,6 +19,7 @@ type EntityAlertsConfig struct {
 	LastCheckedTime time.Time `gorm:"type:timestamp"`
 	ID              uuid.UUID `gorm:"type:uuid;primary_key"`
 	Interval        int       `gorm:"type:int"`
+	Duration        string    `gorm:"type:varchar(255)"`
 	EntityID        uuid.UUID `gorm:"type:uuid"`
 	TenantID        uuid.UUID `gorm:"type:uuid"`
 	CustomerD       uuid.UUID `gorm:"type:uuid"`
