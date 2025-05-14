@@ -151,17 +151,9 @@ func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string,
 	pageSize := 100
 	index := "db_insights_sights_sourcehostname_" + tenantId
 
-	conf := os.GetConf()
-
-	client, err := os.NewClient(ctx, conf.Url, conf.Creds())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while connecting to statistics store", zap.Error(err))
-		return nil, err
-	}
-
 	var allSilentDevices []Device
 	for {
-		silentDevices, newSearchAfter, err := getSilentDevices(ctx, client, index, query, pageSize, searchAfter, tenantName)
+		silentDevices, newSearchAfter, err := getSilentDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
 			return nil, err
