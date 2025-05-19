@@ -69,14 +69,6 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		return err
 	}
 
-	configLogSources, err := source.GetConfigLogSourceIds(ctx)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching config log source ids", zap.Error(err))
-		return err
-	}
-
-	logging.GetLogger().Info("config log sources", zap.Any("config logSources", configLogSources))
-
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTime)))
 	startTimeThreshold := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTimeThreshold)))
@@ -134,34 +126,6 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while marking log sources", zap.Error(err))
 		return err
-	}
-
-	if len(configLogSources) > 0 {
-		var filteredWhisperingAlertsEntityArray, filteredNoisyAlertsEntityArray []alerts_common.AlertBaseObjectV2
-		for _, alert := range whisperingAlertsEntityArray {
-			for _, configLogSource := range configLogSources {
-				if alert.EntityTenantUUId.String() == configLogSource.TenantID && alert.EntityId.String() == configLogSource.SourceID {
-					logging.GetLoggerWithContext(ctx).Info("whispering log source found in config", zap.String("tenantId", configLogSource.TenantID), zap.String("sourceId", configLogSource.SourceID))
-					filteredWhisperingAlertsEntityArray = append(filteredWhisperingAlertsEntityArray, alert)
-				}
-			}
-		}
-		for _, alert := range noisyAlertsEntityArray {
-			for _, configLogSource := range configLogSources {
-				if alert.EntityTenantUUId.String() == configLogSource.TenantID && alert.EntityId.String() == configLogSource.SourceID {
-					logging.GetLoggerWithContext(ctx).Info("noisy log source found in config", zap.String("tenantId", configLogSource.TenantID), zap.String("sourceId", configLogSource.SourceID))
-					filteredNoisyAlertsEntityArray = append(filteredNoisyAlertsEntityArray, alert)
-				}
-			}
-		}
-		if len(filteredNoisyAlertsEntityArray) > 0 {
-			noisyAlertsEntityArray = filteredNoisyAlertsEntityArray
-		}
-
-		if len(filteredWhisperingAlertsEntityArray) > 0 {
-			whisperingAlertsEntityArray = filteredWhisperingAlertsEntityArray
-		}
-
 	}
 
 	err = raiseAlerts(ctx, noisyAlertsEntityArray, whisperingAlertsEntityArray)
