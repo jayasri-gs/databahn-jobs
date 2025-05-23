@@ -189,11 +189,6 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			}
 		}
 
-		err = upsertFrequencyDocs(ctx, cli, &index, docs)
-		if err != nil {
-			return err
-		}
-
 		hasData = true
 		err = writeToSearchFile(s3File, docs, attMap, sourceIdToNameMap)
 		if err != nil {
