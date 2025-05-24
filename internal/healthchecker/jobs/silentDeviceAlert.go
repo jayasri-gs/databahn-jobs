@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"html/template"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -219,10 +220,14 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 		}
 	}
 
+	sort.Slice(filteredDevices, func(i, j int) bool {
+		return filteredDevices[i].MaxTime > filteredDevices[j].MaxTime
+	})
+
 	emailData := EmailData{
 		Title:           fmt.Sprintf("Silent Devices Alert for Tenant: %s", silentDevices[0].TenantName),
-		BulkDataRequest: silentDevices,
-		GroupedDevices:  groupDevicesBySource(silentDevices),
+		BulkDataRequest: filteredDevices,
+		GroupedDevices:  groupDevicesBySource(filteredDevices),
 	}
 
 	// Register the calculateDuration function
