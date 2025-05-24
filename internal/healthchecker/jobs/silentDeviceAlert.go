@@ -34,7 +34,6 @@ type Device struct {
 	TenantName       string `json:"tenant_name"`
 	SourceName       string `json:"source_name"`
 	Summary          string `json:"summary,omitempty"`
-	Duration         string `json:"duration,omitempty"`
 }
 
 type SilentDevicesConfig struct {
@@ -152,11 +151,9 @@ func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string,
 	pageSize := 100
 	index := "db_insights_sights_sourcehostname_" + tenantId
 
-	client := os.GetClient()
-
 	var allSilentDevices []Device
 	for {
-		silentDevices, newSearchAfter, err := getSilentDevices(ctx, client, index, query, pageSize, searchAfter, tenantName)
+		silentDevices, newSearchAfter, err := getSilentDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
 			return nil, err
@@ -200,12 +197,26 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 		return err
 	}
 
+	startOfDay := time.Now().Truncate(24 * time.Hour)
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	// Filter out devices that are not silent
+	var filteredDevices []Device
 	for i := range silentDevices {
-		silentDevices[i].MinTimeFormatted = formatUnixMillis(silentDevices[i].MinTime)
-		silentDevices[i].MaxTimeFormatted = formatUnixMillis(silentDevices[i].MaxTime)
-		silentDevices[i].SourceName = sourceNames[silentDevices[i].SourceID]
-		durationDays := (silentDevices[i].MaxTime - silentDevices[i].MinTime) / (24 * 60 * 60 * 1000)
-		silentDevices[i].Summary = fmt.Sprintf("%d days", durationDays)
+		minTime := time.UnixMilli(silentDevices[i].MinTime)
+		maxTime := time.UnixMilli(silentDevices[i].MaxTime)
+
+		// Filter devices for the current day
+		if minTime.After(startOfDay) && maxTime.Before(endOfDay) {
+			durationHours := (silentDevices[i].MaxTime - silentDevices[i].MinTime) / (60 * 60 * 1000) // Duration in hours
+			if durationHours <= 24 {
+				silentDevices[i].MinTimeFormatted = formatUnixMillis(silentDevices[i].MinTime)
+				silentDevices[i].MaxTimeFormatted = formatUnixMillis(silentDevices[i].MaxTime)
+				silentDevices[i].SourceName = sourceNames[silentDevices[i].SourceID]
+				silentDevices[i].Summary = fmt.Sprintf("%d hours", durationHours)
+				filteredDevices = append(filteredDevices, silentDevices[i])
+			}
+		}
 	}
 
 	emailData := EmailData{
@@ -382,7 +393,6 @@ const emailTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional
                             <thead>
                             <tr>
                                 <th>Device Hostname</th>
-                                <th>First Seen</th>
                                 <th>Last Seen</th>
                                 <th>Duration</th>
                             </tr>
@@ -391,7 +401,6 @@ const emailTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional
                             {{range $devices}}
                             <tr>
                                 <td>{{.Hostname}}</td>
-                                <td>{{.MinTimeFormatted}}</td>
                                 <td>{{.MaxTimeFormatted}}</td>
                                 <td>{{calculateDuration .MinTime .MaxTime}}</td>
                             </tr>
