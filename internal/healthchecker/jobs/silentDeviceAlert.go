@@ -233,8 +233,8 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	// Register the calculateDuration function
 	tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
 		"calculateDuration": func(minTime, maxTime int64) string {
-			durationDays := (maxTime - minTime) / (24 * 60 * 60 * 1000)
-			return fmt.Sprintf("%d days", durationDays)
+			durationHours := (maxTime - minTime) / (60 * 60 * 1000)
+			return fmt.Sprintf("%d hours", durationHours)
 		},
 	}).Parse(emailTemplate)
 	if err != nil {
