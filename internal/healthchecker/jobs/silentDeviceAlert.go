@@ -234,7 +234,12 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 			GroupedDevices:  nil,
 		}
 
-		tmpl, err := template.New("emailTemplate").Parse(emailTemplate)
+		tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
+			"calculateDuration": func(minTime, maxTime int64) string {
+				durationHours := (maxTime - minTime) / (60 * 60 * 1000)
+				return fmt.Sprintf("%d hours", durationHours)
+			},
+		}).Parse(emailTemplate)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error parsing email template", zap.Error(err))
 			return err
