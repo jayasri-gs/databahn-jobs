@@ -12,7 +12,7 @@ func newDataReplayConfig() (*DataReplayConfig, error) {
 	drc := &DataReplayConfig{
 		dataMap: make(map[string]string),
 	}
-	drc.dataMap["urls.data_plane_controller_internal_base_url"] = utils.GetEnvOrDefault("urls.data_plane_controller_internal_base_url", "")
+	drc.dataMap["urls.data_plane_controller_internal_base_url"] = utils.GetEnvOrDefault("DATA_PLANE_CONTROLLER_BASE_URL", "")
 	return drc, nil
 }
 

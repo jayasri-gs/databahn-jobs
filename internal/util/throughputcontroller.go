@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
 )
 
 // ThroughputController is a struct to control the throughput of a process
@@ -48,6 +49,7 @@ func (t *ThroughputController) startIncrementer() {
 		select {
 		// case to handle tick ever second
 		case <-t.ticker.C:
+			logger.GetLogger().Info("events processed in last second", zap.Int("count", t.count))
 			t.count = 0
 		// case to handle increment request
 		case _, ok := <-t.incrementChannel:
