@@ -21,11 +21,18 @@ func CatIndices(ctx context.Context, client *opensearch.Client) ([]string, error
 	if err != nil {
 		return []string{}, err
 	}
+
 	if response.IsError() {
 		msg := fmt.Sprintf("[%d] Status from OpenSearch body: %s", response.StatusCode, response.String())
 		return []string{}, errors.New(msg)
 	}
+
 	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		msg := fmt.Sprintf("[%d] Error reading response body: %s", response.StatusCode, err.Error())
+		return []string{}, errors.New(msg)
+	}
+
 	output := string(body)
 	rows := strings.Split(output, "\n")
 	var indexNames []string
