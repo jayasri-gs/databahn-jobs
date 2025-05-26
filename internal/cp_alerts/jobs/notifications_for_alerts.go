@@ -3,7 +3,6 @@ package jobs
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	notification_common "github.com/databahn-ai/common-utils/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
@@ -201,12 +200,11 @@ func sendCustomerNotification(t tenant.Tenant, title, functionality string, aler
 
 func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notificationManager *notification.NotificationManager) error {
 	emailTitle := fmt.Sprintf("%s:%s:%s", alert.Functionality, t.Name, alert.FunctionalityEntityName)
-	bodyBytes, err := json.MarshalIndent(alert, "", "  ")
+	body, err := buildOpsGenieBody(t, alert)
 	if err != nil {
-		logger.GetLogger().Error("error while marshalling alert", zap.Error(err), zap.String("tenant", t.Id.String()))
+		logger.GetLogger().Error("error while building opsgenie body", zap.Error(err), zap.String("tenant", t.Id.String()))
 		return err
 	}
-	body := string(bodyBytes)
 	request := notification_common.OpsGenieNotificationRequest{
 		Subject: emailTitle,
 		Body:    body,
@@ -217,6 +215,27 @@ func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notifica
 		return err
 	}
 	return nil
+}
+
+func buildOpsGenieBody(tnt tenant.Tenant, alert alerts_async.Alert) (string, error) {
+	var templatePath = emailTemplatesBasePath + "operations_alert.html"
+	t, err := template.ParseFiles(templatePath)
+	if err != nil {
+		logger.GetLogger().Error("error while parsing template", zap.Error(err))
+		return "", err
+	}
+	buf := new(bytes.Buffer)
+	emailTemplate := OpsGenieDetails{
+		TenantName: tnt.Name,
+		Alert:      alert,
+	}
+	err = t.Execute(buf, emailTemplate)
+	if err != nil {
+		logger.GetLogger().Error("error while executing template", zap.Error(err))
+		return "", err
+	}
+	emailBody := buf.String()
+	return emailBody, nil
 }
 
 func buildEmailBody(title string, alerts []alerts_async.Alert) (string, error) {
@@ -271,4 +290,9 @@ type EmailTemplateDetails struct {
 	FunctionalityType       string
 	Message                 string
 	FirstObservedAt         string
+}
+
+type OpsGenieDetails struct {
+	TenantName string
+	Alert      alerts_async.Alert
 }
