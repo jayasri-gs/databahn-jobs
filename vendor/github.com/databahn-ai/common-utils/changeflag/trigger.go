@@ -210,7 +210,7 @@ func (t *Trigger) readMessages(ctx context.Context, consumer *kafkaconfl.Consume
 						for dataType, data := range initialMessages {
 							logger.GetLogger().Info("change flag read initially", zap.Any("dataType", dataType), zap.Int("count", len(data)))
 						}
-						sendAcknowledgements(ctx, acks, t.ackProducer, t.redisUrl)
+						t.SendAcknowledgements(ctx, acks)
 						logger.GetLogger().Info("initial acknowledgements sent", zap.Int("count", len(acks)))
 					}
 				} else {
@@ -225,7 +225,7 @@ func (t *Trigger) readMessages(ctx context.Context, consumer *kafkaconfl.Consume
 					if initialLoadDone {
 						ack := t.newTriggerCallBack(*flag)
 						if ack != nil {
-							sendAcknowledgements(ctx, []Acknowledgement{*ack}, t.ackProducer, t.redisUrl)
+							t.SendAcknowledgements(ctx, []Acknowledgement{*ack})
 						} else {
 							logger.GetLogger().Debug("acknowledgement is empty")
 						}

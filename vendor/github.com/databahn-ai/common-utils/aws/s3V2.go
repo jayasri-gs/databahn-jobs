@@ -1,21 +1,17 @@
 package aws
 
 import (
-	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"io"
 	"net/http"
 	"os"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 type Client struct {
@@ -28,73 +24,61 @@ type Client struct {
 	URL                string
 	S3ForcePathStyle   bool
 	InsecureSkipVerify bool
-	_client            *s3.Client
+	_client            *s3.S3
 }
 
-func (c *Client) Connect() (err error) {
-	var (
-		cfg aws.Config
-	)
-
-	ctx := context.TODO()
+func (c *Client) Connect() error {
+	var config *aws.Config
 
 	// Static credentials
 	if c.AuthType == "KEY_BASED_AUTH" {
-		creds := aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(c.AccessKeyID, c.SecretAccessKey, ""))
-		cfg, err = config.LoadDefaultConfig(ctx,
-			config.WithRegion(c.Region),
-			config.WithCredentialsProvider(creds),
-		)
-		if err != nil {
-			return err
+		config = &aws.Config{
+			Region: aws.String(c.Region),
+			Credentials: credentials.NewStaticCredentials(
+				c.AccessKeyID, c.SecretAccessKey, "",
+			),
 		}
 	} else {
-		// Default credential chain (IAM roles, environment, etc.)
-		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
-		if err != nil {
-			return err
+		// Default credential chain
+		config = &aws.Config{
+			Region: aws.String(c.Region),
 		}
 	}
 
-	// Assume role if specified
-	if c.RoleArn != "" {
-		stsClient := sts.NewFromConfig(cfg)
-		options := func(o *stscreds.AssumeRoleOptions) {
-			if c.ExternalID != "" {
-				o.ExternalID = &c.ExternalID
-			}
-		}
-		creds := aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(stsClient, c.RoleArn, options))
-		cfg.Credentials = creds
+	// Custom endpoint and path style
+	if c.URL != "" {
+		config.Endpoint = aws.String(c.URL)
+		config.S3ForcePathStyle = aws.Bool(c.S3ForcePathStyle)
 	}
 
-	// Create S3 client with custom endpoint and path style if needed
-	c._client = s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = c.S3ForcePathStyle
-		if c.URL != "" {
-			o.BaseEndpoint = aws.String(c.URL)
-		}
-		o.HTTPClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: c.InsecureSkipVerify,
-				},
+	// Custom HTTP client for TLS configuration
+	config.HTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: c.InsecureSkipVerify,
 			},
-		}
-	})
+		},
+	}
+
+	// Create session and S3 client
+	sess, err := session.NewSession(config)
+	if err != nil {
+		return fmt.Errorf("failed to create session: %w", err)
+	}
+	c._client = s3.New(sess)
 	return nil
 }
 
-func (c *Client) UploadFileFromLocation(ctx context.Context, bucketName, key, filePath string) error {
+func (c *Client) UploadFileFromLocation(bucketName, key, filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
-	_, err = c._client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: &bucketName,
-		Key:    &key,
+	_, err = c._client.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(key),
 		Body:   file,
 	})
 	if err != nil {
@@ -103,10 +87,10 @@ func (c *Client) UploadFileFromLocation(ctx context.Context, bucketName, key, fi
 	return nil
 }
 
-func (c *Client) UploadFile(ctx context.Context, bucketName, key string, file io.Reader) error {
-	_, err := c._client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: &bucketName,
-		Key:    &key,
+func (c *Client) UploadFile(bucketName, key string, file io.ReadSeeker) error {
+	_, err := c._client.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(key),
 		Body:   file,
 	})
 	if err != nil {
@@ -115,10 +99,10 @@ func (c *Client) UploadFile(ctx context.Context, bucketName, key string, file io
 	return nil
 }
 
-func (c *Client) DownloadFileToLocation(ctx context.Context, bucketName, key, destinationPath string) error {
-	output, err := c._client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &bucketName,
-		Key:    &key,
+func (c *Client) DownloadFileToLocation(bucketName, key, destinationPath string) error {
+	output, err := c._client.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(key),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
@@ -138,10 +122,10 @@ func (c *Client) DownloadFileToLocation(ctx context.Context, bucketName, key, de
 	return nil
 }
 
-func (c *Client) DownloadFile(ctx context.Context, bucketName, key string) (io.ReadCloser, error) {
-	output, err := c._client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &bucketName,
-		Key:    &key,
+func (c *Client) DownloadFile(bucketName, key string) (io.ReadCloser, error) {
+	output, err := c._client.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(key),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to download file: %w", err)
@@ -149,13 +133,12 @@ func (c *Client) DownloadFile(ctx context.Context, bucketName, key string) (io.R
 	return output.Body, nil
 }
 
-func (c *Client) BucketExists(ctx context.Context, bucketName string) (bool, error) {
-	_, err := c._client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: &bucketName,
+func (c *Client) BucketExists(bucketName string) (bool, error) {
+	_, err := c._client.HeadBucket(&s3.HeadBucketInput{
+		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		var notFound *types.NotFound
-		if errors.As(err, &notFound) {
+		if s3Err, ok := err.(awserr.Error); ok && s3Err.Code() == "NotFound" {
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to check bucket existence: %w", err)

@@ -2,13 +2,14 @@ package changeflag
 
 import (
 	"context"
+	"math/rand"
+	"time"
+
 	"github.com/databahn-ai/common-utils/ack"
 	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"math/rand"
-	"time"
 )
 
 type Acknowledgement struct {
@@ -40,7 +41,7 @@ func ErrorAcknowledgement(requestId, entityType, entityId, tenantId, action, err
 	return newAcknowledgement(ack.StatusFailure, requestId, entityType, entityId, tenantId, action, errorMessage)
 }
 
-func sendAcknowledgements(ctx context.Context, changeFlagAcks []Acknowledgement, producer *ack.AckProducer, redisUrl string) {
+func (t *Trigger) SendAcknowledgements(ctx context.Context, changeFlagAcks []Acknowledgement) {
 	if changeFlagAcks == nil {
 		logger.GetLogger().Debug("no acknowledgements to send")
 		return
@@ -48,13 +49,13 @@ func sendAcknowledgements(ctx context.Context, changeFlagAcks []Acknowledgement,
 	// sleep for random time to ensure cache hit
 	time.Sleep(time.Duration(rand.Intn(2000)) * time.Millisecond)
 	for _, a := range changeFlagAcks {
-		if !ackExistsInCache(ctx, a, redisUrl) {
-			err := producer.Produce(ctx, prepareAck(a), nil)
+		if !ackExistsInCache(ctx, a, t.redisUrl) {
+			err := t.ackProducer.Produce(ctx, prepareAck(a), nil)
 			if err != nil {
 				logger.GetLogger().Error("failed to produce ack", zap.Error(err))
 				// todo generate alert
 			} else {
-				setAckInCache(ctx, a, redisUrl)
+				setAckInCache(ctx, a, t.redisUrl)
 			}
 		} else {
 			logger.GetLogger().Debug("acknowledgement already exists in cache", zap.Any("ack", a))

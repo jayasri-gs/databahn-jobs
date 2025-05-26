@@ -9,6 +9,8 @@ const ACK_PROCESSOR = "ack_processor"
 
 const FLEET_HEALTH_CHECKER = "fleet-health-checker"
 const LOG_SOURCE_ACTIVITY_CHECKER = "log-source-activity-checker"
+const LOG_SOURCE_ACTIVITY_CHECKER_NEW = "log-source-activity-checker-new"
+const NOTIFICATIONS_FOR_ALERTS = "notifications-for-alerts"
 const LOG_SOURCE_REPUTATION_CHECKER = "log-source-reputation-checker"
 const ENTITY_CHECKER_ALERT_GEN_V2 = "entity-reputation-checker-alert-gen-v2"
 const SILENT_DEVICE_ALERT = "silent-device-alert"

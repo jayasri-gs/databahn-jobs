@@ -8,6 +8,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	cp_jobs "github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore"
 	evntjobCmd "github.com/databahn-ai/databahn-jobs/internal/eventsequencing/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
@@ -45,6 +46,10 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.LOG_SOURCE_ACTIVITY_CHECKER:
 		err = jobs.AlertForLogSourceInactivity(ctx)
 		err = jobs.AlertForDestinationInactivity(ctx)
+	case common.LOG_SOURCE_ACTIVITY_CHECKER_NEW:
+		err = cp_jobs.AlertForNoEventsFromSources(ctx)
+	case common.NOTIFICATIONS_FOR_ALERTS:
+		err = cp_jobs.SendNotificationsForAlerts(ctx)
 	case common.LOG_SOURCE_REPUTATION_CHECKER:
 		err = jobs.UpdateReputationForLogSources(ctx)
 	case common.AGENT_HEALTH_CHECKER:

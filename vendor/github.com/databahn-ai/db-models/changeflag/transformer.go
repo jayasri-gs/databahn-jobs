@@ -18,6 +18,7 @@ type FlagTransform struct {
 	LogType                       string                `json:"log_type"`
 	SensitiveDataDetectionEnabled bool                  `json:"sensitive_data_detection_enabled"`
 	SensitiveDataEncryptionType   string                `json:"sensitive_data_encryption_type"`
+	AdditionalConfig              map[string]string     `json:"additional_config"`
 }
 type FlagTransformFunction struct {
 	Type                     string                     `json:"type"`
