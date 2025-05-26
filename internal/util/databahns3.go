@@ -14,9 +14,9 @@ import (
 )
 
 type AwsSearchSecret struct {
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
-	Bucket          string `json:"bucket"`
+	AccessKeyID     string `json:"search.access_key_id"`
+	SecretAccessKey string `json:"search.secret_access_key"`
+	Bucket          string `json:"search.bucket"`
 }
 
 var s3Client *s3.Client

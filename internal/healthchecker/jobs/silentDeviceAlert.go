@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"html/template"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -34,7 +35,6 @@ type Device struct {
 	TenantName       string `json:"tenant_name"`
 	SourceName       string `json:"source_name"`
 	Summary          string `json:"summary,omitempty"`
-	Duration         string `json:"duration,omitempty"`
 }
 
 type SilentDevicesConfig struct {
@@ -152,11 +152,9 @@ func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string,
 	pageSize := 100
 	index := "db_insights_sights_sourcehostname_" + tenantId
 
-	client := os.GetClient()
-
 	var allSilentDevices []Device
 	for {
-		silentDevices, newSearchAfter, err := getSilentDevices(ctx, client, index, query, pageSize, searchAfter, tenantName)
+		silentDevices, newSearchAfter, err := getSilentDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
 			return nil, err
@@ -200,25 +198,90 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 		return err
 	}
 
+	startOfDay := time.Now().Truncate(24 * time.Hour)
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	// Filter out devices that are not silent
+	var filteredDevices []Device
 	for i := range silentDevices {
-		silentDevices[i].MinTimeFormatted = formatUnixMillis(silentDevices[i].MinTime)
-		silentDevices[i].MaxTimeFormatted = formatUnixMillis(silentDevices[i].MaxTime)
-		silentDevices[i].SourceName = sourceNames[silentDevices[i].SourceID]
-		durationDays := (silentDevices[i].MaxTime - silentDevices[i].MinTime) / (24 * 60 * 60 * 1000)
-		silentDevices[i].Summary = fmt.Sprintf("%d days", durationDays)
+		minTime := time.UnixMilli(silentDevices[i].MinTime)
+		maxTime := time.UnixMilli(silentDevices[i].MaxTime)
+
+		// Filter devices for the current day
+		if minTime.After(startOfDay) && maxTime.Before(endOfDay) {
+			durationHours := (silentDevices[i].MaxTime - silentDevices[i].MinTime) / (60 * 60 * 1000) // Duration in hours
+			if durationHours <= 24 {
+				silentDevices[i].MinTimeFormatted = formatUnixMillis(silentDevices[i].MinTime)
+				silentDevices[i].MaxTimeFormatted = formatUnixMillis(silentDevices[i].MaxTime)
+				silentDevices[i].SourceName = sourceNames[silentDevices[i].SourceID]
+				silentDevices[i].Summary = fmt.Sprintf("%d hours", durationHours)
+				filteredDevices = append(filteredDevices, silentDevices[i])
+			}
+		}
+	}
+
+	sort.Slice(filteredDevices, func(i, j int) bool {
+		return filteredDevices[i].MaxTime > filteredDevices[j].MaxTime
+	})
+
+	// Check if no silent devices are found
+	if len(filteredDevices) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("No silent devices found for tenant", zap.String("tenantId", tenantId))
+
+		emailData := EmailData{
+			Title:           fmt.Sprintf("Silent Devices Alert for Tenant: %s", silentDevices[0].TenantName),
+			BulkDataRequest: nil,
+			GroupedDevices:  nil,
+		}
+
+		tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
+			"calculateDuration": func(minTime, maxTime int64) string {
+				durationHours := (maxTime - minTime) / (60 * 60 * 1000)
+				return fmt.Sprintf("%d hours", durationHours)
+			},
+		}).Parse(emailTemplate)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error parsing email template", zap.Error(err))
+			return err
+		}
+
+		var body bytes.Buffer
+		err = tmpl.Execute(&body, emailData)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error executing email template", zap.Error(err))
+			return err
+		}
+
+		emailTo := []string{config.GetAppConfiguration().GetString(awsemail.OPSGini)}
+		emailNotification := awsemail.EmailNotification{
+			Recipients: &awsemail.Recipient{
+				To: emailTo,
+			},
+			Body:    aws.String(body.String()),
+			Subject: aws.String(emailData.Title),
+		}
+
+		err = awsemail.SendEmail(ctx, emailNotification)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error sending notification", zap.Error(err))
+			return err
+		}
+
+		logging.GetLoggerWithContext(ctx).Info("sent notification for tenant with no silent devices", zap.String("tenantId", tenantId))
+		return nil
 	}
 
 	emailData := EmailData{
 		Title:           fmt.Sprintf("Silent Devices Alert for Tenant: %s", silentDevices[0].TenantName),
-		BulkDataRequest: silentDevices,
-		GroupedDevices:  groupDevicesBySource(silentDevices),
+		BulkDataRequest: filteredDevices,
+		GroupedDevices:  groupDevicesBySource(filteredDevices),
 	}
 
 	// Register the calculateDuration function
 	tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
 		"calculateDuration": func(minTime, maxTime int64) string {
-			durationDays := (maxTime - minTime) / (24 * 60 * 60 * 1000)
-			return fmt.Sprintf("%d days", durationDays)
+			durationHours := (maxTime - minTime) / (60 * 60 * 1000)
+			return fmt.Sprintf("%d hours", durationHours)
 		},
 	}).Parse(emailTemplate)
 	if err != nil {
@@ -382,7 +445,6 @@ const emailTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional
                             <thead>
                             <tr>
                                 <th>Device Hostname</th>
-                                <th>First Seen</th>
                                 <th>Last Seen</th>
                                 <th>Duration</th>
                             </tr>
@@ -391,7 +453,6 @@ const emailTemplate = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional
                             {{range $devices}}
                             <tr>
                                 <td>{{.Hostname}}</td>
-                                <td>{{.MinTimeFormatted}}</td>
                                 <td>{{.MaxTimeFormatted}}</td>
                                 <td>{{calculateDuration .MinTime .MaxTime}}</td>
                             </tr>
