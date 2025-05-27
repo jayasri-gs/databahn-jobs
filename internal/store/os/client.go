@@ -25,5 +25,5 @@ func GetClient() *opensearch.Client {
 }
 
 func StatisticsIndexAlias(tenantId string) string {
-	return fmt.Sprintf("%s_alias_%s", StatsIndex, tenantId)
+	return fmt.Sprintf("%salias_%s", StatsIndex, tenantId)
 }

@@ -32,7 +32,6 @@ func BuildNextAggregation(termFields []string, i int) NestedAgg {
 
 func GetStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime string, endTime string) (SumResponse, error) {
 	query := AddDateRange(q, startTime, endTime)
-	query = AddTenantId(query, tenantId)
 
 	searchBody := &SumQueryRequest{}
 	searchBody.Size = 0
@@ -53,7 +52,6 @@ func GetStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime st
 
 func GetStatsAggregate(ctx context.Context, q string, tenantId uuid.UUID, agg string, startTime string, endTime string) (AggregateResponse, error) {
 	query := AddDateRange(q, startTime, endTime)
-	query = AddTenantId(query, tenantId)
 
 	searchBody := &AggregateQueryRequest{}
 	searchBody.Size = 0
@@ -70,34 +68,6 @@ func GetStatsAggregate(ctx context.Context, q string, tenantId uuid.UUID, agg st
 	}
 	bodyContent, err := io.ReadAll(searchResponse.Body)
 
-	resp := &AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := NewAggregateResponse(resp)
-	return aggObj, err
-}
-
-func GetAllTenantsStatsAggregate(ctx context.Context, q string, agg string, startTime string, endTime string) (AggregateResponse, error) {
-	query := AddDateRange(q, startTime, endTime)
-
-	searchBody := &AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
-
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
-		return AggregateResponse{}, err
-	}
-	bodyContent, err := io.ReadAll(searchResponse.Body)
-
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while reading body", zap.Error(err))
-		return AggregateResponse{}, err
-	}
 	resp := &AggregateQueryResponse{}
 	err = json.Unmarshal(bodyContent, resp)
 	aggObj := NewAggregateResponse(resp)

@@ -25,13 +25,6 @@ func TenantDailyDigest(ctx context.Context) error {
 
 	logger.GetLogger().Info("daily digest for tenants", zap.String("startTime", startTime), zap.String("endTime", endTime), zap.Int("tenantCount", len(tenants)))
 
-	// get total events ingested by tenant id
-	ingestedEventsByTenant, ingestedSizeByTenant, err := tenant.GetIngestionByTenantId(ctx, startTime, endTime)
-	if err != nil {
-		logger.GetLogger().Error("error while getting total events ingested by tenant id", zap.Error(err))
-		return err
-	}
-
 	alertsByTenant, err := tenant.GetAlertsFromOpenSearch(ctx)
 	if err != nil {
 		logger.GetLogger().Error("error while getting alerts from OpenSearch", zap.Error(err))
@@ -47,18 +40,19 @@ func TenantDailyDigest(ctx context.Context) error {
 
 		logger.GetLogger().Info("processing tenant", zap.String("tenantId", t.Name))
 		digest := tenant.GetDailyDigest(t.Id, t.Name, startTime, endTime, tenantAlerts)
+
+		ingestedEventsByTenant, ingestedSizeByTenant, err := tenant.GetIngestionByTenantId(ctx, t.Id, startTime, endTime)
 		if err != nil {
-			logger.GetLogger().Error("error while getting daily digest", zap.Error(err))
+			logger.GetLogger().Error("error while getting ingestion by tenant id", zap.Error(err), zap.String("tenantId", t.Id.String()))
 			continue
 		}
-
-		digest.GetIngestionStats(ingestedEventsByTenant[t.Id.String()], ingestedSizeByTenant[t.Id.String()])
+		digest.GetIngestionStats(ingestedEventsByTenant, ingestedSizeByTenant)
 		err = digest.GetSensitiveDataTrackingStats()
 		if err != nil {
 			logger.GetLogger().Error("error while setting sensitive data tracking stats", zap.Error(err))
 		}
 		digest.CalculateEPS()
-		err := digest.GetEventDeliveryBreakdown()
+		err = digest.GetEventDeliveryBreakdown()
 		if err != nil {
 			logger.GetLogger().Error("error while setting event delivery breakdown", zap.Error(err))
 			continue
