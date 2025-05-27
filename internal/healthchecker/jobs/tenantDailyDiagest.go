@@ -46,7 +46,7 @@ func TenantDailyDigest(ctx context.Context) error {
 			logger.GetLogger().Error("error while getting ingestion by tenant id", zap.Error(err), zap.String("tenantId", t.Id.String()))
 			continue
 		}
-		digest.GetIngestionStats(ingestedEventsByTenant, ingestedSizeByTenant)
+		digest.CalculateIngestionStats(ingestedEventsByTenant, ingestedSizeByTenant)
 		err = digest.GetSensitiveDataTrackingStats()
 		if err != nil {
 			logger.GetLogger().Error("error while setting sensitive data tracking stats", zap.Error(err))
@@ -62,7 +62,7 @@ func TenantDailyDigest(ctx context.Context) error {
 			logger.GetLogger().Error("error while setting ingestion breakdown", zap.Error(err))
 			continue
 		}
-		digest.GetVolumeReductionAchievements()
+		digest.CalculateVolumeReductionAchievements()
 
 		h := helper.Notification{
 			TenantId:                digest.TenantId.String(),

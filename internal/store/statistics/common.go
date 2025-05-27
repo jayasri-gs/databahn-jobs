@@ -43,6 +43,10 @@ func GetStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime st
 		return SumResponse{}, err
 	}
 	bodyContent, err := io.ReadAll(searchResponse.Body)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while reading response body", zap.Error(err))
+		return SumResponse{}, err
+	}
 
 	resp := &SumQueryResponse{}
 	err = json.Unmarshal(bodyContent, resp)
@@ -67,6 +71,10 @@ func GetStatsAggregate(ctx context.Context, q string, tenantId uuid.UUID, agg st
 		return AggregateResponse{}, err
 	}
 	bodyContent, err := io.ReadAll(searchResponse.Body)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while reading response body", zap.Error(err))
+		return AggregateResponse{}, err
+	}
 
 	resp := &AggregateQueryResponse{}
 	err = json.Unmarshal(bodyContent, resp)

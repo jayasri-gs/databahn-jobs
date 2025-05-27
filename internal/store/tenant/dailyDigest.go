@@ -61,7 +61,7 @@ func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string, a
 
 }
 
-func (d *Digest) GetVolumeReductionAchievements() {
+func (d *Digest) CalculateVolumeReductionAchievements() {
 	d.VolumeReductionAchievements = make(map[string]int)
 	for _, dest := range d.EventDeliveryBreakdown {
 		totalEventIngestedForSource := 0.0
@@ -109,7 +109,7 @@ func (d *Digest) GetEventDeliveryBreakdown() error {
 	if err != nil {
 		return err
 	}
-	q := fmt.Sprintf(`tags.component_name: "dispenser" AND name: "total_events_delivered"`)
+	q := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
 	agg := "tags.destination_id.keyword"
 
 	aggResponse, err := statistics.GetStatsAggregate(context.Background(), q, d.TenantId, agg, d.StartTime, d.EndTime)
@@ -142,7 +142,7 @@ func (d *Digest) CalculateEPS() {
 	}
 }
 
-func (d *Digest) GetIngestionStats(eventsIngested any, sizeIngested any) {
+func (d *Digest) CalculateIngestionStats(eventsIngested any, sizeIngested any) {
 	d.IngestionHealth = "Healthy"
 	if eventsIngested == nil {
 		d.TotalEventsIngested = "0"
