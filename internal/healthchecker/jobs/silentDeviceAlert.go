@@ -68,6 +68,11 @@ func GetLogSourceIdsFromSilentDeviceConfig(ctx context.Context) (map[string][]st
 
 func getSilentDevices(ctx context.Context, client *opensearch.Client, index string, query string, pageSize int, searchAfter []any, tenantName string) ([]Device, []any, error) {
 
+	logging.GetLogger().Info("query", zap.String("query", query))
+	logging.GetLogger().Info("pageSize", zap.Int("pageSize", pageSize))
+	logging.GetLogger().Info("searchAfter", zap.Any("searchAfter", searchAfter))
+	logging.GetLogger().Info("index", zap.String("index", index))
+
 	var silentDevices []Device
 	res, newSearchAfter, err := os.SearchPaginated(ctx, client, index, query, pageSize, searchAfter, []os.Sort{{Field: "max_time", Order: "desc"}})
 	if err != nil {
@@ -225,6 +230,10 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
 		"calculateDuration": func(minTime, maxTime int64) string {
 			durationDays := (maxTime - minTime) / (24 * 60 * 60 * 1000)
+			if durationDays == 0 {
+				durationHours := (maxTime - minTime) / (60 * 60 * 1000)
+				return fmt.Sprintf("%d hours", durationHours)
+			}
 			return fmt.Sprintf("%d days", durationDays)
 		},
 	}).Parse(emailTemplate)
