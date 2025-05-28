@@ -68,6 +68,11 @@ func GetLogSourceIdsFromSilentDeviceConfig(ctx context.Context) (map[string][]st
 
 func getSilentDevices(ctx context.Context, client *opensearch.Client, index string, query string, pageSize int, searchAfter []any, tenantName string) ([]Device, []any, error) {
 
+	logging.GetLogger().Info("query", zap.String("query", query))
+	logging.GetLogger().Info("pageSize", zap.Int("pageSize", pageSize))
+	logging.GetLogger().Info("searchAfter", zap.Any("searchAfter", searchAfter))
+	logging.GetLogger().Info("index", zap.String("index", index))
+
 	var silentDevices []Device
 	res, newSearchAfter, err := os.SearchPaginated(ctx, client, index, query, pageSize, searchAfter, []os.Sort{{Field: "max_time", Order: "desc"}})
 	if err != nil {
@@ -95,6 +100,7 @@ func getSilentDevices(ctx context.Context, client *opensearch.Client, index stri
 			TenantName: tenantName,
 		})
 	}
+	logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Int("count", len(silentDevices)))
 
 	return silentDevices, newSearchAfter, nil
 }
@@ -147,6 +153,8 @@ func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string,
 		return nil, err
 	}
 
+	logging.GetLoggerWithContext(ctx).Info("query built", zap.String("query", query))
+
 	var searchAfter []any
 	pageSize := 100
 	index := "db_insights_sights_sourcehostname_" + tenantId
@@ -167,6 +175,8 @@ func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string,
 		searchAfter = newSearchAfter
 	}
 
+	logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Any("silentDevices", allSilentDevices))
+
 	return allSilentDevices, nil
 }
 
@@ -176,8 +186,10 @@ func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 		q += ` AND source_id: ` + "(" + strings.Join(sources, " OR ") + ")"
 	}
 
-	// Set endTime to 24 hours before the current time (previous day)
+	// Set endTime to 4 hours before the current time (previous day)
 	endTime := time.Now().Add(-4 * time.Hour).Format(time.RFC3339)
+
+	logging.GetLogger().Info("endTime", zap.String("endTime", endTime))
 
 	// Parse endTime and add it to the query
 	t, err := time.Parse(time.RFC3339, endTime)
@@ -185,6 +197,9 @@ func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 		return "", fmt.Errorf("error parsing endTime: %v", err)
 	}
 	endTimeEpoch := t.UnixMilli()
+
+	logging.GetLogger().Info("endTimeEpoch", zap.Int64("endTimeEpoch", endTimeEpoch))
+
 	q += ` AND max_time:<` + strconv.FormatInt(endTimeEpoch, 10)
 
 	return q, nil
@@ -215,6 +230,10 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
 		"calculateDuration": func(minTime, maxTime int64) string {
 			durationDays := (maxTime - minTime) / (24 * 60 * 60 * 1000)
+			if durationDays == 0 {
+				durationHours := (maxTime - minTime) / (60 * 60 * 1000)
+				return fmt.Sprintf("%d hours", durationHours)
+			}
 			return fmt.Sprintf("%d days", durationDays)
 		},
 	}).Parse(emailTemplate)
