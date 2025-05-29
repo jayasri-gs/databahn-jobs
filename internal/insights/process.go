@@ -458,6 +458,7 @@ func (d Doc) SearchMap(attMap map[string]string, sourceIdToNameMap map[string]st
 	}
 	result["timestamp"] = d.Timestamp
 	result["count"] = d.Count
+	result["id"] = d.Id
 	return result
 }
 
