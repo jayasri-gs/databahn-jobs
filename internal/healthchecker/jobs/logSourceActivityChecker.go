@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
@@ -19,84 +18,123 @@ import (
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
-	"io"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 )
 
-func getAggStatsForDestinations(ctx context.Context, startTime string, endTime string) (statistics.AggregateResponse, error) {
-	q := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
-	query := statistics.AddDateRange(q, startTime, endTime)
-	agg := "tags.destination_id.keyword"
-
-	searchBody := &statistics.AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
-
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", os.StatsIndex))
-		return statistics.AggregateResponse{}, err
+func getAggStatsForDestinationPaginated(ctx context.Context, startTime string, endTime string) (statistics.AggregateResponse, error) {
+	query := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
+	query = statistics.AddDateRange(query, startTime, endTime)
+	groupBy := []string{"tags.db_event_source_id.keyword"}
+	aggregations := []os.AggregationFunction{
+		{Name: "sum_value", Function: "sum", Field: "counter.value"},
 	}
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
 
-	resp := &statistics.AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := statistics.NewAggregateResponse(resp)
-	logging.GetLoggerWithContext(ctx).Info("got response from statistics store")
-	return aggObj, err
+	var allResponses []os.AggResponse
+	var after map[string]any
+
+	for {
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 100, os.StatsIndex+"*", query, groupBy, aggregations, after)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
+			return statistics.AggregateResponse{}, err
+		}
+
+		allResponses = append(allResponses, responses...)
+
+		if nextAfter == nil {
+			break
+		}
+		after = nextAfter
+	}
+
+	logging.GetLoggerWithContext(ctx).Info("Number of responses received", zap.Int("count", len(allResponses)))
+
+	aggMap := make(map[string]any)
+	for _, resp := range allResponses {
+		if sumValue, ok := resp.Values["sum_value"]; ok {
+			aggMap[resp.Key["tags.db_event_source_id.keyword"].(string)] = sumValue
+		}
+	}
+
+	return statistics.AggregateResponse{Agg: aggMap}, nil
 }
 
-func getAggStatsForLogSource(ctx context.Context, startTime string, endTime string) (statistics.AggregateResponse, error) {
+func getAggStatsForLogSourcePaginated(ctx context.Context, startTime string, endTime string) (statistics.AggregateResponse, error) {
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
-	agg := "tags.db_event_source_id.keyword"
-
-	searchBody := &statistics.AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
-
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", os.StatsIndex))
-		return statistics.AggregateResponse{}, err
+	groupBy := []string{"tags.db_event_source_id.keyword"}
+	aggregations := []os.AggregationFunction{
+		{Name: "sum_value", Function: "sum", Field: "counter.value"},
 	}
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
 
-	resp := &statistics.AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := statistics.NewAggregateResponse(resp)
-	logging.GetLoggerWithContext(ctx).Info("got response from statistics store")
-	return aggObj, err
+	var allResponses []os.AggResponse
+	var after map[string]any
+
+	for {
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatsIndex+"*", query, groupBy, aggregations, after)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
+			return statistics.AggregateResponse{}, err
+		}
+
+		allResponses = append(allResponses, responses...)
+
+		if nextAfter == nil {
+			break
+		}
+		after = nextAfter
+	}
+
+	logging.GetLoggerWithContext(ctx).Info("Number of responses received", zap.Int("count", len(allResponses)))
+
+	aggMap := make(map[string]any)
+	for _, resp := range allResponses {
+		if sumValue, ok := resp.Values["sum_value"]; ok {
+			aggMap[resp.Key["tags.db_event_source_id.keyword"].(string)] = sumValue
+		}
+	}
+
+	return statistics.AggregateResponse{Agg: aggMap}, nil
 }
 
-func checkInactivityAlertExistsForGivenLogSources(ctx context.Context, logsources []string) ([]statistics.AlertDocument, error) {
+func PaginatedOpenSearchCallToGetAllExistingAlerts(ctx context.Context, logsources []string) ([]statistics.AlertDocument, error) {
+
+	if len(logsources) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("No log sources to check for existing alerts")
+		return nil, nil
+	}
+
 	q := `dismissed:false AND functionalityEntityId:` + "(" + strings.Join(logsources, " OR ") + ")" + ` AND functionalityType:` + alerts_common.LogSourceStatsNotReceived
 
-	res, err := os.Search(ctx, os.GetClient(), common.AlertsIndex, q)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", common.AlertsIndex))
-		return nil, err
-	}
+	var allAlerts []statistics.AlertDocument
+	var searchAfter []any
 
-	var alerts []statistics.AlertDocument
-	decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-	err = decoder.Decode(res)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
-		return alerts, err
+	for {
+		res, newSearchAfter, err := os.SearchPaginated(ctx, os.GetClient(), common.AlertsIndex, q, 200, searchAfter, []os.Sort{{Field: "updatedAt", Order: "desc"}})
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
+			return nil, err
+		}
+
+		var alerts []statistics.AlertDocument
+		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+		err = decoder.Decode(res)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
+			return allAlerts, err
+		}
+		allAlerts = append(allAlerts, alerts...)
+
+		if len(res) == 0 || newSearchAfter == nil {
+			break
+		}
+		searchAfter = newSearchAfter
 	}
-	return alerts, nil
+	return allAlerts, nil
+
 }
 
 func AlertForDestinationInactivity(ctx context.Context) error {
@@ -109,7 +147,7 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 	//get agg stats by event source - returns all destination which are reporting stats from last 15 minutes
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.DestinationDeliveryCheckerTime)))
-	aggObj, err := getAggStatsForDestinations(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
+	aggObj, err := getAggStatsForDestinationPaginated(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
@@ -131,7 +169,7 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 	}
 
 	startTimeHistorical := endTime.Add(-time.Hour * 24 * 7)
-	historicalStats, err := getAggStatsForDestinations(ctx, strconv.Itoa(int(startTimeHistorical.UnixMilli())), strconv.Itoa(int(startTime.UnixMilli())))
+	historicalStats, err := getAggStatsForDestinationPaginated(ctx, strconv.Itoa(int(startTimeHistorical.UnixMilli())), strconv.Itoa(int(startTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
@@ -206,7 +244,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	//get agg stats by event source - returns all logsources which are reporting stats from last 15 minutes
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.LogSourceActivityCheckerTime)))
-	aggObj, err := getAggStatsForLogSource(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
+	aggObj, err := getAggStatsForLogSourcePaginated(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
@@ -228,17 +266,9 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		}
 	}
 
-	configLogSources, err := source.GetConfigLogSourceIds(ctx)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching config log source ids", zap.Error(err))
-		return err
-	}
-
-	logging.GetLoggerWithContext(ctx).Info("Fetched config log sources", zap.Any("configLogSources", configLogSources))
-
 	// getting logSources which are not active but did not report stats in last 7 days
 	startTimeHistorical := endTime.Add(-(time.Hour * 24 * 7))
-	historicalIds, err := getAggStatsForLogSource(ctx, strconv.Itoa(int(startTimeHistorical.UnixMilli())), strconv.Itoa(int(startTime.UnixMilli())))
+	historicalIds, err := getAggStatsForLogSourcePaginated(ctx, strconv.Itoa(int(startTimeHistorical.UnixMilli())), strconv.Itoa(int(startTime.UnixMilli())))
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
@@ -273,40 +303,13 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	}
 	logging.GetLoggerWithContext(ctx).Info("Log sources to raise alerts before filtering", zap.Any("alertToBeRaisedLogSources", alertToBeRaisedLogSources))
 
-	// Filter alerts to be raised based on configLogSourceIds
-	if len(configLogSources) > 0 {
-		var filteredAlertToBeRaisedLogSources []source.Source
-		configLogSourceMap := make(map[string]bool)
-
-		for _, configLogSource := range configLogSources {
-			configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] = false
-		}
-
-		for _, ls := range alertToBeRaisedLogSources {
-			for _, configLogSource := range configLogSources {
-				if ls.TenantID.String() == configLogSource.TenantID && ls.ID.String() == configLogSource.SourceID {
-					logging.GetLoggerWithContext(ctx).Info("log source is in config log source", zap.String("tenant_id", ls.TenantID.String()), zap.String("source_id", ls.ID.String()))
-					filteredAlertToBeRaisedLogSources = append(filteredAlertToBeRaisedLogSources, ls)
-					configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] = true
-				}
-			}
-		}
-
-		for _, configLogSource := range configLogSources {
-			if !configLogSourceMap[configLogSource.TenantID+configLogSource.SourceID] {
-				logging.GetLoggerWithContext(ctx).Info("configured log source has no alert", zap.String("tenant_id", configLogSource.TenantID), zap.String("source_id", configLogSource.SourceID))
-			}
-		}
-		if len(filteredAlertToBeRaisedLogSources) > 0 {
-			alertToBeRaisedLogSources = filteredAlertToBeRaisedLogSources
-		}
-	}
-	logging.GetLoggerWithContext(ctx).Info("Log sources to raise alerts after filtering", zap.Any("alertToBeRaisedLogSources", alertToBeRaisedLogSources))
 	configMap, err := helper.CreateEntityAlertsConfigMapByType(config.GetDB())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating config map", zap.Error(err))
 		return err
 	}
+
+	//creating alertEntityArray for all logSources for which alert needs to be raised
 	var filteredAlertCandidates []source.Source
 	for _, ls := range alertToBeRaisedLogSources {
 		if configEntry, ok := configMap[fmt.Sprintf("LOG_SOURCE_%s", ls.ID.String())]; ok {
@@ -343,7 +346,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 	logging.GetLoggerWithContext(ctx).Info("Silent log sources", zap.Strings("silentLogsources", silentLogsources))
 
 	// check if any logsource whose stats came back but alert exists
-	alerts, err := checkInactivityAlertExistsForGivenLogSources(ctx, logsourceIdsStatsReceived)
+	alerts, err := PaginatedOpenSearchCallToGetAllExistingAlerts(ctx, logsourceIdsStatsReceived)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while checking inactivity alert exists", zap.Error(err))
 		return err
