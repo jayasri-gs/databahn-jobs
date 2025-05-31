@@ -25,6 +25,9 @@ import (
 )
 
 func getAggStatsForDestinationPaginated(ctx context.Context, startTime string, endTime string) (statistics.AggregateResponse, error) {
+
+	logging.GetLoggerWithContext(ctx).Info("Fetching aggregate stats for destinations", zap.String("startTime", startTime), zap.String("endTime", endTime))
+
 	query := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
 	query = statistics.AddDateRange(query, startTime, endTime)
 	groupBy := []string{"tags.db_event_source_id.keyword"}
@@ -59,10 +62,15 @@ func getAggStatsForDestinationPaginated(ctx context.Context, startTime string, e
 		}
 	}
 
+	logging.GetLoggerWithContext(ctx).Info("Aggregate Response for destinations", zap.Any("aggMap", aggMap))
+
 	return statistics.AggregateResponse{Agg: aggMap}, nil
 }
 
 func getAggStatsForLogSourcePaginated(ctx context.Context, startTime string, endTime string) (statistics.AggregateResponse, error) {
+
+	logging.GetLoggerWithContext(ctx).Info("Fetching aggregate stats for log sources", zap.String("startTime", startTime), zap.String("endTime", endTime))
+
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
 	groupBy := []string{"tags.db_event_source_id.keyword"}
@@ -96,11 +104,14 @@ func getAggStatsForLogSourcePaginated(ctx context.Context, startTime string, end
 			aggMap[resp.Key["tags.db_event_source_id.keyword"].(string)] = sumValue
 		}
 	}
+	logging.GetLoggerWithContext(ctx).Info("Aggregate Response for log sources", zap.Any("aggMap", aggMap))
 
 	return statistics.AggregateResponse{Agg: aggMap}, nil
 }
 
 func PaginatedOpenSearchCallToGetAllExistingAlerts(ctx context.Context, logsources []string) ([]statistics.AlertDocument, error) {
+
+	logging.GetLoggerWithContext(ctx).Info("Checking for existing alerts for log sources", zap.Strings("logSources", logsources))
 
 	if len(logsources) == 0 {
 		logging.GetLoggerWithContext(ctx).Info("No log sources to check for existing alerts")
@@ -133,6 +144,9 @@ func PaginatedOpenSearchCallToGetAllExistingAlerts(ctx context.Context, logsourc
 		}
 		searchAfter = newSearchAfter
 	}
+
+	logging.GetLoggerWithContext(ctx).Info("Number of existing alerts found", zap.Int("count", len(allAlerts)))
+
 	return allAlerts, nil
 
 }
@@ -152,6 +166,9 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
 	}
+
+	logging.GetLoggerWithContext(ctx).Info("Destination stats for last 30 minutes", zap.Any("stats", aggObj.Agg))
+
 	var destinationStatsReceived []string
 	for key, value := range aggObj.Agg {
 		valueInt, ok := value.(float64)
@@ -174,6 +191,8 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while getting stats", zap.Error(err))
 		return err
 	}
+	logging.GetLoggerWithContext(ctx).Info("Destinations stats for last 7 days", zap.Any("historicalStats", historicalStats.Agg))
+
 	var destinationStats7Days []string
 	for key, value := range historicalStats.Agg {
 		valueInt, ok := value.(float64)
@@ -197,12 +216,14 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		}
 	}
 
-	// getting logSources which are not active but did not report stats in last 15 minutes
+	logging.GetLoggerWithContext(ctx).Info("Destination IDs to alert", zap.Any("destinationIdsToAlert", destinationIdsToAlert))
+
+	// getting destinations which are not active but did not report stats
 	var alertToBeRaisedDispenser []destination.Destination
 	checkStatus := []string{healthchecker.StatusDisabled, healthchecker.StatusDeleted, healthchecker.StatusCreated, healthchecker.StatusInactive}
 	err = config.GetDB().Model(&destination.Destination{}).Where("status not in ? AND id in ?", checkStatus, destinationIdsToAlert).Debug().Find(&alertToBeRaisedDispenser).Error
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting active logSources not receiving stats", zap.Error(err))
+		logging.GetLoggerWithContext(ctx).Error("error while getting active destinations not receiving stats", zap.Error(err))
 		return err
 	}
 
@@ -230,7 +251,7 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 			return err
 		}
 	}
-	logging.GetLogger().Info("notification stats as follows", zap.Any("no_of_inactive_sources", len(destinationStatsReceived)), zap.Any("ids", destinationIdsToAlert))
+	logging.GetLogger().Info("notification stats as follows for destinations inactivity", zap.Any("no_of_inactive_destinations", len(logsourcesEntityArray)), zap.Any("ids", logsourcesEntityArray))
 	return nil
 }
 
@@ -309,6 +330,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		return err
 	}
 
+	logging.GetLoggerWithContext(ctx).Info("Config map for log sources for interval based alerts", zap.Any("configMap", configMap))
+
 	//creating alertEntityArray for all logSources for which alert needs to be raised
 	var filteredAlertCandidates []source.Source
 	for _, ls := range alertToBeRaisedLogSources {
@@ -362,7 +385,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		temp.EntityTenantUUId = utils.UUIDFromStringOrNil(alert.TenantId)
 		toDismissAlerts = append(toDismissAlerts, temp)
 	}
-	logging.GetLoggerWithContext(ctx).Info("Alerts to dismiss", zap.Any("toDismissAlerts", toDismissAlerts))
+	logging.GetLoggerWithContext(ctx).Info("Alerts to dismiss for log sources inactivity", zap.Any("toDismissAlerts", toDismissAlerts))
 
 	// send dismiss alerts to change flag
 	if len(toDismissAlerts) > 0 {
@@ -393,6 +416,6 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 			return err
 		}
 	}
-	logging.GetLogger().Info("notification stats as follows", zap.Any("no_of_inactive_sources", len(logsourceIdsStatsReceived)), zap.Any("ids", sourceIdToAlert))
+	logging.GetLogger().Info("notification stats as follows for log source inactivity", zap.Any("no_of_inactive_sources", len(logsourcesEntityArray)), zap.Any("ids", logsourcesEntityArray))
 	return nil
 }
