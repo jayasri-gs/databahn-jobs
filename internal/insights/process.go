@@ -3,7 +3,6 @@ package insights
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -189,11 +188,6 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			}
 		}
 
-		err = upsertFrequencyDocs(ctx, cli, &index, docs)
-		if err != nil {
-			return err
-		}
-
 		hasData = true
 		err = writeToSearchFile(s3File, docs, attMap, sourceIdToNameMap)
 		if err != nil {
@@ -249,46 +243,6 @@ func upsertSightsDocs(ctx context.Context, cli *opensearch.Client, tenantId, app
 	}
 	logger.GetLogger().Debug("updated documents to es sights", zap.Int("count", len(documents)))
 	return nil
-}
-
-func upsertFrequencyDocs(ctx context.Context, cli *opensearch.Client, index *IndexMetadata, documents []Doc) error {
-	if len(documents) == 0 {
-		return nil
-	}
-	indexName := FrequencyIndexNameByApp(index.Type, index.TenantId)
-	buff := new(bytes.Buffer)
-	for _, doc := range documents {
-		f := doc.Frequency()
-		id := buildFrequencyDocId(index, &f)
-		_, err := fmt.Fprintf(buff, "{\"index\": {\"_id\": %s}}\n", strconv.Quote(id))
-		if err != nil {
-			return err
-		}
-		j, err := json.Marshal(f)
-		if err != nil {
-			return err
-		}
-		buff.Write(j)
-		buff.Write([]byte("\n"))
-	}
-	request := opensearchapi.BulkRequest{
-		Index: indexName,
-		Body:  buff,
-	}
-	err := performBulkRequest(ctx, cli, &request)
-	if err != nil {
-		return err
-	}
-	logger.GetLogger().Debug("indexed documents to es frequency", zap.Int("count", len(documents)))
-	return nil
-}
-
-func buildFrequencyDocId(index *IndexMetadata, doc *Frequency) string {
-	key := index.String() + doc.Key1 + doc.Key2 + doc.Key3 + doc.Key4 + doc.Key5 + doc.SourceId
-	h := sha256.New()
-	h.Write([]byte(key))
-	id := fmt.Sprintf("%x", h.Sum(nil))
-	return id
 }
 
 func getUpdateRequestBody(doc *Sight) ([]byte, error) {
@@ -504,6 +458,7 @@ func (d Doc) SearchMap(attMap map[string]string, sourceIdToNameMap map[string]st
 	}
 	result["timestamp"] = d.Timestamp
 	result["count"] = d.Count
+	result["id"] = d.Id
 	return result
 }
 

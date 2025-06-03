@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
-	"github.com/databahn-ai/databahn-jobs/internal/replay/ecryption"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/lookup"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
@@ -29,13 +28,10 @@ import (
 )
 
 func createAwsConnection(input model.Message) (*s3.Client, error) {
-	err := ecryption.DecryptKeys(&input)
-	if err != nil {
-		return nil, err
-	}
 	authType := input.AdditionalConfig["auth_type"]
 
 	var cfg aws.Config
+	var err error
 	if authType == "role_based" {
 		roleArn := input.AdditionalConfig["role_arn"]
 		cfg, err = config.LoadDefaultConfig(context.TODO())

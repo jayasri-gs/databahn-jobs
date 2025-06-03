@@ -6,38 +6,47 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/go-logging/logger"
+	"github.com/google/uuid"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 	"io"
 	"strings"
 )
 
-func GetIngestionByTenantId(ctx context.Context, startTime, endTime string) (map[string]any, map[string]any, error) {
-	events, err := getTotalEventsIngestedByTenantId(ctx, startTime, endTime)
+func GetIngestionByTenantId(ctx context.Context, tId uuid.UUID, startTime, endTime string) (float64, float64, error) {
+	totalIngestion, err := getTotalEventsIngestedByTenantId(ctx, tId, startTime, endTime)
 	if err != nil {
-		return nil, nil, err
+		return 0, 0, err
 	}
 
-	data, err := getTotalDataIngestedByTenantId(ctx, startTime, endTime)
+	totalDataIngested, err := getTotalDataIngestedByTenantId(ctx, tId, startTime, endTime)
 	if err != nil {
-		return nil, nil, err
+		return 0, 0, err
 	}
 
-	return events, data, nil
+	return totalIngestion, totalDataIngested, nil
 }
 
-func getTotalEventsIngestedByTenantId(ctx context.Context, startTime, endTime string) (map[string]any, error) {
+func getTotalEventsIngestedByTenantId(ctx context.Context, tId uuid.UUID, startTime, endTime string) (float64, error) {
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
-	aggBy := "tags.db_tenant_id.keyword"
-
-	return ExecuteAggQuery(ctx, os.GetClient(), q, aggBy, startTime, endTime)
+	response, err := statistics.GetStatsSum(ctx, q, tId, startTime, endTime)
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while getting total events ingested", zap.Error(err))
+		return 0, err
+	}
+	totalIngestion := response.Sum
+	return totalIngestion, nil
 }
 
-func getTotalDataIngestedByTenantId(ctx context.Context, startTime, endTime string) (map[string]any, error) {
+func getTotalDataIngestedByTenantId(ctx context.Context, tId uuid.UUID, startTime, endTime string) (float64, error) {
 	q := `tags.component_name: "storage" AND name: "total_data_received"`
-	aggBy := "tags.db_tenant_id.keyword"
-
-	return ExecuteAggQuery(ctx, os.GetClient(), q, aggBy, startTime, endTime)
+	response, err := statistics.GetStatsSum(ctx, q, tId, startTime, endTime)
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while getting total events ingested", zap.Error(err))
+		return 0, err
+	}
+	totalIngestion := response.Sum
+	return totalIngestion, nil
 }
 
 func ExecuteAggQuery(ctx context.Context, client *opensearch.Client, q, aggBy, startTime, endTime string) (map[string]any, error) {

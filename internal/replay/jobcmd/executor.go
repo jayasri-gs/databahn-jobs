@@ -13,6 +13,7 @@ import (
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/ecryption"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/lookup"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/processor"
@@ -51,6 +52,13 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	var wg sync.WaitGroup
 	mst.UpdateMetaData(constants.Global, constants.StatusInProgress, 0, 0, 0, 0, "")
 	totalFiles := len(mst.GetProcessList())
+	err := ecryption.DecryptKeys(&inputReq)
+	if err != nil {
+		for i := range totalFiles {
+			mst.UpdateMetaData(mst.GetProcessList()[i], "", 0, 0, 0, 0, err.Error())
+		}
+		return
+	}
 	parallelCtrChan := make(chan struct{}, constants.Concurrency)
 	wg.Add(totalFiles)
 	logger.GetLogger().Info("wait group count is", zap.Int("totalFiles", totalFiles))
