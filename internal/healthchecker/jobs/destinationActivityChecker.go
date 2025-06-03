@@ -69,7 +69,7 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 
 	logging.GetLoggerWithContext(ctx).Info("Handling alerts for destination logSources")
 
-	//get agg stats by event source - returns all destination which are reporting stats from last 15 minutes
+	// get agg stats by event source - returns all destination which are reporting stats from last 15 minutes
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.DestinationDeliveryCheckerTime)))
 	aggObj, err := getAggStatsForDestinationPaginated(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
@@ -138,9 +138,8 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		return err
 	}
 
-	//creating alertEntityArray for all logSources for which alert needs to be raised
+	// creating alertEntityArray for all logSources for which alert needs to be raised
 	var logsourcesEntityArray []alerts_common.AlertBaseObjectV2
-	var silentLogsources []string
 	for _, ls := range alertToBeRaisedDispenser {
 		var temp alerts_common.AlertBaseObjectV2
 		temp.EntityName = ls.Name
@@ -150,8 +149,6 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
 		temp.ErrorCode = healthchecker.DNDW10002
 		logsourcesEntityArray = append(logsourcesEntityArray, temp)
-
-		silentLogsources = append(silentLogsources, ls.ID.String())
 	}
 
 	// raise alert and save it to opensearch

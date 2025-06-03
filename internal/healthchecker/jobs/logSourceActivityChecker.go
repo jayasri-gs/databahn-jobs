@@ -114,7 +114,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 	logging.GetLoggerWithContext(ctx).Info("Handling alerts for inactive logSources")
 
-	//get agg stats by event source - returns all logsources which are reporting stats from last 15 minutes
+	// get agg stats by event source - returns all logsources which are reporting stats from last 15 minutes
 	endTime := time.Now()
 	startTime := endTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.LogSourceActivityCheckerTime)))
 	aggObj, err := getAggStatsForLogSourcePaginated(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())))
@@ -184,7 +184,7 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 
 	logging.GetLoggerWithContext(ctx).Info("Config map for log sources for interval based alerts", zap.Any("configMap", configMap))
 
-	//creating alertEntityArray for all logSources for which alert needs to be raised
+	// creating alertEntityArray for all logSources for which alert needs to be raised
 	var filteredAlertCandidates []source.Source
 	for _, ls := range alertToBeRaisedLogSources {
 		if configEntry, ok := configMap[fmt.Sprintf("LOG_SOURCE_%s", ls.ID.String())]; ok {
