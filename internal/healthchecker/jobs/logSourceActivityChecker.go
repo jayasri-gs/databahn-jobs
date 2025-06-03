@@ -30,7 +30,7 @@ func getAggStatsForDestinationPaginated(ctx context.Context, startTime string, e
 
 	query := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
 	query = statistics.AddDateRange(query, startTime, endTime)
-	groupBy := []string{"tags.db_event_source_id.keyword"}
+	groupBy := []string{"tags.destination_id.keyword"}
 	aggregations := []os.AggregationFunction{
 		{Name: "sum_value", Function: "sum", Field: "counter.value"},
 	}
@@ -58,7 +58,7 @@ func getAggStatsForDestinationPaginated(ctx context.Context, startTime string, e
 	aggMap := make(map[string]any)
 	for _, resp := range allResponses {
 		if sumValue, ok := resp.Values["sum_value"]; ok {
-			aggMap[resp.Key["tags.db_event_source_id.keyword"].(string)] = sumValue
+			aggMap[resp.Key["tags.destination_id.keyword"].(string)] = sumValue
 		}
 	}
 
