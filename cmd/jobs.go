@@ -79,9 +79,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		logger.GetLogger().Error("failed to process job", zap.Error(err), zap.String("jobName", jobName))
 		logger.GetLogger().Sync()
 		os.Exit(1)
-	} else {
-		logger.GetLogger().Info("successfully processed job", zap.String("jobName", jobName))
-		logger.GetLogger().Sync()
-		os.Exit(0)
 	}
+	logger.GetLogger().Info("successfully processed job", zap.String("jobName", jobName))
+	logger.GetLogger().Sync()
+	os.Exit(0)
 }
