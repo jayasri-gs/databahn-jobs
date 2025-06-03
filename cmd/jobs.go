@@ -44,6 +44,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.HealthCheckAlertForFleetNode(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER:
 		err = jobs.AlertForLogSourceInactivity(ctx)
+	case common.DESTINATION_ACTIVITY_CHECKER:
 		err = jobs.AlertForDestinationInactivity(ctx)
 	case common.LOG_SOURCE_REPUTATION_CHECKER:
 		err = jobs.UpdateReputationForLogSources(ctx)
