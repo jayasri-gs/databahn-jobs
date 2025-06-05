@@ -1,0 +1,216 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="UTF-8">
+    <title>DataBahn.ai Daily Digest</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,100..900;1,100..900&display=swap"
+          rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@300;400&display=swap"
+          rel="stylesheet">
+    <style>
+        body {
+            font-family: "Jost", sans-serif;
+            font-optical-sizing: auto;
+            font-weight: 400;
+            font-style: normal;
+            margin: 0;
+            padding: 0;
+            background-color: #2a3f5b;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 700px;
+            margin: 20px auto;
+            background-color: rgba(0, 0, 0, 0.38);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            background: linear-gradient(135deg, #b3eaf2, #80cfe0, #4db3ce, #1a97bc);
+            border-radius: 8px 8px 0 0;
+        }
+
+        .header img {
+            max-width: 400px;
+        }
+
+        .content {
+            margin: 20px 0;
+            padding: 10px;
+            margin-top: 10px;
+        }
+
+        .content .hello-div {
+            border-bottom: 0.5px solid #d9d9d9;
+            padding-bottom: 10px;
+        }
+
+        .content .hello-div h1 {
+            font-size: 24px;
+            color: #ffffff;
+            margin-bottom: 10px;
+            margin-top: 0px;
+            font-weight: 500;
+        }
+
+        .content .hello-div p {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.66);
+            line-height: 1.0;
+            margin-bottom: 10px;
+            font-family: "Roboto Condensed", sans-serif;
+            font-weight: 300;
+        }
+
+        .content .status {
+            font-weight: 300;
+            color: #28a745;
+            line-height: 1.0;
+            margin-bottom: 0px;
+        }
+
+        .content .text-data {
+            font-weight: 300;
+            color: rgba(255, 255, 255, 0.63);
+            line-height: 1.0;
+            margin-bottom: 0px;
+        }
+
+        .content .red {
+            font-weight: 300;
+            color: #f40909;
+            line-height: 1.0;
+            margin-bottom: 0px;
+        }
+
+        .content .section-title {
+            font-size: 16px;
+            color: rgb(255, 255, 255);
+            letter-spacing: 2;
+            text-transform: uppercase;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            font-family: "Jost", sans-serif;
+            font-weight: 500;
+        }
+
+        .content .data {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.79);
+            margin-bottom: 10px;
+            padding-left: 10px;
+            position: relative;
+            font-weight: 300;
+            margin-left: 20px;
+            font-family: "Roboto Condensed", sans-serif;
+        }
+
+        .content .data::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #ffffff;
+        }
+
+        .content .data span {
+            font-weight: 400;
+            font-family: "Roboto Condensed", sans-serif;
+        }
+
+        .footer {
+            text-align: center;
+            font-size: 14px;
+            color: #999999;
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0">
+<div class="container">
+    <div class="header">
+        <img src="https://databahn.ai/wp-content/uploads/2024/02/DB-logo-reversed-final-1024x237-1-1.webp"
+             alt="DataBahn Inc">
+    </div>
+    <div class="content">
+        <div class="hello-div">
+            <h1>Hello admin,</h1>
+            <p>Here is your <span class="highlight">DataBahn.ai daily digest</span> from the last 24 hours.</p>
+            <p>Should you have any questions, please reach out to your account point of contact copied on this
+                email.</p>
+        </div>
+        {{- if  eq .IngestionHealth "Healthy" }}
+        <p class="text-data">Overall Event Ingestion Status: <span class="status">{{ .IngestionHealth }}</span>
+        </p>
+        {{- else }}
+        <p class="text-data">Overall Event Ingestion Status: <span class="red">{{ .IngestionHealth }}</span></p>
+        {{- end }}
+
+        {{- if eq .DeliveryHealth "Healthy" }}
+        <p class="text-data">Overall Event Delivery Status: <span class="status">{{ .DeliveryHealth }}</span></p>
+        {{- else }}
+        <p class="text-data">Overall Event Delivery Status: <span class="red">{{ .DeliveryHealth }}</span></p>
+        {{- end }}
+        <br/><div class="section-title">Ingested Events Overview:</div>
+        {{- if ne .TotalEventsIngested "0" }}
+        <div class="data"><span>Total events ingested:</span> <span class="highlight">{{ .TotalEventsIngested }}</span>
+        </div>
+        <div class="data"><span>Data volume ingested:</span> <span
+                class="highlight">{{ .TotalDataIngested }}</span></div>
+        <div class="data"><span>Average events per second (EPS):</span> <span class="highlight">{{ .AverageEPS }}</span>
+        </div>
+        {{- else }}
+        <div class="data alert">No events ingested for this period.</div>
+        {{- end }}
+
+        <br/><div class="section-title">Event Delivery Breakdown:</div>
+        {{- range .EventDeliveryBreakdown }}
+        <div class="data"><span>{{ .Name }}:</span> <span class="highlight">{{ .Count }} events</span></div>
+        {{- else }}
+        <div class="data alert">No events delivered for this period.</div>
+        {{- end }}
+
+        <br/><div class="section-title">Sensitive Data Tracking:</div>
+        {{- range $key, $value := .SensitiveDataTracking }}
+        <div class="data"><span>{{ $key }}:</span> <span class="highlight">{{ $value }} observations</span></div>
+        {{- else }}
+        <div class="data">No sensitive data detected.</div>
+        {{- end }}
+
+        <br/><div class="section-title">Volume Reduction Achievements:</div>
+        {{- range $key, $value := .VolumeReductionAchievements }}
+        <div class="data"><span>{{ $key }}:</span> <span class="highlight">{{ $value }}% reduction</span></div>
+        {{- else }}
+        <div class="data alert">No volume reduction for this period.</div>
+        {{- end }}
+
+        <br/><div class="section-title">Alerts:</div>
+        {{- range .Alerts }}
+        <div class="data">
+            <div class="alert-title">
+                <strong>Title:</strong>
+                <span class="highlight">{{ .Title }}</span>
+            </div>
+            <div class="alert-details">
+                <div><strong>Criticality:</strong> <span class="highlight">{{ .Criticality }}</span></div>
+                <div><strong>Message:</strong> <span class="highlight">{{ .Message }}</span></div>
+            </div>
+        </div>
+        {{- else }}
+        <div class="data alert">No alerts present for this period.</div>
+        {{- end }}
+    </div>
+    <div class="footer">
+        &copy; 2023 DataBahn.ai. All rights reserved.
+    </div>
+</div>
+</body>
+</html>

@@ -22,8 +22,8 @@ import (
 	"time"
 )
 
-// const emailTemplatesBasePath = "/home/databahn/templates/"
-const emailTemplatesBasePath = "templates/"
+// const EmailTemplatesBasePath = "/home/databahn/templates/"
+const EmailTemplatesBasePath = "templates/"
 
 func SendNotificationsForAlerts(ctx context.Context) error {
 	db := config.GetDB()
@@ -218,7 +218,7 @@ func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notifica
 }
 
 func buildOpsGenieBody(tnt tenant.Tenant, alert alerts_async.Alert) (string, error) {
-	var templatePath = emailTemplatesBasePath + "operations_alert.html"
+	var templatePath = EmailTemplatesBasePath + "operations_alert.html"
 	t, err := template.ParseFiles(templatePath)
 	if err != nil {
 		logger.GetLogger().Error("error while parsing template", zap.Error(err))
@@ -239,12 +239,12 @@ func buildOpsGenieBody(tnt tenant.Tenant, alert alerts_async.Alert) (string, err
 }
 
 func buildEmailBody(title string, alerts []alerts_async.Alert) (string, error) {
-	var templatePath = emailTemplatesBasePath + "green_alert.html"
+	var templatePath = EmailTemplatesBasePath + "green_alert.html"
 	switch alerts[0].Criticality {
 	case alerts_async.Warning.String(), alerts_async.Sever.String():
-		templatePath = emailTemplatesBasePath + "warning_alert.html"
+		templatePath = EmailTemplatesBasePath + "warning_alert.html"
 	case alerts_async.Critical.String():
-		templatePath = emailTemplatesBasePath + "error_alert.html"
+		templatePath = EmailTemplatesBasePath + "error_alert.html"
 	}
 	t, err := template.ParseFiles(templatePath)
 	if err != nil {

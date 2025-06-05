@@ -55,7 +55,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.AGENT_HEALTH_CHECKER:
 		err = jobs.AgentAlertForFleetNode(ctx)
 	case common.TENANT_DAILY_DIGEST:
-		err = jobs.TenantDailyDigest(ctx)
+		err = cp_jobs.SendTenantDailyDigest(ctx)
 	case common.UNPARSED_EVENTS:
 		err = jobs.AlertForUnparsedEvents(ctx)
 	case common.KAFKA_QUERY:

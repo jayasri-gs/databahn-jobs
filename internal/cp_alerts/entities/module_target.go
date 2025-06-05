@@ -51,44 +51,31 @@ type ModuleTenantMapping struct {
 }
 
 func GetTargetsForModule(db *gorm.DB, tenantId uuid.UUID, moduleName string) ([]Targets, error) {
-	var modules []Modules
-	err := db.Where("name = ?", moduleName).Find(&modules).Error
-	if err != nil {
-		return nil, err
-	}
-	var moduleIds []uuid.UUID
-	for _, module := range modules {
-		moduleIds = append(moduleIds, module.ID)
-	}
 	var moduleTenants []ModuleTenantMapping
-	err = db.Where("tenant_id = ? AND module_id IN ?", tenantId, moduleIds).Find(&moduleTenants).Error
+	err := db.Preload("Module").Where("tenant_id = ?", tenantId).Find(&moduleTenants).Error
 	if err != nil {
 		return nil, err
 	}
-	var enabledModuleIds []uuid.UUID
+	var enabledMatchingModuleIds []uuid.UUID
 	for _, moduleTenant := range moduleTenants {
-		if moduleTenant.Enabled {
-			enabledModuleIds = append(enabledModuleIds, moduleTenant.ModuleID)
+		if moduleTenant.Enabled && moduleTenant.Module.Name == moduleName {
+			enabledMatchingModuleIds = append(enabledMatchingModuleIds, moduleTenant.ModuleID)
 		}
 	}
-	if len(enabledModuleIds) == 0 {
+	if len(enabledMatchingModuleIds) == 0 {
 		return []Targets{}, nil
 	}
 	var moduleTargets []ModuleTargets
-	err = db.Where("module_id IN ?", enabledModuleIds).Find(&moduleTargets).Error
+	err = db.Joins("join targets on targets.id = module_targets.target_id").Preload("Target").Preload("Module").Where("module_id IN ? and targets.tenant_id = ?", enabledMatchingModuleIds, tenantId).Find(&moduleTargets).Error
 	if err != nil {
 		return nil, err
 	}
-	var targetIds []uuid.UUID
+
+	var result []Targets
 	for _, moduleTarget := range moduleTargets {
-		targetIds = append(targetIds, moduleTarget.TargetID)
+		result = append(result, moduleTarget.Target)
 	}
-	var targets []Targets
-	err = db.Where("id IN ?", targetIds).Find(&targets).Error
-	if err != nil {
-		return nil, err
-	}
-	return targets, nil
+	return result, nil
 }
 
 func GetTargetsForTenantByModule(db *gorm.DB, tenantId uuid.UUID) (map[string][]Targets, error) {

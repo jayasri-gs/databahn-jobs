@@ -53,6 +53,7 @@ func (n *NotificationManager) SendOpsGenieNotification(request cn.OpsGenieNotifi
 	n.producer.SendAsyncTopic(message, "db.management.notification.opsgenie", func(err error) {
 		logger.GetLogger().Error("error while sending email notification", zap.Error(err))
 	})
+	logger.GetLogger().Info("opsgenie notification request sent", zap.String("subject", request.Subject))
 	return nil
 }
 
@@ -68,6 +69,7 @@ func (n *NotificationManager) SendEmailNotification(request cn.EmailNotification
 	n.producer.SendAsyncTopic(message, "db.management.notification.email", func(err error) {
 		logger.GetLogger().Error("error while sending email notification", zap.Error(err))
 	})
+	logger.GetLogger().Info("email notification request sent", zap.String("title", request.Subject))
 	return nil
 }
 
