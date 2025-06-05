@@ -1,0 +1,15 @@
+name: Check Merge Conflicts
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  check-merge-conflicts:
+    uses: databahn-ai/ci-github-workflows/blob/master/.github/workflows/master-develop-merge-conflict-check.yaml@master
+    with:
+      base_branch: master
+      feature_branch: develop
+    secrets:
+      SANDY_PERSONAL_TOKEN: ${{ secrets.SANDY_PERSONAL_TOKEN }}
