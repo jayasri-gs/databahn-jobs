@@ -7,7 +7,7 @@ on:
 
 jobs:
   check-merge-conflicts:
-    uses: databahn-ai/ci-github-workflows/blob/master/.github/workflows/master-develop-merge-conflict-check.yaml@master
+    uses: databahn-ai/ci-github-workflows/.github/workflows/master-develop-merge-conflict-check.yaml@master
     with:
       base_branch: master
       feature_branch: develop
