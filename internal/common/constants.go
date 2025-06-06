@@ -43,6 +43,7 @@ const FleetNodeHealthCheckMessage = "This alert indicates that the cloud has not
 
 const AgentHealthCheck = "agent health check"
 const AgentFunctionality = "endpoint health checker"
+const AgentHealthCheckerFunctionalityTitle = "health from agent not reported for more than 5 minutes, marking unhealthy for agent %s"
 const AgentHealthCheckTitle = "unhealthy agent nodes found"
 const AgentHealthCheckMessage = "health from agent not reported for more than 5 minutes, marking unhealthy"
 
