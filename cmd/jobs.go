@@ -54,6 +54,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.UpdateReputationForLogSources(ctx)
 	case common.AGENT_HEALTH_CHECKER:
 		err = jobs.AgentAlertForFleetNode(ctx)
+	case common.HEALTH_CHECKER:
+		err = cp_jobs.HealthCheckJob(ctx)
 	case common.TENANT_DAILY_DIGEST:
 		err = cp_jobs.SendTenantDailyDigest(ctx)
 	case common.UNPARSED_EVENTS:

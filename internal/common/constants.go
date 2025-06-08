@@ -16,6 +16,7 @@ const ENTITY_CHECKER_ALERT_GEN_V2 = "entity-reputation-checker-alert-gen-v2"
 const SILENT_DEVICE_ALERT = "silent-device-alert"
 const TENANT_DAILY_DIGEST = "tenant-daily-digest"
 const AGENT_HEALTH_CHECKER = "agent-health-checker"
+const HEALTH_CHECKER = "health-checker"
 const KAFKA_QUERY = "kafka_query"
 const UNPARSED_EVENTS = "unparsed-events"
 const EVENT_SEQUENCING = "event-sequencing"
@@ -53,7 +54,7 @@ const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud ha
 const FleetComponentHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified component for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 
 const FleetConnectorHealthCheckTitle = "No heartbeat received in the last 30 minutes"
-const FleetComponentHealthCheckTitle = "fleet component is not reporting health"
+const FleetComponentHealthCheckTitle = "fleet component %s is not reporting health"
 
 const ALERT_REPORT_PROCESSOR = "alert_report_processor"
 
