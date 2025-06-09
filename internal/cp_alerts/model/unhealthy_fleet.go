@@ -29,9 +29,7 @@ func (uf UnhealthyFleet) GetDataPlaneId() string {
 func (ufc UnhealthyFleetComponents) GetEntityId() string {
 	return ufc.FleetComponent.Id.String()
 }
-func (ufc UnhealthyFleetComponents) GetServiceName() string {
-	return ufc.FleetComponent.ServiceName
-}
+func (ufc UnhealthyFleetComponents) GetEntityName() string { return "Fleet Component Name" }
 func (ufc UnhealthyFleetComponents) GetTenantId() string {
 	return ufc.FleetComponent.TenantId.String()
 }
