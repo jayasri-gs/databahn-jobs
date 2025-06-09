@@ -24,11 +24,6 @@ import (
 	"time"
 )
 
-// Func for no events delivered to destination
-// Send In App Alerts
-
-// Find inactive and active destinations
-
 func AlertForNoEventsToDestination(ctx context.Context) error {
 	db := config.GetDB()
 
@@ -219,7 +214,7 @@ func getDestinationIdToLastEventTime(ctx context.Context, osClient *opensearch.C
 
 }
 func buildDestAlert(iad model.InactiveDestination) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(constants.DeliveryCheckerFunctionalityTitle, "30")
+	details := fmt.Sprintf(constants.DeliveryCheckerFunctionalityTitle, defaultAlertDuration30Min)
 	functionality := alerts_async.Dispenser
 
 	return alerts_async.NewAlert(functionality,

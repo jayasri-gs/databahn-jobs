@@ -192,8 +192,7 @@ func alertForFleetComponentsHealthCheck(ctx context.Context) error {
 func findInactiveAgents(db *gorm.DB, healthCheckTime time.Time, page, pageSize int) ([]*model.UnhealthyAgent, error) {
 	var agents []agent.Agent
 	offset := page * pageSize
-	err := db.Table("agents").
-		Where("heartbeat_at < ? AND status != ?", healthCheckTime, healthchecker.StatusCreated).
+	err := db.Where("heartbeat_at < ? AND status != ?", healthCheckTime, healthchecker.StatusCreated).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&agents).Error
@@ -216,8 +215,7 @@ func findInactiveFleet(db *gorm.DB, healthCheckTime, healthCheckIgnoreTime time.
 	var fleetNodes []fleet.Node
 	offSet := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
-	err := db.Table("fleet_nodes").
-		Where("(heartbeat_at < ? AND heartbeat_at  > ?) AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).
+	err := db.Where("(heartbeat_at < ? AND heartbeat_at  > ?) AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offSet).
 		Find(&fleetNodes).Error
@@ -243,8 +241,7 @@ func findInactiveFleetConnectors(db *gorm.DB, healthCheckTime, healthCheckIgnore
 	var fleetConnectors []fleet.Connector
 	offset := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
-	err := db.Table("connector").
-		Where("(heartbeat_at < ? AND heartbeat_at > ? )AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).
+	err := db.Where("(heartbeat_at < ? AND heartbeat_at > ? )AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&fleetConnectors).Error
@@ -268,8 +265,7 @@ func findInactiveFleetComponents(db *gorm.DB, healthCheckTime, healthCheckIgnore
 	var fleetComponents []fleet.Components
 	offset := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
-	err := db.Table("fleet_components").
-		Where("(heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", healthCheckTime, checkStatus).
+	err := db.Where("(heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", healthCheckTime, checkStatus).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&fleetComponents).Error
@@ -329,51 +325,51 @@ func sendFleetComponentInAppAlerts(inactiveFleetComponents []*model.UnhealthyFle
 func buildAgentAlert(ia model.UnhealthyAgent) (*alerts_async.Alert, error) {
 	details := fmt.Sprintf(common.AgentHealthCheckerFunctionalityTitle, ia.GetEntityName())
 	return alerts_async.NewAlert(
-		alerts_async.CloudLogSource,
+		alerts_async.Agent,
 		alerts_async.WithEntity(ia),
 		alerts_async.WithCriticality(alerts_async.Critical),
-		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
+		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
 		alerts_async.WithTitle(details),
 		alerts_async.WithMessage(details),
-		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
+		alerts_async.WithErrorCode(alerts_async.DHRW10001, ""),
 	)
 }
 
 func buildFleetAlert(uf model.UnhealthyFleet) (*alerts_async.Alert, error) {
 	details := fmt.Sprintf(common.FleetNodeHealthCheckerFunctionalityTitle, uf.GetEntityName())
 	return alerts_async.NewAlert(
-		alerts_async.CloudLogSource,
+		alerts_async.FleetNode,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
-		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
+		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
 		alerts_async.WithTitle(details),
 		alerts_async.WithMessage(details),
-		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
+		alerts_async.WithErrorCode(alerts_async.DHRW10002, ""),
 	)
 }
 
 func buildFleetConnectorAlert(uf model.UnhealthyFleetConnector) (*alerts_async.Alert, error) {
 	details := fmt.Sprintf(common.FleetConnectorHealthCheckerFunctionalityTitle, uf.GetEntityName())
 	return alerts_async.NewAlert(
-		alerts_async.CloudLogSource,
+		alerts_async.FleetConnector,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
-		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
+		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
 		alerts_async.WithTitle(details),
 		alerts_async.WithMessage(details),
-		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
+		alerts_async.WithErrorCode(alerts_async.DHRW10004, ""),
 	)
 }
 
 func buildFleetComponentAlert(uf model.UnhealthyFleetComponents) (*alerts_async.Alert, error) {
 	details := fmt.Sprintf(common.FleetComponentHealthCheckTitle, uf.GetEntityName())
 	return alerts_async.NewAlert(
-		alerts_async.CloudLogSource,
+		alerts_async.FleetComponent,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
-		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
+		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
 		alerts_async.WithTitle(details),
 		alerts_async.WithMessage(details),
-		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
+		alerts_async.WithErrorCode(alerts_async.DHRW10003, ""),
 	)
 }
