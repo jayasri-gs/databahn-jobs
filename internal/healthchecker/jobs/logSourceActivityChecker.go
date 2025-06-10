@@ -360,6 +360,8 @@ func AlertForLogSourceInactivity(ctx context.Context) error {
 		temp.EntityName = alert.FunctionalityEntityName
 		temp.EntityId = utils.UUIDFromStringOrNil(alert.FunctionalityEntityId)
 		temp.EntityTenantUUId = utils.UUIDFromStringOrNil(alert.TenantId)
+		temp.AlertType = alerts_common.AlertTypeExternalAndExternal
+		temp.ErrorCode = healthchecker.DNDW10001
 		toDismissAlerts = append(toDismissAlerts, temp)
 	}
 	logging.GetLoggerWithContext(ctx).Info("Alerts to dismiss", zap.Any("toDismissAlerts", toDismissAlerts))
