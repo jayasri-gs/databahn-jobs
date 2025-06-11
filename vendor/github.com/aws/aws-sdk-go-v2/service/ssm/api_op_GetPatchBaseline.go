@@ -30,10 +30,11 @@ func (c *Client) GetPatchBaseline(ctx context.Context, params *GetPatchBaselineI
 
 type GetPatchBaselineInput struct {
 
-	// The ID of the patch baseline to retrieve. To retrieve information about an
-	// Amazon Web Services managed patch baseline, specify the full Amazon Resource
-	// Name (ARN) of the baseline. For example, for the baseline
-	// AWS-AmazonLinuxDefaultPatchBaseline , specify
+	// The ID of the patch baseline to retrieve.
+	//
+	// To retrieve information about an Amazon Web Services managed patch baseline,
+	// specify the full Amazon Resource Name (ARN) of the baseline. For example, for
+	// the baseline AWS-AmazonLinuxDefaultPatchBaseline , specify
 	// arn:aws:ssm:us-east-2:733109147000:patchbaseline/pb-0e392de35e7c563b7 instead of
 	// pb-0e392de35e7c563b7 .
 	//
@@ -59,6 +60,13 @@ type GetPatchBaselineOutput struct {
 	// that should be applied to the managed nodes. The default value is false .
 	// Applies to Linux managed nodes only.
 	ApprovedPatchesEnableNonSecurity *bool
+
+	// Indicates the compliance status of managed nodes for which security-related
+	// patches are available but were not approved. This preference is specified when
+	// the CreatePatchBaseline or UpdatePatchBaseline commands are run.
+	//
+	// Applies to Windows Server managed nodes only.
+	AvailableSecurityUpdatesComplianceStatus types.PatchComplianceStatus
 
 	// The ID of the retrieved patch baseline.
 	BaselineId *string
@@ -146,6 +154,9 @@ func (c *Client) addOperationGetPatchBaselineMiddlewares(stack *middleware.Stack
 	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
+	if err = addSpanRetryLoop(stack, options); err != nil {
+		return err
+	}
 	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
@@ -156,6 +167,15 @@ func (c *Client) addOperationGetPatchBaselineMiddlewares(stack *middleware.Stack
 		return err
 	}
 	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addTimeOffsetBuild(stack, c); err != nil {
+		return err
+	}
+	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
+	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetPatchBaselineValidationMiddleware(stack); err != nil {
@@ -177,6 +197,18 @@ func (c *Client) addOperationGetPatchBaselineMiddlewares(stack *middleware.Stack
 		return err
 	}
 	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
+	if err = addSpanInitializeStart(stack); err != nil {
+		return err
+	}
+	if err = addSpanInitializeEnd(stack); err != nil {
+		return err
+	}
+	if err = addSpanBuildRequestStart(stack); err != nil {
+		return err
+	}
+	if err = addSpanBuildRequestEnd(stack); err != nil {
 		return err
 	}
 	return nil

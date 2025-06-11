@@ -11,7 +11,9 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Retrieve information about one or more parameters in a specific hierarchy.
+// Retrieve information about one or more parameters under a specified level in a
+// hierarchy.
+//
 // Request results are returned on a best-effort basis. If you specify MaxResults
 // in the request, the response includes information up to the limit specified. The
 // number of items returned, however, can be between zero and the value of
@@ -52,18 +54,22 @@ type GetParametersByPathInput struct {
 	// A token to start the list. Use this token to get the next set of results.
 	NextToken *string
 
-	// Filters to limit the request results. The following Key values are supported
-	// for GetParametersByPath : Type , KeyId , and Label . The following Key values
-	// aren't supported for GetParametersByPath : tag , DataType , Name , Path , and
-	// Tier .
+	// Filters to limit the request results.
+	//
+	// The following Key values are supported for GetParametersByPath : Type , KeyId ,
+	// and Label .
+	//
+	// The following Key values aren't supported for GetParametersByPath : tag ,
+	// DataType , Name , Path , and Tier .
 	ParameterFilters []types.ParameterStringFilter
 
-	// Retrieve all parameters within a hierarchy. If a user has access to a path,
-	// then the user can access all levels of that path. For example, if a user has
-	// permission to access path /a , then the user can also access /a/b . Even if a
-	// user has explicitly been denied access in IAM for parameter /a/b , they can
-	// still call the GetParametersByPath API operation recursively for /a and view
-	// /a/b .
+	// Retrieve all parameters within a hierarchy.
+	//
+	// If a user has access to a path, then the user can access all levels of that
+	// path. For example, if a user has permission to access path /a , then the user
+	// can also access /a/b . Even if a user has explicitly been denied access in IAM
+	// for parameter /a/b , they can still call the GetParametersByPath API operation
+	// recursively for /a and view /a/b .
 	Recursive *bool
 
 	// Retrieve all parameters in a hierarchy with their value decrypted.
@@ -130,6 +136,9 @@ func (c *Client) addOperationGetParametersByPathMiddlewares(stack *middleware.St
 	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
+	if err = addSpanRetryLoop(stack, options); err != nil {
+		return err
+	}
 	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
@@ -140,6 +149,15 @@ func (c *Client) addOperationGetParametersByPathMiddlewares(stack *middleware.St
 		return err
 	}
 	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addTimeOffsetBuild(stack, c); err != nil {
+		return err
+	}
+	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
+	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetParametersByPathValidationMiddleware(stack); err != nil {
@@ -163,16 +181,20 @@ func (c *Client) addOperationGetParametersByPathMiddlewares(stack *middleware.St
 	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
+	if err = addSpanInitializeStart(stack); err != nil {
+		return err
+	}
+	if err = addSpanInitializeEnd(stack); err != nil {
+		return err
+	}
+	if err = addSpanBuildRequestStart(stack); err != nil {
+		return err
+	}
+	if err = addSpanBuildRequestEnd(stack); err != nil {
+		return err
+	}
 	return nil
 }
-
-// GetParametersByPathAPIClient is a client that implements the
-// GetParametersByPath operation.
-type GetParametersByPathAPIClient interface {
-	GetParametersByPath(context.Context, *GetParametersByPathInput, ...func(*Options)) (*GetParametersByPathOutput, error)
-}
-
-var _ GetParametersByPathAPIClient = (*Client)(nil)
 
 // GetParametersByPathPaginatorOptions is the paginator options for
 // GetParametersByPath
@@ -239,6 +261,9 @@ func (p *GetParametersByPathPaginator) NextPage(ctx context.Context, optFns ...f
 	}
 	params.MaxResults = limit
 
+	optFns = append([]func(*Options){
+		addIsPaginatorUserAgent,
+	}, optFns...)
 	result, err := p.client.GetParametersByPath(ctx, &params, optFns...)
 	if err != nil {
 		return nil, err
@@ -257,6 +282,14 @@ func (p *GetParametersByPathPaginator) NextPage(ctx context.Context, optFns ...f
 
 	return result, nil
 }
+
+// GetParametersByPathAPIClient is a client that implements the
+// GetParametersByPath operation.
+type GetParametersByPathAPIClient interface {
+	GetParametersByPath(context.Context, *GetParametersByPathInput, ...func(*Options)) (*GetParametersByPathOutput, error)
+}
+
+var _ GetParametersByPathAPIClient = (*Client)(nil)
 
 func newServiceMetadataMiddleware_opGetParametersByPath(region string) *awsmiddleware.RegisterServiceMetadata {
 	return &awsmiddleware.RegisterServiceMetadata{

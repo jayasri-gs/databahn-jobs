@@ -7,6 +7,7 @@ import (
 	"fmt"
 	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/go-logging/logger"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 func uploadFileToS3ForSearch(ctx context.Context, index *IndexMetadata, fileName string) error {
 	fileBaseName := filepath.Base(fileName)
 	objectKey := fmt.Sprintf("tenant_id=%s/insight_rule_id=%s/year=%04d/month=%02d/date=%02d/%s", index.TenantId, index.Type, index.Year, index.Month, index.Day, fileBaseName)
+	logger.GetLogger().Info(fmt.Sprintf("Uploading insights file %s to S3", objectKey))
 	return util.UploadFileToS3(ctx, objectKey, fileName)
 }
 

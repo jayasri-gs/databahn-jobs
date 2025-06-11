@@ -105,6 +105,9 @@ func (c *Client) addOperationDescribeInstancePropertiesMiddlewares(stack *middle
 	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
+	if err = addSpanRetryLoop(stack, options); err != nil {
+		return err
+	}
 	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
@@ -115,6 +118,15 @@ func (c *Client) addOperationDescribeInstancePropertiesMiddlewares(stack *middle
 		return err
 	}
 	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addTimeOffsetBuild(stack, c); err != nil {
+		return err
+	}
+	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
+	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDescribeInstancePropertiesValidationMiddleware(stack); err != nil {
@@ -138,16 +150,20 @@ func (c *Client) addOperationDescribeInstancePropertiesMiddlewares(stack *middle
 	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
+	if err = addSpanInitializeStart(stack); err != nil {
+		return err
+	}
+	if err = addSpanInitializeEnd(stack); err != nil {
+		return err
+	}
+	if err = addSpanBuildRequestStart(stack); err != nil {
+		return err
+	}
+	if err = addSpanBuildRequestEnd(stack); err != nil {
+		return err
+	}
 	return nil
 }
-
-// DescribeInstancePropertiesAPIClient is a client that implements the
-// DescribeInstanceProperties operation.
-type DescribeInstancePropertiesAPIClient interface {
-	DescribeInstanceProperties(context.Context, *DescribeInstancePropertiesInput, ...func(*Options)) (*DescribeInstancePropertiesOutput, error)
-}
-
-var _ DescribeInstancePropertiesAPIClient = (*Client)(nil)
 
 // DescribeInstancePropertiesPaginatorOptions is the paginator options for
 // DescribeInstanceProperties
@@ -216,6 +232,9 @@ func (p *DescribeInstancePropertiesPaginator) NextPage(ctx context.Context, optF
 	}
 	params.MaxResults = limit
 
+	optFns = append([]func(*Options){
+		addIsPaginatorUserAgent,
+	}, optFns...)
 	result, err := p.client.DescribeInstanceProperties(ctx, &params, optFns...)
 	if err != nil {
 		return nil, err
@@ -234,6 +253,14 @@ func (p *DescribeInstancePropertiesPaginator) NextPage(ctx context.Context, optF
 
 	return result, nil
 }
+
+// DescribeInstancePropertiesAPIClient is a client that implements the
+// DescribeInstanceProperties operation.
+type DescribeInstancePropertiesAPIClient interface {
+	DescribeInstanceProperties(context.Context, *DescribeInstancePropertiesInput, ...func(*Options)) (*DescribeInstancePropertiesOutput, error)
+}
+
+var _ DescribeInstancePropertiesAPIClient = (*Client)(nil)
 
 func newServiceMetadataMiddleware_opDescribeInstanceProperties(region string) *awsmiddleware.RegisterServiceMetadata {
 	return &awsmiddleware.RegisterServiceMetadata{

@@ -1,18 +1,16 @@
 package common
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/store/s3_store"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"io"
 	"os"
 	"time"
 )
@@ -49,21 +47,7 @@ func uploadFile(ctx context.Context, filePath string, bucketName string, objectK
 	}
 	defer file.Close()
 
-	// Get file size and content type
-	fileInfo, _ := file.Stat()
-	size := fileInfo.Size()
-	buffer := make([]byte, size)
-	_, err = file.Read(buffer)
-	if err != nil && err != io.EOF {
-		return err
-	}
-
-	s3PutObject := s3.PutObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(objectKey),
-		Body:   bytes.NewReader(buffer),
-	}
-	_, err = aws.UploadFileToS3(ctx, &s3PutObject)
+	err = s3_store.GetClient().UploadFile(ctx, bucketName, objectKey, file)
 	if err != nil {
 		return err
 	}
