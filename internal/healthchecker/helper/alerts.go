@@ -51,6 +51,7 @@ func sendAlertToCP(ctx context.Context, alerts []alerts_common.Alert, sendNotifi
 		logger.GetLogger().Error("error while creating alert client", zap.Error(err))
 		return err
 	}
+	logger.GetLoggerWithContext(ctx).Info("sending alert to CP", zap.Any("alerts", alerts))
 	if sendNotification {
 		err = SendToNotificationTopic(ctx, alerts)
 		if err != nil {
@@ -67,6 +68,7 @@ func sendAlertToCP(ctx context.Context, alerts []alerts_common.Alert, sendNotifi
 	return nil
 }
 func SendToNotificationTopic(ctx context.Context, alerts []alerts_common.Alert) error {
+	logger.GetLoggerWithContext(ctx).Info("sending alert to notification topic", zap.Any("alerts", alerts))
 	producer := GetProducer()
 
 	if producer == nil {
