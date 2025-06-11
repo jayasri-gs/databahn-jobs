@@ -58,8 +58,8 @@ const (
 	AuthCognitoId        = "auth.auth_cognito_id"
 	AuthClientId         = "auth.client_id"
 	Region               = "region"
-	S3Endpoint           = "s3.artifacts.endpoint"
-	S3ForcePathStyle     = "s3.artifacts.force_path_style"
-	S3AccessKeyId        = "s3.artifacts.access_key"
-	S3SecretKey          = "s3.artifacts.secret_key"
+	S3Endpoint           = "s3.endpoint"
+	S3ForcePathStyle     = "s3.force_path_style"
+	S3AccessKeyId        = "s3.access_key"
+	S3SecretKey          = "s3.secret_key"
 )
