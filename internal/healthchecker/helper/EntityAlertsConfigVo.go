@@ -37,6 +37,28 @@ func QueryEntityAlertsConfig(db *gorm.DB, tenantId uuid.UUID, interval int, last
 	return results, err
 }
 
+func LoadEntityAlertConfigMapToTenantId(db *gorm.DB) (map[string]map[int][]string, error) {
+	var configs []EntityAlertsConfig
+	err := db.Find(&configs).Error
+	if err != nil {
+		return nil, err
+	}
+	configMapByTenantAndInterval := make(map[string]map[int][]string)
+
+	for _, config := range configs {
+		tenantIDStr := config.TenantID.String()
+		entityIDStr := config.EntityID.String()
+
+		if _, ok := configMapByTenantAndInterval[tenantIDStr]; !ok {
+			configMapByTenantAndInterval[tenantIDStr] = make(map[int][]string)
+		}
+
+		configMapByTenantAndInterval[tenantIDStr][config.Interval] =
+			append(configMapByTenantAndInterval[tenantIDStr][config.Interval], entityIDStr)
+	}
+
+	return configMapByTenantAndInterval, nil
+}
 func CreateEntityAlertsConfigMapByType(db *gorm.DB) (map[string]EntityAlertsConfig, error) {
 	var configs []EntityAlertsConfig
 	err := db.Find(&configs).Error
