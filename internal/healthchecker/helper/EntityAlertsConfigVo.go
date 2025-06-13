@@ -37,6 +37,51 @@ func QueryEntityAlertsConfig(db *gorm.DB, tenantId uuid.UUID, interval int, last
 	return results, err
 }
 
+func LoadEntityAlertConfigMapToTenantId(db *gorm.DB) (map[string]map[int][]string, error) {
+	var configs []EntityAlertsConfig
+	err := db.Find(&configs).Error
+	if err != nil {
+		return nil, err
+	}
+	configMapByTenantAndInterval := make(map[string]map[int][]string)
+
+	for _, config := range configs {
+		tenantIDStr := config.TenantID.String()
+		entityIDStr := config.EntityID.String()
+
+		if _, ok := configMapByTenantAndInterval[tenantIDStr]; !ok {
+			configMapByTenantAndInterval[tenantIDStr] = make(map[int][]string)
+		}
+
+		configMapByTenantAndInterval[tenantIDStr][config.Interval] =
+			append(configMapByTenantAndInterval[tenantIDStr][config.Interval], entityIDStr)
+	}
+
+	return configMapByTenantAndInterval, nil
+}
+
+func EntityAlertConfigMapToTenantId(db *gorm.DB) (map[string]map[int][]EntityAlertsConfig, error) {
+	var configs []EntityAlertsConfig
+	err := db.Find(&configs).Error
+	if err != nil {
+		return nil, err
+	}
+	configMapByTenantAndInterval := make(map[string]map[int][]EntityAlertsConfig)
+
+	for _, config := range configs {
+		tenantIDStr := config.TenantID.String()
+
+		if _, ok := configMapByTenantAndInterval[tenantIDStr]; !ok {
+			configMapByTenantAndInterval[tenantIDStr] = make(map[int][]EntityAlertsConfig)
+		}
+
+		configMapByTenantAndInterval[tenantIDStr][config.Interval] =
+			append(configMapByTenantAndInterval[tenantIDStr][config.Interval], config)
+	}
+
+	return configMapByTenantAndInterval, nil
+}
+
 func CreateEntityAlertsConfigMapByType(db *gorm.DB) (map[string]EntityAlertsConfig, error) {
 	var configs []EntityAlertsConfig
 	err := db.Find(&configs).Error
@@ -50,6 +95,32 @@ func CreateEntityAlertsConfigMapByType(db *gorm.DB) (map[string]EntityAlertsConf
 		configMap[key] = configmap
 	}
 
+	return configMap, nil
+}
+
+func AlertConfigToTenantId(db *gorm.DB) (map[string][]EntityAlertsConfig, error) {
+	var configs []EntityAlertsConfig
+	err := db.Find(&configs).Error
+	if err != nil {
+		return nil, err
+	}
+	configMap := make(map[string][]EntityAlertsConfig)
+	for _, c := range configs {
+		configMap[c.TenantID.String()] = append(configMap[c.TenantID.String()], c)
+	}
+	return configMap, nil
+}
+
+func LogSourceIdToInterval(db *gorm.DB) (map[string]int, error) {
+	var configs []EntityAlertsConfig
+	err := db.Find(&configs).Error
+	if err != nil {
+		return nil, err
+	}
+	configMap := make(map[string]int)
+	for _, c := range configs {
+		configMap[c.EntityID.String()] = c.Interval
+	}
 	return configMap, nil
 }
 
