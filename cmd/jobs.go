@@ -43,7 +43,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.FLEET_HEALTH_CHECKER:
 		err = jobs.HealthCheckAlertForFleetNode(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER:
-		err = jobs.AlertForLogSourceInactivity(ctx)
+		err = jobs.SendAlertsForInactivity(ctx)
 		err = jobs.AlertForDestinationInactivity(ctx)
 	case common.LOG_SOURCE_REPUTATION_CHECKER:
 		err = jobs.UpdateReputationForLogSources(ctx)
@@ -68,7 +68,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.DATA_HEALTH_SCORE_JOB:
 		err = datahealthscore.CalculateDataHealthScore(ctx)
 	case common.ENTITY_CHECKER_ALERT_GEN_V2:
-		err = jobs.CheckEntityStats(ctx)
+		err = jobs.UpdateLastEventTime(ctx)
 	case common.SILENT_DEVICE_ALERT:
 		err = jobs.ProcessSilentDevices(ctx)
 	default:
