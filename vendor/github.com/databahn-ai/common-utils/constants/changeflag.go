@@ -31,6 +31,7 @@ const (
 	EntityExabeam                       = "destination_exabeam"
 	EntityAnomaliDestination            = "destination_anomali"
 	EntityCrowdstrikeHecDestination     = "destination_crowdstrike_hec"
+	EntityExabeamGcsDestination         = "destination_exabeam_gcs"
 
 	EntitySource              = "source"
 	EntityTransformer         = "transformer"
@@ -51,4 +52,5 @@ const (
 	HeaderRequestId         = "request_id"
 	HeaderAction            = "action"
 	HeaderEntityType        = "entity_type"
+	HeaderEntityName        = "entity_name"
 )

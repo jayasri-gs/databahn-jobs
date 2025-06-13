@@ -11,3 +11,9 @@ const GlobalDestUnparsedDirectory = "unparsed"
 const GlobalDestSensitiveDirectory = "sensitive"
 const GlobalDestArchiveDirectory = "archive"
 const GlobalDestMetadataDirectory = "metadata"
+
+const (
+	S3DestinationType        = "S3"
+	AzureBlobDestinationType = "AZURE_BLOB"
+	SnowflakeDestinationType = "SNOWFLAKE"
+)

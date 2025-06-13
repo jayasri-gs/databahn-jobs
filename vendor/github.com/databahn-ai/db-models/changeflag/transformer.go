@@ -20,13 +20,20 @@ type FlagTransform struct {
 	SensitiveDataEncryptionType   string                `json:"sensitive_data_encryption_type"`
 	AdditionalConfig              map[string]string     `json:"additional_config"`
 }
+
 type FlagTransformFunction struct {
 	Type                     string                     `json:"type"`
 	RenameConfig             RenameConfig               `json:"rename_config"`
 	ReorderConfig            ReorderConfig              `json:"reorder_config"`
 	ResizeConfig             ResizeConfig               `json:"resize_config"`
 	OcsfTransformationConfig OcsfTransformationMappings `json:"ocsf_transformation_config"`
+	CodeBlockConfig          CodeBlockConfig            `json:"code_block_config"`
 	RegexExtractConfig       string                     `json:"regex_extract_config"`
+}
+
+type CodeBlockConfig struct {
+	SampleInput string
+	CodeBlock   string
 }
 type OcsfTransformationMappings struct {
 	OcsfTransformationBlocks []OcsfTransformationBlock

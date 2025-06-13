@@ -3,6 +3,7 @@ package changeflag
 import (
 	"context"
 	"errors"
+	"github.com/databahn-ai/db-models/alerts_async"
 	"os"
 	"strconv"
 	"strings"
@@ -30,6 +31,8 @@ type Trigger struct {
 	kafkaBootstrapServers string
 	redisUrl              string
 	consumerGroupId       string
+	alertsManager         *alerts_async.AlertsManager
+	dataPlaneId           string
 }
 
 func NewTriggerWithoutConfigReader(ctx context.Context, kafkaBootstrap, cacheUrl string, changeTypes []string,
@@ -74,6 +77,18 @@ func WithConsumerGroupId(groupId string) TriggerOption {
 	}
 }
 
+/*
+WithAlertsManager sets the alerts manager and data plane ID for the trigger.
+This allows the trigger to send alerts for any acknowledgements that are not successful.
+It is optional, and if not set, the trigger will not send alerts.
+*/
+func WithAlertsManager(alertsManager *alerts_async.AlertsManager, dataPlaneId string) TriggerOption {
+	return func(t *Trigger) {
+		t.alertsManager = alertsManager
+		t.dataPlaneId = dataPlaneId
+	}
+}
+
 func NewTrigger(ctx context.Context, confReader configuration.ConfigReader, changeTypes []string,
 	firstLoadCallBack func(map[string][]ChangeFlag) []Acknowledgement,
 	newTriggerCallBack func(ChangeFlag) *Acknowledgement, options ...TriggerOption) (*Trigger, error) {
@@ -108,9 +123,12 @@ func NewTrigger(ctx context.Context, confReader configuration.ConfigReader, chan
 	return &t, err
 }
 
-func (t *Trigger) Close() {
+func (t *Trigger) Close(ctx context.Context) {
 	t.quit <- struct{}{}
-	t.ackProducer.Close(context.Background())
+	t.ackProducer.Close(ctx)
+	if t.alertsManager != nil {
+		t.alertsManager.Close(ctx)
+	}
 }
 
 func (t *Trigger) WaitForInitialLoad() {
@@ -251,6 +269,9 @@ func prepareChangeFlag(value []byte, headers []kafkaconfl.Header, key []byte) (*
 		}
 		if hdr.Key == constants.HeaderEntityType {
 			changeFlag.EntityType = string(hdr.Value)
+		}
+		if hdr.Key == constants.HeaderEntityName {
+			changeFlag.EntityName = string(hdr.Value)
 		}
 		if hdr.Key == constants.HeaderAction {
 			changeFlag.Action = string(hdr.Value)

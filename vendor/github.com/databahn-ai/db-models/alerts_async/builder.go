@@ -18,6 +18,14 @@ type AlertEntity interface {
 
 type AlertOption func(alert *Alert)
 
+/*
+NewAlert is a builder for an Alert.
+It allows you to create an alert with various options.
+Some of the fields are optional and some are required.
+Many fields can have limited values, such as functionality, criticality, and alert type.
+Please use appropriate enums for those options and if new values are needed, please add them to the enums.
+It internally creates a unique ID for the alert based on the tenant ID, entity ID, entity name, functionality, and functionality type.
+*/
 func NewAlert(functionality Functionality, options ...AlertOption) (*Alert, error) {
 	alert := defaultAlert()
 	alert.Functionality = functionality.String()
@@ -84,13 +92,14 @@ func validateAlert(alert *Alert) error {
 }
 
 func defaultAlert() *Alert {
-	now := time.Now().UnixMilli()
+	now := time.Now().UTC().UnixMilli()
 	return &Alert{
 		Dismissed:       false,
+		Status:          AlertOpen.Value(),
 		FirstObservedAt: now,
 		LastObservedAt:  now,
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }
 
@@ -134,12 +143,6 @@ func WithErrorCode(errorCode ErrorCode, messageTemplateParam string) AlertOption
 func WithAlertType(alertType AlertType) AlertOption {
 	return func(alert *Alert) {
 		alert.AlertType = alertType.String()
-	}
-}
-
-func WithError(err error) AlertOption {
-	return func(alert *Alert) {
-		alert.ErrorMessage = err.Error()
 	}
 }
 

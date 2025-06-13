@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+/*
+AlertsManager is used for sending alerts.
+Internally it sends alerts to a deduplication queue, which batches them and sends them to Kafka.
+Because it holds alerts in memory, it is critical to close the manager when service is shutting down.
+Close is a blocking call that waits for all alerts to be sent before returning.
+*/
 type AlertsManager struct {
 	dq       *queue.DedupeQueue[*Alert]
 	producer *kafka.Producer
