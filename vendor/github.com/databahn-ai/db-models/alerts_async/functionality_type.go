@@ -25,6 +25,8 @@ var (
 	SourceConfigParsingFailure     = functionalityTypeEnum{value: "source_config_parsing_failure"}
 	SourceConfigProcessingFailure  = functionalityTypeEnum{value: "source_config_processing_failure"}
 	IngestionChecker               = functionalityTypeEnum{value: "ingestion_checker"}
+	UnparsedChecker                = functionalityTypeEnum{value: "unparsed_checker"}
+	SilentDeviceChecker            = functionalityTypeEnum{value: "silent_device_checker"}
 	HealthCheck                    = functionalityTypeEnum{value: "health_check"}
 	HttpUnauthorizedAccess         = functionalityTypeEnum{value: "unauthorized_access"}
 	HttpResourceNotFound           = functionalityTypeEnum{value: "resource_not_found"}

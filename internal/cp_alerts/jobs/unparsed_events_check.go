@@ -5,6 +5,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -182,17 +183,14 @@ func sendInAppAlertsForUnparsedEvents(sourcesToAlert []*model.UnparsedEventSourc
 }
 
 func buildUnparsedEventAlert(ias model.UnparsedEventSource) (*alerts_async.Alert, error) {
-	details := "Unparsed event"
+	details := constants.UnparsedEventCheckerFunctionalityType
 	functionality := alerts_async.LogSource
-	if ias.Source.Scope == "CLOUD" {
-		functionality = alerts_async.CloudLogSource
-	}
 	return alerts_async.NewAlert(functionality,
 		alerts_async.WithEntity(ias),
 		alerts_async.WithCriticality(alerts_async.Critical),
-		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
+		alerts_async.WithFunctionalityType(alerts_async.UnparsedChecker),
 		alerts_async.WithTitle(details),
 		alerts_async.WithMessage(details),
-		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
+		alerts_async.WithErrorCode(alerts_async.DBPW10001, ""),
 	)
 }
