@@ -1,5 +1,29 @@
 package changeflag
 
+type TransformationOpType string
+
+const (
+	Replace                           TransformationOpType = "REPLACE"
+	ConstantReplace                   TransformationOpType = "CONSTANT_REPLACE"
+	SubstringExtraction               TransformationOpType = "SUBSTRING_EXTRACTION"
+	Split                             TransformationOpType = "SPLIT"
+	Trim                              TransformationOpType = "TRIM"
+	Numerify                          TransformationOpType = "NUMERIFY"
+	Mask                              TransformationOpType = "MASK"
+	StringTruncate                    TransformationOpType = "STRING_TRUNCATE"
+	StringRedact                      TransformationOpType = "STRING_REDACT"
+	StringBase64Encode                TransformationOpType = "STRING_BASE64_ENCODE"
+	StringBase64Decode                TransformationOpType = "STRING_BASE64_DECODE"
+	StringMD5                         TransformationOpType = "STRING_MD5"
+	TimeFromUnixTimestampSeconds      TransformationOpType = "TIME_FROM_UNIX_TIMESTAMP_SECONDS"
+	TimeFromUnixTimestampMilliseconds TransformationOpType = "TIME_FROM_UNIX_TIMESTAMP_MILLISECONDS"
+	TimeUnixTsSec                     TransformationOpType = "TIME_UNIX_TS_SEC"
+	TimeUnixTsMs                      TransformationOpType = "TIME_UNIX_TS_MS"
+	Case                              TransformationOpType = "CASE"
+	Integerify                        TransformationOpType = "INTEGERIFY"
+	Stringify                         TransformationOpType = "STRINGIFY"
+)
+
 type FlagTransform struct {
 	ID                            string                `json:"id"`
 	Name                          string                `json:"name"`
@@ -20,13 +44,20 @@ type FlagTransform struct {
 	SensitiveDataEncryptionType   string                `json:"sensitive_data_encryption_type"`
 	AdditionalConfig              map[string]string     `json:"additional_config"`
 }
+
 type FlagTransformFunction struct {
 	Type                     string                     `json:"type"`
-	RenameConfig             RenameConfig               `json:"rename_config"`
+	RenameConfig             RenameConfiguration        `json:"rename_config"`
 	ReorderConfig            ReorderConfig              `json:"reorder_config"`
 	ResizeConfig             ResizeConfig               `json:"resize_config"`
 	OcsfTransformationConfig OcsfTransformationMappings `json:"ocsf_transformation_config"`
+	CodeBlockConfig          CodeBlockConfig            `json:"code_block_config"`
 	RegexExtractConfig       string                     `json:"regex_extract_config"`
+}
+
+type CodeBlockConfig struct {
+	SampleInput string
+	CodeBlock   string
 }
 type OcsfTransformationMappings struct {
 	OcsfTransformationBlocks []OcsfTransformationBlock
@@ -41,6 +72,27 @@ type ResizeConfig struct {
 type RenameConfig struct {
 	RenameFields []RenameFields `json:"renameFields"`
 }
+type RenameConfiguration struct {
+	RenameFields []RenameFieldsWithOperators `json:"renameFields"`
+}
+type TrimConfig struct {
+	StripLeading  bool `json:"stripLeading"`
+	StripTrailing bool `json:"stripTrailing"`
+}
+type TransformationOperator struct {
+	Type TransformationOpType `json:"type"`
+
+	ReplaceConfig                *ReplaceConfig                `json:"replaceConfig,omitempty"`
+	TrimConfig                   *TrimConfig                   `json:"trimConfig,omitempty"`
+	MaskConfig                   *MaskConfig                   `json:"maskConfig,omitempty"`
+	SubstringExtractionConfig    *SubstringExtractionConfig    `json:"substringExtractionConfig,omitempty"`
+	ConstantReplaceConfig        *ConstantReplaceConfig        `json:"constantReplaceConfig,omitempty"`
+	SplitOperatorConfig          *SplitOperatorConfig          `json:"splitOperatorConfig,omitempty"`
+	StringRedactOperatorConfig   *StringRedactOperatorConfig   `json:"stringRedactOperatorConfig,omitempty"`
+	StringTruncateOperatorConfig *StringTruncateOperatorConfig `json:"stringTruncateOperatorConfig,omitempty"`
+	CaseOperatorConfig           *CaseOperatorConfig           `json:"caseOperatorConfig,omitempty"`
+}
+
 type RenameFields struct {
 	LogAttribute                       string                    `json:"logAttribute"`
 	DatabahnAttribute                  string                    `json:"databahnAttribute"`
@@ -104,6 +156,15 @@ type RenameFields struct {
 	IntegerifyOperatorEnabled bool `json:"integerifyOperatorEnabled"`
 	StringifyOperatorEnabled  bool `json:"stringifyOperatorEnabled"`
 }
+
+type RenameFieldsWithOperators struct {
+	LogAttribute      string `json:"logAttribute"`
+	DatabahnAttribute string `json:"databahnAttribute"`
+	RenameAttribute   string `json:"renameAttribute"`
+	Include           bool   `json:"include"`
+
+	Operators []TransformationOperator `json:"operators"`
+}
 type CaseOperatorConfig struct {
 	IfConditionKey string      `json:"ifConditionKey"`
 	Conditions     []Condition `json:"conditions"`
@@ -153,12 +214,12 @@ type SubstringExtractionConfig struct {
 	ExtractionPattern string `json:"extractionPattern"`
 }
 type OcsfTransformationBlock struct {
-	OcsfFilterCriteria OcsfFilterCriteria `json:"ocsfFilterCriteria"`
-	Name               string             `json:"name"`
-	OcsfCategory       string             `json:"ocsfCategory"`
-	OcsfClass          string             `json:"ocsfClass"`
-	Mappings           []RenameFields     `json:"mappings"`
-	Default            bool               `json:"default"`
+	OcsfFilterCriteria OcsfFilterCriteria          `json:"ocsfFilterCriteria"`
+	Name               string                      `json:"name"`
+	OcsfCategory       string                      `json:"ocsfCategory"`
+	OcsfClass          string                      `json:"ocsfClass"`
+	Mappings           []RenameFieldsWithOperators `json:"mappings"`
+	Default            bool                        `json:"default"`
 }
 type OcsfFilterCriteria struct {
 	Field      string               `json:"field"`

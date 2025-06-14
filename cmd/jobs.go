@@ -48,16 +48,16 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.AlertForDestinationInactivity(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER_NEW:
 		err = cp_jobs.AlertForNoEventsFromSources(ctx)
+	case common.DESTINATION_ACTIVITY_CHECKER:
+		err = cp_jobs.AlertForNoEventsToDestination(ctx)
 	case common.NOTIFICATIONS_FOR_ALERTS:
 		err = cp_jobs.SendNotificationsForAlerts(ctx)
-	case common.LOG_SOURCE_REPUTATION_CHECKER:
-		err = jobs.UpdateReputationForLogSources(ctx)
-	case common.AGENT_HEALTH_CHECKER:
-		err = jobs.AgentAlertForFleetNode(ctx)
+	case common.HEALTH_CHECKER:
+		err = cp_jobs.HealthCheckJob(ctx)
 	case common.TENANT_DAILY_DIGEST:
 		err = cp_jobs.SendTenantDailyDigest(ctx)
 	case common.UNPARSED_EVENTS:
-		err = jobs.AlertForUnparsedEvents(ctx)
+		err = cp_jobs.SendAlertsForUnparsedEvents(ctx)
 	case common.KAFKA_QUERY:
 		threadCount := utils.GetEnvInt("KAFKA_QUERY_THREAD_COUNT", 4)
 		waitMinutes := utils.GetEnvInt("KAFKA_QUERY_WAIT_MINUTES", 5)
@@ -75,7 +75,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.ENTITY_CHECKER_ALERT_GEN_V2:
 		err = jobs.CheckEntityStats(ctx)
 	case common.SILENT_DEVICE_ALERT:
-		err = jobs.ProcessSilentDevices(ctx)
+		err = cp_jobs.SendSilentDeviceNotification(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
