@@ -58,6 +58,10 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 		}
 		destinationsToAlert, activeDestinations, err := findInactiveAndActiveDestinations(db, tenantUuid, destinationsIdToLastEventTime)
 
+		if err != nil {
+			return err
+		}
+
 		if len(destinationsToAlert) == 0 {
 			logger.GetLoggerWithContext(ctx).Info("no  destinations to alert for tenant", zap.String("tenant_id", tenantId))
 		} else {

@@ -84,6 +84,9 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 
 		if len(sourcesToAlert) > 0 {
 			err = sendInAppAlertsForUnparsedEvents(sourcesToAlert, alertsManager)
+			if err != nil {
+				logger.GetLogger().Error("error while sending unparsed events", zap.Error(err), zap.String("tenantId", tenantId))
+			}
 		}
 
 		if len(sourcesToDismiss) > 0 {
