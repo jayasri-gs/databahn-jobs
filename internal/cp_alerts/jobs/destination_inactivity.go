@@ -194,7 +194,7 @@ func getDestinationIdToLastEventTime(ctx context.Context, osClient *opensearch.C
 	q := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
 
 	for {
-		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, osClient, 100, statsAlias, q, []string{"tags.db_events_destination_id.keyword"}, []os.AggregationFunction{aggFunc}, after)
+		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, osClient, 100, statsAlias, q, []string{"tags.destination_id.keyword"}, []os.AggregationFunction{aggFunc}, after)
 		if err != nil {
 			return nil, err
 		}
@@ -202,7 +202,7 @@ func getDestinationIdToLastEventTime(ctx context.Context, osClient *opensearch.C
 			break
 		}
 		for _, response := range responses {
-			destinationId := response.Key["tags.db_events_destination_id.keyword"].(string)
+			destinationId := response.Key["tags.destination_id.keyword"].(string)
 			lastEventMillis := int64(response.Values["last_event_time"].(float64))
 			lastEventTime := time.UnixMilli(lastEventMillis).UTC()
 			destinationIdToLastEventTime[destinationId] = lastEventTime
