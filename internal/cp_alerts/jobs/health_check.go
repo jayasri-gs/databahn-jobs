@@ -106,13 +106,14 @@ func alertForFleetHealthCheck(ctx context.Context) error {
 		if len(inactiveFleet) == 0 {
 			logger.GetLogger().Info("no more inactive fleet nodes found", zap.Int("page", page))
 			break
-		} else {
-			err := sendFleetInAppAlerts(inactiveFleet, alertsManager)
-			if err != nil {
-				logger.GetLogger().Error("error while sending fleet in-app alerts", zap.Error(err))
-				return err
-			}
 		}
+
+		err = sendFleetInAppAlerts(inactiveFleet, alertsManager)
+		if err != nil {
+			logger.GetLogger().Error("error while sending fleet in-app alerts", zap.Error(err))
+			return err
+		}
+
 		page++
 	}
 	return nil
@@ -139,20 +140,20 @@ func alertForFleetConnectorsHealthCheck(ctx context.Context) error {
 		if len(inactiveFleetConnectors) == 0 {
 			logger.GetLogger().Info("no more inactive fleet connectors found", zap.Int("page", page))
 			break
-		} else {
-			for _, fc := range inactiveFleetConnectors {
-				newAlert, err := buildFleetConnectorAlert(*fc)
-				if err != nil {
-					logger.GetLogger().Error("error while building fleet connector alert", zap.Error(err))
-					return err
-				}
-				err = alertsManager.SendAlerts([]*alerts_async.Alert{newAlert})
-				if err != nil {
-					logger.GetLogger().Error("error while sending fleet connector in-app alerts", zap.Error(err))
-					return err
-				}
+		}
+		for _, fc := range inactiveFleetConnectors {
+			newAlert, err := buildFleetConnectorAlert(*fc)
+			if err != nil {
+				logger.GetLogger().Error("error while building fleet connector alert", zap.Error(err))
+				return err
+			}
+			err = alertsManager.SendAlerts([]*alerts_async.Alert{newAlert})
+			if err != nil {
+				logger.GetLogger().Error("error while sending fleet connector in-app alerts", zap.Error(err))
+				return err
 			}
 		}
+
 		page++
 	}
 	return nil

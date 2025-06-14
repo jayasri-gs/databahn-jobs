@@ -96,7 +96,7 @@ func buildSilentDeviceDigest(ctx context.Context, t tenant.Tenant) (*SilentDevic
 	}, nil
 }
 
-func sendSilentDeviceNotification(digest *SilentDeviceEmailStruct, targets []entities.Targets, t tenant.Tenant, notificationManager *notification.NotificationManager) error {
+func sendSilentDeviceNotification(silentDevice *SilentDeviceEmailStruct, targets []entities.Targets, t tenant.Tenant, notificationManager *notification.NotificationManager) error {
 	templatePath := EmailTemplatesBasePath + "silent_device_alert.html"
 	temp, err := template.ParseFiles(templatePath)
 	if err != nil {
@@ -104,7 +104,7 @@ func sendSilentDeviceNotification(digest *SilentDeviceEmailStruct, targets []ent
 		return err
 	}
 	buf := new(bytes.Buffer)
-	err = temp.Execute(buf, digest)
+	err = temp.Execute(buf, silentDevice)
 	if err != nil {
 		logging.GetLogger().Error("error while executing template", zap.Error(err))
 		return err
