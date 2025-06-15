@@ -22,8 +22,9 @@ import (
 	"time"
 )
 
-// const EmailTemplatesBasePath = "/home/databahn/templates/"
-const EmailTemplatesBasePath = "templates/"
+const EmailTemplatesBasePath = "/home/databahn/templates/"
+
+// const EmailTemplatesBasePath = "templates/"
 
 func SendNotificationsForAlerts(ctx context.Context) error {
 	db := config.GetDB()

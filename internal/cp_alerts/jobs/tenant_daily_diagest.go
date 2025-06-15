@@ -45,9 +45,6 @@ func SendTenantDailyDigest(ctx context.Context) error {
 	}
 
 	for _, t := range tenants {
-		if t.Id.String() != "f5e31bb8-af80-40d8-a0e4-16f12187e4e4" {
-			continue
-		}
 		targets, err := entities.GetTargetsForModule(db, t.Id, DailyDigestModule)
 		if err != nil {
 			logger.GetLogger().Error("error while getting targets for tenant", zap.Error(err), zap.String("tenantId", t.Id.String()))

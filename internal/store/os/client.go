@@ -1,12 +1,12 @@
 package os
 
 import (
-	"crypto/tls"
 	"fmt"
+	osUtils "github.com/databahn-ai/common-utils/opensearch"
+	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
-	"net/http"
 )
 
 var client *opensearch.Client
@@ -14,25 +14,12 @@ var StatsIndex = "db_statistics_"
 
 func GetClient() *opensearch.Client {
 	if client == nil {
-		newClient, err := opensearch.NewClient(opensearch.Config{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-			Addresses: []string{"https://localhost:9200"},
-			Username:  "admin",
-			Password:  "admin",
-		})
+		c, err := osUtils.Connect(appConfig.GetAppConfiguration())
 		if err != nil {
-			logger.GetLogger().Panic("error while creating opensearch connection", zap.Error(err))
+			logger.GetLogger().Error("error while creating opensearch connection", zap.Error(err))
 			return nil
 		}
-		return newClient
-		//c, err := osUtils.Connect(appConfig.GetAppConfiguration())
-		//if err != nil {
-		//	logger.GetLogger().Error("error while creating opensearch connection", zap.Error(err))
-		//	return nil
-		//}
-		//client = c
+		client = c
 	}
 	return client
 }

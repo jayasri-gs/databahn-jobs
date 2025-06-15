@@ -1,7 +1,5 @@
 package constants
 
-const LogSourceFunctionality = "log-source"
-const LogSourceErrorCode = "DNDW10001"
 const IngestionCheckerFunctionalityType = "ingestion-checker"
 const DeliveryCheckerFunctionalityType = "dispenser-checker"
 const UnparsedEventCheckerFunctionalityType = "unparsed-event-checker"

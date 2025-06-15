@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
@@ -19,33 +20,49 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	EnvFleetHealthCheckTime       = "FLEET_HEALTH_CHECK_TIME"
+	EnvAgentHealthCheckTime       = "AGENT_HEALTH_CHECK_TIME"
+	EnvFleetHealthCheckIgnoreTime = "FLEET_HEALTH_CHECK_IGNORE_TIME"
+)
+
+var AgentHealthCheckTimeNew = utils.GetEnvOrDefault(EnvAgentHealthCheckTime, "10")
+var FleetHealthCheckTimeNew = utils.GetEnvOrDefault(EnvFleetHealthCheckTime, "10")
+var FleetHealthCheckIgnoreTimeNew = utils.GetEnvOrDefault(EnvFleetHealthCheckIgnoreTime, "600")
+
 func HealthCheckJob(ctx context.Context) error {
+
+	alertsManager, err := alert.NewAlertsManager(ctx)
+	if err != nil {
+		return err
+	}
 
 	logger.GetLoggerWithContext(ctx).Info("starting health check job")
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy agents")
-	err := alertForUnhealthyAgents(ctx)
+
+	err = alertForUnhealthyAgents(ctx, alertsManager)
 	if err != nil {
 		logger.GetLogger().Error("error while handling alerts for unhealthy agents", zap.Error(err))
 		return err
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet nodes")
-	err = alertForFleetHealthCheck(ctx)
+	err = alertForFleetHealthCheck(ctx, alertsManager)
 	if err != nil {
 		logger.GetLogger().Error("error while handling alerts for unhealthy fleet nodes", zap.Error(err))
 		return err
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet connectors")
-	err = alertForFleetConnectorsHealthCheck(ctx)
+	err = alertForFleetConnectorsHealthCheck(ctx, alertsManager)
 	if err != nil {
 		logger.GetLogger().Error("error while handling alerts for unhealthy fleet connectors", zap.Error(err))
 		return err
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet components")
-	err = alertForFleetComponentsHealthCheck(ctx)
+	err = alertForFleetComponentsHealthCheck(ctx, alertsManager)
 	if err != nil {
 		logger.GetLogger().Error("error while handling alerts for unhealthy fleet components", zap.Error(err))
 		return err
@@ -54,16 +71,12 @@ func HealthCheckJob(ctx context.Context) error {
 	return nil
 }
 
-func alertForUnhealthyAgents(ctx context.Context) error {
+func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsManager) error {
 	db := config.GetDB()
-	alertsManager, err := alert.NewAlertsManager(ctx)
-	if err != nil {
-		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return err
-	}
+
 	defer alertsManager.Close(ctx)
 
-	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.AgentHealthCheckTime)))
+	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(AgentHealthCheckTimeNew)))
 	page, pageSize := 0, 50
 	for {
 		inactiveAgents, err := findInactiveAgents(db, healthCheckTime, page, pageSize)
@@ -85,16 +98,12 @@ func alertForUnhealthyAgents(ctx context.Context) error {
 	return nil
 }
 
-func alertForFleetHealthCheck(ctx context.Context) error {
+func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager) error {
 	db := config.GetDB()
-	alertsManager, err := alert.NewAlertsManager(ctx)
-	if err != nil {
-		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return err
-	}
+
 	defer alertsManager.Close(ctx)
 
-	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckTime)))
+	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
 	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
 	page, pageSize := 0, 50
 	for {
@@ -119,17 +128,13 @@ func alertForFleetHealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func alertForFleetConnectorsHealthCheck(ctx context.Context) error {
+func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager) error {
 	db := config.GetDB()
-	alertsManager, err := alert.NewAlertsManager(ctx)
-	if err != nil {
-		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return err
-	}
+
 	defer alertsManager.Close(ctx)
 
-	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckTime)))
-	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
+	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
+	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckIgnoreTimeNew)))
 	page, pageSize := 0, 50
 	for {
 		inactiveFleetConnectors, err := findInactiveFleetConnectors(db, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
@@ -158,7 +163,7 @@ func alertForFleetConnectorsHealthCheck(ctx context.Context) error {
 	}
 	return nil
 }
-func alertForFleetComponentsHealthCheck(ctx context.Context) error {
+func alertForFleetComponentsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager) error {
 	db := config.GetDB()
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
@@ -167,8 +172,8 @@ func alertForFleetComponentsHealthCheck(ctx context.Context) error {
 	}
 	defer alertsManager.Close(ctx)
 	currentTime := time.Now()
-	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckTime)))
-	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
+	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
+	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckIgnoreTimeNew)))
 	page, pageSize := 0, 50
 	for {
 		inactiveFleetComponents, err := findInactiveFleetComponents(db, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
@@ -213,23 +218,23 @@ func findInactiveAgents(db *gorm.DB, healthCheckTime time.Time, page, pageSize i
 	return result, nil
 }
 func findInactiveFleet(db *gorm.DB, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*model.UnhealthyFleet, error) {
-	var fleetNodes []fleet.Node
+	var InactiveFleetNodes []fleet.Node
 	offSet := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
 	err := db.Where("(heartbeat_at < ? AND heartbeat_at  > ?) AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offSet).
-		Find(&fleetNodes).Error
+		Find(&InactiveFleetNodes).Error
 
 	if err != nil {
 		return nil, err
 	}
-	if len(fleetNodes) == 0 {
+	if len(InactiveFleetNodes) == 0 {
 		logger.GetLogger().Info("no inactive fleet nodes found", zap.Int("page", page))
 		return nil, nil
 	}
 	var result []*model.UnhealthyFleet
-	for _, fl := range fleetNodes {
+	for _, fl := range InactiveFleetNodes {
 		result = append(result, &model.UnhealthyFleet{
 			FleetNode: &fl,
 		})

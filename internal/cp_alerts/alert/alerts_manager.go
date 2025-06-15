@@ -66,7 +66,7 @@ func (am *AlertsManager) SendAlerts(alerts []*alerts_async.Alert) error {
 	return nil
 }
 
-func (am *AlertsManager) DismissAlerts(alertIds []string) error {
+func (am *AlertsManager) AutoResolveAlerts(alertIds []string) error {
 	if len(alertIds) == 0 {
 		return nil
 	}

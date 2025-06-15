@@ -115,7 +115,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 				}
 			}
 			if len(alertsToDismiss) > 0 {
-				err = alertsManager.DismissAlerts(alertsToDismiss)
+				err = alertsManager.AutoResolveAlerts(alertsToDismiss)
 				if err != nil {
 					logger.GetLogger().Error("error while dismissing unparsed events alerts", zap.Error(err))
 					return err

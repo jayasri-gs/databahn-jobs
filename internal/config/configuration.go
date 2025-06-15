@@ -63,22 +63,13 @@ func connectDB() {
 		Port:         appConfigReader.GetString(configuration.DatabasePort),
 		SchemaName:   appConfigReader.GetString(configuration.DatabaseSchema),
 		DatabaseName: appConfigReader.GetString(configuration.DatabaseName),
-		Credentials: databases.DatabaseCredentials{
-			Username: "db_root",
-			Password: "Mumbai2020#",
-		},
 	}
-	connect, err := databaseConnection.Connect(context.Background(), false)
+	dbConnection, err := databaseConnection.ConnectWithSecrets(context.Background(), false, appConfigReader)
 	if err != nil {
-		logger.GetLogger().Panic("error while connecting to database", zap.Error(err))
+		logger.GetLoggerWithContext(context.Background()).Panic("error while connecting to database", zap.Error(err))
+		return
 	}
-	db = connect
-	//dbConnection, err := databaseConnection.ConnectWithSecrets(context.Background(), false, appConfigReader)
-	//if err != nil {
-	//	logger.GetLoggerWithContext(context.Background()).Panic("error while connecting to database", zap.Error(err))
-	//	return
-	//}
-	//db = dbConnection
+	db = dbConnection
 }
 
 func GetDB() *gorm.DB {

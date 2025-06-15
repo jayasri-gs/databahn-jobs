@@ -282,6 +282,7 @@ github.com/databahn-ai/common-utils/constants
 github.com/databahn-ai/common-utils/databases
 github.com/databahn-ai/common-utils/kafka
 github.com/databahn-ai/common-utils/notification
+github.com/databahn-ai/common-utils/opensearch
 github.com/databahn-ai/common-utils/queue
 github.com/databahn-ai/common-utils/redis
 github.com/databahn-ai/common-utils/utils

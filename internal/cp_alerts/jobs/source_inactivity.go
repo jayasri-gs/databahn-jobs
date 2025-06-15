@@ -67,10 +67,6 @@ func AlertForNoEventsFromSources(ctx context.Context) error {
 	}()
 
 	for _, t := range tenants {
-		if t.Id.String() != "f5e31bb8-af80-40d8-a0e4-16f12187e4e4" {
-			continue
-		}
-
 		tenantUuid := t.Id
 		tenantId := tenantUuid.String()
 		logger.GetLogger().Info("checking for inactive sources", zap.String("tenantId", tenantId))
@@ -135,7 +131,7 @@ func AlertForNoEventsFromSources(ctx context.Context) error {
 			}
 		}
 		if len(alertsToDismiss) > 0 {
-			err = alertsManager.DismissAlerts(alertsToDismiss)
+			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
 			if err != nil {
 				logger.GetLogger().Error("error while dismissing alerts", zap.Error(err))
 				return err
