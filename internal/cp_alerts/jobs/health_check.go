@@ -10,7 +10,14 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/databahn-jobs/internal/store/agent"
 	"github.com/databahn-ai/databahn-jobs/internal/store/fleet"
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
+	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/db-models/alerts_common"
+	"github.com/mitchellh/mapstructure"
+	"github.com/opensearch-project/opensearch-go/v2"
+	"strings"
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
@@ -21,6 +28,7 @@ import (
 )
 
 const (
+	StatusDeleted                 = "DELETED"
 	EnvFleetHealthCheckTime       = "FLEET_HEALTH_CHECK_TIME"
 	EnvAgentHealthCheckTime       = "AGENT_HEALTH_CHECK_TIME"
 	EnvFleetHealthCheckIgnoreTime = "FLEET_HEALTH_CHECK_IGNORE_TIME"
@@ -32,46 +40,57 @@ var FleetHealthCheckIgnoreTimeNew = utils.GetEnvOrDefault(EnvFleetHealthCheckIgn
 
 func HealthCheckJob(ctx context.Context) error {
 
+	logger.GetLoggerWithContext(ctx).Info("starting health check job")
+
+	db := config.GetDB()
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
 		return err
 	}
 
-	logger.GetLoggerWithContext(ctx).Info("starting health check job")
+	tenants, err := tenant.GetTenants(ctx, db)
+	if err != nil {
+		logger.GetLogger().Error("error while fetching tenants", zap.Error(err))
+		return err
+	}
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy agents")
 
-	err = alertForUnhealthyAgents(ctx, alertsManager)
-	if err != nil {
-		logger.GetLogger().Error("error while handling alerts for unhealthy agents", zap.Error(err))
-		return err
-	}
+	for _, t := range tenants {
 
-	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet nodes")
-	err = alertForFleetHealthCheck(ctx, alertsManager)
-	if err != nil {
-		logger.GetLogger().Error("error while handling alerts for unhealthy fleet nodes", zap.Error(err))
-		return err
-	}
+		err = alertForUnhealthyAgents(ctx, alertsManager, t.Id.String())
+		if err != nil {
+			logger.GetLogger().Error("error while handling alerts for unhealthy agents", zap.Error(err))
+			return err
+		}
 
-	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet connectors")
-	err = alertForFleetConnectorsHealthCheck(ctx, alertsManager)
-	if err != nil {
-		logger.GetLogger().Error("error while handling alerts for unhealthy fleet connectors", zap.Error(err))
-		return err
+		err = alertForFleetComponentsHealthCheck(ctx, alertsManager, t.Id.String())
+		if err != nil {
+			logger.GetLogger().Error("error while handling alerts for unhealthy fleet components", zap.Error(err))
+			return err
+		}
+
+		logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet nodes")
+		err = alertForFleetHealthCheck(ctx, alertsManager, t.Id.String())
+		if err != nil {
+			logger.GetLogger().Error("error while handling alerts for unhealthy fleet nodes", zap.Error(err))
+			return err
+		}
+
+		logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet connectors")
+		err = alertForFleetConnectorsHealthCheck(ctx, alertsManager, t.Id.String())
+		if err != nil {
+			logger.GetLogger().Error("error while handling alerts for unhealthy fleet connectors", zap.Error(err))
+			return err
+		}
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet components")
-	err = alertForFleetComponentsHealthCheck(ctx, alertsManager)
-	if err != nil {
-		logger.GetLogger().Error("error while handling alerts for unhealthy fleet components", zap.Error(err))
-		return err
-	}
 
 	return nil
 }
 
-func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsManager) error {
+func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
 	defer alertsManager.Close(ctx)
@@ -79,26 +98,68 @@ func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsMan
 	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(AgentHealthCheckTimeNew)))
 	page, pageSize := 0, 50
 	for {
-		inactiveAgents, err := findInactiveAgents(db, healthCheckTime, page, pageSize)
+		activeAgents, inactiveAgents, err := findActiveAndInactiveAgents(db, tenantId, healthCheckTime, page, pageSize)
 		if err != nil {
 			logger.GetLogger().Error("error while finding inactive agents", zap.Error(err))
 			return err
 		}
-		if len(inactiveAgents) == 0 {
+		if len(inactiveAgents) == 0 && len(activeAgents) == 0 {
 			logger.GetLogger().Info("no more inactive agents found", zap.Int("page", page))
-		} else {
-			err := sendAgentInAppAlerts(inactiveAgents, alertsManager)
+			break
+		}
+
+		if len(inactiveAgents) > 0 {
+			err = sendAgentInAppAlerts(inactiveAgents, alertsManager)
 			if err != nil {
 				logger.GetLogger().Error("error while sending agent in-app alerts", zap.Error(err))
 				return err
 			}
 		}
+		activeAgentsById := make(map[string]*agent.Agent)
+		for _, ag := range activeAgents {
+			activeAgentsById[ag.ID.String()] = ag
+		}
+		activeAgentsPartitions := util.PartitionSlice(activeAgents, 10)
+		var alertsToDismiss []string
+
+		for _, activeAgentsPartition := range activeAgentsPartitions {
+			agentIds := make([]string, len(activeAgentsPartition))
+
+			for i, a := range activeAgentsPartition {
+				agentIds[i] = a.ID.String()
+			}
+
+			existingAlerts, err := getExistingAlerts(ctx, tenantId, agentIds, os.GetClient(), common.AgentHealthCheck)
+			if err != nil {
+				logger.GetLogger().Error("error while getting existing alerts for agents", zap.Error(err), zap.String("tenantId", tenantId))
+				return err
+			}
+			if len(existingAlerts) == 0 {
+				logger.GetLogger().Info("no existing alerts found for active agents", zap.Strings("agentIds", agentIds))
+				continue
+			}
+			for _, alrt := range existingAlerts {
+				if _, ok := activeAgentsById[alrt.FunctionalityEntityId]; ok {
+					alertsToDismiss = append(alertsToDismiss, alrt.Id)
+				}
+			}
+
+		}
+
+		if len(alertsToDismiss) == 0 {
+			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
+			if err != nil {
+				logger.GetLogger().Error("error while auto-resolving alerts for active agents", zap.Error(err))
+				return err
+			}
+		}
+
 		page++
 	}
 	return nil
 }
 
-func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager) error {
+func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
 	defer alertsManager.Close(ctx)
@@ -107,20 +168,58 @@ func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsMa
 	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
 	page, pageSize := 0, 50
 	for {
-		inactiveFleet, err := findInactiveFleet(db, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
+		activeFleet, inactiveFleet, err := findActiveAndInactiveFleet(db, tenantId, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
 		if err != nil {
 			logger.GetLogger().Error("error while finding inactive fleet nodes", zap.Error(err))
 			return err
 		}
-		if len(inactiveFleet) == 0 {
+		if len(inactiveFleet) == 0 && len(activeFleet) == 0 {
 			logger.GetLogger().Info("no more inactive fleet nodes found", zap.Int("page", page))
 			break
 		}
+		if len(inactiveFleet) > 0 {
+			err = sendFleetInAppAlerts(inactiveFleet, alertsManager)
+			if err != nil {
+				logger.GetLogger().Error("error while sending fleet in-app alerts", zap.Error(err))
+				return err
+			}
+		}
 
-		err = sendFleetInAppAlerts(inactiveFleet, alertsManager)
-		if err != nil {
-			logger.GetLogger().Error("error while sending fleet in-app alerts", zap.Error(err))
-			return err
+		activeFleetById := make(map[string]*fleet.Node)
+
+		for _, af := range activeFleet {
+			activeFleetById[af.Id.String()] = af
+		}
+
+		activeFleetPartitions := util.PartitionSlice(activeFleet, 10)
+		var alertsToDismiss []string
+
+		for _, activeFleetPartition := range activeFleetPartitions {
+			fleetIds := make([]string, len(activeFleetPartition))
+			for i, a := range activeFleetPartition {
+				fleetIds[i] = a.Id.String()
+			}
+
+			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetIds, os.GetClient(), common.FleetNodeHealthCheck)
+			if err != nil {
+				logger.GetLogger().Error("error while getting existing alerts for fleet", zap.Error(err))
+				return err
+			}
+			if len(existingAlerts) == 0 {
+				logger.GetLogger().Info("no existing alerts found for fleet", zap.Strings("fleetIds", fleetIds))
+				continue
+			}
+			for _, alrt := range existingAlerts {
+				if _, ok := activeFleetById[alrt.FunctionalityEntityId]; ok {
+					alertsToDismiss = append(alertsToDismiss, alrt.Id)
+				}
+			}
+		}
+		if len(alertsToDismiss) > 0 {
+			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
+			if err != nil {
+				logger.GetLogger().Error("error while auto-resolving alerts for fleet", zap.Error(err))
+			}
 		}
 
 		page++
@@ -128,7 +227,7 @@ func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsMa
 	return nil
 }
 
-func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager) error {
+func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
 	defer alertsManager.Close(ctx)
@@ -137,24 +236,55 @@ func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *aler
 	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckIgnoreTimeNew)))
 	page, pageSize := 0, 50
 	for {
-		inactiveFleetConnectors, err := findInactiveFleetConnectors(db, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
+		activeFleetConnectors, inactiveFleetConnectors, err := findActiveAndInactiveFleetConnectors(db, tenantId, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
 		if err != nil {
 			logger.GetLogger().Error("error while finding inactive fleet connectors", zap.Error(err))
 			return err
 		}
-		if len(inactiveFleetConnectors) == 0 {
+		if len(inactiveFleetConnectors) == 0 && len(activeFleetConnectors) == 0 {
 			logger.GetLogger().Info("no more inactive fleet connectors found", zap.Int("page", page))
 			break
 		}
-		for _, fc := range inactiveFleetConnectors {
-			newAlert, err := buildFleetConnectorAlert(*fc)
-			if err != nil {
-				logger.GetLogger().Error("error while building fleet connector alert", zap.Error(err))
-				return err
+
+		err = sendFleetConnectorInAppAlerts(inactiveFleetConnectors, alertsManager)
+		if err != nil {
+			logger.GetLogger().Error("error while sending fleet in-app alerts", zap.Error(err))
+			return err
+		}
+
+		activeFleetConnectorById := make(map[string]*fleet.Connector)
+		for _, af := range activeFleetConnectors {
+			activeFleetConnectorById[af.ID.String()] = af
+		}
+
+		activeFleetConnectorPartitions := util.PartitionSlice(activeFleetConnectors, 10)
+		var alertsToDismiss []string
+
+		for _, activeFleetConnectorPartition := range activeFleetConnectorPartitions {
+			fleetConnectorIds := make([]string, len(activeFleetConnectorPartition))
+			for i, a := range activeFleetConnectorPartition {
+				fleetConnectorIds[i] = a.ID.String()
 			}
-			err = alertsManager.SendAlerts([]*alerts_async.Alert{newAlert})
+
+			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetConnectorIds, os.GetClient(), alerts_common.FleetConnectorHealthCheck)
 			if err != nil {
-				logger.GetLogger().Error("error while sending fleet connector in-app alerts", zap.Error(err))
+				logger.GetLogger().Error("error while getting existing alerts for fleet", zap.Error(err))
+			}
+
+			if len(existingAlerts) == 0 {
+				logger.GetLogger().Info("alerts not found for fleet connector", zap.Strings("fleetIds", fleetConnectorIds))
+			}
+
+			for _, alrt := range existingAlerts {
+				if _, ok := activeFleetConnectorById[alrt.FunctionalityEntityId]; ok {
+					alertsToDismiss = append(alertsToDismiss, alrt.Id)
+				}
+			}
+		}
+		if len(alertsToDismiss) > 0 {
+			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
+			if err != nil {
+				logger.GetLogger().Error("error while auto-resolving alerts for fleet", zap.Error(err))
 				return err
 			}
 		}
@@ -163,132 +293,246 @@ func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *aler
 	}
 	return nil
 }
-func alertForFleetComponentsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager) error {
+func alertForFleetComponentsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
-	alertsManager, err := alert.NewAlertsManager(ctx)
-	if err != nil {
-		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return err
-	}
+
 	defer alertsManager.Close(ctx)
 	currentTime := time.Now()
 	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
 	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckIgnoreTimeNew)))
 	page, pageSize := 0, 50
 	for {
-		inactiveFleetComponents, err := findInactiveFleetComponents(db, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
+		activeFleetComponent, inactiveFleetComponents, err := findInactiveAndActiveFleetComponents(db, tenantId, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
 		if err != nil {
 			logger.GetLogger().Error("error while finding inactive fleet components", zap.Error(err))
 			return err
 		}
-		if len(inactiveFleetComponents) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("", zap.Any("Active Fleet Components", activeFleetComponent), zap.Any("Inactive Fleet Components", inactiveFleetComponents))
+		if len(inactiveFleetComponents) == 0 && len(activeFleetComponent) == 0 {
 			logger.GetLogger().Info("no more inactive fleet components found", zap.Int("page", page))
 			break
-		} else {
-			err := sendFleetComponentInAppAlerts(inactiveFleetComponents, alertsManager)
+		}
+		err = sendFleetComponentInAppAlerts(inactiveFleetComponents, alertsManager)
+		if err != nil {
+			logger.GetLogger().Error("error while sending fleet component in-app alerts", zap.Error(err))
+			return err
+		}
+
+		activeFleetComponentById := make(map[string]*fleet.Components)
+		for _, af := range activeFleetComponent {
+			activeFleetComponentById[af.Id.String()] = af
+		}
+
+		activeFleetComponentPartitions := util.PartitionSlice(activeFleetComponent, 10)
+		var alertsToDismiss []string
+
+		for _, activeFleetComponentPartition := range activeFleetComponentPartitions {
+			fleetIds := make([]string, len(activeFleetComponentPartition))
+
+			for i, a := range activeFleetComponentPartition {
+				fleetIds[i] = a.Id.String()
+			}
+
+			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetIds, os.GetClient(), common.FleetNodeHealthCheck)
 			if err != nil {
-				logger.GetLogger().Error("error while sending fleet component in-app alerts", zap.Error(err))
+				logger.GetLogger().Error("error while fetching existing alerts for fleet components", zap.Error(err))
+				return err
+			}
+			if len(existingAlerts) == 0 {
+				logger.GetLogger().Error("alerts not found for fleet components", zap.Error(err))
+				return err
+			}
+
+			for _, alert := range existingAlerts {
+				if _, ok := activeFleetComponentById[alert.Id]; !ok {
+					alertsToDismiss = append(alertsToDismiss, alert.Id)
+
+				}
+			}
+
+		}
+		if len(alertsToDismiss) > 0 {
+			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
+			if err != nil {
+				logger.GetLogger().Error("error while auto-resolving alerts", zap.Error(err))
 				return err
 			}
 		}
+
 		page++
 	}
 	return nil
 }
-func findInactiveAgents(db *gorm.DB, healthCheckTime time.Time, page, pageSize int) ([]*model.UnhealthyAgent, error) {
-	var agents []agent.Agent
+func findActiveAndInactiveAgents(db *gorm.DB, tenantId string, healthCheckTime time.Time, page, pageSize int) ([]*agent.Agent, []*model.UnhealthyAgent, error) {
+	var activeAgents []agent.Agent
+	var inactiveAgents []agent.Agent
 	offset := page * pageSize
-	err := db.Where("heartbeat_at < ? AND status != ?", healthCheckTime, healthchecker.StatusCreated).
+	err := db.Where("tenant_id = ? AND heartbeat_at < ? AND status != ?", tenantId, healthCheckTime, StatusDeleted).
 		Limit(pageSize).
 		Offset(offset).
-		Find(&agents).Error
+		Find(&inactiveAgents).Error
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(agents) == 0 {
-		logger.GetLogger().Info("no inactive agents found", zap.Int("page", page))
-		return nil, nil
+
+	err = db.Where("tenant_id = ? AND heartbeat_at >= ? AND status != ?", tenantId, healthCheckTime, StatusDeleted).
+		Limit(pageSize).
+		Offset(offset).
+		Find(&activeAgents).Error
+
+	if err != nil {
+		return nil, nil, err
 	}
-	var result []*model.UnhealthyAgent
-	for _, a := range agents {
-		result = append(result, &model.UnhealthyAgent{
+
+	if len(activeAgents) == 0 && len(inactiveAgents) == 0 {
+		logger.GetLogger().Info("no active or inactive agents found", zap.Int("page", page))
+		return nil, nil, nil
+	}
+
+	var activeResult []*agent.Agent
+	for _, a := range activeAgents {
+		activeResult = append(activeResult, &a)
+	}
+
+	var inactiveResult []*model.UnhealthyAgent
+	for _, a := range inactiveAgents {
+		inactiveResult = append(inactiveResult, &model.UnhealthyAgent{
 			Agent: &a,
 		})
 	}
-	return result, nil
+	return activeResult, inactiveResult, nil
 }
-func findInactiveFleet(db *gorm.DB, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*model.UnhealthyFleet, error) {
+func findActiveAndInactiveFleet(db *gorm.DB, tenantId string, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*fleet.Node, []*model.UnhealthyFleet, error) {
+	var ActiveFleetNodes []fleet.Node
 	var InactiveFleetNodes []fleet.Node
 	offSet := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
-	err := db.Where("(heartbeat_at < ? AND heartbeat_at  > ?) AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).
+
+	err := db.Where("tenant_id = ? AND (heartbeat_at < ? AND heartbeat_at  > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offSet).
 		Find(&InactiveFleetNodes).Error
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(InactiveFleetNodes) == 0 {
-		logger.GetLogger().Info("no inactive fleet nodes found", zap.Int("page", page))
-		return nil, nil
+
+	err = db.Where("tenant_id = ? AND (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+		Limit(pageSize).
+		Offset(offSet).
+		Find(&ActiveFleetNodes).Error
+
+	if err != nil {
+		return nil, nil, err
 	}
-	var result []*model.UnhealthyFleet
+
+	if len(ActiveFleetNodes) == 0 && len(InactiveFleetNodes) == 0 {
+		logger.GetLogger().Info("no active or inactive fleet nodes found", zap.Int("page", page))
+		return nil, nil, nil
+
+	}
+
+	var activeResult []*fleet.Node
+	for _, a := range ActiveFleetNodes {
+		activeResult = append(activeResult, &a)
+	}
+
+	var inactiveResult []*model.UnhealthyFleet
 	for _, fl := range InactiveFleetNodes {
-		result = append(result, &model.UnhealthyFleet{
+		inactiveResult = append(inactiveResult, &model.UnhealthyFleet{
 			FleetNode: &fl,
 		})
 	}
-	return result, nil
+
+	return activeResult, inactiveResult, err
 
 }
 
-func findInactiveFleetConnectors(db *gorm.DB, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*model.UnhealthyFleetConnector, error) {
-	var fleetConnectors []fleet.Connector
+func findActiveAndInactiveFleetConnectors(db *gorm.DB, tenantId string, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*fleet.Connector, []*model.UnhealthyFleetConnector, error) {
+	var activeFleetConnectors []fleet.Connector
+	var inactiveFleetConnectors []fleet.Connector
 	offset := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
-	err := db.Where("(heartbeat_at < ? AND heartbeat_at > ? )AND status not in ?", healthCheckTime, healthCheckIgnoreTime, checkStatus).
+
+	err := db.Where("tenant_id = ? AND (heartbeat_at < ? AND heartbeat_at > ? )AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offset).
-		Find(&fleetConnectors).Error
+		Find(&inactiveFleetConnectors).Error
+
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(fleetConnectors) == 0 {
-		logger.GetLogger().Info("no inactive fleet connectors found", zap.Int("page", page))
-		return nil, nil
+
+	err = db.Where("tenant_id = ? AND (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+		Limit(pageSize).
+		Offset(offset).
+		Find(&activeFleetConnectors).Error
+
+	if err != nil {
+		return nil, nil, err
 	}
-	var result []*model.UnhealthyFleetConnector
-	for _, fc := range fleetConnectors {
-		result = append(result, &model.UnhealthyFleetConnector{
+
+	if len(activeFleetConnectors) == 0 && len(inactiveFleetConnectors) == 0 {
+		logger.GetLogger().Info("no active or inactive fleet connectors found", zap.Int("page", page))
+		return nil, nil, nil
+	}
+
+	var activeResult []*fleet.Connector
+	for _, ac := range activeFleetConnectors {
+		activeResult = append(activeResult, &ac)
+	}
+
+	var inactiveResult []*model.UnhealthyFleetConnector
+	for _, fc := range inactiveFleetConnectors {
+		inactiveResult = append(inactiveResult, &model.UnhealthyFleetConnector{
 			FleetConnector: &fc,
 		})
 	}
-	return result, nil
+
+	return activeResult, inactiveResult, nil
 }
 
-func findInactiveFleetComponents(db *gorm.DB, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*model.UnhealthyFleetComponents, error) {
-	var fleetComponents []fleet.Components
+func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*fleet.Components, []*model.UnhealthyFleetComponents, error) {
+	var activeFleetComponents []fleet.Components
+	var inactiveFleetComponents []fleet.Components
 	offset := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
-	err := db.Where("(heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", healthCheckTime, checkStatus).
+
+	err := db.Where("tenant_id = ? AND (heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offset).
-		Find(&fleetComponents).Error
+		Find(&inactiveFleetComponents).Error
+
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(fleetComponents) == 0 {
-		logger.GetLogger().Info("no inactive fleet components found", zap.Int("page", page))
-		return nil, nil
+
+	err = db.Where("tenant_id = ? (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+		Limit(pageSize).
+		Offset(offset).
+		Find(&activeFleetComponents).Error
+
+	if err != nil {
+		return nil, nil, err
 	}
-	var result []*model.UnhealthyFleetComponents
-	for _, fc := range fleetComponents {
-		result = append(result, &model.UnhealthyFleetComponents{
-			FleetComponent: &fc,
-		})
+
+	if len(activeFleetComponents) == 0 && len(inactiveFleetComponents) == 0 {
+		logger.GetLogger().Info("nothing found in db")
+		return nil, nil, nil
 	}
-	return result, nil
+
+	var inactiveResult []*model.UnhealthyFleetComponents
+	for _, fc := range inactiveFleetComponents {
+		inactiveResult = append(inactiveResult, &model.UnhealthyFleetComponents{FleetComponent: &fc})
+	}
+
+	var activeResult []*fleet.Components
+	for _, fc := range activeFleetComponents {
+		activeResult = append(activeResult, &fc)
+	}
+
+	return activeResult, inactiveResult, nil
+
 }
 func sendAgentInAppAlerts(inactiveAgents []*model.UnhealthyAgent, alertsManager *alert.AlertsManager) error {
 	alertsToSave := make([]*alerts_async.Alert, len(inactiveAgents))
@@ -319,6 +563,19 @@ func sendFleetComponentInAppAlerts(inactiveFleetComponents []*model.UnhealthyFle
 	alertsToSave := make([]*alerts_async.Alert, len(inactiveFleetComponents))
 	for i, ufc := range inactiveFleetComponents {
 		newAlert, err := buildFleetComponentAlert(*ufc)
+		if err != nil {
+			logger.GetLogger().Error("error while building fleet component alert", zap.Error(err))
+			return err
+		}
+		alertsToSave[i] = newAlert
+	}
+	return alertsManager.SendAlerts(alertsToSave)
+}
+
+func sendFleetConnectorInAppAlerts(inactiveFleetConnectors []*model.UnhealthyFleetConnector, alertsManager *alert.AlertsManager) error {
+	alertsToSave := make([]*alerts_async.Alert, len(inactiveFleetConnectors))
+	for i, ufc := range inactiveFleetConnectors {
+		newAlert, err := buildFleetConnectorAlert(*ufc)
 		if err != nil {
 			logger.GetLogger().Error("error while building fleet component alert", zap.Error(err))
 			return err
@@ -378,4 +635,25 @@ func buildFleetComponentAlert(uf model.UnhealthyFleetComponents) (*alerts_async.
 		alerts_async.WithMessage(details),
 		alerts_async.WithErrorCode(alerts_async.DHRW10003, ""),
 	)
+}
+
+func getExistingAlerts(ctx context.Context, tenantId string, sourceIds []string, osClient *opensearch.Client, functionalityType string) ([]statistics.AlertDocument, error) {
+	q := "tenantId:" + tenantId + " AND dismissed:false AND functionalityEntityId:" + "(" + strings.Join(sourceIds, " OR ") + ")" + ` AND functionalityType:(` + functionalityType + " OR " + alerts_async.IngestionChecker.String() + ")"
+	openAlerts, err := os.Search(ctx, osClient, common.AlertsIndex, q)
+	if err != nil {
+		logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q))
+		return nil, err
+	}
+	var alerts []statistics.AlertDocument
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+	if err != nil {
+		logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
+		return nil, err
+	}
+	err = decoder.Decode(openAlerts)
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
+		return nil, err
+	}
+	return alerts, nil
 }

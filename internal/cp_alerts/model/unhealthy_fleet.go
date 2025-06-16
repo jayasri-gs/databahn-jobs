@@ -5,10 +5,16 @@ import "github.com/databahn-ai/databahn-jobs/internal/store/fleet"
 type UnhealthyFleet struct {
 	FleetNode *fleet.Node
 }
+
+type HealthyFleet struct {
+	FleetNode *fleet.Node
+}
 type UnhealthyFleetConnector struct {
 	FleetConnector *fleet.Connector
 }
-
+type HealthyFleetConnector struct {
+	FleetConnector *fleet.Connector
+}
 type UnhealthyFleetComponents struct {
 	FleetComponent *fleet.Components
 }

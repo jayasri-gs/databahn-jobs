@@ -6,6 +6,10 @@ type UnhealthyAgent struct {
 	Agent *agent.Agent
 }
 
+type HealthyAgent struct {
+	Agent *agent.Agent
+}
+
 func (ua UnhealthyAgent) GetEntityId() string {
 	return ua.Agent.ID.String()
 }
