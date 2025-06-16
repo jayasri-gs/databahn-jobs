@@ -5,8 +5,12 @@ import (
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/audit"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/dataTransformation"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/deviceInventory"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/logsource"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/volumeController"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/db-models/alerts_common"
@@ -47,6 +51,14 @@ func GenerateAuditReport(ctx context.Context) error {
 			go audit.FetchAuditReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
 		case consts.DEVICE_INVENTORY_REPORT:
 			go deviceInventory.FetchDeviceInventory(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.VOLUME_CONTROLLER_REPORT:
+			go volumeController.FetchVolumeControllerReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.TRANSFORMATION_REPORT:
+			go dataTransformation.FetchDataTransformationReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.LOGSOURCE_REPORT:
+			go logsource.FetchLogSourceReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.DESTINATION_REPORT:
+			go destination.FetchDestinationReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
 		default:
 			logging.GetLoggerWithContext(ctx).Error("invalid report type", zap.String("reportType", req.ReportType))
 		}

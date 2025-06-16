@@ -172,6 +172,7 @@ func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInven
 	writer.Flush()
 	return writer.Error()
 }
+
 func getDeviceInventoryReportConfigFromRequest(req models.AuditReport) ([]string, string, string, error) {
 	var deviceInventoryReportConfiguration map[string]interface{}
 	var sources []string
