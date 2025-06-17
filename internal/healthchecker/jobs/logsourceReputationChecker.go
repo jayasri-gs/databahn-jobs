@@ -73,7 +73,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 	startTime := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTime)))
 	startTimeThreshold := endTime.Add(-time.Hour * time.Duration(util.GetEnvInt64FromString(healthchecker.ReputationCheckerTimeThreshold)))
 
-	var whisperingAlertsEntityArray, noisyAlertsEntityArray []alerts_common.AlertBaseObjectV2
+	var whisperingAlertsEntityArray, noisyAlertsEntityArray []helper.AlertBaseObjectV2
 	var whisperingLs, noisyLs []string
 	for _, ls := range logSources {
 		thresholdAggObj, err := getHistogramForLogSource(ctx, strconv.Itoa(int(startTimeThreshold.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), "1h", ls.ID.String())
@@ -101,7 +101,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 		reputation := classifySources(zScoreMean)
 
 		if reputation == common.WHISPERING {
-			var temp alerts_common.AlertBaseObjectV2
+			var temp helper.AlertBaseObjectV2
 			temp.EntityName = ls.Name
 			temp.EntityId = ls.ID
 			temp.EntityTenantUUId = ls.TenantID
@@ -111,7 +111,7 @@ func UpdateReputationForLogSources(ctx context.Context) error {
 			whisperingAlertsEntityArray = append(whisperingAlertsEntityArray, temp)
 			whisperingLs = append(whisperingLs, ls.ID.String())
 		} else if reputation == common.NOISY {
-			var temp alerts_common.AlertBaseObjectV2
+			var temp helper.AlertBaseObjectV2
 			temp.EntityName = ls.Name
 			temp.EntityId = ls.ID
 			temp.EntityTenantUUId = ls.TenantID
@@ -155,7 +155,7 @@ func markReputation(ctx context.Context, noisyLs []string, whisperingLs []string
 	return nil
 }
 
-func raiseAlerts(ctx context.Context, noisyAlertsEntityArray []alerts_common.AlertBaseObjectV2, whisperingAlertsEntityArray []alerts_common.AlertBaseObjectV2) error {
+func raiseAlerts(ctx context.Context, noisyAlertsEntityArray []helper.AlertBaseObjectV2, whisperingAlertsEntityArray []helper.AlertBaseObjectV2) error {
 	// raise alert for whispering
 	if len(whisperingAlertsEntityArray) > 0 {
 		err := helper.SendAlertToControlPlane(ctx, whisperingAlertsEntityArray, alerts_common.WhisperingAlertTitle, alerts_common.WhisperingAlertMessage, alerts_common.WhisperingAlertType, alerts_common.LogSourceFunctionality, alerts_common.WarningAlert, alerts_common.AlertOpen, false, "system")

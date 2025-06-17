@@ -11,6 +11,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -19,7 +20,7 @@ import (
 	"time"
 )
 
-func FetchAuditReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]alerts_common.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
+func FetchAuditReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]helper.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
 	var file *os.File
 	var writer *csv.Writer
 	defer func() {
@@ -30,7 +31,7 @@ func FetchAuditReport(ctx context.Context, req models.AuditReport, wg *sync.Wait
 	}()
 
 	var failedRequestsTemp []models.FailedRequests
-	var successAlertsTemp []alerts_common.AlertBaseObjectV2
+	var successAlertsTemp []helper.AlertBaseObjectV2
 	logging.GetLogger().Info("Fetching audit report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
 	err := models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
 	if err != nil {
@@ -52,7 +53,7 @@ func FetchAuditReport(ctx context.Context, req models.AuditReport, wg *sync.Wait
 		*failedRequests = append(*failedRequests, errRequest)
 		return
 	} else {
-		successAlertsTemp = append(successAlertsTemp, alerts_common.AlertBaseObjectV2{EntityName: req.Name, EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
+		successAlertsTemp = append(successAlertsTemp, helper.AlertBaseObjectV2{EntityName: req.Name, EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
 	}
 
 	// Lock the mutex before updating the success alerts

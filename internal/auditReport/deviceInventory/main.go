@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]alerts_common.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
+func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]helper.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
 	var file *os.File
 	var writer *csv.Writer
 	defer func() {
@@ -40,7 +40,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 	}()
 
 	var failedRequestsTemp []models.FailedRequests
-	var successAlertsTemp []alerts_common.AlertBaseObjectV2
+	var successAlertsTemp []helper.AlertBaseObjectV2
 	logging.GetLogger().Info("Fetching device inventory report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
 	err := models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
 	if err != nil {
@@ -60,7 +60,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		failedRequestsTemp = append(failedRequestsTemp, errRequest)
 	} else {
-		successAlertsTemp = append(successAlertsTemp, alerts_common.AlertBaseObjectV2{EntityName: req.Name, EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
+		successAlertsTemp = append(successAlertsTemp, helper.AlertBaseObjectV2{EntityName: req.Name, EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
 	}
 
 	// Lock the mutex before updating the success alerts
