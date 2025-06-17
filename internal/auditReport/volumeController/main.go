@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
@@ -16,9 +15,7 @@ import (
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
-	"strings"
 	"sync"
-	"time"
 )
 
 func FetchVolumeControllerReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]alerts_common.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
@@ -102,7 +99,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 			}
 		}
 
-		fetchedRowsCount, err = writeRowToTheFileOneByOne(columns, rows, writer, fetchedRowsCount)
+		fetchedRowsCount, err = common.WriteRowToTheFileOneByOne(columns, rows, writer, fetchedRowsCount)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -156,7 +153,7 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 	startTime := configData["startTime"].(string)
 	endTime := configData["endTime"].(string)
 
-	err = validateConfig(startTime, endTime)
+	err = common.ValidateConfig(startTime, endTime)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error in validating startime and endtime", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -167,93 +164,19 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 
 	otherParamsAdded := false
 
-	otherParamsAdded, query = updateQueryFromFilter(configData, otherParamsAdded, query, "scope", "scope")
-	otherParamsAdded, query = updateQueryFromFilter(configData, otherParamsAdded, query, "sources", "log_source_id")
-	otherParamsAdded, query = updateQueryFromFilter(configData, otherParamsAdded, query, "types", "type")
-	otherParamsAdded, query = updateQueryFromFilter(configData, otherParamsAdded, query, "destinations", "destination_id")
-	otherParamsAdded, query = updateQueryFromFilter(configData, otherParamsAdded, query, "dataplaneId", "data_plane_id")
+	filterMappings := map[string]string{
+		"scope":        "scope",
+		"sources":      "log_source_id",
+		"types":        "type",
+		"destinations": "destination_id",
+		"dataplaneId":  "data_plane_id",
+	}
 
+	for filterKey, dbField := range filterMappings {
+		otherParamsAdded, query = common.UpdateQueryFromFilter(configData, otherParamsAdded, query, filterKey, dbField)
+	}
 	if otherParamsAdded {
 		query += ")"
 	}
 	return query, nil
-}
-
-func updateQueryFromFilter(configData map[string]interface{}, otherParamsAdded bool, query string, filterKey string, dbField string) (bool, string) {
-	fieldKey, ok := configData[filterKey]
-	if !ok || len(fieldKey.([]interface{})) == 0 {
-		logging.GetLogger().Info("no types found in the config, ignoring this filter criteria")
-	} else {
-		if !otherParamsAdded {
-			query += " and ("
-			otherParamsAdded = true
-		} else {
-			query += " or "
-		}
-		fieldsArray, _ := convertToStrings(fieldKey.([]interface{}))
-		query += fmt.Sprintf("%s in ('%s')", dbField, strings.Join(fieldsArray, "','"))
-	}
-	return otherParamsAdded, query
-}
-func convertToStrings(input []interface{}) ([]string, error) {
-	var result []string
-	for _, v := range input {
-		str, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("element %v is not a string", v)
-		}
-		result = append(result, str)
-	}
-	return result, nil
-}
-func validateConfig(startTime string, endTime string) error {
-
-	if startTime == "" || endTime == "" {
-		return errors.New("start time and end time cannot be empty")
-	}
-	// Parse time strings into time.Time objects
-	start, err := time.Parse(time.RFC3339, startTime)
-	if err != nil {
-		return err
-	}
-
-	end, err := time.Parse(time.RFC3339, endTime)
-	if err != nil {
-		return err
-	}
-
-	// Compare time1 and time2
-	if start.After(end) {
-		return errors.New("startTime greater than endTime")
-	}
-	return nil
-}
-func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, writer *csv.Writer, fetchedRowsCount int) (int, error) {
-	values := make([]interface{}, len(columns))
-
-	for i := range values {
-		values[i] = new(sql.RawBytes)
-	}
-	for rows.Next() {
-		if err := rows.Scan(values...); err != nil {
-			return 0, err
-		}
-
-		var row []string
-		for _, col := range values {
-			// Convert column value to string
-			columnValue := string(*col.(*sql.RawBytes))
-			row = append(row, columnValue)
-		}
-		err := writer.Write(row)
-		if err != nil {
-			logging.GetLoggerWithContext(context.Background()).Error("error while writing row to the file", zap.Error(err))
-			return 0, err
-		}
-		fetchedRowsCount++
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
-	}
-	return fetchedRowsCount, nil
 }
