@@ -160,7 +160,7 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 		*failedRequests = append(*failedRequests, errRequest)
 	}
 
-	query := fmt.Sprintf("updated_at >= '%s' and updated_at <= '%s'", startTime, endTime)
+	query := fmt.Sprintf("tenant_id = '%s' and updated_at >= '%s' and updated_at <= '%s'", req.TenantId, startTime, endTime)
 
 	otherParamsAdded := false
 

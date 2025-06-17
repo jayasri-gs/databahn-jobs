@@ -2,37 +2,118 @@ package logsource
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"io"
-	"strings"
+	"time"
 )
 
-func getAggStatsForLogSource(ctx context.Context, q string, startTime string, endTime string) (statistics.AggregateResponse, error) {
-	query := statistics.AddDateRange(q, startTime, endTime)
-	agg := "tags.db_event_source_id.keyword"
-
-	searchBody := &statistics.AggregateQueryRequest{}
-	searchBody.Size = 0
-	searchBody.Query.QueryString.Query = query
-
-	aggList := strings.Split(agg, ",")
-	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
-
-	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, os.GetClient())
-
+// write a function convert utc timestamp to epoch format
+func convertUtcToEpoch(utcTime string) (string, error) {
+	layout := "2006-01-02T15:04:05Z" // RFC3339 format
+	t, err := time.Parse(layout, utcTime)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", os.StatsIndex))
-		return statistics.AggregateResponse{}, err
+		return "", fmt.Errorf("failed to parse UTC time: %w", err)
 	}
-	bodyContent, _ := io.ReadAll(searchResponse.Body)
 
-	resp := &statistics.AggregateQueryResponse{}
-	err = json.Unmarshal(bodyContent, resp)
-	aggObj := statistics.NewAggregateResponse(resp)
-	logging.GetLoggerWithContext(ctx).Info("got response from statistics store")
-	return aggObj, err
+	epoch := t.UnixMilli() // Convert to epoch time
+	return fmt.Sprintf("%d", epoch), nil
+}
+
+func getAggStatsForLogSourcePaginated(ctx context.Context, startTime string, endTime string, tenantId string) (map[string]string, error) {
+
+	logging.GetLoggerWithContext(ctx).Info("Fetching aggregate stats for log sources", zap.String("startTime", startTime), zap.String("endTime", endTime))
+
+	startTimeEpoch, err := convertUtcToEpoch(startTime)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error converting startTime to epoch", zap.Error(err))
+		return nil, err
+	}
+	endTimeEpoch, err := convertUtcToEpoch(endTime)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error converting endTime to epoch", zap.Error(err))
+		return nil, err
+	}
+
+	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
+	query := statistics.AddDateRange(q, startTimeEpoch, endTimeEpoch)
+	groupBy := []string{"tags.db_event_source_id.keyword"}
+	aggregations := []os.AggregationFunction{
+		{Name: "sum_value", Function: "sum", Field: "counter.value"},
+	}
+
+	var allResponses []os.AggResponse
+	var after map[string]any
+
+	for {
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatisticsIndexAlias(tenantId)+"*", query, groupBy, aggregations, after)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
+			return nil, err
+		}
+
+		allResponses = append(allResponses, responses...)
+
+		if nextAfter == nil {
+			break
+		}
+		after = nextAfter
+	}
+	lsIdToStatsMap := make(map[string]string)
+	for _, resp := range allResponses {
+		lsIdToStatsMap[resp.Key["tags.db_event_source_id.keyword"].(string)] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+	}
+	return lsIdToStatsMap, nil
+}
+
+func getAggStatsForLogSourceToDestinationPaginated(ctx context.Context, startTime string, endTime string, tenantId string) (map[string]map[string]string, error) {
+
+	logging.GetLoggerWithContext(ctx).Info("Fetching destination stats for log sources", zap.String("startTime", startTime), zap.String("endTime", endTime))
+	startTimeEpoch, err := convertUtcToEpoch(startTime)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error converting startTime to epoch", zap.Error(err))
+		return nil, err
+	}
+	endTimeEpoch, err := convertUtcToEpoch(endTime)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error converting endTime to epoch", zap.Error(err))
+		return nil, err
+	}
+
+	q := `tags.component_name: "dispenser" AND name: "total_events_delivered"`
+	query := statistics.AddDateRange(q, startTimeEpoch, endTimeEpoch)
+	groupBy := []string{"tags.db_event_source_id.keyword", "tags.destination_id.keyword"}
+	aggregations := []os.AggregationFunction{
+		{Name: "sum_value", Function: "sum", Field: "counter.value"},
+	}
+
+	var allResponses []os.AggResponse
+	var after map[string]any
+
+	for {
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatisticsIndexAlias(tenantId)+"*", query, groupBy, aggregations, after)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
+			return nil, err
+		}
+
+		allResponses = append(allResponses, responses...)
+
+		if nextAfter == nil {
+			break
+		}
+		after = nextAfter
+	}
+	lsIdToDestinaionStatsMap := make(map[string]map[string]string)
+	for _, resp := range allResponses {
+		lsId := resp.Key["tags.db_event_source_id.keyword"].(string)
+		destId := resp.Key["tags.destination_id.keyword"].(string)
+		if _, exists := lsIdToDestinaionStatsMap[lsId]; !exists {
+			lsIdToDestinaionStatsMap[lsId] = make(map[string]string)
+		}
+		lsIdToDestinaionStatsMap[lsId][destId] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+	}
+	return lsIdToDestinaionStatsMap, nil
 }

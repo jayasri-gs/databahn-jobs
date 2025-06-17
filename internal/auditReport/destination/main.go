@@ -11,10 +11,12 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -70,13 +72,34 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 	offset := 0
 	writeHeader := true
 
-	query, file, err := getFileAndRequestConfig(ctx, req, file, failedRequests)
+	query, startTime, endTime, file, err := getFileAndRequestConfig(ctx, req, file, failedRequests)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
 		return nil, nil, err
 	}
+
+	dstIdsToLogSourceStatsMap, err := getAggStatsForDestinationToLogSourcePaginated(ctx, startTime, endTime, req.TenantId)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
+		*failedRequests = append(*failedRequests, errRequest)
+		return nil, nil, err
+	}
+	// get destiantion id to names
+	failedRequests, logsourceIdToNameMap, err := GetLogSourceIdToNamesMap(ctx, req, err, failedRequests)
+	if err != nil {
+		return nil, nil, err
+	}
+	file, writer, err = writeToFIle(ctx, req, file, failedRequests, writer, writeHeader, offset, pageSize, query, dstIdsToLogSourceStatsMap, logsourceIdToNameMap)
+	if err != nil {
+		return nil, nil, err
+	}
+	return file, writer, nil
+}
+
+func writeToFIle(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests, writer *csv.Writer, writeHeader bool, offset int, pageSize int, query string, dstIdsToLogSourceStatsMap map[string]map[string]string, logsourceIdToNameMap map[string]string) (*os.File, *csv.Writer, error) {
 	for {
 		writeHeader = writeHeader && offset == 0
 		rows, columns, err := getRowsAndColumnsFromAuditTable(pageSize, offset, query)
@@ -87,19 +110,21 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 			return nil, nil, err
 		}
 		fetchedRowsCount := 0
-
 		if writeHeader {
+			headerColumns := append(columns, "destination_loogsource_stats")
+			// Add additional columns for ingestion stats and destination stats
 			writer = csv.NewWriter(file)
-			err = writer.Write(columns)
+			err = writer.Write(headerColumns)
 			if err != nil {
 				logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
 				errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 				*failedRequests = append(*failedRequests, errRequest)
 				return nil, nil, err
 			}
+
 		}
 
-		fetchedRowsCount, err = common.WriteRowToTheFileOneByOne(columns, rows, writer, fetchedRowsCount)
+		fetchedRowsCount, err = writeRowToTheFileOneByOne(columns, rows, dstIdsToLogSourceStatsMap, logsourceIdToNameMap, writer, fetchedRowsCount)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -113,7 +138,71 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 	}
 	return file, writer, nil
 }
-func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests) (string, *os.File, error) {
+
+func GetLogSourceIdToNamesMap(ctx context.Context, req models.AuditReport, err error, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
+	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while fetching logsources", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
+		*failedRequests = append(*failedRequests, errRequest)
+		return nil, nil, err
+	}
+	logsourceIdToNameMap := make(map[string]string)
+	for _, ls := range logSources {
+		logsourceIdToNameMap[ls.ID.String()] = ls.Name
+	}
+	return failedRequests, logsourceIdToNameMap, nil
+}
+func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, dstIdsToLogSourceStatsMap map[string]map[string]string, logsourceIdToNameMap map[string]string, writer *csv.Writer, fetchedRowsCount int) (int, error) {
+
+	values := make([]interface{}, len(columns))
+	for i := range values {
+		values[i] = new(sql.RawBytes)
+	}
+	for rows.Next() {
+		dstId := ""
+		columnValue := ""
+		if err := rows.Scan(values...); err != nil {
+			return 0, err
+		}
+
+		var row []string
+		for i, col := range values {
+			if columns[i] == "id" {
+				dstId = string(*col.(*sql.RawBytes))
+			}
+			columnValue = string(*col.(*sql.RawBytes))
+			row = append(row, columnValue)
+		}
+		row = append(row, getLogSourceStatsString(dstIdsToLogSourceStatsMap, dstId, logsourceIdToNameMap))
+		err := writer.Write(row)
+		if err != nil {
+			logging.GetLoggerWithContext(context.Background()).Error("error while writing row to the file", zap.Error(err))
+			return 0, err
+		}
+		fetchedRowsCount++
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return fetchedRowsCount, nil
+}
+
+func getLogSourceStatsString(dstIdsToLogSourceStatsMap map[string]map[string]string, destinationId string, logsourceIdToNameMap map[string]string) string {
+	if lsStats, ok := dstIdsToLogSourceStatsMap[destinationId]; ok {
+		var logSourceStats []string
+		for lsId, value := range lsStats {
+			if name, exists := logsourceIdToNameMap[lsId]; exists {
+				logSourceStats = append(logSourceStats, fmt.Sprintf("%s: %s", name, value))
+			} else {
+				logSourceStats = append(logSourceStats, fmt.Sprintf("%s: %s", lsId, value))
+			}
+		}
+		return fmt.Sprintf("%v", strings.Join(logSourceStats, "\n"))
+	}
+	return ""
+}
+func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests) (string, string, string, *os.File, error) {
 	file, err := common.CreateTempFile(req.Id.String())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
@@ -121,14 +210,14 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *
 		*failedRequests = append(*failedRequests, errRequest)
 	}
 
-	query, err := getQueryFromConfig(ctx, req, failedRequests)
+	query, startTime, endTime, err := getQueryFromConfig(ctx, req, failedRequests)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
 	}
 
-	return query, file, err
+	return query, startTime, endTime, file, err
 }
 func getRowsAndColumnsFromAuditTable(pageSize int, offset int, query string) (*sql.Rows, []string, error) {
 	rows, err := config.GetDB().Table("destination").Limit(pageSize).Offset(offset).Where(query).Order("updated_at").Rows()
@@ -141,11 +230,11 @@ func getRowsAndColumnsFromAuditTable(pageSize int, offset int, query string) (*s
 	}
 	return rows, columns, nil
 }
-func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (string, error) {
+func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (string, string, string, error) {
 	var reportConfiguration map[string]interface{}
 	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
 	if err != nil {
-		return "", err
+		return "", "", "", err
 	}
 	var configData map[string]interface{}
 	configData = reportConfiguration["filter"].(map[string]interface{})
@@ -160,7 +249,7 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 		*failedRequests = append(*failedRequests, errRequest)
 	}
 
-	query := fmt.Sprintf("updated_at >= '%s' and updated_at <= '%s'", startTime, endTime)
+	query := fmt.Sprintf("tenant_id = '%s' and updated_at >= '%s' and updated_at <= '%s'", req.TenantId, startTime, endTime)
 
 	otherParamsAdded := false
 
@@ -178,5 +267,5 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 	if otherParamsAdded {
 		query += ")"
 	}
-	return query, nil
+	return query, startTime, endTime, nil
 }
