@@ -63,6 +63,57 @@ github.com/MicahParks/keyfunc
 # github.com/ajg/form v1.5.1
 ## explicit
 github.com/ajg/form
+# github.com/aws/aws-sdk-go v1.44.263
+## explicit; go 1.11
+github.com/aws/aws-sdk-go/aws
+github.com/aws/aws-sdk-go/aws/arn
+github.com/aws/aws-sdk-go/aws/awserr
+github.com/aws/aws-sdk-go/aws/awsutil
+github.com/aws/aws-sdk-go/aws/client
+github.com/aws/aws-sdk-go/aws/client/metadata
+github.com/aws/aws-sdk-go/aws/corehandlers
+github.com/aws/aws-sdk-go/aws/credentials
+github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds
+github.com/aws/aws-sdk-go/aws/credentials/endpointcreds
+github.com/aws/aws-sdk-go/aws/credentials/processcreds
+github.com/aws/aws-sdk-go/aws/credentials/ssocreds
+github.com/aws/aws-sdk-go/aws/credentials/stscreds
+github.com/aws/aws-sdk-go/aws/csm
+github.com/aws/aws-sdk-go/aws/defaults
+github.com/aws/aws-sdk-go/aws/ec2metadata
+github.com/aws/aws-sdk-go/aws/endpoints
+github.com/aws/aws-sdk-go/aws/request
+github.com/aws/aws-sdk-go/aws/session
+github.com/aws/aws-sdk-go/aws/signer/v4
+github.com/aws/aws-sdk-go/internal/context
+github.com/aws/aws-sdk-go/internal/ini
+github.com/aws/aws-sdk-go/internal/s3shared
+github.com/aws/aws-sdk-go/internal/s3shared/arn
+github.com/aws/aws-sdk-go/internal/s3shared/s3err
+github.com/aws/aws-sdk-go/internal/sdkio
+github.com/aws/aws-sdk-go/internal/sdkmath
+github.com/aws/aws-sdk-go/internal/sdkrand
+github.com/aws/aws-sdk-go/internal/sdkuri
+github.com/aws/aws-sdk-go/internal/shareddefaults
+github.com/aws/aws-sdk-go/internal/strings
+github.com/aws/aws-sdk-go/internal/sync/singleflight
+github.com/aws/aws-sdk-go/private/checksum
+github.com/aws/aws-sdk-go/private/protocol
+github.com/aws/aws-sdk-go/private/protocol/eventstream
+github.com/aws/aws-sdk-go/private/protocol/eventstream/eventstreamapi
+github.com/aws/aws-sdk-go/private/protocol/json/jsonutil
+github.com/aws/aws-sdk-go/private/protocol/jsonrpc
+github.com/aws/aws-sdk-go/private/protocol/query
+github.com/aws/aws-sdk-go/private/protocol/query/queryutil
+github.com/aws/aws-sdk-go/private/protocol/rest
+github.com/aws/aws-sdk-go/private/protocol/restjson
+github.com/aws/aws-sdk-go/private/protocol/restxml
+github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
+github.com/aws/aws-sdk-go/service/s3
+github.com/aws/aws-sdk-go/service/sso
+github.com/aws/aws-sdk-go/service/sso/ssoiface
+github.com/aws/aws-sdk-go/service/sts
+github.com/aws/aws-sdk-go/service/sts/stsiface
 # github.com/aws/aws-sdk-go-v2 v1.36.3
 ## explicit; go 1.22
 github.com/aws/aws-sdk-go-v2/aws
@@ -218,7 +269,7 @@ github.com/cespare/xxhash/v2
 ## explicit; go 1.21
 github.com/confluentinc/confluent-kafka-go/v2/kafka
 github.com/confluentinc/confluent-kafka-go/v2/kafka/librdkafka_vendor
-# github.com/databahn-ai/common-utils v0.163.0
+# github.com/databahn-ai/common-utils v0.173.0
 ## explicit; go 1.24
 github.com/databahn-ai/common-utils/ack
 github.com/databahn-ai/common-utils/alert
@@ -230,12 +281,15 @@ github.com/databahn-ai/common-utils/configuration
 github.com/databahn-ai/common-utils/constants
 github.com/databahn-ai/common-utils/databases
 github.com/databahn-ai/common-utils/kafka
+github.com/databahn-ai/common-utils/notification
 github.com/databahn-ai/common-utils/opensearch
+github.com/databahn-ai/common-utils/queue
 github.com/databahn-ai/common-utils/redis
 github.com/databahn-ai/common-utils/utils
 github.com/databahn-ai/common-utils/vault
-# github.com/databahn-ai/db-models v0.154.0
-## explicit; go 1.23
+# github.com/databahn-ai/db-models v0.169.0
+## explicit; go 1.24
+github.com/databahn-ai/db-models/alerts_async
 github.com/databahn-ai/db-models/alerts_common
 github.com/databahn-ai/db-models/changeflag
 github.com/databahn-ai/db-models/destination
@@ -369,6 +423,9 @@ github.com/jinzhu/inflection
 # github.com/jinzhu/now v1.1.5
 ## explicit; go 1.12
 github.com/jinzhu/now
+# github.com/jmespath/go-jmespath v0.4.0
+## explicit; go 1.14
+github.com/jmespath/go-jmespath
 # github.com/leodido/go-urn v1.4.0
 ## explicit; go 1.18
 github.com/leodido/go-urn

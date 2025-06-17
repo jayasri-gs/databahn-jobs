@@ -50,3 +50,4 @@ const GlobalDestinationUnDeliveredAzureBlobTopicPrefix = "db.global.destination.
 const GlobalDestinationUnParsedAzureBlobTopicPrefix = "db.global.destination.unparsed.azureblob"
 const GlobalDestinationUnDeliveredS3TopicPrefix = "db.global.destination.undelivered.s3"
 const GlobalDestinationUnParsedS3TopicPrefix = "db.global.destination.unparsed.s3"
+const GlobalDestinationUnDeliveredSnowflakeTopicPrefix = "db.global.destination.undelivered.snowflake"
