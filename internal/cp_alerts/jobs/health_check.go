@@ -146,7 +146,7 @@ func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsMan
 
 		}
 
-		if len(alertsToDismiss) == 0 {
+		if len(alertsToDismiss) > 0 {
 			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
 			if err != nil {
 				logger.GetLogger().Error("error while auto-resolving alerts for active agents", zap.Error(err))
@@ -344,7 +344,7 @@ func alertForFleetComponentsHealthCheck(ctx context.Context, alertsManager *aler
 			}
 
 			for _, alert := range existingAlerts {
-				if _, ok := activeFleetComponentById[alert.Id]; !ok {
+				if _, ok := activeFleetComponentById[alert.FunctionalityEntityId]; !ok {
 					alertsToDismiss = append(alertsToDismiss, alert.Id)
 
 				}
@@ -507,7 +507,7 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 		return nil, nil, err
 	}
 
-	err = db.Where("tenant_id = ? (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+	err = db.Where("tenant_id = ? AND (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&activeFleetComponents).Error
