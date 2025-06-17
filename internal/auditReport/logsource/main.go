@@ -99,7 +99,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 	}
 
 	// get destiantion id to names
-	failedRequests, destinationIdToNameMap, err := GetDestinationIdToNamesMap(ctx, req, err, failedRequests)
+	failedRequests, destinationIdToNameMap, err := GetDestinationIdToNamesMap(ctx, req, failedRequests)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -150,7 +150,7 @@ func writeToFIle(ctx context.Context, req models.AuditReport, file *os.File, fai
 	return file, writer, nil
 }
 
-func GetDestinationIdToNamesMap(ctx context.Context, req models.AuditReport, err error, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
+func GetDestinationIdToNamesMap(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
 	destinations, err := destination.GetDestinationByTenantId(utils.UUIDFromStringOrNil(req.TenantId), config.GetDB())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while fetching destinations", zap.Error(err))

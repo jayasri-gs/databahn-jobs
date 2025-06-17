@@ -88,7 +88,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 		return nil, nil, err
 	}
 	// get destiantion id to names
-	failedRequests, logsourceIdToNameMap, err := GetLogSourceIdToNamesMap(ctx, req, err, failedRequests)
+	failedRequests, logsourceIdToNameMap, err := GetLogSourceIdToNamesMap(ctx, req, failedRequests)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -139,7 +139,7 @@ func writeToFIle(ctx context.Context, req models.AuditReport, file *os.File, fai
 	return file, writer, nil
 }
 
-func GetLogSourceIdToNamesMap(ctx context.Context, req models.AuditReport, err error, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
+func GetLogSourceIdToNamesMap(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
 	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while fetching logsources", zap.Error(err))
