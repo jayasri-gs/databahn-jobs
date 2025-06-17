@@ -8,7 +8,9 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/dataTransformation"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/deviceInventory"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/enrichment"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/logsource"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/lookups"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/volumeController"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -59,6 +61,10 @@ func GenerateAuditReport(ctx context.Context) error {
 			go logsource.FetchLogSourceReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
 		case consts.DESTINATION_REPORT:
 			go destination.FetchDestinationReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.LOOKUP_REPORT:
+			go lookups.FetchLookupReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.ENRICHMENT_REPORT:
+			go enrichment.FetchEnrichmentReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
 		default:
 			logging.GetLoggerWithContext(ctx).Error("invalid report type", zap.String("reportType", req.ReportType))
 		}
