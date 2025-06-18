@@ -48,7 +48,7 @@ func FetchEnrichmentReport(ctx context.Context, req models.AuditReport, wg *sync
 	if err != nil {
 		return
 	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
+	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name)
 	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
@@ -119,14 +119,14 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 	return file, writer, nil
 }
 func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests) (string, *os.File, error) {
-	file, err := common.CreateTempFile(req.Id.String())
+	file, err := common.CreateTempFile(req.Name)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
 	}
 
-	query, err := getQueryFromConfig(ctx, req, failedRequests)
+	query, err := getQueryFromConfig(req)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -146,7 +146,7 @@ func getRowsAndColumnsFromAuditTable(pageSize int, offset int, query string) (*s
 	}
 	return rows, columns, nil
 }
-func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (string, error) {
+func getQueryFromConfig(req models.AuditReport) (string, error) {
 	var reportConfiguration map[string]interface{}
 	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
 	if err != nil {
@@ -155,17 +155,7 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 	var configData map[string]interface{}
 	configData = reportConfiguration["filter"].(map[string]interface{})
 
-	startTime := configData["startTime"].(string)
-	endTime := configData["endTime"].(string)
-
-	err = common.ValidateConfig(startTime, endTime)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error in validating startime and endtime", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-	}
-
-	query := fmt.Sprintf("tenant_id = '%s' and updated_at >= '%s' and updated_at <= '%s'", req.TenantId, startTime, endTime)
+	query := fmt.Sprintf("tenant_id = '%s'", req.TenantId)
 
 	otherParamsAdded := false
 

@@ -11,7 +11,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -50,7 +49,7 @@ func FetchDestinationReport(ctx context.Context, req models.AuditReport, wg *syn
 	if err != nil {
 		return
 	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
+	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name)
 	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
@@ -93,7 +92,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 		return nil, nil, err
 	}
 	// get destiantion id to names
-	failedRequests, logsourceIdToNameMap, err := GetLogSourceIdToNamesMap(ctx, req, failedRequests)
+	failedRequests, logsourceIdToNameMap, err := common.GetLogSourceIdToNamesMap(ctx, req, failedRequests)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -116,7 +115,7 @@ func writeToFIle(ctx context.Context, req models.AuditReport, file *os.File, fai
 		}
 		fetchedRowsCount := 0
 		if writeHeader {
-			headerColumns := append(columns, "destination_loogsource_stats")
+			headerColumns := append(columns, "destination_logsource_stats")
 			// Add additional columns for ingestion stats and destination stats
 			writer = csv.NewWriter(file)
 			err = writer.Write(headerColumns)
@@ -144,20 +143,6 @@ func writeToFIle(ctx context.Context, req models.AuditReport, file *os.File, fai
 	return file, writer, nil
 }
 
-func GetLogSourceIdToNamesMap(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
-	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching logsources", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return nil, nil, err
-	}
-	logsourceIdToNameMap := make(map[string]string)
-	for _, ls := range logSources {
-		logsourceIdToNameMap[ls.ID.String()] = ls.Name
-	}
-	return failedRequests, logsourceIdToNameMap, nil
-}
 func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, dstIdsToLogSourceStatsMap map[string]map[string]string, logsourceIdToNameMap map[string]string, writer *csv.Writer, fetchedRowsCount int) (int, error) {
 
 	values := make([]interface{}, len(columns))
@@ -176,6 +161,10 @@ func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, dstIdsToLogSour
 			if columns[i] == "id" {
 				dstId = string(*col.(*sql.RawBytes))
 			}
+			if columns[i] == "configuration" {
+				row = append(row, "cannot write this column due to security reasons")
+				continue
+			}
 			columnValue = string(*col.(*sql.RawBytes))
 			row = append(row, columnValue)
 		}
@@ -187,6 +176,7 @@ func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, dstIdsToLogSour
 		}
 		fetchedRowsCount++
 	}
+	writer.Flush()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
@@ -208,7 +198,7 @@ func getLogSourceStatsString(dstIdsToLogSourceStatsMap map[string]map[string]str
 	return ""
 }
 func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests) (string, string, string, *os.File, error) {
-	file, err := common.CreateTempFile(req.Id.String())
+	file, err := common.CreateTempFile(req.Name)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -249,15 +239,14 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 
 	err = common.ValidateConfig(startTime, endTime)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error in validating startime and endtime", zap.Error(err))
+		logging.GetLoggerWithContext(ctx).Error("error while validating config", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
+		return "", "", "", err
 	}
-
-	query := fmt.Sprintf("tenant_id = '%s' and updated_at >= '%s' and updated_at <= '%s'", req.TenantId, startTime, endTime)
+	query := fmt.Sprintf("tenant_id = '%s'", req.TenantId)
 
 	otherParamsAdded := false
-
 	filterMappings := map[string]string{
 		"scope":        "scope",
 		"sources":      "log_source_id",

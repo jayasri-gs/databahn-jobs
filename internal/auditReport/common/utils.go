@@ -6,11 +6,16 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
+	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
+	"strconv"
 	"strings"
-	"time"
 )
 
 func CreateTempFile(fileName string) (*os.File, error) {
@@ -24,7 +29,7 @@ func CreateTempFile(fileName string) (*os.File, error) {
 func UpdateQueryFromFilter(configData map[string]interface{}, otherParamsAdded bool, query string, filterKey string, dbField string) (bool, string) {
 	fieldKey, ok := configData[filterKey]
 	if !ok || len(fieldKey.([]interface{})) == 0 {
-		logging.GetLogger().Info("no types found in the config, ignoring this filter criteria")
+		logging.GetLogger().Info(fmt.Sprintf("no config not found for filter %s, ignoring this filter criteria", filterKey))
 	} else {
 		if !otherParamsAdded {
 			query += " and ("
@@ -54,18 +59,18 @@ func ValidateConfig(startTime string, endTime string) error {
 		return errors.New("start time and end time cannot be empty")
 	}
 	// Parse time strings into time.Time objects
-	start, err := time.Parse(time.RFC3339, startTime)
+	start, err := strconv.Atoi(startTime)
 	if err != nil {
 		return err
 	}
 
-	end, err := time.Parse(time.RFC3339, endTime)
+	end, err := strconv.Atoi(endTime)
 	if err != nil {
 		return err
 	}
 
 	// Compare time1 and time2
-	if start.After(end) {
+	if start > end {
 		return errors.New("startTime greater than endTime")
 	}
 	return nil
@@ -93,8 +98,39 @@ func WriteRowToTheFileOneByOne(columns []string, rows *sql.Rows, writer *csv.Wri
 		}
 		fetchedRowsCount++
 	}
+	writer.Flush()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
 	return fetchedRowsCount, nil
+}
+func GetLogSourceIdToNamesMap(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
+	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while fetching logsources", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
+		*failedRequests = append(*failedRequests, errRequest)
+		return nil, nil, err
+	}
+	logsourceIdToNameMap := make(map[string]string)
+	for _, ls := range logSources {
+		logsourceIdToNameMap[ls.ID.String()] = ls.Name
+	}
+	return failedRequests, logsourceIdToNameMap, nil
+}
+
+func GetDestinationIdToNamesMap(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
+	destinations, err := destination.GetDestinationByTenantId(utils.UUIDFromStringOrNil(req.TenantId), config.GetDB())
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while fetching destinations", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
+		*failedRequests = append(*failedRequests, errRequest)
+		return nil, nil, err
+	}
+	destinationIdToNameMap := make(map[string]string)
+	for _, dest := range destinations {
+		destinationIdToNameMap[dest.ID.String()] = dest.Name
+	}
+	destinationIdToNameMap["dbd00000-0000-0000-0000-000000000000"] = "Databahn Sandbox"
+	return failedRequests, destinationIdToNameMap, nil
 }

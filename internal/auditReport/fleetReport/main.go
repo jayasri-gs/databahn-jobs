@@ -1,4 +1,4 @@
-package volumeController
+package fleetReport
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"sync"
 )
 
-func FetchVolumeControllerReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]alerts_common.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
+func FetchFleetReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]alerts_common.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
 	var file *os.File
 	var writer *csv.Writer
 	defer func() {
@@ -35,7 +35,7 @@ func FetchVolumeControllerReport(ctx context.Context, req models.AuditReport, wg
 
 	var failedRequestsTemp []models.FailedRequests
 	var successAlertsTemp []alerts_common.AlertBaseObjectV2
-	logging.GetLogger().Info("Fetching volume controller report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
+	logging.GetLogger().Info("Fetching fleet report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
 	err := models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while updating status to in progress", zap.Error(err))
@@ -126,7 +126,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *
 		*failedRequests = append(*failedRequests, errRequest)
 	}
 
-	query, err := getQueryFromConfig(req)
+	query, err := getQueryFromConfig(ctx, req, failedRequests)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -136,7 +136,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *
 	return query, file, err
 }
 func getRowsAndColumnsFromAuditTable(pageSize int, offset int, query string) (*sql.Rows, []string, error) {
-	rows, err := config.GetDB().Table("vc_rule").Limit(pageSize).Offset(offset).Where(query).Order("updated_at").Rows()
+	rows, err := config.GetDB().Table("fleet").Limit(pageSize).Offset(offset).Where(query).Order("updated_at").Rows()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -146,7 +146,7 @@ func getRowsAndColumnsFromAuditTable(pageSize int, offset int, query string) (*s
 	}
 	return rows, columns, nil
 }
-func getQueryFromConfig(req models.AuditReport) (string, error) {
+func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (string, error) {
 	var reportConfiguration map[string]interface{}
 	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
 	if err != nil {
@@ -155,7 +155,17 @@ func getQueryFromConfig(req models.AuditReport) (string, error) {
 	var configData map[string]interface{}
 	configData = reportConfiguration["filter"].(map[string]interface{})
 
-	query := fmt.Sprintf("tenant_id = '%s'", req.TenantId)
+	startTime := configData["startTime"].(string)
+	endTime := configData["endTime"].(string)
+
+	err = common.ValidateConfig(startTime, endTime)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error in validating startime and endtime", zap.Error(err))
+		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
+		*failedRequests = append(*failedRequests, errRequest)
+	}
+
+	query := fmt.Sprintf("tenant_id = '%s' and updated_at >= '%s' and updated_at <= '%s'", req.TenantId, startTime, endTime)
 
 	otherParamsAdded := false
 

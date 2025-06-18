@@ -49,7 +49,7 @@ func FetchAuditReport(ctx context.Context, req models.AuditReport, wg *sync.Wait
 	if err != nil {
 		return
 	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
+	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name)
 	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
@@ -117,7 +117,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 	return file, writer, nil
 }
 func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests) (string, string, *os.File, error) {
-	file, err := common.CreateTempFile(req.Id.String())
+	file, err := common.CreateTempFile(req.Name)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -205,6 +205,7 @@ func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, writer *csv.Wri
 		}
 		fetchedRowsCount++
 	}
+	writer.Flush()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}

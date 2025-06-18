@@ -1,4 +1,4 @@
-package volumeController
+package agentReport
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"sync"
 )
 
-func FetchVolumeControllerReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]alerts_common.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
+func FetchAgentReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]alerts_common.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
 	var file *os.File
 	var writer *csv.Writer
 	defer func() {
@@ -35,7 +35,7 @@ func FetchVolumeControllerReport(ctx context.Context, req models.AuditReport, wg
 
 	var failedRequestsTemp []models.FailedRequests
 	var successAlertsTemp []alerts_common.AlertBaseObjectV2
-	logging.GetLogger().Info("Fetching volume controller report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
+	logging.GetLogger().Info("Fetching agent report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
 	err := models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while updating status to in progress", zap.Error(err))
@@ -71,7 +71,7 @@ func FetchVolumeControllerReport(ctx context.Context, req models.AuditReport, wg
 }
 
 func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests, writer *csv.Writer) (*os.File, *csv.Writer, error) {
-	pageSize := utils.GetEnvInt("VOLUME_CONTROLLER_REPORT_PAGE_SIZE", 1000)
+	pageSize := utils.GetEnvInt("AGENT_REPORT_PAGE_SIZE", 1000)
 	offset := 0
 	writeHeader := true
 
@@ -136,7 +136,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *
 	return query, file, err
 }
 func getRowsAndColumnsFromAuditTable(pageSize int, offset int, query string) (*sql.Rows, []string, error) {
-	rows, err := config.GetDB().Table("vc_rule").Limit(pageSize).Offset(offset).Where(query).Order("updated_at").Rows()
+	rows, err := config.GetDB().Table("agent_node").Limit(pageSize).Offset(offset).Where(query).Order("updated_at").Rows()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -154,17 +154,13 @@ func getQueryFromConfig(req models.AuditReport) (string, error) {
 	}
 	var configData map[string]interface{}
 	configData = reportConfiguration["filter"].(map[string]interface{})
-
-	query := fmt.Sprintf("tenant_id = '%s'", req.TenantId)
+	query := fmt.Sprintf("tenant_id = '%s' ", req.TenantId)
 
 	otherParamsAdded := false
 
 	filterMappings := map[string]string{
-		"scope":        "scope",
-		"sources":      "log_source_id",
-		"types":        "type",
-		"destinations": "destination_id",
-		"dataplaneId":  "data_plane_id",
+		"os":       "os",
+		"platform": "platform",
 	}
 
 	for filterKey, dbField := range filterMappings {

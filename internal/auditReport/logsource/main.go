@@ -11,7 +11,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -50,7 +49,7 @@ func FetchLogSourceReport(ctx context.Context, req models.AuditReport, wg *sync.
 	if err != nil {
 		return
 	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
+	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name)
 	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
@@ -104,7 +103,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file 
 	}
 
 	// get destiantion id to names
-	failedRequests, destinationIdToNameMap, err := GetDestinationIdToNamesMap(ctx, req, failedRequests)
+	failedRequests, destinationIdToNameMap, err := common.GetDestinationIdToNamesMap(ctx, req, failedRequests)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -155,20 +154,6 @@ func writeToFIle(ctx context.Context, req models.AuditReport, file *os.File, fai
 	return file, writer, nil
 }
 
-func GetDestinationIdToNamesMap(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
-	destinations, err := destination.GetDestinationByTenantId(utils.UUIDFromStringOrNil(req.TenantId), config.GetDB())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching destinations", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return nil, nil, err
-	}
-	destinationIdToNameMap := make(map[string]string)
-	for _, dest := range destinations {
-		destinationIdToNameMap[dest.ID.String()] = dest.Name
-	}
-	return failedRequests, destinationIdToNameMap, nil
-}
 func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, logsourceIdsToIngestionStats map[string]string, logsourceIdsToDestinationStats map[string]map[string]string, destinationIdToName map[string]string, writer *csv.Writer, fetchedRowsCount int) (int, error) {
 
 	values := make([]interface{}, len(columns))
@@ -187,6 +172,10 @@ func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, logsourceIdsToI
 			if columns[i] == "id" {
 				lsId = string(*col.(*sql.RawBytes))
 			}
+			if columns[i] == "configuration" {
+				row = append(row, "cannot write this column due to security reasons")
+				continue
+			}
 			columnValue = string(*col.(*sql.RawBytes))
 			row = append(row, columnValue)
 		}
@@ -199,6 +188,7 @@ func writeRowToTheFileOneByOne(columns []string, rows *sql.Rows, logsourceIdsToI
 		}
 		fetchedRowsCount++
 	}
+	writer.Flush()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
@@ -220,7 +210,7 @@ func getDestinationStatsString(logsourceIdsToDestinationStats map[string]map[str
 	return ""
 }
 func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests) (string, string, string, *os.File, error) {
-	file, err := common.CreateTempFile(req.Id.String())
+	file, err := common.CreateTempFile(req.Name)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -264,9 +254,10 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 		logging.GetLoggerWithContext(ctx).Error("error in validating startime and endtime", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 		*failedRequests = append(*failedRequests, errRequest)
+		return "", "", "", err
 	}
 
-	query := fmt.Sprintf("tenant_id = '%s' and updated_at >= '%s' and updated_at <= '%s'", req.TenantId, startTime, endTime)
+	query := fmt.Sprintf("tenant_id = '%s'", req.TenantId)
 
 	otherParamsAdded := false
 

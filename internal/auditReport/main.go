@@ -3,15 +3,19 @@ package auditReport
 import (
 	"context"
 	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/agentReport"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/alertReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/audit"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/dataTransformation"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/deviceInventory"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/enrichment"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/fleetReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/logsource"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/lookups"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/roiReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/volumeController"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
@@ -65,6 +69,14 @@ func GenerateAuditReport(ctx context.Context) error {
 			go lookups.FetchLookupReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
 		case consts.ENRICHMENT_REPORT:
 			go enrichment.FetchEnrichmentReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.AGENT_REPORT:
+			go agentReport.FetchAgentReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.FLEET_REPORT:
+			go fleetReport.FetchFleetReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.ROI_REPORT:
+			go roiReport.FetchROIReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
+		case consts.ALERT_REPORT:
+			go alertReport.FetchAlertReport(ctx, req, &wg, parallelismCntrl, &failedRequests, &successAlerts, &failedRequestMutex, &successAlertsMutex)
 		default:
 			logging.GetLoggerWithContext(ctx).Error("invalid report type", zap.String("reportType", req.ReportType))
 		}

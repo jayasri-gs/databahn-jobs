@@ -52,7 +52,7 @@ func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.
 	if err != nil {
 		return
 	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
+	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name)
 
 	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
@@ -129,7 +129,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failed
 	for _, source := range logSources {
 		sourceIdsToNames[source.ID.String()] = source.Name
 	}
-	file, err = common.CreateTempFile(req.Id.String())
+	file, err = common.CreateTempFile(req.Name)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
