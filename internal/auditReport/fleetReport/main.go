@@ -71,7 +71,7 @@ func FetchFleetReport(ctx context.Context, req models.AuditReport, wg *sync.Wait
 }
 
 func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests, writer *csv.Writer) (*os.File, *csv.Writer, error) {
-	pageSize := utils.GetEnvInt("VOLUME_CONTROLLER_REPORT_PAGE_SIZE", 1000)
+	pageSize := utils.GetEnvInt("FLEET_REPORT_PAGE_SIZE", 1000)
 	offset := 0
 	writeHeader := true
 
@@ -126,7 +126,7 @@ func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *
 		*failedRequests = append(*failedRequests, errRequest)
 	}
 
-	query, err := getQueryFromConfig(ctx, req, failedRequests)
+	query, err := getQueryFromConfig(req)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -146,7 +146,7 @@ func getRowsAndColumnsFromAuditTable(pageSize int, offset int, query string) (*s
 	}
 	return rows, columns, nil
 }
-func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (string, error) {
+func getQueryFromConfig(req models.AuditReport) (string, error) {
 	var reportConfiguration map[string]interface{}
 	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
 	if err != nil {
@@ -155,26 +155,13 @@ func getQueryFromConfig(ctx context.Context, req models.AuditReport, failedReque
 	var configData map[string]interface{}
 	configData = reportConfiguration["filter"].(map[string]interface{})
 
-	startTime := configData["startTime"].(string)
-	endTime := configData["endTime"].(string)
-
-	err = common.ValidateConfig(startTime, endTime)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error in validating startime and endtime", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-	}
-
-	query := fmt.Sprintf("tenant_id = '%s' and updated_at >= '%s' and updated_at <= '%s'", req.TenantId, startTime, endTime)
+	query := fmt.Sprintf("tenant_id = '%s'", req.TenantId)
 
 	otherParamsAdded := false
 
 	filterMappings := map[string]string{
-		"scope":        "scope",
-		"sources":      "log_source_id",
-		"types":        "type",
-		"destinations": "destination_id",
-		"dataplaneId":  "data_plane_id",
+		"topology":    "topology",
+		"dataplaneId": "data_plane_id",
 	}
 
 	for filterKey, dbField := range filterMappings {
