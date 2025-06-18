@@ -11,11 +11,52 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker"
 	"github.com/databahn-ai/db-models/alerts_common"
 	"github.com/databahn-ai/go-logging/logger"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"time"
 )
 
-func SendAlertToControlPlane(ctx context.Context, entityArray []alerts_common.AlertBaseObjectV2, title string, message string, functionalityType string, functionality string, severity string, status int, dismissed bool, updatedBy string) error {
+type AlertBaseObjectV2 struct {
+	EntityId         uuid.UUID
+	EntityTenantUUId uuid.UUID
+	EntityName       string
+	DataPlaneId      uuid.UUID
+	AlertType        string
+	ErrorCode        string
+	Description      string
+}
+
+func SendAlertToControlPlaneForLogSource(ctx context.Context, entityArray []AlertBaseObjectV2, message string, functionalityType string, functionality string, severity string, status int, dismissed bool, updatedBy string) error {
+	var alerts []alerts_common.Alert
+	for _, entity := range entityArray {
+		eMsg := configuration.GetErrorMessage(context.Background(), config.GetAlertConfiguration(), entity.ErrorCode, message)
+		temp := alerts_common.Alert{
+			Title:                   entity.Description,
+			Message:                 entity.Description,
+			CreatedAt:               time.Now(),
+			UpdatedAt:               time.Now(),
+			FirstObservedAt:         time.Now(),
+			LastObservedAt:          time.Now(),
+			TenantUUID:              entity.EntityTenantUUId,
+			FunctionalityType:       functionalityType,
+			Functionality:           functionality,
+			FunctionalityEntityId:   entity.EntityId.String(),
+			FunctionalityEntityName: entity.EntityName,
+			Dismissed:               dismissed,
+			Criticality:             severity,
+			Status:                  status,
+			UpdatedBy:               updatedBy,
+			AlertType:               entity.AlertType,
+			DataPlaneId:             entity.DataPlaneId,
+			ErrorMessage:            eMsg,
+			ErrorCode:               entity.ErrorCode,
+		}
+		alerts = append(alerts, temp)
+	}
+	return sendAlertToCP(ctx, alerts, !dismissed)
+}
+
+func SendAlertToControlPlane(ctx context.Context, entityArray []AlertBaseObjectV2, title string, message string, functionalityType string, functionality string, severity string, status int, dismissed bool, updatedBy string) error {
 	var alerts []alerts_common.Alert
 	for _, entity := range entityArray {
 		eMsg := configuration.GetErrorMessage(context.Background(), config.GetAlertConfiguration(), entity.ErrorCode, message)

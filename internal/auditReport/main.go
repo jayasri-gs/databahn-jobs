@@ -32,7 +32,7 @@ func GenerateAuditReport(ctx context.Context) error {
 	}
 
 	var failedRequests []models.FailedRequests
-	var successAlerts []alerts_common.AlertBaseObjectV2
+	var successAlerts []helper.AlertBaseObjectV2
 
 	failedRequestMutex := sync.Mutex{}
 	successAlertsMutex := sync.Mutex{}
@@ -66,7 +66,7 @@ func GenerateAuditReport(ctx context.Context) error {
 	return nil
 }
 
-func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertBaseObjectV2, errorAlerts []alerts_common.AlertBaseObjectV2) error {
+func handleAlerts(ctx context.Context, successAlerts []helper.AlertBaseObjectV2, errorAlerts []helper.AlertBaseObjectV2) error {
 
 	if len(successAlerts) > 0 {
 		err := helper.SendAlertToControlPlane(ctx, successAlerts, consts.SuccessTitle, consts.SuccessTitle, consts.AuditReportFunctionalityType, consts.AuditReportFunctionality, alerts_common.InfoAlert, alerts_common.AlertOpen, false, "system")
@@ -82,9 +82,9 @@ func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertBaseOb
 	}
 	return nil
 }
-func handleErrorRequests(requests []models.FailedRequests) ([]alerts_common.AlertBaseObjectV2, error) {
+func handleErrorRequests(requests []models.FailedRequests) ([]helper.AlertBaseObjectV2, error) {
 
-	var errorAlerts []alerts_common.AlertBaseObjectV2
+	var errorAlerts []helper.AlertBaseObjectV2
 	for _, req := range requests {
 		if req.Retry <= consts.MaxRetries {
 			err := models.UpdateRequestStatusAndRetries(config.GetDB(), req.RequestId, consts.FAILED, req.Retry)
@@ -93,7 +93,7 @@ func handleErrorRequests(requests []models.FailedRequests) ([]alerts_common.Aler
 			}
 		}
 		if req.Retry == consts.MaxRetries {
-			alertEntity := alerts_common.AlertBaseObjectV2{
+			alertEntity := helper.AlertBaseObjectV2{
 				EntityName:       req.RequestId,
 				EntityId:         utils.UUIDFromStringOrNil(req.RequestId),
 				EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId),
