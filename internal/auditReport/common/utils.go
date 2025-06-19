@@ -1,47 +1,13 @@
 package common
 
 import (
-	"context"
 	"database/sql"
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"github.com/databahn-ai/common-utils/utils"
-	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
-	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
-	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
-	logging "github.com/databahn-ai/go-logging/logger"
-	"go.uber.org/zap"
-	"os"
 	"strconv"
-	"strings"
 )
 
-func CreateTempFile(fileName string) (*os.File, error) {
-	f, err := os.Create(os.TempDir() + "/" + fileName + ".csv")
-	if err != nil {
-		return nil, err
-	}
-	return f, nil
-}
-
-func UpdateQueryFromFilter(configData map[string]interface{}, otherParamsAdded bool, query string, filterKey string, dbField string) (bool, string) {
-	fieldKey, ok := configData[filterKey]
-	if !ok || len(fieldKey.([]interface{})) == 0 {
-		logging.GetLogger().Info(fmt.Sprintf("no config not found for filter %s, ignoring this filter criteria", filterKey))
-	} else {
-		if !otherParamsAdded {
-			query += " and ("
-			otherParamsAdded = true
-		} else {
-			query += " or "
-		}
-		fieldsArray, _ := ConvertToStrings(fieldKey.([]interface{}))
-		query += fmt.Sprintf("%s in ('%s')", dbField, strings.Join(fieldsArray, "','"))
-	}
-	return otherParamsAdded, query
-}
 func ConvertToStrings(input []interface{}) ([]string, error) {
 	var result []string
 	for _, v := range input {
@@ -75,7 +41,8 @@ func ValidateConfig(startTime string, endTime string) error {
 	}
 	return nil
 }
-func WriteRowToTheFileOneByOne(columns []string, rows *sql.Rows, writer *csv.Writer, fetchedRowsCount int) (int, error) {
+func WriteRowsToFileForDbReportTypeWithoutTimeFilters(columns []string, rows *sql.Rows, writer *csv.Writer) (int, error) {
+	fetchedRowsCount := 0
 	values := make([]interface{}, len(columns))
 	for i := range values {
 		values[i] = new(sql.RawBytes)
@@ -93,7 +60,6 @@ func WriteRowToTheFileOneByOne(columns []string, rows *sql.Rows, writer *csv.Wri
 		}
 		err := writer.Write(row)
 		if err != nil {
-			logging.GetLoggerWithContext(context.Background()).Error("error while writing row to the file", zap.Error(err))
 			return 0, err
 		}
 		fetchedRowsCount++
@@ -103,34 +69,4 @@ func WriteRowToTheFileOneByOne(columns []string, rows *sql.Rows, writer *csv.Wri
 		return 0, err
 	}
 	return fetchedRowsCount, nil
-}
-func GetLogSourceIdToNamesMap(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
-	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching logsources", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return nil, nil, err
-	}
-	logsourceIdToNameMap := make(map[string]string)
-	for _, ls := range logSources {
-		logsourceIdToNameMap[ls.ID.String()] = ls.Name
-	}
-	return failedRequests, logsourceIdToNameMap, nil
-}
-
-func GetDestinationIdToNamesMap(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests) (*[]models.FailedRequests, map[string]string, error) {
-	destinations, err := destination.GetDestinationByTenantId(utils.UUIDFromStringOrNil(req.TenantId), config.GetDB())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching destinations", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return nil, nil, err
-	}
-	destinationIdToNameMap := make(map[string]string)
-	for _, dest := range destinations {
-		destinationIdToNameMap[dest.ID.String()] = dest.Name
-	}
-	destinationIdToNameMap["dbd00000-0000-0000-0000-000000000000"] = "Databahn Sandbox"
-	return failedRequests, destinationIdToNameMap, nil
 }

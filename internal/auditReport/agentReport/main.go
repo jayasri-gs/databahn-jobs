@@ -2,172 +2,81 @@ package agentReport
 
 import (
 	"context"
-	"database/sql"
 	"encoding/csv"
-	"encoding/json"
-	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
-	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
-	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
-	"sync"
 )
 
-func FetchAgentReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]alerts_common.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
-	var file *os.File
+func WriteAgentReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
+	logging.GetLoggerWithContext(ctx).Info("writing agent report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	query, err := getQueryForAgentData(ctx, req)
+	if err != nil {
+		return err
+	}
+	err = getReportAndWriteToFile(ctx, req, query, file)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query string, file *os.File) error {
+
 	var writer *csv.Writer
 	defer func() {
-		writer.Flush()
-		if err := writer.Error(); err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while flushing writer", zap.Error(err))
+		if writer != nil {
+			writer.Flush()
+			if err := writer.Error(); err != nil {
+				logging.GetLoggerWithContext(ctx).Error("error while flushing writer", zap.Error(err))
+			}
 		}
-		if err := file.Close(); err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while closing file", zap.Error(err))
-		}
-		wg.Done()
-		<-parallelismCntrl
 	}()
 
-	var failedRequestsTemp []models.FailedRequests
-	var successAlertsTemp []alerts_common.AlertBaseObjectV2
-	logging.GetLogger().Info("Fetching agent report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
-	err := models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while updating status to in progress", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		failedRequestsTemp = append(failedRequestsTemp, errRequest)
-		return
-	}
-
-	file, writer, err = gatherDataAndWriteToFile(ctx, req, file, &failedRequestsTemp, writer)
-	if err != nil {
-		return
-	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name)
-	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return
-	} else {
-		successAlertsTemp = append(successAlertsTemp, alerts_common.AlertBaseObjectV2{EntityName: req.Name, EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
-	}
-
-	// Lock the mutex before updating the success alerts
-	successAlertsMutex.Lock()
-	*successAlerts = append(*successAlerts, successAlertsTemp...)
-	successAlertsMutex.Unlock()
-
-	// Lock the mutex before updating the failed requests
-	failedRequestMutex.Lock()
-	*failedRequests = append(*failedRequests, failedRequestsTemp...)
-	failedRequestMutex.Unlock()
-}
-
-func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests, writer *csv.Writer) (*os.File, *csv.Writer, error) {
 	pageSize := utils.GetEnvInt("AGENT_REPORT_PAGE_SIZE", 1000)
 	offset := 0
 	writeHeader := true
-
-	query, file, err := getFileAndRequestConfig(ctx, req, file, failedRequests)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return nil, nil, err
-	}
 	for {
 		writeHeader = writeHeader && offset == 0
-		rows, columns, err := getRowsAndColumnsFromAuditTable(pageSize, offset, query)
+		rows, columns, err := common.GetRowsAndColumnsByQueryFromTable("agent_node", query, pageSize, offset)
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while fetching data from audit table", zap.Error(err))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-			*failedRequests = append(*failedRequests, errRequest)
-			return nil, nil, err
+			logging.GetLoggerWithContext(ctx).Error("error while fetching data from agent table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+			return err
 		}
-		fetchedRowsCount := 0
 
 		if writeHeader {
 			writer = csv.NewWriter(file)
 			err = writer.Write(columns)
 			if err != nil {
-				logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
-				errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-				*failedRequests = append(*failedRequests, errRequest)
-				return nil, nil, err
+				logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+				return err
 			}
 		}
-
-		fetchedRowsCount, err = common.WriteRowToTheFileOneByOne(columns, rows, writer, fetchedRowsCount)
+		fetchedRowsCount, err := common.WriteRowsToFileForDbReportTypeWithoutTimeFilters(columns, rows, writer)
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-			*failedRequests = append(*failedRequests, errRequest)
-			return nil, nil, err
+			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+			return err
 		}
 		if fetchedRowsCount < pageSize {
 			break
 		}
 		offset += pageSize + 1
 	}
-	return file, writer, nil
+	return nil
 }
-func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, file *os.File, failedRequests *[]models.FailedRequests) (string, *os.File, error) {
-	file, err := common.CreateTempFile(req.Name)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-	}
-
-	query, err := getQueryFromConfig(req)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-	}
-
-	return query, file, err
-}
-func getRowsAndColumnsFromAuditTable(pageSize int, offset int, query string) (*sql.Rows, []string, error) {
-	rows, err := config.GetDB().Table("agent_node").Limit(pageSize).Offset(offset).Where(query).Order("updated_at").Rows()
-	if err != nil {
-		return nil, nil, err
-	}
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, nil, err
-	}
-	return rows, columns, nil
-}
-func getQueryFromConfig(req models.AuditReport) (string, error) {
-	var reportConfiguration map[string]interface{}
-	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
-	if err != nil {
-		return "", err
-	}
-	var configData map[string]interface{}
-	configData = reportConfiguration["filter"].(map[string]interface{})
-	query := fmt.Sprintf("tenant_id = '%s' ", req.TenantId)
-
-	otherParamsAdded := false
-
-	filterMappings := map[string]string{
+func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, error) {
+	filterToDbColumnMap := map[string]string{
 		"os":       "os",
 		"platform": "platform",
 	}
 
-	for filterKey, dbField := range filterMappings {
-		otherParamsAdded, query = common.UpdateQueryFromFilter(configData, otherParamsAdded, query, filterKey, dbField)
+	query, err := common.GetDbQueryWithoutTimeFilters(req, filterToDbColumnMap)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while getting query from config", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return "", err
 	}
-	if otherParamsAdded {
-		query += ")"
-	}
+	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, nil
 }
