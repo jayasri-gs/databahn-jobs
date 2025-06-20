@@ -34,8 +34,9 @@ func UpdateLastEventTime(ctx context.Context) error {
 
 	logging.GetLoggerWithContext(ctx).Info("configMap", zap.Any("configMap", fullConfigMap))
 
-	for _, tenant := range tenants {
-		tenantId := tenant.Id.String()
+	for _, t := range tenants {
+		sourceIdToLastEventTimeFinal := make(map[string]time.Time)
+		tenantId := t.Id.String()
 
 		logger := logging.GetLoggerWithContext(ctx).With(zap.String("tenantId", tenantId))
 		logger.Info("Processing tenant for last event time updates")
@@ -58,7 +59,7 @@ func UpdateLastEventTime(ctx context.Context) error {
 				zap.Strings("logsourceIds", logSourceIds))
 
 			if len(logSourceIds) > 100 {
-				logger.Warn("Too many log sources for interval, chunking",
+				logger.Info("Too many log sources for interval, chunking",
 					zap.Int("interval", interval),
 					zap.Int("logSourceCount", len(logSourceIds)))
 
@@ -78,31 +79,32 @@ func UpdateLastEventTime(ctx context.Context) error {
 					}
 
 					for sourceId, lastTime := range sourceIdToLastEventTime {
-						sourceIdToLastEventTime[sourceId] = lastTime
+						sourceIdToLastEventTimeFinal[sourceId] = lastTime
 						logger.Debug("Retrieved last event time", zap.String("sourceId", sourceId), zap.Time("lastEventTime", lastTime))
 					}
 				}
-				continue
+			} else {
+				sourceIdToLastEventTime, err := getSourceIdToLastEventTimeNew(ctx, osClient, tenantId, interval, logSourceIds)
+				if err != nil {
+					logger.Error("error getting last event times for tenant's log sources in interval",
+						zap.Error(err),
+						zap.Int("interval", interval))
+					continue
+				}
+
+				for sourceId, lastTime := range sourceIdToLastEventTime {
+					sourceIdToLastEventTimeFinal[sourceId] = lastTime
+					logger.Debug("Retrieved last event time", zap.String("sourceId", sourceId), zap.Time("lastEventTime", lastTime))
+				}
 			}
 
-			sourceIdToLastEventTime, err := getSourceIdToLastEventTimeNew(ctx, osClient, tenantId, interval, logSourceIds)
-			if err != nil {
-				logger.Error("error getting last event times for tenant's log sources in interval",
-					zap.Error(err),
-					zap.Int("interval", interval))
-				continue
-			}
+			if len(sourceIdToLastEventTimeFinal) > 0 {
 
-			for sourceId, lastTime := range sourceIdToLastEventTime {
-				sourceIdToLastEventTime[sourceId] = lastTime
-				logger.Debug("Retrieved last event time", zap.String("sourceId", sourceId), zap.Time("lastEventTime", lastTime))
-			}
-			if len(sourceIdToLastEventTime) > 0 {
-				err = updateLastCheckedTimeInDB(ctx, db, sourceIdToLastEventTime)
+				err = updateLastCheckedTimeInDB(ctx, db, sourceIdToLastEventTimeFinal)
 				if err != nil {
 					logger.Error("error updating LastCheckedTime in database",
 						zap.Error(err),
-						zap.Any("sourceIdToLastEventTime", sourceIdToLastEventTime))
+						zap.Any("sourceIdToLastEventTimeFinal", sourceIdToLastEventTimeFinal))
 					return err
 				}
 			}
