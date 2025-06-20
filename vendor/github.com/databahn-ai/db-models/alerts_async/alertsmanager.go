@@ -3,10 +3,13 @@ package alerts_async
 import (
 	"context"
 	"encoding/json"
+	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/queue"
+	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+	"sync"
 	"time"
 )
 
@@ -17,15 +20,69 @@ Because it holds alerts in memory, it is critical to close the manager when serv
 Close is a blocking call that waits for all alerts to be sent before returning.
 */
 type AlertsManager struct {
-	dq       *queue.DedupeQueue[*Alert]
-	producer *kafka.Producer
+	dq              *queue.DedupeQueue[*Alert]
+	producer        *kafka.Producer
+	deDupeDuration  time.Duration
+	deDupeQueueSize int
+	deDupeMaxSize   int
+	closeOnce       sync.Once
 }
 
-func NewAlertsManager(ctx context.Context, cluster *kafka.Cluster) (*AlertsManager, error) {
+var defaultDeDupeSeconds = utils.GetEnvInt("ALERTS_DEDUPE_DURATION_SECONDS", 60)
+var defaultDeDupeDuration = time.Duration(defaultDeDupeSeconds) * time.Second
+var defaultDeDupeQueueSize = utils.GetEnvInt("ALERTS_DEDUPE_QUEUE_SIZE", 50)
+var defaultDeDupeMaxSize = utils.GetEnvInt("ALERTS_DEDUPE_MAX_SIZE", 50)
+
+type AlertManagerOption func(*AlertsManager)
+
+func WithDeDupeDuration(duration time.Duration) AlertManagerOption {
+	return func(a *AlertsManager) {
+		a.deDupeDuration = duration
+	}
+}
+
+func WithDeDupeQueueSize(size int) AlertManagerOption {
+	return func(a *AlertsManager) {
+		a.deDupeQueueSize = size
+	}
+}
+
+func WithDeDupeMaxSize(size int) AlertManagerOption {
+	return func(a *AlertsManager) {
+		a.deDupeMaxSize = size
+	}
+}
+
+func NewAlertsManager(ctx context.Context, configReader configuration.ConfigReader, options ...AlertManagerOption) (*AlertsManager, error) {
+	inputClusterBrokers := configReader.GetString(configuration.InputKafkaClusterBootstrapServers)
+	conf := map[string]any{
+		"acks":             1,
+		"linger.ms":        50,
+		"compression.type": "gzip",
+	}
+	alertsCluster := kafka.NewKafkaCluster("alerts-cluster", inputClusterBrokers)
+	config := kafka.ProducerConfig{
+		Name:       "alerts-producer",
+		Topic:      "db.management.alerts",
+		ExtraParam: conf,
+	}
+	kafkaProducer, err := alertsCluster.NewProducer(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	manager := &AlertsManager{
+		producer:        kafkaProducer,
+		deDupeDuration:  defaultDeDupeDuration,
+		deDupeQueueSize: defaultDeDupeQueueSize,
+		deDupeMaxSize:   defaultDeDupeMaxSize,
+	}
+	for _, option := range options {
+		option(manager)
+	}
 	adq, err := queue.NewDedupeQueue[*Alert](
-		queue.WithMaxUniqueItems[*Alert](100),
-		queue.WithMaxBatchDuration[*Alert](1*time.Minute),
-		queue.WithInputBuffSize[*Alert](20),
+		queue.WithMaxUniqueItems[*Alert](manager.deDupeMaxSize),
+		queue.WithMaxBatchDuration[*Alert](manager.deDupeDuration),
+		queue.WithInputBuffSize[*Alert](manager.deDupeQueueSize),
 		queue.WithKeyFunc(func(alert *Alert) string {
 			return alert.Functionality + alert.FunctionalityType + alert.FunctionalityEntityId + alert.Title + alert.Message
 		}),
@@ -33,24 +90,7 @@ func NewAlertsManager(ctx context.Context, cluster *kafka.Cluster) (*AlertsManag
 	if err != nil {
 		return nil, err
 	}
-	conf := map[string]any{
-		"acks":             1,
-		"linger.ms":        50,
-		"compression.type": "gzip",
-	}
-	config := kafka.ProducerConfig{
-		Name:       "alerts-producer",
-		Topic:      "db.management.alerts",
-		ExtraParam: conf,
-	}
-	producer, err = cluster.NewProducer(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-	manager := &AlertsManager{
-		dq:       adq,
-		producer: producer,
-	}
+	manager.dq = adq
 	go manager.processAlerts()
 	return manager, nil
 }
@@ -63,7 +103,7 @@ func (a *AlertsManager) sendAlerts(alerts []*Alert) {
 			Message: alertBytes,
 			Headers: nil,
 		}
-		producer.SendAsync(msg, func(err error) {
+		a.producer.SendAsync(msg, func(err error) {
 			logger.GetLogger().Error("error while sending alert to kafka", zap.Error(err))
 		})
 	}
@@ -82,6 +122,8 @@ func (a *AlertsManager) RecordAlert(alert *Alert) {
 }
 
 func (a *AlertsManager) Close(ctx context.Context) {
-	a.dq.Close()
-	a.producer.Close(ctx)
+	a.closeOnce.Do(func() {
+		a.dq.Close()
+		a.producer.Close(ctx)
+	})
 }

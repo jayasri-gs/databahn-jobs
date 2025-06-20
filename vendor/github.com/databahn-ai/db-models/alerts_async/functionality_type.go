@@ -42,4 +42,5 @@ var (
 	HttpClientError                = functionalityTypeEnum{value: "client_error"}
 	HttpServerError                = functionalityTypeEnum{value: "server_error"}
 	UnknownError                   = functionalityTypeEnum{value: "unknown_error"}
+	AuditReportGeneration          = functionalityTypeEnum{value: "audit_report_generation"}
 )

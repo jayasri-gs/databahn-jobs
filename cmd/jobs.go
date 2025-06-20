@@ -44,7 +44,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.FLEET_HEALTH_CHECKER:
 		err = jobs.HealthCheckAlertForFleetNode(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER:
-		err = jobs.SendAlertsForInactivity(ctx)
+		err = jobs.SendAlertsForActivity(ctx)
 		err = jobs.AlertForDestinationInactivity(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER_NEW:
 		err = cp_jobs.AlertForNoEventsFromSources(ctx)

@@ -19,13 +19,13 @@ func (f functionalityEnum) privateFunctionality() {
 }
 
 var (
-  Agent             = functionalityEnum{value: "agent"}
+	Agent             = functionalityEnum{value: "agent"}
 	LogSource         = functionalityEnum{value: "log_source"}
 	CloudLogSource    = functionalityEnum{value: "cloud_log_source"}
 	Fleet             = functionalityEnum{value: "fleet"}
 	FleetNode         = functionalityEnum{value: "fleet_node"}
-  FleetConnector = functionalityEnum{value: "fleet_connector"}
-	FleetComponent = functionalityEnum{value: "fleet_component"}
+	FleetConnector    = functionalityEnum{value: "fleet_connector"}
+	FleetComponent    = functionalityEnum{value: "fleet_component"}
 	Dispenser         = functionalityEnum{value: "dispenser"}
 	VolumeControlRule = functionalityEnum{value: "volume_control_rule"}
 	Lookup            = functionalityEnum{value: "lookup"}
@@ -34,6 +34,7 @@ var (
 	RouteProcessor    = functionalityEnum{value: "route_processor"}
 	InsightsRule      = functionalityEnum{value: "insights_rule"}
 	GlobalDestination = functionalityEnum{value: "global_destination"}
+	AuditReport       = functionalityEnum{value: "audit_report"}
 	Unknown           = functionalityEnum{value: "unknown"}
 )
 
