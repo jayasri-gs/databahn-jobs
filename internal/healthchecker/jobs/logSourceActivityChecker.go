@@ -29,7 +29,7 @@ const (
 	DefaultLastSevenDays = 7 * 24 * time.Hour
 )
 
-func SendAlertsForInactivity(ctx context.Context) error {
+func SendAlertsForActivity(ctx context.Context) error {
 	db := config.GetDB()
 
 	tenants, err := tenant.GetTenants(ctx, db)

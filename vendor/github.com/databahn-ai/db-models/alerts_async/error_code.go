@@ -45,6 +45,6 @@ var (
 	DHRW10001 = errorCodeEnum{value: "DHRW10001", messageTemplate: "Agent is unhealthy. {0}"}
 	DHRW10002 = errorCodeEnum{value: "DHRW10002", messageTemplate: "Fleet is unhealthy. {0}"}
 	DHRW10003 = errorCodeEnum{value: "DHRW10003", messageTemplate: "Fleet Component is unhealthy. {0}"}
-	DHRW10004 = errorCodeEnum{value: "DHRW10004", messageTemplate: "Connector is unhealthy. {0}"}
-	DBPW10001 = errorCodeEnum{value: "DBPE10001", messageTemplate: "Unparsed Events Received. {0}"}
+	DHRW10004 = errorCodeEnum{value: "DHRW10004", messageTemplate: "Fleet Connector is unhealthy. {0}"}
+	DBPW10001 = errorCodeEnum{value: "DBPW10001", messageTemplate: "Unparsed Events Received. {0}"}
 )

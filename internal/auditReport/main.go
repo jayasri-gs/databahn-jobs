@@ -19,8 +19,9 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/roiReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/volumeController"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
-	"github.com/databahn-ai/db-models/alerts_common"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
+	"github.com/databahn-ai/db-models/alerts_async"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
@@ -30,7 +31,7 @@ import (
 )
 
 type ReportProcessor struct {
-	successAlertChannel  chan alerts_common.AlertBaseObjectV2
+	successAlertChannel  chan model.AuditReportAlert
 	failedRequestChannel chan models.FailedRequests
 }
 
@@ -38,15 +39,22 @@ func GenerateAuditReport(ctx context.Context) error {
 	parallelism := utils.GetEnvInt("AUDIT_REPORT_PARALLELISM_CONTROL", 4)
 	channelBufferSize := utils.GetEnvInt("AUDIT_REPORT_CHANNEL_BUFFER_SIZE", 4)
 
+	alertsManager, err := alert.NewAlertsManager(ctx)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while creating alerts manager", zap.Error(err))
+		return err
+	}
+
 	defer func(logger *zap.Logger) {
 		_ = logger.Sync()
+		alertsManager.Close(ctx)
 	}(logging.GetLogger())
 
 	logging.GetLoggerWithContext(ctx).Info("handling audit report generation request")
 	logging.GetLoggerWithContext(ctx).Info("initialising report processor object")
 
 	reportProcessor := ReportProcessor{
-		successAlertChannel:  make(chan alerts_common.AlertBaseObjectV2, channelBufferSize),
+		successAlertChannel:  make(chan model.AuditReportAlert, channelBufferSize),
 		failedRequestChannel: make(chan models.FailedRequests, channelBufferSize),
 	}
 
@@ -62,10 +70,10 @@ func GenerateAuditReport(ctx context.Context) error {
 		return nil
 	}
 
-	var successAlerts []alerts_common.AlertBaseObjectV2
+	var successAlerts []*alerts_async.Alert
 	var errorRequests []models.FailedRequests
 	go handleErrorRequestChannel(reportProcessor, &errorRequests)
-	go handleSuccessRequestChannel(reportProcessor, &successAlerts)
+	go handleSuccessRequestChannel(ctx, reportProcessor, &successAlerts)
 
 	wg := sync.WaitGroup{}
 	parallelismControl := make(chan struct{}, parallelism)
@@ -83,7 +91,7 @@ func GenerateAuditReport(ctx context.Context) error {
 		logging.GetLoggerWithContext(ctx).Error("error while handling error requests", zap.Error(err))
 		return err
 	}
-	err = handleAlerts(ctx, successAlerts, errorAlerts)
+	err = handleAlerts(alertsManager, successAlerts, errorAlerts)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while handling alerts", zap.Error(err))
 		return err
@@ -95,9 +103,21 @@ func handleErrorRequestChannel(reportProcessor ReportProcessor, errorAlerts *[]m
 		*errorAlerts = append(*errorAlerts, failedRequest)
 	}
 }
-func handleSuccessRequestChannel(reportProcessor ReportProcessor, successAlerts *[]alerts_common.AlertBaseObjectV2) {
+func handleSuccessRequestChannel(ctx context.Context, reportProcessor ReportProcessor, successAlerts *[]*alerts_async.Alert) {
+
 	for successAlert := range reportProcessor.successAlertChannel {
-		*successAlerts = append(*successAlerts, successAlert)
+		sucAlert, err := alerts_async.NewAlert(
+			alerts_async.AuditReport,
+			alerts_async.WithEntity(successAlert),
+			alerts_async.WithCriticality(alerts_async.Info),
+			alerts_async.WithFunctionalityType(alerts_async.AuditReportGeneration),
+			alerts_async.WithTitle(consts.SuccessTitle),
+			alerts_async.WithMessage(consts.SuccessTitle),
+		)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while creating success alert", zap.Error(err))
+		}
+		*successAlerts = append(*successAlerts, sucAlert)
 	}
 }
 func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismControl chan struct{}, reportProcessor ReportProcessor) {
@@ -242,29 +262,27 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 		reportProcessor.failedRequestChannel <- errRequest
 		return
 	} else {
-		reportProcessor.successAlertChannel <- alerts_common.AlertBaseObjectV2{EntityName: req.Name, EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal}
+		reportProcessor.successAlertChannel <- model.AuditReportAlert{
+			EntityId:       req.Id.String(),
+			EntityName:     req.Name,
+			EntityTenantId: req.TenantId,
+		}
 	}
 }
 
-func handleAlerts(ctx context.Context, successAlerts []alerts_common.AlertBaseObjectV2, errorAlerts []alerts_common.AlertBaseObjectV2) error {
+func handleAlerts(alertsManager *alert.AlertsManager, successAlerts []*alerts_async.Alert, errorAlerts []*alerts_async.Alert) error {
 
 	if len(successAlerts) > 0 {
-		err := helper.SendAlertToControlPlane(ctx, successAlerts, consts.SuccessTitle, consts.SuccessTitle, consts.AuditReportFunctionalityType, consts.AuditReportFunctionality, alerts_common.InfoAlert, alerts_common.AlertOpen, false, "system")
-		if err != nil {
-			return err
-		}
+		alertsManager.SendAlerts(successAlerts)
 	}
 	if len(errorAlerts) > 0 {
-		err := helper.SendAlertToControlPlane(ctx, errorAlerts, consts.FailureTitle, consts.FailureTitle, consts.AuditReportFunctionalityType, consts.AuditReportFunctionality, alerts_common.InfoAlert, alerts_common.AlertOpen, false, "system")
-		if err != nil {
-			return err
-		}
+		alertsManager.SendAlerts(errorAlerts)
 	}
 	return nil
 }
-func handleErrorRequests(requests []models.FailedRequests) ([]alerts_common.AlertBaseObjectV2, error) {
+func handleErrorRequests(requests []models.FailedRequests) ([]*alerts_async.Alert, error) {
 
-	var errorAlerts []alerts_common.AlertBaseObjectV2
+	var errorAlerts []*alerts_async.Alert
 	for _, req := range requests {
 		if req.Retry <= consts.MaxRetries {
 			err := models.UpdateRequestStatusAndRetries(config.GetDB(), req.RequestId, consts.FAILED, req.Retry)
@@ -273,13 +291,25 @@ func handleErrorRequests(requests []models.FailedRequests) ([]alerts_common.Aler
 			}
 		}
 		if req.Retry == consts.MaxRetries {
-			alertEntity := alerts_common.AlertBaseObjectV2{
-				EntityName:       req.RequestId,
-				EntityId:         utils.UUIDFromStringOrNil(req.RequestId),
-				EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId),
-				AlertType:        alerts_common.AlertTypeExternalAndExternal,
+
+			alert := model.AuditReportAlert{
+				EntityId:       req.RequestId,
+				EntityName:     req.Name,
+				EntityTenantId: req.TenantId,
 			}
-			errorAlerts = append(errorAlerts, alertEntity)
+
+			errorAlert, err := alerts_async.NewAlert(
+				alerts_async.AuditReport,
+				alerts_async.WithEntity(alert),
+				alerts_async.WithCriticality(alerts_async.Info),
+				alerts_async.WithFunctionalityType(alerts_async.AuditReportGeneration),
+				alerts_async.WithTitle(consts.SuccessTitle),
+				alerts_async.WithMessage(consts.SuccessTitle))
+			if err != nil {
+				logging.GetLogger().Error("error while creating error alert", zap.Error(err), zap.String("request_id", req.RequestId), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId))
+			}
+
+			errorAlerts = append(errorAlerts, errorAlert)
 		}
 	}
 	return errorAlerts, nil
