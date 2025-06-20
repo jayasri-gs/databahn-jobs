@@ -24,7 +24,9 @@ import (
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"os"
+	"strconv"
 	"sync"
+	"time"
 )
 
 type ReportProcessor struct {
@@ -62,8 +64,8 @@ func GenerateAuditReport(ctx context.Context) error {
 
 	var successAlerts []alerts_common.AlertBaseObjectV2
 	var errorRequests []models.FailedRequests
-	go handleErrorRequestChannel(reportProcessor, errorRequests)
-	go handleSuccessRequestChannel(reportProcessor, successAlerts)
+	go handleErrorRequestChannel(reportProcessor, &errorRequests)
+	go handleSuccessRequestChannel(reportProcessor, &successAlerts)
 
 	wg := sync.WaitGroup{}
 	parallelismControl := make(chan struct{}, parallelism)
@@ -88,14 +90,14 @@ func GenerateAuditReport(ctx context.Context) error {
 	}
 	return nil
 }
-func handleErrorRequestChannel(reportProcessor ReportProcessor, errorAlerts []models.FailedRequests) {
+func handleErrorRequestChannel(reportProcessor ReportProcessor, errorAlerts *[]models.FailedRequests) {
 	for failedRequest := range reportProcessor.failedRequestChannel {
-		errorAlerts = append(errorAlerts, failedRequest)
+		*errorAlerts = append(*errorAlerts, failedRequest)
 	}
 }
-func handleSuccessRequestChannel(reportProcessor ReportProcessor, successAlerts []alerts_common.AlertBaseObjectV2) {
+func handleSuccessRequestChannel(reportProcessor ReportProcessor, successAlerts *[]alerts_common.AlertBaseObjectV2) {
 	for successAlert := range reportProcessor.successAlertChannel {
-		successAlerts = append(successAlerts, successAlert)
+		*successAlerts = append(*successAlerts, successAlert)
 	}
 }
 func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismControl chan struct{}, reportProcessor ReportProcessor) {
@@ -232,7 +234,7 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 	}
 
 	// upload file
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name)
+	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name + "_" + strconv.Itoa(int(time.Now().Unix())))
 	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))

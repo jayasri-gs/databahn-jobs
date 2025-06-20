@@ -15,7 +15,7 @@ import (
 )
 
 func WriteAlertReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
-	logging.GetLoggerWithContext(ctx).Info("writing roi report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	logging.GetLoggerWithContext(ctx).Info("writing alert report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	query, err := getAlertReportConfigFromRequest(ctx, req)
 	if err != nil {
 		return err
@@ -109,7 +109,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query
 	}()
 	alertResponse, err := getAlertsFromOpenSearch(ctx, query)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting roi stats", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		logging.GetLoggerWithContext(ctx).Error("error while getting alert stats", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return err
 	}
 	// Write headers to the file

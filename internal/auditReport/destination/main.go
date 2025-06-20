@@ -15,9 +15,9 @@ import (
 )
 
 func WriteDestinationReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
-	logging.GetLoggerWithContext(ctx).Info("writing logsource report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	logging.GetLoggerWithContext(ctx).Info("writing destination report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 
-	startTime, endTime, query, err := getQueryForDestinationData(ctx, req)
+	query, startTime, endTime, err := getQueryForDestinationData(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ func getQueryForDestinationData(ctx context.Context, req models.AuditReport) (st
 		logging.GetLoggerWithContext(ctx).Error("error while getting query from config", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return "", "", "", err
 	}
-	logging.GetLoggerWithContext(ctx).Info("query for volume controller data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	logging.GetLoggerWithContext(ctx).Info("query for destination data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }
 func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query, startTime, endTime string, file *os.File) error {
@@ -73,7 +73,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query,
 		writeHeader = writeHeader && offset == 0
 		rows, columns, err := common.GetRowsAndColumnsByQueryFromTable("destination", query, pageSize, offset)
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while fetching data from volume controller table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+			logging.GetLoggerWithContext(ctx).Error("error while fetching data from destination table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
 		}
 

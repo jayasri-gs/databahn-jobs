@@ -17,7 +17,7 @@ import (
 func WriteLogSourceReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
 	logging.GetLoggerWithContext(ctx).Info("writing logsource report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 
-	startTime, endTime, query, err := getQueryForLogSourceData(ctx, req)
+	query, startTime, endTime, err := getQueryForLogSourceData(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query,
 		writeHeader = writeHeader && offset == 0
 		rows, columns, err := common.GetRowsAndColumnsByQueryFromTable("log_source", query, pageSize, offset)
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while fetching data from volume controller table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+			logging.GetLoggerWithContext(ctx).Error("error while fetching data from logsource table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
 		}
 
@@ -102,7 +102,7 @@ func getQueryForLogSourceData(ctx context.Context, req models.AuditReport) (stri
 		logging.GetLoggerWithContext(ctx).Error("error while getting query from config", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return "", "", "", err
 	}
-	logging.GetLoggerWithContext(ctx).Info("query for volume controller data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	logging.GetLoggerWithContext(ctx).Info("query for logsource data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }
 func writeRowsToFileForLogSource(columns []string, rows *sql.Rows, logsourceIdsToIngestionStats map[string]string, logsourceIdsToDestinationStats map[string]map[string]string, destinationIdToName map[string]string, writer *csv.Writer) (int, error) {

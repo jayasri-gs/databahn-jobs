@@ -21,7 +21,7 @@ import (
 )
 
 func WriteDeviceInventoryReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
-	logging.GetLoggerWithContext(ctx).Info("writing roi report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	logging.GetLoggerWithContext(ctx).Info("writing device inventory report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	sources, startTime, endTime, err := getDeviceInventoryReportConfigFromRequest(ctx, req)
 	if err != nil {
 		return err
