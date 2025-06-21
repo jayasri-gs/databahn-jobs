@@ -4,9 +4,10 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"time"
 )
 
 type Interval string
@@ -15,9 +16,24 @@ const Minute Interval = "Minute"
 const Hour Interval = "HOUR"
 const Day Interval = "DAY"
 
+type IncludeExclude string
+
+const Include IncludeExclude = "INCLUDE"
+const Exclude IncludeExclude = "EXCLUDE"
+
+type Reputation string
+
+const (
+	ReputationSilent     Reputation = "SILENT"
+	ReputationStable     Reputation = "STABLE"
+	ReputationWhispering Reputation = "WHISPERING"
+	ReputationNoisy      Reputation = "NOISY"
+)
+
 type AlertConfig struct {
-	Enabled                        bool                            `json:"enabled"`
-	LogSourceInactivityAlertConfig *LogSourceInactivityAlertConfig `json:"logSourceInactivityAlertConfig"`
+	Enabled                             bool                                 `json:"enabled"`
+	LogSourceInactivityAlertConfig      *LogSourceInactivityAlertConfig      `json:"logSourceInactivityAlertConfig"`
+	LogSourceDeviceInventoryAlertConfig *LogSourceDeviceInventoryAlertConfig `json:"logSourceDeviceInventoryAlertConfig"`
 }
 
 func (a *AlertConfig) Scan(value interface{}) error {
@@ -34,6 +50,21 @@ func (a *AlertConfig) Value() (driver.Value, error) {
 
 type LogSourceInactivityAlertConfig struct {
 	InactivityDuration *Duration `json:"inactivityDuration"`
+}
+
+type LogSourceDeviceInventoryAlertConfig struct {
+	Enabled            bool           `json:"enabled"`
+	ReputationsToAlert []Reputation   `json:"reputationsToAlert"`
+	VcRuleFilters      *VcRuleFilter  `json:"vcRuleFilters"`
+	IncludeExclude     IncludeExclude `json:"includeExclude"`
+}
+
+type VcRuleFilter struct {
+	Field      string         `json:"field"`
+	Value      string         `json:"value"`
+	Operator   string         `json:"operator"`
+	Rules      []VcRuleFilter `json:"rules"`
+	Combinator string         `json:"combinator"`
 }
 
 type Duration struct {
