@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
+
 	"github.com/google/uuid"
 
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -34,7 +36,6 @@ type DeviceClass struct {
 	SourceName string `json:"source_name"`
 }
 
-// Extended VcRuleFilter structure to include field, value, and operator
 type VcRuleFilter struct {
 	Field      string         `json:"field"`
 	Value      string         `json:"value"`
@@ -97,9 +98,12 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 			logging.GetLoggerWithContext(ctx).Info("no devices found for tenant", zap.String("tenantId", tenantId))
 			continue
 		}
-
+		sourceIdToDevice := make(map[string][]model.DeviceClass)
+		for _, device := range devices {
+			sourceIdToDevice[device.SourceID] = append(sourceIdToDevice[device.SourceID], device)
+		}
 		// Filter devices based on alert configuration
-		filteredDevices, err := filterDevicesWithConfig(devices, alertConfig)
+		filteredDevices, err := filterDevicesWithConfig(devices, alertConfigsBySourceId)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while filtering devices", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
@@ -109,21 +113,16 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 			logging.GetLoggerWithContext(ctx).Info("no devices match alert criteria", zap.String("tenantId", tenantId))
 			continue
 		}
-
-		// Create alerts for filtered devices
-		alertsToSend := make([]*alerts_async.Alert, len(filteredDevices))
-		for i, device := range filteredDevices {
-			alert, err := buildDeviceAlert(device, t)
-			if err != nil {
-				logging.GetLoggerWithContext(ctx).Error("error while building alert", zap.Error(err), zap.String("deviceId", device.Hostname))
-				continue
-			}
-			alertsToSend[i] = alert
+		var alertsToSend []*model.DeviceInventoryAlerts
+		for _, alrt := range filteredDevices {
+			alertsToSend = append(alertsToSend, &model.DeviceInventoryAlerts{
+				DeviceClass: &alrt,
+			})
 		}
 
 		// Send alerts
-		if len(alertsToSend) > 0 {
-			err = alertsManager.SendAlerts(alertsToSend)
+		if len(filteredDevices) > 0 {
+			err = sendInAppAlertsForDeviceInventory(alertsToSend, alertsManager)
 			if err != nil {
 				logging.GetLoggerWithContext(ctx).Error("error while sending alerts", zap.Error(err))
 				continue
@@ -134,33 +133,39 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 	return nil
 }
 
-func filterDevicesWithConfig(devices []DeviceClass, alertConfig []entities.EntityAlertsConfig) ([]DeviceClass, error) {
-	var filteredDevices []DeviceClass
+func filterDevicesWithConfig(devices []model.DeviceClass, alertConfigsBySourceId map[uuid.UUID]entities.EntityAlertsConfig) ([]model.DeviceClass, error) {
+	var filteredDevices []model.DeviceClass
 
 	for _, device := range devices {
-		for _, config := range alertConfig {
-			if config.Config == nil || !config.Config.Enabled {
-				continue
-			}
+		// Convert device.SourceID string to UUID to match with alertConfigsBySourceId
+		sourceID, err := uuid.Parse(device.SourceID)
+		if err != nil {
+			logging.GetLogger().Error("error parsing device source ID", zap.Error(err), zap.String("sourceID", device.SourceID))
+			continue
+		}
 
-			deviceInventoryConfig := config.Config.LogSourceDeviceInventoryAlertConfig
-			fmt.Println(deviceInventoryConfig)
-			if deviceInventoryConfig == nil || !deviceInventoryConfig.Enabled {
-				continue
-			}
+		// Get the alert configuration for this specific source
+		alrtconfig, exists := alertConfigsBySourceId[sourceID]
+		if !exists {
+			logging.GetLogger().Info("no alert configuration found for source", zap.String("sourceID", device.SourceID))
+			continue
+		}
 
-			// Check if device matches the alert criteria
-			if matchesAlertCriteria(device, deviceInventoryConfig) {
-				filteredDevices = append(filteredDevices, device)
-				break
-			}
+		if alrtconfig.Config == nil || !alrtconfig.Config.Enabled {
+			logging.GetLogger().Info("alert configuration is nil or disabled for source", zap.String("sourceID", device.SourceID))
+			continue
+		}
+
+		// Check if device matches the alert criteria for this specific source
+		if matchesAlertCriteria(device, alrtconfig.Config.LogSourceDeviceInventoryAlertConfig) {
+			filteredDevices = append(filteredDevices, device)
 		}
 	}
 
 	return filteredDevices, nil
 }
 
-func matchesAlertCriteria(device DeviceClass, config *entities.LogSourceDeviceInventoryAlertConfig) bool {
+func matchesAlertCriteria(device model.DeviceClass, config *entities.LogSourceDeviceInventoryAlertConfig) bool {
 	logging.GetLogger().Info("Checking alert criteria for device",
 		zap.String("hostname", device.Hostname),
 		zap.String("reputation", device.Reputation),
@@ -170,7 +175,8 @@ func matchesAlertCriteria(device DeviceClass, config *entities.LogSourceDeviceIn
 	if len(config.ReputationsToAlert) > 0 {
 		reputationMatch := false
 		for _, rep := range config.ReputationsToAlert {
-			if string(rep) == device.Reputation {
+			reputationLowerCase := strings.ToLower(string(rep))
+			if reputationLowerCase == device.Reputation {
 				reputationMatch = true
 				break
 			}
@@ -249,7 +255,7 @@ func convertVcRuleFilter(entitiesFilter *entities.VcRuleFilter) *VcRuleFilter {
 	return result
 }
 
-func evaluateRuleFilter(device DeviceClass, rule *VcRuleFilter) bool {
+func evaluateRuleFilter(device model.DeviceClass, rule *VcRuleFilter) bool {
 	if rule == nil {
 		logging.GetLogger().Info("No rule filter to evaluate")
 		return true
@@ -312,7 +318,7 @@ func evaluateRuleFilter(device DeviceClass, rule *VcRuleFilter) bool {
 	return true
 }
 
-func evaluateCondition(device DeviceClass, field, operator, value string) bool {
+func evaluateCondition(device model.DeviceClass, field, operator, value string) bool {
 	var deviceValue string
 
 	// Get the device field value
@@ -348,33 +354,14 @@ func evaluateCondition(device DeviceClass, field, operator, value string) bool {
 	}
 }
 
-func buildDeviceAlert(device DeviceClass, t tenant.Tenant) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf("Device Inventory Alert - %s - %s", t.Name, time.Now().Format(time.DateOnly))
-	message := fmt.Sprintf("Device %s has reputation %s", device.Hostname, device.Reputation)
-
-	return alerts_async.NewAlert(alerts_async.LogSource,
-		alerts_async.WithEntityDetails(
-			device.SourceID,
-			device.Hostname,
-			"", // dataPlaneId
-			device.TenantId,
-		),
-		alerts_async.WithCriticality(alerts_async.Critical),
-		alerts_async.WithFunctionalityType(alerts_async.SilentDeviceChecker),
-		alerts_async.WithTitle(title),
-		alerts_async.WithMessage(message),
-		alerts_async.WithErrorCode(alerts_async.DNDW10003, ""),
-	)
-}
-
-func getDevices(ctx context.Context, client *opensearch.Client, index string, query string, pageSize int, searchAfter []any, tenantName string) ([]DeviceClass, []any, error) {
+func getDevices(ctx context.Context, client *opensearch.Client, index string, query string, pageSize int, searchAfter []any, tenantName string) ([]model.DeviceClass, []any, error) {
 
 	logging.GetLogger().Info("query", zap.String("query", query))
 	logging.GetLogger().Info("pageSize", zap.Int("pageSize", pageSize))
 	logging.GetLogger().Info("searchAfter", zap.Any("searchAfter", searchAfter))
 	logging.GetLogger().Info("index", zap.String("index", index))
 
-	var silentDevices []DeviceClass
+	var silentDevices []model.DeviceClass
 	res, newSearchAfter, err := os.SearchPaginated(ctx, client, index, query, pageSize, searchAfter, []os.Sort{{Field: "max_time", Order: "desc"}})
 	if err != nil {
 		return nil, nil, err
@@ -392,7 +379,7 @@ func getDevices(ctx context.Context, client *opensearch.Client, index string, qu
 	}
 
 	for _, device := range deviceInventoryList {
-		silentDevices = append(silentDevices, DeviceClass{
+		silentDevices = append(silentDevices, model.DeviceClass{
 			Hostname:   device.Hostname,
 			MinTime:    device.MinTime,
 			MaxTime:    device.MaxTime,
@@ -407,7 +394,7 @@ func getDevices(ctx context.Context, client *opensearch.Client, index string, qu
 	return silentDevices, newSearchAfter, nil
 }
 
-func fetchDevices(ctx context.Context, tenantId string, tenantName string, sources []uuid.UUID) ([]DeviceClass, error) {
+func fetchDevices(ctx context.Context, tenantId string, tenantName string, sources []uuid.UUID) ([]model.DeviceClass, error) {
 
 	// Build the query using getQueryFromFilters
 	query, err := getQuery(sources, tenantId)
@@ -422,7 +409,7 @@ func fetchDevices(ctx context.Context, tenantId string, tenantName string, sourc
 	pageSize := 100
 	index := "db_insights_sights_sourcehostname_" + tenantId
 
-	var allSilentDevices []DeviceClass
+	var allSilentDevices []model.DeviceClass
 	for {
 		silentDevices, newSearchAfter, err := getDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
 		if err != nil {
@@ -495,4 +482,36 @@ func getLogSourceIdsFromEntityAlertConfig(ctx context.Context, db *gorm.DB) ([]e
 	}
 	return entityAlertConfig, tenantIdToConfig, tenantIdToSource, nil
 
+}
+
+func sendInAppAlertsForDeviceInventory(devicesToAlert []*model.DeviceInventoryAlerts, alertsManager *alert.AlertsManager) error {
+	alertsToSave := make([]*alerts_async.Alert, len(devicesToAlert))
+	for i, dvcAlert := range devicesToAlert {
+		newAlert, err := buildDeviceAlert(*dvcAlert)
+		if err != nil {
+			logging.GetLogger().Error("error while building alert", zap.Error(err))
+			return err
+		}
+		alertsToSave[i] = newAlert
+	}
+	err := alertsManager.SendAlerts(alertsToSave)
+	if err != nil {
+		logging.GetLogger().Error("error while sending inactive source alert", zap.Error(err))
+		return err
+	}
+	return nil
+}
+
+func buildDeviceAlert(dia model.DeviceInventoryAlerts) (*alerts_async.Alert, error) {
+	details := fmt.Sprintf("Device Inventory Alert - Device %s has reputation %s", dia.GetEntityName(), dia.DeviceClass.Reputation)
+	functionality := alerts_async.LogSource
+
+	return alerts_async.NewAlert(functionality,
+		alerts_async.WithEntity(dia),
+		alerts_async.WithCriticality(alerts_async.Critical),
+		alerts_async.WithFunctionalityType(alerts_async.SilentDeviceChecker),
+		alerts_async.WithTitle(details),
+		alerts_async.WithMessage(details),
+		alerts_async.WithErrorCode(alerts_async.DNDW10003, ""),
+	)
 }

@@ -76,6 +76,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.UpdateLastEventTime(ctx)
 	case common.SILENT_DEVICE_ALERT:
 		err = cp_jobs.SendSilentDeviceNotification(ctx)
+	case common.DEVICE_INVENTORY_ALERT:
+		err = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
