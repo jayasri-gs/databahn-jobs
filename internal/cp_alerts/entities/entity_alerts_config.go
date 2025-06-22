@@ -53,7 +53,6 @@ type LogSourceInactivityAlertConfig struct {
 }
 
 type LogSourceDeviceInventoryAlertConfig struct {
-	Enabled            bool           `json:"enabled"`
 	ReputationsToAlert []Reputation   `json:"reputationsToAlert"`
 	VcRuleFilters      *VcRuleFilter  `json:"vcRuleFilters"`
 	IncludeExclude     IncludeExclude `json:"includeExclude"`
