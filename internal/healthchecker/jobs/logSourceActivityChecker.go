@@ -59,10 +59,12 @@ func SendAlertsForActivity(ctx context.Context) error {
 			var sourceIdsToAlert []string
 
 			var activeSources []string
-
+			lastCheckTimeMapToSourceIds := make(map[string]time.Time)
 			for _, c := range entityAlertsConfigs {
 
 				lastEventTime := c.LastCheckedTime
+
+				lastCheckTimeMapToSourceIds[c.EntityID.String()] = lastEventTime
 
 				if lastEventTime.Before(now.Add(-DefaultLastSevenDays)) {
 					logging.GetLoggerWithContext(ctx).Info("Skipping source due to old last event time",
@@ -103,16 +105,20 @@ func SendAlertsForActivity(ctx context.Context) error {
 				}
 			}
 
-			var alertsToSend []alerts_common.AlertBaseObjectV2
+			var alertsToSend []helper.AlertBaseObjectV2
 			for _, validSource := range validatedInactiveSources {
-				alertsToSend = append(alertsToSend, alerts_common.AlertBaseObjectV2{
+
+				alertsToSend = append(alertsToSend, helper.AlertBaseObjectV2{
 					EntityName:       validSource.Name,
 					EntityId:         validSource.ID,
 					EntityTenantUUId: validSource.TenantID,
 					DataPlaneId:      validSource.DataPlaneId,
 					AlertType:        alerts_common.AlertTypeExternalAndExternal,
 					ErrorCode:        healthchecker.DNDW10001,
-				})
+					Description: fmt.Sprintf(
+						"No new events received in %s",
+						humanizeDuration(now.Sub(lastCheckTimeMapToSourceIds[validSource.ID.String()])),
+					)})
 			}
 
 			if len(activeSources) > 0 {
@@ -123,9 +129,9 @@ func SendAlertsForActivity(ctx context.Context) error {
 					return err
 				}
 
-				var toDismiss []alerts_common.AlertBaseObjectV2
+				var toDismiss []helper.AlertBaseObjectV2
 				for _, alert := range alerts {
-					var temp alerts_common.AlertBaseObjectV2
+					var temp helper.AlertBaseObjectV2
 					temp.EntityName = alert.FunctionalityEntityName
 					temp.EntityId = utils.UUIDFromStringOrNil(alert.FunctionalityEntityId)
 					temp.EntityTenantUUId = utils.UUIDFromStringOrNil(alert.TenantId)
@@ -137,8 +143,7 @@ func SendAlertsForActivity(ctx context.Context) error {
 				logging.GetLoggerWithContext(ctx).Info("Dismissing Alerts for tenant Id", zap.Any("tenantId", t.Id))
 				logging.GetLoggerWithContext(ctx).Info("dismissing alerts for sources ", zap.Any("sourceToDismiss", toDismiss))
 
-				err = helper.SendAlertToControlPlane(ctx, toDismiss,
-					fmt.Sprintf("No new events received in the last %d minutes", interval),
+				err = helper.SendAlertToControlPlaneForLogSource(ctx, toDismiss,
 					fmt.Sprintf("No new events received in the last %d minutes", interval),
 					alerts_common.LogSourceStatsNotReceived,
 					alerts_common.LogSourceFunctionality,
@@ -157,8 +162,7 @@ func SendAlertsForActivity(ctx context.Context) error {
 				logging.GetLoggerWithContext(ctx).Info("Sending new alerts for tenant's inactive sources",
 					zap.Any("sourcesToAlert", alertsToSend)) // Renamed from sourceToDismiss
 
-				err = helper.SendAlertToControlPlane(ctx, alertsToSend,
-					fmt.Sprintf("No new events received in the last %d minutes", interval),
+				err = helper.SendAlertToControlPlaneForLogSource(ctx, alertsToSend,
 					fmt.Sprintf("No new events received in the last %d minutes", interval),
 					alerts_common.LogSourceStatsNotReceived,
 					alerts_common.LogSourceFunctionality,
@@ -288,10 +292,10 @@ func AlertForDestinationInactivity(ctx context.Context) error {
 	}
 
 	//creating alertEntityArray for all logSources for which alert needs to be raised
-	var logsourcesEntityArray []alerts_common.AlertBaseObjectV2
+	var logsourcesEntityArray []helper.AlertBaseObjectV2
 	var silentLogsources []string
 	for _, ls := range alertToBeRaisedDispenser {
-		var temp alerts_common.AlertBaseObjectV2
+		var temp helper.AlertBaseObjectV2
 		temp.EntityName = ls.Name
 		temp.EntityId = ls.ID
 		temp.EntityTenantUUId = ls.TenantID
@@ -351,4 +355,21 @@ func getAggStatsForDestinationPaginated(ctx context.Context, startTime string, e
 	}
 
 	return statistics.AggregateResponse{Agg: aggMap}, nil
+}
+
+func humanizeDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%d seconds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		return fmt.Sprintf("%d hours, %d minutes", h, m)
+	}
+	days := int(d.Hours()) / 24
+	h := int(d.Hours()) % 24
+	return fmt.Sprintf("%d days, %d hours", days, h)
 }
