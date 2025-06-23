@@ -19,6 +19,10 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/db-models/alerts_async"
 	logging "github.com/databahn-ai/go-logging/logger"
+	"github.com/hyperjumptech/grule-rule-engine/ast"
+	"github.com/hyperjumptech/grule-rule-engine/builder"
+	"github.com/hyperjumptech/grule-rule-engine/engine"
+	"github.com/hyperjumptech/grule-rule-engine/pkg"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
@@ -34,6 +38,32 @@ type DeviceClass struct {
 	Reputation string `json:"reputation"`
 	TenantName string `json:"tenant_name"`
 	SourceName string `json:"source_name"`
+}
+
+var deviceFieldMap = map[string]string{
+	"hostname":   "Hostname",
+	"sourceid":   "SourceID",
+	"tenantid":   "TenantId",
+	"reputation": "Reputation",
+	"sourcename": "SourceName",
+}
+
+type RuleResult struct {
+	IsMatch bool
+}
+
+type StringHelpers struct{}
+
+func (h *StringHelpers) Contains(s1, s2 string) bool {
+	return strings.Contains(strings.ToLower(s1), strings.ToLower(s2))
+}
+
+func (h *StringHelpers) StartsWith(s1, s2 string) bool {
+	return strings.HasPrefix(strings.ToLower(s1), strings.ToLower(s2))
+}
+
+func (h *StringHelpers) EndsWith(s1, s2 string) bool {
+	return strings.HasSuffix(strings.ToLower(s1), strings.ToLower(s2))
 }
 
 type VcRuleFilter struct {
@@ -157,7 +187,12 @@ func filterDevicesWithConfig(devices []model.DeviceClass, alertConfigsBySourceId
 		}
 
 		// Check if device matches the alert criteria for this specific source
-		if matchesAlertCriteria(device, alrtconfig.Config.LogSourceDeviceInventoryAlertConfig) {
+		matches, err := matchesAlertCriteria(device, alrtconfig.Config.LogSourceDeviceInventoryAlertConfig)
+		if err != nil {
+			logging.GetLogger().Error("error checking alert criteria", zap.Error(err), zap.String("hostname", device.Hostname))
+			continue
+		}
+		if matches {
 			filteredDevices = append(filteredDevices, device)
 		}
 	}
@@ -165,7 +200,7 @@ func filterDevicesWithConfig(devices []model.DeviceClass, alertConfigsBySourceId
 	return filteredDevices, nil
 }
 
-func matchesAlertCriteria(device model.DeviceClass, config *entities.LogSourceDeviceInventoryAlertConfig) bool {
+func matchesAlertCriteria(device model.DeviceClass, config *entities.LogSourceDeviceInventoryAlertConfig) (bool, error) {
 	logging.GetLogger().Info("Checking alert criteria for device",
 		zap.String("hostname", device.Hostname),
 		zap.String("reputation", device.Reputation),
@@ -186,7 +221,7 @@ func matchesAlertCriteria(device model.DeviceClass, config *entities.LogSourceDe
 				zap.String("hostname", device.Hostname),
 				zap.String("deviceReputation", device.Reputation),
 				zap.Any("allowedReputations", config.ReputationsToAlert))
-			return false
+			return false, nil
 		}
 		logging.GetLogger().Info("Device reputation matches",
 			zap.String("hostname", device.Hostname),
@@ -200,11 +235,14 @@ func matchesAlertCriteria(device model.DeviceClass, config *entities.LogSourceDe
 			zap.Int("ruleCount", len(config.VcRuleFilters.Rules)),
 			zap.String("combinator", config.VcRuleFilters.Combinator))
 
-		ruleFilter := convertVcRuleFilter(config.VcRuleFilters)
-		if !evaluateRuleFilter(device, ruleFilter) {
+		ruleMatches, err := evaluateDeviceAgainstFiltersWithGrule(device, config.VcRuleFilters)
+		if err != nil {
+			return false, fmt.Errorf("error evaluating grule rules: %w", err)
+		}
+		if !ruleMatches {
 			logging.GetLogger().Info("Device does not match rule filters",
 				zap.String("hostname", device.Hostname))
-			return false
+			return false, nil
 		}
 		logging.GetLogger().Info("Device matches rule filters",
 			zap.String("hostname", device.Hostname))
@@ -218,139 +256,108 @@ func matchesAlertCriteria(device model.DeviceClass, config *entities.LogSourceDe
 		logging.GetLogger().Info("Device excluded by include/exclude setting",
 			zap.String("hostname", device.Hostname),
 			zap.String("includeExclude", string(config.IncludeExclude)))
-		return false
+		return false, nil
 	}
 
 	logging.GetLogger().Info("Device matches all alert criteria",
 		zap.String("hostname", device.Hostname))
-	return true
+	return true, nil
 }
 
-func convertVcRuleFilter(entitiesFilter *entities.VcRuleFilter) *VcRuleFilter {
-	if entitiesFilter == nil {
-		return nil
+func evaluateDeviceAgainstFiltersWithGrule(device model.DeviceClass, filters *entities.VcRuleFilter) (bool, error) {
+	if filters == nil || len(filters.Rules) == 0 {
+		return true, nil
+	}
+	expression, err := buildGruleExpression(filters)
+	if err != nil {
+		return false, err
+	}
+	rule := fmt.Sprintf(`
+		rule DeviceFilter "Check if device matches filter" {
+			when
+				%s
+			then
+				Result.IsMatch = true;
+		}`, expression)
+
+	dataContext := ast.NewDataContext()
+	err = dataContext.Add("Device", &device)
+	if err != nil {
+		return false, err
+	}
+	result := &RuleResult{IsMatch: false}
+	err = dataContext.Add("Result", result)
+	if err != nil {
+		return false, err
+	}
+	err = dataContext.Add("Strings", &StringHelpers{})
+	if err != nil {
+		return false, err
 	}
 
-	result := &VcRuleFilter{
-		Combinator: entitiesFilter.Combinator,
+	knowledgeLibrary := ast.NewKnowledgeLibrary()
+	ruleBuilder := builder.NewRuleBuilder(knowledgeLibrary)
+
+	err = ruleBuilder.BuildRuleFromResource("DeviceInventoryRules", "1.0.0", pkg.NewBytesResource([]byte(rule)))
+	if err != nil {
+		return false, err
 	}
 
-	logging.GetLogger().Info("Converting rule filter",
-		zap.Int("ruleCount", len(entitiesFilter.Rules)),
-		zap.String("combinator", entitiesFilter.Combinator))
-
-	// Convert nested rules
-	for i, rule := range entitiesFilter.Rules {
-		convertedRule := convertVcRuleFilter(&rule)
-		if convertedRule != nil {
-			result.Rules = append(result.Rules, *convertedRule)
-			logging.GetLogger().Info("Converted rule",
-				zap.Int("ruleIndex", i),
-				zap.String("field", convertedRule.Field),
-				zap.String("operator", convertedRule.Operator),
-				zap.String("value", convertedRule.Value))
-		}
+	engine := engine.NewGruleEngine()
+	knowledgeBase := knowledgeLibrary.GetKnowledgeBase("DeviceInventoryRules", "1.0.0")
+	if knowledgeBase == nil {
+		// This can happen if the rule has syntax errors and wasn't added.
+		return false, fmt.Errorf("knowledge base 'DeviceInventoryRules' not found, possibly due to a rule syntax error")
+	}
+	err = engine.Execute(dataContext, knowledgeBase)
+	if err != nil {
+		return false, err
 	}
 
-	return result
+	return result.IsMatch, nil
 }
 
-func evaluateRuleFilter(device model.DeviceClass, rule *VcRuleFilter) bool {
-	if rule == nil {
-		logging.GetLogger().Info("No rule filter to evaluate")
-		return true
-	}
-
-	// If this is a leaf node (has field, value, operator)
-	if rule.Field != "" && rule.Value != "" && rule.Operator != "" {
-		result := evaluateCondition(device, rule.Field, rule.Operator, rule.Value)
-		logging.GetLogger().Info("Evaluated leaf rule",
-			zap.String("hostname", device.Hostname),
-			zap.String("field", rule.Field),
-			zap.String("operator", rule.Operator),
-			zap.String("value", rule.Value),
-			zap.Bool("result", result))
-		return result
-	}
-
-	// If this is a composite node (has rules)
-	if len(rule.Rules) > 0 {
-		combinator := rule.Combinator
-		if combinator == "" {
-			combinator = "AND"
-		}
-
-		logging.GetLogger().Info("Evaluating composite rule",
-			zap.String("hostname", device.Hostname),
-			zap.String("combinator", combinator),
-			zap.Int("ruleCount", len(rule.Rules)))
-
-		if combinator == "AND" {
-			for i, subRule := range rule.Rules {
-				if !evaluateRuleFilter(device, &subRule) {
-					logging.GetLogger().Info("AND rule failed",
-						zap.String("hostname", device.Hostname),
-						zap.Int("ruleIndex", i))
-					return false
-				}
+func buildGruleExpression(filter *entities.VcRuleFilter) (string, error) {
+	if len(filter.Rules) > 0 { // It's a group
+		var expressions []string
+		for _, rule := range filter.Rules {
+			expr, err := buildGruleExpression(&rule)
+			if err != nil {
+				return "", err
 			}
-			logging.GetLogger().Info("All AND rules passed",
-				zap.String("hostname", device.Hostname))
-			return true
-		} else if combinator == "OR" {
-			for i, subRule := range rule.Rules {
-				if evaluateRuleFilter(device, &subRule) {
-					logging.GetLogger().Info("OR rule passed",
-						zap.String("hostname", device.Hostname),
-						zap.Int("ruleIndex", i))
-					return true
-				}
-			}
-			logging.GetLogger().Info("No OR rules passed",
-				zap.String("hostname", device.Hostname))
-			return false
+			expressions = append(expressions, "("+expr+")")
 		}
-	} else {
-		logging.GetLogger().Info("Empty rules array, returning true",
-			zap.String("hostname", device.Hostname))
-	}
+		combinator := " && "
+		if strings.ToUpper(filter.Combinator) == "OR" {
+			combinator = " || "
+		}
+		return strings.Join(expressions, combinator), nil
+	} else { // It's a single rule
+		normalizedField := strings.ToLower(strings.ReplaceAll(filter.Field, " ", ""))
+		mappedField, ok := deviceFieldMap[normalizedField]
+		if !ok {
+			return "", fmt.Errorf("unsupported rule field: %s", filter.Field)
+		}
+		field := "Device." + mappedField
+		value := filter.Value
+		// Escape double quotes in the value
+		value = strings.ReplaceAll(value, `"`, `\"`)
+		value = `"` + value + `"` // a string literal in GRL
 
-	return true
-}
-
-func evaluateCondition(device model.DeviceClass, field, operator, value string) bool {
-	var deviceValue string
-
-	// Get the device field value
-	switch field {
-	case "Hostname":
-		deviceValue = device.Hostname
-	case "SourceID":
-		deviceValue = device.SourceID
-	case "TenantId":
-		deviceValue = device.TenantId
-	case "Reputation":
-		deviceValue = device.Reputation
-	case "SourceName":
-		deviceValue = device.SourceName
-	default:
-		return false
-	}
-
-	// Evaluate the condition based on operator
-	switch operator {
-	case "==", "=":
-		return deviceValue == value
-	case "!=":
-		return deviceValue != value
-	case "contains":
-		return strings.Contains(strings.ToLower(deviceValue), strings.ToLower(value))
-	case "startsWith":
-		return strings.HasPrefix(strings.ToLower(deviceValue), strings.ToLower(value))
-	case "endsWith":
-		return strings.HasSuffix(strings.ToLower(deviceValue), strings.ToLower(value))
-	default:
-		return false
+		switch filter.Operator {
+		case "==", "=":
+			return fmt.Sprintf("%s == %s", field, value), nil
+		case "!=":
+			return fmt.Sprintf("%s != %s", field, value), nil
+		case "contains":
+			return fmt.Sprintf(`Strings.Contains(%s, %s)`, field, value), nil
+		case "startsWith":
+			return fmt.Sprintf(`Strings.StartsWith(%s, %s)`, field, value), nil
+		case "endsWith":
+			return fmt.Sprintf(`Strings.EndsWith(%s, %s)`, field, value), nil
+		default:
+			return "", fmt.Errorf("unsupported operator %s", filter.Operator)
+		}
 	}
 }
 
