@@ -3,6 +3,9 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -17,8 +20,6 @@ import (
 	"github.com/databahn-ai/db-models/alerts_common"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
-	"strings"
-	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/db-models/alerts_async"
@@ -47,6 +48,7 @@ func HealthCheckJob(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer alertsManager.Close(ctx)
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
@@ -92,8 +94,6 @@ func HealthCheckJob(ctx context.Context) error {
 
 func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
-
-	defer alertsManager.Close(ctx)
 
 	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(AgentHealthCheckTimeNew)))
 	page, pageSize := 0, 50
@@ -162,8 +162,6 @@ func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsMan
 func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
-	defer alertsManager.Close(ctx)
-
 	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
 	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
 	page, pageSize := 0, 50
@@ -230,8 +228,6 @@ func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsMa
 func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
-	defer alertsManager.Close(ctx)
-
 	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
 	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckIgnoreTimeNew)))
 	page, pageSize := 0, 50
@@ -296,7 +292,6 @@ func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *aler
 func alertForFleetComponentsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
-	defer alertsManager.Close(ctx)
 	currentTime := time.Now()
 	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
 	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckIgnoreTimeNew)))
