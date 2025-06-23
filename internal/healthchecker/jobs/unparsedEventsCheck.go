@@ -112,7 +112,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 	for _, ls := range alertToBeRaisedLogSources {
 		alertMessageStr := fmt.Sprintf("Source %s has unparsed events", ls.Name)
 
-		alert := alerts_common.AlertBaseObjectV2{
+		alert := helper.AlertBaseObjectV2{
 			EntityName:       ls.Name,
 			EntityId:         ls.ID,
 			EntityTenantUUId: ls.TenantID,
@@ -123,7 +123,7 @@ func AlertForUnparsedEvents(ctx context.Context) error {
 
 		logging.GetLoggerWithContext(ctx).Info("Sending alert to control panel", zap.Any("alert", alert), zap.String("alertMessage", alertMessageStr))
 
-		err = helper.SendAlertToControlPlane(ctx, []alerts_common.AlertBaseObjectV2{alert}, "Unparsed events detected", alertMessageStr, "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.CriticalAlert, alerts_common.AlertOpen, false, "system")
+		err = helper.SendAlertToControlPlane(ctx, []helper.AlertBaseObjectV2{alert}, "Unparsed events detected", alertMessageStr, "UNPARSED_EVENTS_DETECTED", "DAILY_UNPARSED_EVENTS", alerts_common.CriticalAlert, alerts_common.AlertOpen, false, "system")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while raising alert for unparsedevents", zap.Error(err))
 			return err
@@ -143,11 +143,11 @@ func resolveExistingAlerts(ctx context.Context, sources map[string]float64) erro
 		logging.GetLoggerWithContext(ctx).Info("no existing alerts found for unparsed events.")
 		return nil
 	}
-	var toDismissAlerts []alerts_common.AlertBaseObjectV2
+	var toDismissAlerts []helper.AlertBaseObjectV2
 	for _, alert := range alerts {
 		if _, ok := sources[alert.FunctionalityEntityId]; !ok {
 			// resolve the alert as it is not present in the current list of sources having unparsed events
-			toDismissAlerts = append(toDismissAlerts, alerts_common.AlertBaseObjectV2{
+			toDismissAlerts = append(toDismissAlerts, helper.AlertBaseObjectV2{
 				EntityId:         utils.UUIDFromStringOrNil(alert.FunctionalityEntityId),
 				EntityTenantUUId: utils.UUIDFromStringOrNil(alert.TenantId),
 				EntityName:       alert.FunctionalityEntityName,
