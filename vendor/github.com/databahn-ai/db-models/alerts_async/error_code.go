@@ -39,7 +39,7 @@ var (
 	DDTE10001 = errorCodeEnum{value: "DDTE10001", messageTemplate: "Data Conversion Issue. {0}"}
 	DNDW10001 = errorCodeEnum{value: "DNDW10001", messageTemplate: "No Data For Logsource Received. {0}"}
 	DNDW10002 = errorCodeEnum{value: "DNDW10002", messageTemplate: "No Data For Destination Received. {0}"}
-	DNDW10003 = errorCodeEnum{value: "DNDW10003", messageTemplate: "No Data For Device Received. {0}"}
+	DNDW10003 = errorCodeEnum{value: "DNDW10003", messageTemplate: "Reputation update for device . {0}"}
 	DGRW10001 = errorCodeEnum{value: "DGRW10001", messageTemplate: "System guardrail triggered. {0}"}
 	DDBE10001 = errorCodeEnum{value: "DDBE10001", messageTemplate: "Database source unavailable. {0}"}
 	DHRW10001 = errorCodeEnum{value: "DHRW10001", messageTemplate: "Agent is unhealthy. {0}"}
@@ -47,4 +47,6 @@ var (
 	DHRW10003 = errorCodeEnum{value: "DHRW10003", messageTemplate: "Fleet Component is unhealthy. {0}"}
 	DHRW10004 = errorCodeEnum{value: "DHRW10004", messageTemplate: "Fleet Connector is unhealthy. {0}"}
 	DBPW10001 = errorCodeEnum{value: "DBPW10001", messageTemplate: "Unparsed Events Received. {0}"}
+	DIIS10001 = errorCodeEnum{value: "DIIS10001", messageTemplate: "Report generated successfully. {0}"}
+	DIIS20001 = errorCodeEnum{value: "DIIS20001", messageTemplate: "Alert report generation failed. {0}"}
 )
