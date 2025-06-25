@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/kafka"
 	cn "github.com/databahn-ai/common-utils/notification"
-	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -17,7 +15,7 @@ type NotificationManager struct {
 }
 
 func NewNotificationManager(ctx context.Context) (*NotificationManager, error) {
-	kafkaBrokers := config.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
+	kafkaBrokers := "localhost:9092"
 	if kafkaBrokers == "" {
 		return nil, errors.New("kafka bootstrap server is not configured")
 	}

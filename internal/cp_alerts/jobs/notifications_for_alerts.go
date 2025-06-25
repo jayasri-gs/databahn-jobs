@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+	"text/template"
+	"time"
+
 	notification_common "github.com/databahn-ai/common-utils/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -16,15 +21,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
-	"html/template"
-	"strconv"
-	"strings"
-	"time"
 )
 
-const EmailTemplatesBasePath = "/home/databahn/templates/"
+// const EmailTemplatesBasePath = "/home/databahn/templates/"
 
-// const EmailTemplatesBasePath = "templates/"
+const EmailTemplatesBasePath = "templates/"
 
 func SendNotificationsForAlerts(ctx context.Context) error {
 	db := config.GetDB()
@@ -169,12 +170,53 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 }
 
 func sendCustomerNotification(t tenant.Tenant, title, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager) error {
-	subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, title)
-	body, err := buildEmailBody(title, alerts)
+
+	db := config.GetDB()
+
+	var mapping entities.ModuleTenantMapping
+
+	err := db.Where("tenant_id = ?", "f5e31bb8-af80-40d8-a0e4-16f12187e4e4").Find(&mapping).Error
 	if err != nil {
-		logger.GetLogger().Error("error while building email body", zap.Error(err), zap.String("tenant", t.Id.String()))
+		logger.GetLogger().Error("error while fetching module tenant mapping", zap.Error(err), zap.String("tenant", t.Id.String()))
 		return err
 	}
+
+	// Filter alerts based on module_tenant_config
+	var filteredAlerts []alerts_async.Alert
+	if mapping.ModuleTenantConfig != nil {
+		for _, alert := range alerts {
+			// Check if this alert's source should be excluded based on config
+			if !shouldExcludeAlert(alert, mapping.ModuleTenantConfig) {
+				filteredAlerts = append(filteredAlerts, alert)
+			} else {
+				logger.GetLogger().Info("alert filtered out based on module tenant config",
+					zap.String("tenant", t.Id.String()),
+					zap.String("functionality", functionality),
+					zap.String("sourceId", alert.FunctionalityEntityId))
+			}
+		}
+	} else {
+		// If no config, include all alerts
+		filteredAlerts = alerts
+	}
+
+	// If no alerts remain after filtering, don't send notification
+	if len(filteredAlerts) == 0 {
+		logger.GetLogger().Info("no alerts remaining after filtering, skipping notification",
+			zap.String("tenant", t.Id.String()),
+			zap.String("functionality", functionality))
+		return nil
+	}
+
+	subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, title)
+
+	// Rebuild email body with filtered alerts
+	body, err := buildEmailBody(title, filteredAlerts)
+	if err != nil {
+		logger.GetLogger().Error("error while building email body with filtered alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
+		return err
+	}
+
 	for modulesName, targets := range targetsByModuleName {
 		if alertFunctionalityMatchesModuleName(functionality, modulesName) {
 			var databahnTargets []*notification_common.DatabahnTarget
@@ -197,6 +239,33 @@ func sendCustomerNotification(t tenant.Tenant, title, functionality string, aler
 		}
 	}
 	return nil
+}
+
+// shouldExcludeAlert checks if an alert should be excluded based on the module tenant config
+func shouldExcludeAlert(alert alerts_async.Alert, config *entities.ModuleTenantConfigData) bool {
+	if config == nil {
+		return false
+	}
+
+	// Check if the alert's source ID is in the sourceList
+	sourceIdInList := false
+	for _, sourceId := range config.SourceList {
+		if sourceId == alert.FunctionalityEntityId {
+			sourceIdInList = true
+			break
+		}
+	}
+
+	// If includeExclude is "EXCLUDE" and sourceId is in the list, exclude it
+	// If includeExclude is "INCLUDE" and sourceId is NOT in the list, exclude it
+	if config.IncludeExclude == "EXCLUDE" {
+		return sourceIdInList
+	} else if config.IncludeExclude == "INCLUDE" {
+		return !sourceIdInList
+	}
+
+	// Default: don't exclude
+	return false
 }
 
 func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notificationManager *notification.NotificationManager) error {
