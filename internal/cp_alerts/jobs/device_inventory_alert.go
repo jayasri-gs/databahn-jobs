@@ -98,9 +98,6 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 
 	for _, t := range tenants {
 		tenantId := t.Id.String()
-		if t.Id.String() != "f5e31bb8-af80-40d8-a0e4-16f12187e4e4" {
-			continue
-		}
 		logging.GetLoggerWithContext(ctx).Info("Processing tenant", zap.String("tenantId", tenantId))
 
 		if len(alertConfig) == 0 {
@@ -132,7 +129,6 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 		for _, device := range devices {
 			sourceIdToDevice[device.SourceID] = append(sourceIdToDevice[device.SourceID], device)
 		}
-		// Filter devices based on alert configuration
 		filteredDevices, err := filterDevicesWithConfig(devices, alertConfigsBySourceId)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while filtering devices", zap.Error(err), zap.String("tenantId", tenantId))
