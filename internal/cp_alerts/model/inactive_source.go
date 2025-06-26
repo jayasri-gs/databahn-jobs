@@ -1,10 +1,8 @@
 package model
 
 import (
-	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
-	"strings"
 	"time"
 )
 

@@ -581,53 +581,57 @@ func sendFleetConnectorInAppAlerts(inactiveFleetConnectors []*model.UnhealthyFle
 }
 
 func buildAgentAlert(ia model.UnhealthyAgent) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(common.AgentHealthCheckerFunctionalityTitle, ia.HealthCheckTimeStr(), ia.GetEntityName())
+	title := fmt.Sprintf(common.AgentHealthCheckerFunctionalityTitle, ia.HealthCheckTimeStr(), ia.GetEntityName())
+	message := fmt.Sprintf(common.AgentHealthCheckerFunctionalityMessage, ia.HealthCheckTimeStr(), ia.CheckedTimeStr(), ia.LastHeartbeatTimeStr())
 	return alerts_async.NewAlert(
 		alerts_async.Agent,
 		alerts_async.WithEntity(ia),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10001, ""),
 	)
 }
 
 func buildFleetAlert(uf model.UnhealthyFleet) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(common.FleetNodeHealthCheckerFunctionalityTitle, uf.HealthCheckTimeStr(), uf.GetEntityName())
+	title := fmt.Sprintf(common.FleetNodeHealthCheckerFunctionalityTitle, uf.HealthCheckTimeStr(), uf.GetEntityName())
+	message := fmt.Sprintf(common.FleetNodeHealthCheckerFunctionalityMessage, uf.HealthCheckTimeStr(), uf.CheckedTimeStr(), uf.LastHeartbeatTimeStr())
 	return alerts_async.NewAlert(
 		alerts_async.FleetNode,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10002, ""),
 	)
 }
 
 func buildFleetConnectorAlert(uf model.UnhealthyFleetConnector) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(common.FleetConnectorHealthCheckerFunctionalityTitle, uf.HealthCheckTimeStr(), uf.GetEntityName())
+	title := fmt.Sprintf(common.FleetConnectorHealthCheckerFunctionalityTitle, uf.HealthCheckTimeStr(), uf.GetEntityName())
+	message := fmt.Sprintf(common.FleetConnectorHealthCheckerFunctionalityMessage, uf.HealthCheckTimeStr(), uf.CheckedTimeStr(), uf.LastHeartbeatTimeStr())
 	return alerts_async.NewAlert(
 		alerts_async.FleetConnector,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10004, ""),
 	)
 }
 
 func buildFleetComponentAlert(uf model.UnhealthyFleetComponents) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(common.FleetComponentHealthCheckTitle, uf.GetEntityName(), uf.HealthCheckTimeStr())
+	title := fmt.Sprintf(common.FleetComponentHealthCheckTitle, uf.GetEntityName(), uf.HealthCheckTimeStr())
+	message := fmt.Sprintf(common.FleetComponentHealthCheckerFunctionalityMessage, uf.HealthCheckTimeStr(), uf.CheckedTimeStr(), uf.LastHeartbeatTimeStr())
 	return alerts_async.NewAlert(
 		alerts_async.FleetComponent,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10003, ""),
 	)
 }

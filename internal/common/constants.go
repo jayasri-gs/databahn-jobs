@@ -50,6 +50,12 @@ const FleetConnectorHealthCheckerFunctionalityTitle = "Health from fleet_connect
 const AgentHealthCheckTitle = "Unhealthy agent nodes found"
 const AgentHealthCheckMessage = "Health from agent not reported for more than 5 minutes, marking unhealthy"
 
+// New message constants with time information
+const AgentHealthCheckerFunctionalityMessage = "This agent is configured to be alerted when health is not reported for more than %s. As of '%s' last heartbeat was received at '%s'."
+const FleetNodeHealthCheckerFunctionalityMessage = "This fleet node is configured to be alerted when health is not reported for more than %s. As of '%s' last heartbeat was received at '%s'."
+const FleetConnectorHealthCheckerFunctionalityMessage = "This fleet connector is configured to be alerted when health is not reported for more than %s. As of '%s' last heartbeat was received at '%s'."
+const FleetComponentHealthCheckerFunctionalityMessage = "This fleet component is configured to be alerted when health is not reported for more than %s. As of '%s' last heartbeat was received at '%s'."
+
 const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified connector for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 const FleetComponentHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified component for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 
