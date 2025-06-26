@@ -2,6 +2,10 @@ package jobs
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
@@ -14,8 +18,6 @@ import (
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"strconv"
-	"time"
 
 	"github.com/mitchellh/mapstructure"
 )
@@ -73,7 +75,8 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 			}
 			for _, s := range sources {
 				if _, ok := sourceIdToUnparsedCount[s.ID.String()]; ok {
-					ias := model.NewUnparsedEventSource(&s)
+					unparsedCount := int(sourceIdToUnparsedCount[s.ID.String()])
+					ias := model.NewUnparsedEventSource(&s, unparsedCount)
 					sourcesToAlert = append(sourcesToAlert, ias)
 				} else {
 					sourcesToDismiss = append(sourcesToDismiss, &s)
@@ -186,7 +189,7 @@ func sendInAppAlertsForUnparsedEvents(sourcesToAlert []*model.UnparsedEventSourc
 }
 
 func buildUnparsedEventAlert(ias model.UnparsedEventSource) (*alerts_async.Alert, error) {
-	details := constants.UnparsedEventCheckerFunctionalityType
+	details := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityTitle, ias.GetEntityName(), ias.GetUnparsedCount())
 	functionality := alerts_async.LogSource
 	return alerts_async.NewAlert(functionality,
 		alerts_async.WithEntity(ias),
