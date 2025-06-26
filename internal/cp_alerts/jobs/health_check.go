@@ -396,7 +396,7 @@ func findActiveAndInactiveAgents(db *gorm.DB, tenantId string, healthCheckTime t
 		inactiveResult = append(inactiveResult, model.NewUnhealthyAgent(&ag, healthCheckDuration))
 	}
 
-	return activeResult, inactiveResult, nil
+	return activeResult, inactiveResult, err
 }
 func findActiveAndInactiveFleet(db *gorm.DB, tenantId string, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*fleet.Node, []*model.UnhealthyFleet, error) {
 	var ActiveFleetNodes []fleet.Node
