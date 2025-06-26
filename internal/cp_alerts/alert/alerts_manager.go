@@ -74,7 +74,7 @@ func (am *AlertsManager) AutoResolveAlerts(alertIds []string) error {
 		body := make(map[string]any)
 		body["id"] = alertId
 		body["status"] = alerts_async.AlertAutoResolved.Value()
-		body["dismissed"] = "true"
+		body["dismissed"] = true
 		jsonRequest, err := json.Marshal(body)
 		if err != nil {
 			return err
