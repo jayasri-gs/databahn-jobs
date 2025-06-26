@@ -44,17 +44,17 @@ const FleetNodeHealthCheckMessage = "This alert indicates that the cloud has not
 
 const AgentHealthCheck = "agent health check"
 const AgentFunctionality = "endpoint health checker"
-const AgentHealthCheckerFunctionalityTitle = "health from agent not reported for more than %s, marking unhealthy for agent %s"
-const FleetNodeHealthCheckerFunctionalityTitle = "health from fleet_node not reported for more than %s, marking unhealthy for fleet node %s"
-const FleetConnectorHealthCheckerFunctionalityTitle = "health from fleet_connector not reported for more than %s, marking unhealthy for fleet connector %s"
-const AgentHealthCheckTitle = "unhealthy agent nodes found"
-const AgentHealthCheckMessage = "health from agent not reported for more than 5 minutes, marking unhealthy"
+const AgentHealthCheckerFunctionalityTitle = "Health from agent not reported for more than %s, marking unhealthy for agent %s"
+const FleetNodeHealthCheckerFunctionalityTitle = "Health from fleet_node not reported for more than %s, marking unhealthy for fleet node %s"
+const FleetConnectorHealthCheckerFunctionalityTitle = "Health from fleet_connector not reported for more than %s, marking unhealthy for fleet connector %s"
+const AgentHealthCheckTitle = "Unhealthy agent nodes found"
+const AgentHealthCheckMessage = "Health from agent not reported for more than 5 minutes, marking unhealthy"
 
 const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified connector for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 const FleetComponentHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified component for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 
 const FleetConnectorHealthCheckTitle = "No heartbeat received in the last 30 minutes"
-const FleetComponentHealthCheckTitle = "fleet component %s is not reporting health for more than %s"
+const FleetComponentHealthCheckTitle = "Fleet component %s is not reporting health for more than %s"
 
 const ALERT_REPORT_PROCESSOR = "alert_report_processor"
 
