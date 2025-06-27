@@ -5,11 +5,14 @@ import (
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/fleet"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 )
 
 type UnhealthyFleet struct {
 	FleetNode       *fleet.Node
 	HealthCheckTime time.Duration
+	CheckedAt       time.Time
+	LastHeartbeatAt time.Time
 }
 
 type HealthyFleet struct {
@@ -18,6 +21,8 @@ type HealthyFleet struct {
 type UnhealthyFleetConnector struct {
 	FleetConnector  *fleet.Connector
 	HealthCheckTime time.Duration
+	CheckedAt       time.Time
+	LastHeartbeatAt time.Time
 }
 type HealthyFleetConnector struct {
 	FleetConnector *fleet.Connector
@@ -25,12 +30,27 @@ type HealthyFleetConnector struct {
 type UnhealthyFleetComponents struct {
 	FleetComponent  *fleet.Components
 	HealthCheckTime time.Duration
+	CheckedAt       time.Time
+	LastHeartbeatAt time.Time
 }
 
 func NewUnhealthyFleet(fleetNode *fleet.Node, healthCheckTime time.Duration) *UnhealthyFleet {
+	// Parse the heartbeat string to time.Time
+	var lastHeartbeatAt time.Time
+	if fleetNode.HeartbeatAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, fleetNode.HeartbeatAt); err == nil {
+			lastHeartbeatAt = parsed
+		} else {
+			// If parsing fails, use zero time
+			lastHeartbeatAt = time.Time{}
+		}
+	}
+
 	return &UnhealthyFleet{
 		FleetNode:       fleetNode,
 		HealthCheckTime: healthCheckTime,
+		CheckedAt:       time.Now().UTC(),
+		LastHeartbeatAt: lastHeartbeatAt,
 	}
 }
 
@@ -38,6 +58,8 @@ func NewUnhealthyFleetConnector(fleetConnector *fleet.Connector, healthCheckTime
 	return &UnhealthyFleetConnector{
 		FleetConnector:  fleetConnector,
 		HealthCheckTime: healthCheckTime,
+		CheckedAt:       time.Now().UTC(),
+		LastHeartbeatAt: fleetConnector.HeartbeatAt,
 	}
 }
 
@@ -45,6 +67,8 @@ func NewUnhealthyFleetComponents(fleetComponent *fleet.Components, healthCheckTi
 	return &UnhealthyFleetComponents{
 		FleetComponent:  fleetComponent,
 		HealthCheckTime: healthCheckTime,
+		CheckedAt:       time.Now().UTC(),
+		LastHeartbeatAt: fleetComponent.HeartbeatAt,
 	}
 }
 
@@ -73,6 +97,14 @@ func (uf UnhealthyFleet) HealthCheckTimeStr() string {
 	return fmt.Sprintf("%d minutes", minutes)
 }
 
+func (uf UnhealthyFleet) LastHeartbeatTimeStr() string {
+	return util.HumanReadableTimeWithZone(uf.LastHeartbeatAt)
+}
+
+func (uf UnhealthyFleet) CheckedTimeStr() string {
+	return util.HumanReadableTimeWithZone(uf.CheckedAt)
+}
+
 func (ufc UnhealthyFleetComponents) GetEntityId() string {
 	return ufc.FleetComponent.Id.String()
 }
@@ -94,6 +126,14 @@ func (ufc UnhealthyFleetComponents) HealthCheckTimeStr() string {
 		return "1 minute"
 	}
 	return fmt.Sprintf("%d minutes", minutes)
+}
+
+func (ufc UnhealthyFleetComponents) LastHeartbeatTimeStr() string {
+	return util.HumanReadableTimeWithZone(ufc.LastHeartbeatAt)
+}
+
+func (ufc UnhealthyFleetComponents) CheckedTimeStr() string {
+	return util.HumanReadableTimeWithZone(ufc.CheckedAt)
 }
 
 func (ufc UnhealthyFleetConnector) GetEntityId() string {
@@ -119,4 +159,12 @@ func (ufc UnhealthyFleetConnector) HealthCheckTimeStr() string {
 		return "1 minute"
 	}
 	return fmt.Sprintf("%d minutes", minutes)
+}
+
+func (ufc UnhealthyFleetConnector) LastHeartbeatTimeStr() string {
+	return util.HumanReadableTimeWithZone(ufc.LastHeartbeatAt)
+}
+
+func (ufc UnhealthyFleetConnector) CheckedTimeStr() string {
+	return util.HumanReadableTimeWithZone(ufc.CheckedAt)
 }
