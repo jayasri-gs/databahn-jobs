@@ -7,22 +7,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
-
-	"github.com/google/uuid"
-
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/db-models/alerts_async"
 	logging "github.com/databahn-ai/go-logging/logger"
-	"github.com/hyperjumptech/grule-rule-engine/ast"
-	"github.com/hyperjumptech/grule-rule-engine/builder"
-	"github.com/hyperjumptech/grule-rule-engine/engine"
-	"github.com/hyperjumptech/grule-rule-engine/pkg"
+	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
@@ -97,6 +91,9 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 	defer alertsManager.Close(ctx)
 
 	for _, t := range tenants {
+		if t.Id.String() != "1be4494f-0251-4bf1-ad18-e09adc141aea" {
+			continue
+		}
 		tenantId := t.Id.String()
 		logging.GetLoggerWithContext(ctx).Info("Processing tenant", zap.String("tenantId", tenantId))
 
@@ -247,14 +244,6 @@ func matchesAlertCriteria(device model.DeviceClass, config *entities.LogSourceDe
 			zap.String("hostname", device.Hostname))
 	}
 
-	// Check include/exclude
-	if config.IncludeExclude == entities.Exclude {
-		logging.GetLogger().Info("Device excluded by include/exclude setting",
-			zap.String("hostname", device.Hostname),
-			zap.String("includeExclude", string(config.IncludeExclude)))
-		return false, nil
-	}
-
 	logging.GetLogger().Info("Device matches all alert criteria",
 		zap.String("hostname", device.Hostname))
 	return true, nil
@@ -264,96 +253,102 @@ func evaluateDeviceAgainstFiltersWithGrule(device model.DeviceClass, filters *en
 	if filters == nil || len(filters.Rules) == 0 {
 		return true, nil
 	}
-	expression, err := buildGruleExpression(filters)
-	if err != nil {
-		return false, err
-	}
-	rule := fmt.Sprintf(`
-		rule DeviceFilter "Check if device matches filter" {
-			when
-				%s
-			then
-				Result.IsMatch = true;
-		}`, expression)
 
-	dataContext := ast.NewDataContext()
-	err = dataContext.Add("Device", &device)
-	if err != nil {
-		return false, err
-	}
-	result := &RuleResult{IsMatch: false}
-	err = dataContext.Add("Result", result)
-	if err != nil {
-		return false, err
-	}
-	err = dataContext.Add("Strings", &StringHelpers{})
-	if err != nil {
-		return false, err
-	}
-
-	knowledgeLibrary := ast.NewKnowledgeLibrary()
-	ruleBuilder := builder.NewRuleBuilder(knowledgeLibrary)
-
-	err = ruleBuilder.BuildRuleFromResource("DeviceInventoryRules", "1.0.0", pkg.NewBytesResource([]byte(rule)))
-	if err != nil {
-		return false, err
-	}
-
-	engine := engine.NewGruleEngine()
-	knowledgeBase := knowledgeLibrary.GetKnowledgeBase("DeviceInventoryRules", "1.0.0")
-	if knowledgeBase == nil {
-		// This can happen if the rule has syntax errors and wasn't added.
-		return false, fmt.Errorf("knowledge base 'DeviceInventoryRules' not found, possibly due to a rule syntax error")
-	}
-	err = engine.Execute(dataContext, knowledgeBase)
-	if err != nil {
-		return false, err
-	}
-
-	return result.IsMatch, nil
+	return evaluateFilterRecursive(device, filters)
 }
 
-func buildGruleExpression(filter *entities.VcRuleFilter) (string, error) {
-	if len(filter.Rules) > 0 { // It's a group
-		var expressions []string
-		for _, rule := range filter.Rules {
-			expr, err := buildGruleExpression(&rule)
-			if err != nil {
-				return "", err
-			}
-			expressions = append(expressions, "("+expr+")")
-		}
-		combinator := " && "
-		if strings.ToUpper(filter.Combinator) == "OR" {
-			combinator = " || "
-		}
-		return strings.Join(expressions, combinator), nil
-	} else { // It's a single rule
-		normalizedField := strings.ToLower(strings.ReplaceAll(filter.Field, " ", ""))
-		mappedField, ok := deviceFieldMap[normalizedField]
-		if !ok {
-			return "", fmt.Errorf("unsupported rule field: %s", filter.Field)
-		}
-		field := "Device." + mappedField
-		value := filter.Value
-		// Escape double quotes in the value
-		value = strings.ReplaceAll(value, `"`, `\"`)
-		value = `"` + value + `"` // a string literal in GRL
+// Simple native Go rule evaluator - much faster than Grule
+func evaluateFilterRecursive(device model.DeviceClass, filter *entities.VcRuleFilter) (bool, error) {
+	// Handle rule groups (nested rules with combinators)
+	if len(filter.Rules) > 0 {
+		return evaluateRuleGroup(device, filter)
+	}
 
-		switch filter.Operator {
-		case "==", "=":
-			return fmt.Sprintf("%s == %s", field, value), nil
-		case "!=":
-			return fmt.Sprintf("%s != %s", field, value), nil
-		case "contains":
-			return fmt.Sprintf(`Strings.Contains(%s, %s)`, field, value), nil
-		case "startsWith":
-			return fmt.Sprintf(`Strings.StartsWith(%s, %s)`, field, value), nil
-		case "endsWith":
-			return fmt.Sprintf(`Strings.EndsWith(%s, %s)`, field, value), nil
-		default:
-			return "", fmt.Errorf("unsupported operator %s", filter.Operator)
+	// Handle single rule
+	return evaluateSingleRule(device, filter)
+}
+
+func evaluateRuleGroup(device model.DeviceClass, filter *entities.VcRuleFilter) (bool, error) {
+	if len(filter.Rules) == 0 {
+		return true, nil
+	}
+
+	// Evaluate all rules in the group
+	results := make([]bool, len(filter.Rules))
+	for i, rule := range filter.Rules {
+		result, err := evaluateFilterRecursive(device, &rule)
+		if err != nil {
+			return false, err
 		}
+		results[i] = result
+	}
+
+	// Apply combinator (AND by default, OR if specified)
+	if strings.ToUpper(filter.Combinator) == "OR" {
+		// OR logic - return true if any rule matches
+		for _, result := range results {
+			if result {
+				return true, nil
+			}
+		}
+		return false, nil
+	} else {
+		// AND logic - return true only if all rules match
+		for _, result := range results {
+			if !result {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+}
+
+func evaluateSingleRule(device model.DeviceClass, filter *entities.VcRuleFilter) (bool, error) {
+	// Get the field value from the device
+	fieldValue, err := getDeviceFieldValue(device, filter.Field)
+	if err != nil {
+		return false, err
+	}
+
+	// Apply the operator
+	return applyOperator(fieldValue, filter.Operator, filter.Value)
+}
+
+func getDeviceFieldValue(device model.DeviceClass, fieldName string) (string, error) {
+	normalizedField := strings.ToLower(strings.ReplaceAll(fieldName, " ", ""))
+
+	switch normalizedField {
+	case "hostname":
+		return device.Hostname, nil
+	case "sourceid":
+		return device.SourceID, nil
+	case "tenantid":
+		return device.TenantId, nil
+	case "reputation":
+		return device.Reputation, nil
+	case "sourcename":
+		return device.SourceName, nil
+	default:
+		return "", fmt.Errorf("unsupported field: %s", fieldName)
+	}
+}
+
+func applyOperator(fieldValue, operator, expectedValue string) (bool, error) {
+	switch operator {
+	case "==", "=":
+		return fieldValue == expectedValue, nil
+	case "!=":
+		return fieldValue != expectedValue, nil
+	case "contains":
+		return strings.Contains(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
+	case "doesNotContain":
+		return !strings.Contains(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
+	case "startsWith":
+		return strings.HasPrefix(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
+	case "endsWith":
+		return strings.HasSuffix(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
+	default:
+		return false, fmt.Errorf("unsupported operator: %s", operator)
 	}
 }
 
