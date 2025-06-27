@@ -387,7 +387,8 @@ func findActiveAndInactiveAgents(db *gorm.DB, tenantId string, healthCheckTime t
 
 	var activeResult []*agent.Agent
 	for _, a := range activeAgents {
-		activeResult = append(activeResult, &a)
+		temp := &a
+		activeResult = append(activeResult, temp)
 	}
 
 	healthCheckDuration := time.Since(healthCheckTime)
@@ -430,7 +431,8 @@ func findActiveAndInactiveFleet(db *gorm.DB, tenantId string, healthCheckTime, h
 
 	var activeResult []*fleet.Node
 	for _, a := range ActiveFleetNodes {
-		activeResult = append(activeResult, &a)
+		tmp := &a
+		activeResult = append(activeResult, tmp)
 	}
 
 	healthCheckDuration := time.Since(healthCheckTime)
