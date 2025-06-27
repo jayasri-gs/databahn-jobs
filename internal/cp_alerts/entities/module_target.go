@@ -18,8 +18,11 @@ type EmailConfig struct {
 }
 
 type ModuleTenantConfigData struct {
-	SourceList     []string `json:"sourceList"`
-	IncludeExclude string   `json:"includeExclude"`
+	SourceList struct {
+		SourceIds      []string `json:"sourceIds"`
+		IncludeExclude string   `json:"includeExclude"`
+	} `json:"sourceList"`
+	IncludeExclude string `json:"includeExclude"`
 }
 
 type Modules struct {

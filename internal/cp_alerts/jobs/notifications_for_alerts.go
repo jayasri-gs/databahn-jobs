@@ -24,9 +24,9 @@ import (
 	"gorm.io/gorm"
 )
 
-const EmailTemplatesBasePath = "/home/databahn/templates/"
+// const EmailTemplatesBasePath = "/home/databahn/templates/"
 
-// const EmailTemplatesBasePath = "templates/"
+const EmailTemplatesBasePath = "templates/"
 
 func SendNotificationsForAlerts(ctx context.Context) error {
 	db := config.GetDB()
@@ -198,10 +198,10 @@ func sendCustomerNotification(t tenant.Tenant, title, functionality string, aler
 	var filteredAlerts []alerts_async.Alert
 
 	config := moduleTenantConfigMap[t.Id.String()]
-	if config != nil && config.IncludeExclude == "EXCLUDE" {
+	if config != nil && config.SourceList.IncludeExclude == "EXCLUDE" {
 		// Create a map of source IDs for efficient lookup
 		sourceIdMap := make(map[string]bool)
-		for _, sourceId := range config.SourceList {
+		for _, sourceId := range config.SourceList.SourceIds {
 			sourceIdMap[sourceId] = true
 		}
 
