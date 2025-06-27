@@ -199,9 +199,9 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 			alertConfig, ok := alertConfigsBySourceId[s.ID]
 			var alertDuration time.Duration
 			if ok {
-				configuredDuration, err, skip := getAlertDuration(alertConfig, sourceId, tenantUuid.String())
-				if err != nil {
-					logger.GetLogger().Error("error while getting alert duration, ignoring", zap.Error(err), zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
+				configuredDuration, errr, skip := getAlertDuration(alertConfig, sourceId, tenantUuid.String())
+				if errr != nil {
+					logger.GetLogger().Error("error while getting alert duration, ignoring", zap.Error(errr), zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
 					continue
 				}
 				if skip {
@@ -300,7 +300,9 @@ func getAlertDuration(alertConfig entities.EntityAlertsConfig, sourceId, tenantI
 }
 
 func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(constants.IngestionCheckerFunctionalityTitle, ias.InactivityDurationStr())
+	title := fmt.Sprintf(constants.IngestionCheckerFunctionalityTitle, ias.InactivityDurationStr())
+	message := fmt.Sprintf(constants.IngestionCheckerFunctionalityMessage, ias.AlertConfigDurationStr(),
+		util.HumanReadableTimeWithZone(ias.CheckedAt), util.HumanReadableTimeWithZone(ias.LastEventTime))
 	functionality := alerts_async.LogSource
 	if ias.Source.Scope == "CLOUD" {
 		functionality = alerts_async.CloudLogSource
@@ -309,8 +311,8 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 		alerts_async.WithEntity(ias),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
 	)
 }

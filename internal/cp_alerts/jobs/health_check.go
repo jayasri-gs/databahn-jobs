@@ -35,9 +35,9 @@ const (
 	EnvFleetHealthCheckIgnoreTime = "FLEET_HEALTH_CHECK_IGNORE_TIME"
 )
 
-var AgentHealthCheckTimeNew = utils.GetEnvOrDefault(EnvAgentHealthCheckTime, "10")
-var FleetHealthCheckTimeNew = utils.GetEnvOrDefault(EnvFleetHealthCheckTime, "10")
-var FleetHealthCheckIgnoreTimeNew = utils.GetEnvOrDefault(EnvFleetHealthCheckIgnoreTime, "600")
+var AgentHealthCheckTimeNew = utils.GetEnvInt(EnvAgentHealthCheckTime, 10)
+var FleetHealthCheckTimeNew = utils.GetEnvInt(EnvFleetHealthCheckTime, 10)
+var FleetHealthCheckIgnoreTimeNew = utils.GetEnvInt(EnvFleetHealthCheckIgnoreTime, 600)
 
 func HealthCheckJob(ctx context.Context) error {
 
@@ -95,7 +95,7 @@ func HealthCheckJob(ctx context.Context) error {
 func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
-	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(AgentHealthCheckTimeNew)))
+	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(AgentHealthCheckTimeNew))
 	page, pageSize := 0, 50
 	for {
 		activeAgents, inactiveAgents, err := findActiveAndInactiveAgents(db, tenantId, healthCheckTime, page, pageSize)
@@ -162,8 +162,8 @@ func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsMan
 func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
-	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
-	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(healthchecker.FleetHealthCheckIgnoreTime)))
+	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(FleetHealthCheckTimeNew))
+	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(FleetHealthCheckIgnoreTimeNew))
 	page, pageSize := 0, 50
 	for {
 		activeFleet, inactiveFleet, err := findActiveAndInactiveFleet(db, tenantId, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
@@ -228,8 +228,8 @@ func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsMa
 func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {
 	db := config.GetDB()
 
-	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
-	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckIgnoreTimeNew)))
+	healthCheckTime := time.Now().Add(-time.Minute * time.Duration(FleetHealthCheckTimeNew))
+	healthCheckIgnoreTime := time.Now().Add(-time.Minute * time.Duration(FleetHealthCheckIgnoreTimeNew))
 	page, pageSize := 0, 50
 	for {
 		activeFleetConnectors, inactiveFleetConnectors, err := findActiveAndInactiveFleetConnectors(db, tenantId, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
@@ -293,8 +293,8 @@ func alertForFleetComponentsHealthCheck(ctx context.Context, alertsManager *aler
 	db := config.GetDB()
 
 	currentTime := time.Now()
-	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckTimeNew)))
-	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(util.GetEnvInt64FromString(FleetHealthCheckIgnoreTimeNew)))
+	healthCheckTime := currentTime.Add(-time.Minute * time.Duration(FleetHealthCheckTimeNew))
+	healthCheckIgnoreTime := currentTime.Add(-time.Minute * time.Duration(FleetHealthCheckIgnoreTimeNew))
 	page, pageSize := 0, 50
 	for {
 		activeFleetComponent, inactiveFleetComponents, err := findInactiveAndActiveFleetComponents(db, tenantId, healthCheckTime, healthCheckIgnoreTime, page, pageSize)
@@ -387,7 +387,8 @@ func findActiveAndInactiveAgents(db *gorm.DB, tenantId string, healthCheckTime t
 
 	var activeResult []*agent.Agent
 	for _, a := range activeAgents {
-		activeResult = append(activeResult, &a)
+		temp := &a
+		activeResult = append(activeResult, temp)
 	}
 
 	healthCheckDuration := time.Since(healthCheckTime)
@@ -430,7 +431,8 @@ func findActiveAndInactiveFleet(db *gorm.DB, tenantId string, healthCheckTime, h
 
 	var activeResult []*fleet.Node
 	for _, a := range ActiveFleetNodes {
-		activeResult = append(activeResult, &a)
+		tmp := &a
+		activeResult = append(activeResult, tmp)
 	}
 
 	healthCheckDuration := time.Since(healthCheckTime)
@@ -581,53 +583,57 @@ func sendFleetConnectorInAppAlerts(inactiveFleetConnectors []*model.UnhealthyFle
 }
 
 func buildAgentAlert(ia model.UnhealthyAgent) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(common.AgentHealthCheckerFunctionalityTitle, ia.HealthCheckTimeStr(), ia.GetEntityName())
+	title := fmt.Sprintf(common.AgentHealthCheckerFunctionalityTitle, ia.HealthCheckTimeStr(), ia.GetEntityName())
+	message := fmt.Sprintf(common.AgentHealthCheckerFunctionalityMessage, ia.HealthCheckTimeStr(), ia.CheckedTimeStr(), ia.LastHeartbeatTimeStr())
 	return alerts_async.NewAlert(
 		alerts_async.Agent,
 		alerts_async.WithEntity(ia),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10001, ""),
 	)
 }
 
 func buildFleetAlert(uf model.UnhealthyFleet) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(common.FleetNodeHealthCheckerFunctionalityTitle, uf.HealthCheckTimeStr(), uf.GetEntityName())
+	title := fmt.Sprintf(common.FleetNodeHealthCheckerFunctionalityTitle, uf.HealthCheckTimeStr(), uf.GetEntityName())
+	message := fmt.Sprintf(common.FleetNodeHealthCheckerFunctionalityMessage, uf.HealthCheckTimeStr(), uf.CheckedTimeStr(), uf.LastHeartbeatTimeStr())
 	return alerts_async.NewAlert(
 		alerts_async.FleetNode,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10002, ""),
 	)
 }
 
 func buildFleetConnectorAlert(uf model.UnhealthyFleetConnector) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(common.FleetConnectorHealthCheckerFunctionalityTitle, uf.HealthCheckTimeStr(), uf.GetEntityName())
+	title := fmt.Sprintf(common.FleetConnectorHealthCheckerFunctionalityTitle, uf.HealthCheckTimeStr(), uf.GetEntityName())
+	message := fmt.Sprintf(common.FleetConnectorHealthCheckerFunctionalityMessage, uf.HealthCheckTimeStr(), uf.CheckedTimeStr(), uf.LastHeartbeatTimeStr())
 	return alerts_async.NewAlert(
 		alerts_async.FleetConnector,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10004, ""),
 	)
 }
 
 func buildFleetComponentAlert(uf model.UnhealthyFleetComponents) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(common.FleetComponentHealthCheckTitle, uf.GetEntityName(), uf.HealthCheckTimeStr())
+	title := fmt.Sprintf(common.FleetComponentHealthCheckTitle, uf.GetEntityName(), uf.HealthCheckTimeStr())
+	message := fmt.Sprintf(common.FleetComponentHealthCheckerFunctionalityMessage, uf.HealthCheckTimeStr(), uf.CheckedTimeStr(), uf.LastHeartbeatTimeStr())
 	return alerts_async.NewAlert(
 		alerts_async.FleetComponent,
 		alerts_async.WithEntity(uf),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.HealthCheck),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10003, ""),
 	)
 }

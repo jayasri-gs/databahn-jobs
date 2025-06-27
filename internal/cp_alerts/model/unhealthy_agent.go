@@ -5,11 +5,14 @@ import (
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/agent"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 )
 
 type UnhealthyAgent struct {
 	Agent           *agent.Agent
 	HealthCheckTime time.Duration
+	CheckedAt       time.Time
+	LastHeartbeatAt time.Time
 }
 
 type HealthyAgent struct {
@@ -20,6 +23,8 @@ func NewUnhealthyAgent(agent *agent.Agent, healthCheckTime time.Duration) *Unhea
 	return &UnhealthyAgent{
 		Agent:           agent,
 		HealthCheckTime: healthCheckTime,
+		CheckedAt:       time.Now().UTC(),
+		LastHeartbeatAt: agent.HeartbeatAt,
 	}
 }
 
@@ -46,4 +51,12 @@ func (ua UnhealthyAgent) HealthCheckTimeStr() string {
 		return "1 minute"
 	}
 	return fmt.Sprintf("%d minutes", minutes)
+}
+
+func (ua UnhealthyAgent) LastHeartbeatTimeStr() string {
+	return util.HumanReadableTimeWithZone(ua.LastHeartbeatAt)
+}
+
+func (ua UnhealthyAgent) CheckedTimeStr() string {
+	return util.HumanReadableTimeWithZone(ua.CheckedAt)
 }
