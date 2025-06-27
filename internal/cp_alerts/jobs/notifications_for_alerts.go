@@ -24,9 +24,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// const EmailTemplatesBasePath = "/home/databahn/templates/"
+const EmailTemplatesBasePath = "/home/databahn/templates/"
 
-const EmailTemplatesBasePath = "templates/"
+// const EmailTemplatesBasePath = "templates/"
 
 func SendNotificationsForAlerts(ctx context.Context) error {
 	db := config.GetDB()
@@ -55,9 +55,6 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	}
 
 	for _, t := range tenants {
-		if t.Id.String() != "f5e31bb8-af80-40d8-a0e4-16f12187e4e4" {
-			continue
-		}
 		checkpoint, err := entities.GetAlertNotificationCheckpoint(db, t.Id)
 		tenantIdStr := t.Id.String()
 		if err != nil {
