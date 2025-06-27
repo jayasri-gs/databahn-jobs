@@ -56,6 +56,9 @@ func HumanReadableDuration(d time.Duration) string {
 		parts = append(parts, fmt.Sprintf("%d minute%s", minutes, plural(minutes)))
 	}
 
+	if len(parts) == 0 {
+		return "0 minutes"
+	}
 	return strings.Join(parts, " ")
 }
 
