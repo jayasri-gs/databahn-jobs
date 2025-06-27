@@ -201,7 +201,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 			if ok {
 				configuredDuration, errr, skip := getAlertDuration(alertConfig, sourceId, tenantUuid.String())
 				if errr != nil {
-					logger.GetLogger().Error("error while getting alert duration, ignoring", zap.Error(err), zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
+					logger.GetLogger().Error("error while getting alert duration, ignoring", zap.Error(errr), zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
 					continue
 				}
 				if skip {
