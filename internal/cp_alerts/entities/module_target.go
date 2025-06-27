@@ -58,7 +58,7 @@ type ModuleTenantMapping struct {
 	Module             Modules                 `json:"module" gorm:"foreignKey:ModuleID"`
 	Enabled            bool                    `gorm:"type:boolean;not null;column:enabled"`
 	Config             string                  `gorm:"type:text;not null;column:config"`
-	ModuleTenantConfig *ModuleTenantConfigData `gorm:"type:jsonb;column:module_tenant_config"`
+	ModuleTenantConfig *ModuleTenantConfigData `gorm:"type:json"`
 }
 
 func (m *ModuleTenantConfigData) Scan(value interface{}) error {
@@ -142,25 +142,4 @@ func GetTargetsForTenantByModule(db *gorm.DB, tenantId uuid.UUID) (map[string][]
 		targetsByModuleName[moduleName] = append(targetsByModuleName[moduleName], moduleTarget.Target)
 	}
 	return targetsByModuleName, nil
-}
-
-func GetModuleTenatConfigMap(tenantId uuid.UUID) (map[string]*ModuleTenantConfigData, error) {
-	// TODO: Implement this function if needed
-	return nil, nil
-}
-
-func ShouldExcludeSourceId(configData *ModuleTenantConfigData, sourceId string) bool {
-	if configData == nil {
-		return false
-	}
-
-	for _, id := range configData.SourceList {
-		if id == sourceId {
-			return configData.IncludeExclude == "EXCLUDE"
-		}
-	}
-
-	// If sourceId is not in the list and it's EXCLUDE, then don't exclude it
-	// If sourceId is not in the list and it's INCLUDE, then exclude it
-	return configData.IncludeExclude == "INCLUDE"
 }

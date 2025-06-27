@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // const EmailTemplatesBasePath = "/home/databahn/templates/"
@@ -45,6 +46,13 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	defer func() {
 		notificationManager.Close(ctx)
 	}()
+
+	// Load module tenant configs once for all tenants
+	moduleTenantConfigMap, err := loadModuleTenantConfigs(db)
+	if err != nil {
+		logger.GetLogger().Error("error while loading module tenant configs", zap.Error(err))
+		return err
+	}
 
 	for _, t := range tenants {
 		if t.Id.String() != "f5e31bb8-af80-40d8-a0e4-16f12187e4e4" {
@@ -144,7 +152,7 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 							logger.GetLogger().Info("support notification sent successfully", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality), zap.String("title", title))
 						}
 					}
-					err := sendCustomerNotification(t, title, functionality, alerts, targetsByModuleName, notificationManager)
+					err := sendCustomerNotification(t, title, functionality, alerts, targetsByModuleName, notificationManager, moduleTenantConfigMap)
 					if err != nil {
 						logger.GetLogger().Error("failed to send customer notification", zap.Error(err), zap.String("tenant", tenantIdStr))
 						return err
@@ -169,34 +177,45 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	return nil
 }
 
-func sendCustomerNotification(t tenant.Tenant, title, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager) error {
-
-	db := config.GetDB()
-
-	var mapping entities.ModuleTenantMapping
-
-	err := db.Where("tenant_id = ?", "f5e31bb8-af80-40d8-a0e4-16f12187e4e4").Find(&mapping).Error
+// loadModuleTenantConfigs loads all module tenant configs and creates a map for efficient lookup
+func loadModuleTenantConfigs(db *gorm.DB) (map[string]*entities.ModuleTenantConfigData, error) {
+	var mappings []entities.ModuleTenantMapping
+	err := db.Find(&mappings).Error
 	if err != nil {
-		logger.GetLogger().Error("error while fetching module tenant mapping", zap.Error(err), zap.String("tenant", t.Id.String()))
-		return err
+		return nil, err
 	}
+
+	configMap := make(map[string]*entities.ModuleTenantConfigData)
+	for _, mapping := range mappings {
+		if mapping.ModuleTenantConfig != nil {
+			configMap[mapping.TenantID.String()] = mapping.ModuleTenantConfig
+		}
+	}
+
+	return configMap, nil
+}
+
+func sendCustomerNotification(t tenant.Tenant, title, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, moduleTenantConfigMap map[string]*entities.ModuleTenantConfigData) error {
 
 	// Filter alerts based on module_tenant_config
 	var filteredAlerts []alerts_async.Alert
-	if mapping.ModuleTenantConfig != nil {
+
+	config := moduleTenantConfigMap[t.Id.String()]
+	if config != nil && config.IncludeExclude == "EXCLUDE" {
+		// Create a map of source IDs for efficient lookup
+		sourceIdMap := make(map[string]bool)
+		for _, sourceId := range config.SourceList {
+			sourceIdMap[sourceId] = true
+		}
+
+		// Filter alerts using the map
 		for _, alert := range alerts {
-			// Check if this alert's source should be excluded based on config
-			if !shouldExcludeAlert(alert, mapping.ModuleTenantConfig) {
+			if !sourceIdMap[alert.FunctionalityEntityId] {
 				filteredAlerts = append(filteredAlerts, alert)
-			} else {
-				logger.GetLogger().Info("alert filtered out based on module tenant config",
-					zap.String("tenant", t.Id.String()),
-					zap.String("functionality", functionality),
-					zap.String("sourceId", alert.FunctionalityEntityId))
 			}
 		}
 	} else {
-		// If no config, include all alerts
+		// If no config or not EXCLUDE, include all alerts
 		filteredAlerts = alerts
 	}
 
@@ -239,33 +258,6 @@ func sendCustomerNotification(t tenant.Tenant, title, functionality string, aler
 		}
 	}
 	return nil
-}
-
-// shouldExcludeAlert checks if an alert should be excluded based on the module tenant config
-func shouldExcludeAlert(alert alerts_async.Alert, config *entities.ModuleTenantConfigData) bool {
-	if config == nil {
-		return false
-	}
-
-	// Check if the alert's source ID is in the sourceList
-	sourceIdInList := false
-	for _, sourceId := range config.SourceList {
-		if sourceId == alert.FunctionalityEntityId {
-			sourceIdInList = true
-			break
-		}
-	}
-
-	// If includeExclude is "EXCLUDE" and sourceId is in the list, exclude it
-	// If includeExclude is "INCLUDE" and sourceId is NOT in the list, exclude it
-	if config.IncludeExclude == "EXCLUDE" {
-		return sourceIdInList
-	} else if config.IncludeExclude == "INCLUDE" {
-		return !sourceIdInList
-	}
-
-	// Default: don't exclude
-	return false
 }
 
 func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notificationManager *notification.NotificationManager) error {
