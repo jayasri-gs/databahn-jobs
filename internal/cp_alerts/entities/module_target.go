@@ -1,16 +1,25 @@
 package entities
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
-	"time"
 )
 
 type EmailConfig struct {
 	To  string `json:"to"`
 	CC  string `json:"cc"`
 	BCC string `json:"bcc"`
+}
+
+type ModuleTenantConfigData struct {
+	SourceList     []string `json:"sourceList"`
+	IncludeExclude string   `json:"includeExclude"`
 }
 
 type Modules struct {
@@ -43,11 +52,39 @@ type ModuleTargets struct {
 }
 
 type ModuleTenantMapping struct {
-	ID       uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primary_key;column:id"`
-	TenantID uuid.UUID `gorm:"type:uuid;not null;column:tenant_id"`
-	ModuleID uuid.UUID `gorm:"type:uuid;not null;column:module_id"`
-	Module   Modules   `json:"module" gorm:"foreignKey:ModuleID"`
-	Enabled  bool      `gorm:"type:boolean;not null;column:enabled"`
+	ID                 uuid.UUID               `gorm:"type:uuid;default:uuid_generate_v4();primary_key;column:id"`
+	TenantID           uuid.UUID               `gorm:"type:uuid;not null;column:tenant_id"`
+	ModuleID           uuid.UUID               `gorm:"type:uuid;not null;column:module_id"`
+	Module             Modules                 `json:"module" gorm:"foreignKey:ModuleID"`
+	Enabled            bool                    `gorm:"type:boolean;not null;column:enabled"`
+	Config             string                  `gorm:"type:text;not null;column:config"`
+	ModuleTenantConfig *ModuleTenantConfigData `gorm:"type:json"`
+}
+
+func (m *ModuleTenantConfigData) Scan(value interface{}) error {
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("failed to unmarshal JSONB value: %v", value)
+	}
+	return json.Unmarshal(bytes, m)
+}
+
+func (m ModuleTenantConfigData) Value() (driver.Value, error) {
+	return json.Marshal(m)
+}
+
+func GetAllModuleTenantConfigToTenantId(db *gorm.DB, tenantId uuid.UUID) (map[string][]ModuleTenantMapping, error) {
+	var moduleTenantMappings []ModuleTenantMapping
+	var moduleTenantConfigToTenantId = make(map[string][]ModuleTenantMapping)
+	err := db.Where("tenant_id = ? ", tenantId).Find(&moduleTenantMappings).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, mp := range moduleTenantMappings {
+		moduleTenantConfigToTenantId[mp.TenantID.String()] = append(moduleTenantConfigToTenantId[mp.TenantID.String()], mp)
+	}
+	return moduleTenantConfigToTenantId, nil
 }
 
 func GetTargetsForModule(db *gorm.DB, tenantId uuid.UUID, moduleName string) ([]Targets, error) {

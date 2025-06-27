@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+	"text/template"
+	"time"
+
 	notification_common "github.com/databahn-ai/common-utils/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -16,10 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
-	"html/template"
-	"strconv"
-	"strings"
-	"time"
+	"gorm.io/gorm"
 )
 
 const EmailTemplatesBasePath = "/home/databahn/templates/"
@@ -45,10 +47,14 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 		notificationManager.Close(ctx)
 	}()
 
+	// Load module tenant configs once for all tenants
+	moduleTenantConfigMap, err := loadModuleTenantConfigs(db)
+	if err != nil {
+		logger.GetLogger().Error("error while loading module tenant configs", zap.Error(err))
+		return err
+	}
+
 	for _, t := range tenants {
-		if t.Id.String() != "f5e31bb8-af80-40d8-a0e4-16f12187e4e4" {
-			continue
-		}
 		checkpoint, err := entities.GetAlertNotificationCheckpoint(db, t.Id)
 		tenantIdStr := t.Id.String()
 		if err != nil {
@@ -143,7 +149,7 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 							logger.GetLogger().Info("support notification sent successfully", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality), zap.String("title", title))
 						}
 					}
-					err := sendCustomerNotification(t, title, functionality, alerts, targetsByModuleName, notificationManager)
+					err := sendCustomerNotification(t, title, functionality, alerts, targetsByModuleName, notificationManager, moduleTenantConfigMap)
 					if err != nil {
 						logger.GetLogger().Error("failed to send customer notification", zap.Error(err), zap.String("tenant", tenantIdStr))
 						return err
@@ -168,13 +174,65 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	return nil
 }
 
-func sendCustomerNotification(t tenant.Tenant, title, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager) error {
-	subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, title)
-	body, err := buildEmailBody(title, alerts)
+// loadModuleTenantConfigs loads all module tenant configs and creates a map for efficient lookup
+func loadModuleTenantConfigs(db *gorm.DB) (map[string]*entities.ModuleTenantConfigData, error) {
+	var mappings []entities.ModuleTenantMapping
+	err := db.Find(&mappings).Error
 	if err != nil {
-		logger.GetLogger().Error("error while building email body", zap.Error(err), zap.String("tenant", t.Id.String()))
+		return nil, err
+	}
+
+	configMap := make(map[string]*entities.ModuleTenantConfigData)
+	for _, mapping := range mappings {
+		if mapping.ModuleTenantConfig != nil {
+			configMap[mapping.TenantID.String()] = mapping.ModuleTenantConfig
+		}
+	}
+
+	return configMap, nil
+}
+
+func sendCustomerNotification(t tenant.Tenant, title, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, moduleTenantConfigMap map[string]*entities.ModuleTenantConfigData) error {
+
+	// Filter alerts based on module_tenant_config
+	var filteredAlerts []alerts_async.Alert
+
+	config := moduleTenantConfigMap[t.Id.String()]
+	if config != nil && config.IncludeExclude == "EXCLUDE" {
+		// Create a map of source IDs for efficient lookup
+		sourceIdMap := make(map[string]bool)
+		for _, sourceId := range config.SourceList {
+			sourceIdMap[sourceId] = true
+		}
+
+		// Filter alerts using the map
+		for _, alert := range alerts {
+			if !sourceIdMap[alert.FunctionalityEntityId] {
+				filteredAlerts = append(filteredAlerts, alert)
+			}
+		}
+	} else {
+		// If no config or not EXCLUDE, include all alerts
+		filteredAlerts = alerts
+	}
+
+	// If no alerts remain after filtering, don't send notification
+	if len(filteredAlerts) == 0 {
+		logger.GetLogger().Info("no alerts remaining after filtering, skipping notification",
+			zap.String("tenant", t.Id.String()),
+			zap.String("functionality", functionality))
+		return nil
+	}
+
+	subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, title)
+
+	// Rebuild email body with filtered alerts
+	body, err := buildEmailBody(title, filteredAlerts)
+	if err != nil {
+		logger.GetLogger().Error("error while building email body with filtered alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
 		return err
 	}
+
 	for modulesName, targets := range targetsByModuleName {
 		if alertFunctionalityMatchesModuleName(functionality, modulesName) {
 			var databahnTargets []*notification_common.DatabahnTarget
