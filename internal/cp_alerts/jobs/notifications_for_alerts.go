@@ -24,9 +24,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// const EmailTemplatesBasePath = "/home/databahn/templates/"
+const EmailTemplatesBasePath = "/home/databahn/templates/"
 
-const EmailTemplatesBasePath = "templates/"
+// const EmailTemplatesBasePath = "templates/"
 
 func SendNotificationsForAlerts(ctx context.Context) error {
 	db := config.GetDB()
