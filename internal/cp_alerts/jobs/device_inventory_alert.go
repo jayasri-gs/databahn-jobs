@@ -91,9 +91,7 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 	defer alertsManager.Close(ctx)
 
 	for _, t := range tenants {
-		if t.Id.String() != "1be4494f-0251-4bf1-ad18-e09adc141aea" {
-			continue
-		}
+
 		tenantId := t.Id.String()
 		logging.GetLoggerWithContext(ctx).Info("Processing tenant", zap.String("tenantId", tenantId))
 
@@ -507,7 +505,7 @@ func buildDeviceAlert(dia model.DeviceInventoryAlerts) (*alerts_async.Alert, err
 	return alerts_async.NewAlert(functionality,
 		alerts_async.WithEntity(dia),
 		alerts_async.WithCriticality(alerts_async.Critical),
-		alerts_async.WithFunctionalityType(alerts_async.SilentDeviceChecker),
+		alerts_async.WithFunctionalityType(alerts_async.DeviceReputationChecker),
 		alerts_async.WithTitle(details),
 		alerts_async.WithMessage(details),
 		alerts_async.WithErrorCode(alerts_async.DNDW10003, ""),
