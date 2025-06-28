@@ -2,7 +2,6 @@ package tenant
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"strconv"
 	"time"
@@ -87,10 +86,10 @@ func (d *Digest) CalculateVolumeReductionAchievements() {
 }
 
 func (d *Digest) GetIngestionBreakdown() error {
-	q := fmt.Sprintf(`tags.component_name: "ingestion" AND name: "total_events_delivered" AND tags.db_tenant_id.keyword: "%s"`, d.TenantId.String())
+	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	agg := "tags.db_event_source_id.keyword"
 
-	ingestionStats, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime)
+	ingestionStats, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime, d.TenantId)
 	if err != nil {
 		return err
 	}
@@ -161,9 +160,9 @@ func (d *Digest) CalculateIngestionStats(eventsIngested any, sizeIngested any) {
 
 func (d *Digest) GetSensitiveDataTrackingStats() error {
 	d.SensitiveDataTracking = make(map[string]string)
-	q := fmt.Sprintf(`name: "sensitive_total" AND tags.db_tenant_id.keyword: "%s"`, d.TenantId.String())
+	q := `name: "sensitive_total"`
 	agg := "tags.sensitive_type.keyword"
-	s, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime)
+	s, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime, d.TenantId)
 	if err != nil {
 		return err
 	}
