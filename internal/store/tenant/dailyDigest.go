@@ -2,7 +2,6 @@ package tenant
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"strconv"
 	"time"
@@ -161,7 +160,7 @@ func (d *Digest) CalculateIngestionStats(eventsIngested any, sizeIngested any) {
 
 func (d *Digest) GetSensitiveDataTrackingStats() error {
 	d.SensitiveDataTracking = make(map[string]string)
-	q := fmt.Sprintf(`name: "sensitive_total" AND tags.db_tenant_id.keyword: "%s"`, d.TenantId.String())
+	q := `name: "sensitive_total"`
 	agg := "tags.sensitive_type.keyword"
 	s, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime, d.TenantId)
 	if err != nil {
