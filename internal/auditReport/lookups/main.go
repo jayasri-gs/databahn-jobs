@@ -68,7 +68,8 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 }
 func getQueryForLookupData(ctx context.Context, req models.AuditReport) (string, error) {
 	filterToDbColumnMap := map[string]string{
-		"types": "type",
+		"status": "status",
+		"types":  "type",
 	}
 
 	query, err := common.GetDbQueryWithoutTimeFilters(req, filterToDbColumnMap)

@@ -69,6 +69,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 func getQueryForVolumeControllerData(ctx context.Context, req models.AuditReport) (string, error) {
 	filterToDbColumnMap := map[string]string{
 		"scope":        "scope",
+		"status":       "status",
 		"sources":      "log_source_id",
 		"types":        "type",
 		"destinations": "destination_id",

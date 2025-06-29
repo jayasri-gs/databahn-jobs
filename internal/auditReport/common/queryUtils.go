@@ -38,8 +38,14 @@ func GetDbQueryWithTimeFilters(req models.AuditReport, filterToDbColumnMap map[s
 	var configData map[string]interface{}
 	configData = reportConfiguration["filter"].(map[string]interface{})
 
-	startTime := configData["startTime"].(string)
-	endTime := configData["endTime"].(string)
+	startTime, ok := configData["startTime"].(string)
+	if !ok || startTime == "" {
+		return "", "", "", fmt.Errorf("startTime missing or not a string in config")
+	}
+	endTime, ok := configData["endTime"].(string)
+	if !ok || endTime == "" {
+		return "", "", "", fmt.Errorf("endTime missing or not a string in config")
+	}
 
 	err = ValidateConfig(startTime, endTime)
 	if err != nil {

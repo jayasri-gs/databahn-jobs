@@ -46,11 +46,15 @@ func getDeviceInventoryReportConfigFromRequest(ctx context.Context, req models.A
 	if _, ok := configData["sources"]; ok {
 		sources, _ = convertInterfaceSliceToStringSlice(configData["sources"].([]interface{}))
 	}
-	if _, ok := configData["startTime"].(string); ok {
-		startTime = configData["startTime"].(string)
+	if v, ok := configData["startTime"].(string); ok {
+		startTime = v
 	}
-	if _, ok := configData["endTime"].(string); ok {
-		endTime = configData["endTime"].(string)
+	if v, ok := configData["endTime"].(string); ok {
+		endTime = v
+	}
+	if startTime == "" || endTime == "" {
+		logging.GetLoggerWithContext(ctx).Error("startTime or endTime missing or empty in device inventory report config", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return nil, "", "", fmt.Errorf("startTime or endTime missing or empty in device inventory report config")
 	}
 	return sources, startTime, endTime, nil
 }

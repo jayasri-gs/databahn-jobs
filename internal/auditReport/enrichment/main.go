@@ -69,6 +69,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 func getQueryForEnrichmentData(ctx context.Context, req models.AuditReport) (string, error) {
 	filterToDbColumnMap := map[string]string{
 		"lookups":      "lookup_id",
+		"status":       "status",
 		"sources":      "source_id",
 		"destinations": "destination_id",
 		"dataplaneId":  "data_plane_id",
