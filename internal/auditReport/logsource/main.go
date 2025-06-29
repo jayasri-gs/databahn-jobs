@@ -91,6 +91,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query,
 func getQueryForLogSourceData(ctx context.Context, req models.AuditReport) (string, string, string, error) {
 	filterToDbColumnMap := map[string]string{
 		"scope":       "scope",
+		"status":      "status",
 		"vendor":      "vendor",
 		"device":      "device",
 		"logType":     "log_type",
@@ -101,6 +102,9 @@ func getQueryForLogSourceData(ctx context.Context, req models.AuditReport) (stri
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting query from config", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return "", "", "", err
+	}
+	if startTime == "" || endTime == "" {
+		return "", "", "", fmt.Errorf("startTime or endTime missing in logsource report config")
 	}
 	logging.GetLoggerWithContext(ctx).Info("query for logsource data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil

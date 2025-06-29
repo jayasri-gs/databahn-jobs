@@ -86,7 +86,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, start
 
 	for {
 		writeHeader = writeHeader && offset == 0
-		rows, columns, err := getRowsAndColumnsFromAuditTable(pageSize, offset, startTime, endTime)
+		rows, columns, err := getRowsAndColumnsFromAuditTable(pageSize, offset, startTime, endTime, req.TenantId)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from audit table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
@@ -112,8 +112,8 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, start
 	}
 	return nil
 }
-func getRowsAndColumnsFromAuditTable(pageSize int, offset int, startTime string, endTime string) (*sql.Rows, []string, error) {
-	rows, err := config.GetDB().Table("db_audit").Limit(pageSize).Offset(offset).Where("timestamp >= ? and timestamp <= ?", startTime, endTime).Order("timestamp").Rows()
+func getRowsAndColumnsFromAuditTable(pageSize int, offset int, startTime string, endTime string, tenantId string) (*sql.Rows, []string, error) {
+	rows, err := config.GetDB().Table("db_audit").Limit(pageSize).Offset(offset).Where("tenant_uuid = ? and timestamp >= ? and timestamp <= ?", tenantId, startTime, endTime).Order("timestamp").Rows()
 	if err != nil {
 		return nil, nil, err
 	}
