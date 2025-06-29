@@ -3,12 +3,14 @@ package model
 import "github.com/databahn-ai/databahn-jobs/internal/store/source"
 
 type UnparsedEventSource struct {
-	Source *source.Source
+	Source        *source.Source
+	UnparsedCount int
 }
 
-func NewUnparsedEventSource(source *source.Source) *UnparsedEventSource {
+func NewUnparsedEventSource(source *source.Source, unparsedCount int) *UnparsedEventSource {
 	return &UnparsedEventSource{
-		Source: source,
+		Source:        source,
+		UnparsedCount: unparsedCount,
 	}
 }
 
@@ -23,4 +25,8 @@ func (ias UnparsedEventSource) GetDataPlaneId() string {
 }
 func (ias UnparsedEventSource) GetTenantId() string {
 	return ias.Source.TenantID.String()
+}
+
+func (ias UnparsedEventSource) GetUnparsedCount() int {
+	return ias.UnparsedCount
 }

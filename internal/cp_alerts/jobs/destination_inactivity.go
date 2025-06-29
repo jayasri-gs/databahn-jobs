@@ -218,15 +218,19 @@ func getDestinationIdToLastEventTime(ctx context.Context, osClient *opensearch.C
 
 }
 func buildDestAlert(iad model.InactiveDestination) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(constants.DeliveryCheckerFunctionalityTitle, defaultAlertDuration30Min)
+	now := time.Now().UTC()
+	actualDifference := now.Sub(iad.LastEventTime)
+	title := fmt.Sprintf(constants.DeliveryCheckerFunctionalityTitle, util.HumanReadableDuration(actualDifference))
+	message := fmt.Sprintf(constants.DeliveryCheckerFunctionalityMessage, util.HumanReadableDuration(defaultAlertDuration30Min),
+		util.HumanReadableTimeWithZone(now), util.HumanReadableTimeWithZone(iad.LastEventTime))
 	functionality := alerts_async.Dispenser
 
 	return alerts_async.NewAlert(functionality,
 		alerts_async.WithEntity(iad),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10002, ""),
 	)
 }

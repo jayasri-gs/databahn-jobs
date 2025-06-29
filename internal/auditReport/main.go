@@ -2,6 +2,7 @@ package auditReport
 
 import (
 	"context"
+	"errors"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/agentReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/alertReport"
@@ -113,6 +114,7 @@ func handleSuccessRequestChannel(ctx context.Context, reportProcessor ReportProc
 			alerts_async.WithFunctionalityType(alerts_async.AuditReportGeneration),
 			alerts_async.WithTitle(consts.SuccessTitle),
 			alerts_async.WithMessage(consts.SuccessTitle),
+			alerts_async.WithErrorCode(alerts_async.DIIS10001, ""),
 		)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while creating success alert", zap.Error(err))
@@ -271,6 +273,9 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 }
 
 func handleAlerts(alertsManager *alert.AlertsManager, successAlerts []*alerts_async.Alert, errorAlerts []*alerts_async.Alert) error {
+	if alertsManager == nil {
+		return errors.New("alertsManager is nil")
+	}
 
 	if len(successAlerts) > 0 {
 		alertsManager.SendAlerts(successAlerts)
@@ -304,7 +309,9 @@ func handleErrorRequests(requests []models.FailedRequests) ([]*alerts_async.Aler
 				alerts_async.WithCriticality(alerts_async.Info),
 				alerts_async.WithFunctionalityType(alerts_async.AuditReportGeneration),
 				alerts_async.WithTitle(consts.SuccessTitle),
-				alerts_async.WithMessage(consts.SuccessTitle))
+				alerts_async.WithMessage(consts.SuccessTitle),
+				alerts_async.WithErrorCode(alerts_async.DIIS20001, ""),
+			)
 			if err != nil {
 				logging.GetLogger().Error("error while creating error alert", zap.Error(err), zap.String("request_id", req.RequestId), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId))
 			}

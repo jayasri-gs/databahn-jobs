@@ -1,9 +1,8 @@
 package model
 
 import (
-	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
-	"strings"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"time"
 )
 
@@ -28,42 +27,12 @@ func (ias InActiveSource) GetTenantId() string {
 }
 
 func (ias InActiveSource) InactivityDurationStr() string {
-	d := ias.AlertDuration
-	d = d.Round(time.Second)
-
-	days := d / (24 * time.Hour)
-	d -= days * 24 * time.Hour
-
-	hours := d / time.Hour
-	d -= hours * time.Hour
-
-	minutes := d / time.Minute
-	d -= minutes * time.Minute
-
-	seconds := d / time.Second
-
-	var parts []string
-	if days > 0 {
-		parts = append(parts, fmt.Sprintf("%d day%s", days, plural(days)))
-	}
-	if hours > 0 {
-		parts = append(parts, fmt.Sprintf("%d hour%s", hours, plural(hours)))
-	}
-	if minutes > 0 {
-		parts = append(parts, fmt.Sprintf("%d minute%s", minutes, plural(minutes)))
-	}
-	if seconds > 0 || len(parts) == 0 {
-		parts = append(parts, fmt.Sprintf("%d second%s", seconds, plural(seconds)))
-	}
-
-	return strings.Join(parts, " ")
+	d := ias.CheckedAt.Sub(ias.LastEventTime)
+	return util.HumanReadableDuration(d)
 }
 
-func plural(v time.Duration) string {
-	if v == 1 {
-		return ""
-	}
-	return "s"
+func (ias InActiveSource) AlertConfigDurationStr() string {
+	return util.HumanReadableDuration(ias.AlertDuration)
 }
 
 func NewInActiveSource(source *source.Source, lastEventTime time.Time, alertDuration time.Duration) *InActiveSource {

@@ -12,9 +12,10 @@ import (
 
 type Interval string
 
-const Minute Interval = "Minute"
+const Minute Interval = "MINUTE"
 const Hour Interval = "HOUR"
 const Day Interval = "DAY"
+const Week Interval = "WEEK"
 
 type IncludeExclude string
 
@@ -79,8 +80,10 @@ func (d *Duration) GetDuration() (time.Duration, error) {
 		return time.Duration(d.Time) * time.Hour, nil
 	case Day:
 		return time.Duration(d.Time) * time.Hour * 24, nil
+	case Week:
+		return time.Duration(d.Time) * time.Hour * 24 * 7, nil
 	default:
-		return 0, nil
+		return 0, fmt.Errorf("invalid interval: %s", d.Interval)
 	}
 }
 
