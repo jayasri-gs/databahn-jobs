@@ -50,17 +50,13 @@ func formatNumber(num float64) string {
 }
 
 func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string, alerts []statistics.AlertDocument) *Digest {
-	topAlerts := alerts
-	if len(alerts) > 5 {
-		topAlerts = alerts[:5]
-	}
 
 	return &Digest{
 		TenantId:  tenantId,
 		Name:      tenantName,
 		StartTime: startTime,
 		EndTime:   endTime,
-		Alerts:    topAlerts,
+		Alerts:    alerts,
 	}
 }
 
@@ -186,7 +182,7 @@ func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.Alert
 	var searchAfter []any
 
 	for {
-		res, newSearchAfter, err := os.SearchPaginated(ctx, os.GetClient(), common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "desc"}})
+		res, newSearchAfter, err := os.SearchPaginated(ctx, os.GetClient(), common.AlertsIndex, q, 5, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "desc"}})
 		if err != nil {
 			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", common.AlertsIndex))
 			return nil, err
