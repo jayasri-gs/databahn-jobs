@@ -3,6 +3,9 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
@@ -21,8 +24,6 @@ import (
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"strings"
-	"time"
 )
 
 /*
@@ -69,9 +70,20 @@ func AlertForNoEventsFromSources(ctx context.Context) error {
 	for _, t := range tenants {
 		tenantUuid := t.Id
 		tenantId := tenantUuid.String()
+
+		sources, err := getAllLogSourcesOfTenant(db, tenantUuid)
+		if err != nil {
+			logger.GetLogger().Error("error while getting all log sources of tenant", zap.Error(err))
+			return err
+		}
+
+		if len(sources) == 0 {
+			continue
+		}
+
 		logger.GetLogger().Info("checking for inactive sources", zap.String("tenantId", tenantId))
 
-		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(tenantId, ctx, osClient)
+		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(tenantId, ctx, osClient, sources)
 		if err != nil {
 			return err
 		}
@@ -232,7 +244,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 	return sourcesToAlert, activeSources, nil
 }
 
-func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *opensearch.Client) (map[string]time.Time, error) {
+func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *opensearch.Client, sources []source.Source) (map[string]time.Time, error) {
 	statsAlias := os.StatisticsIndexAlias(tenantId)
 	aggFunc := os.AggregationFunction{
 		Function: "max",
@@ -259,6 +271,13 @@ func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *
 		}
 		after = newAfter
 	}
+	logger.GetLoggerWithContext(ctx).Debug("Checking for sources that were newly onboarded and updating them in open search map")
+	for _, s := range sources {
+		if _, ok := sourceIdToLastEventTime[s.ID.String()]; !ok {
+			sourceIdToLastEventTime[s.ID.String()] = s.UpdatedAt.UTC()
+		}
+	}
+
 	return sourceIdToLastEventTime, nil
 }
 
@@ -315,4 +334,11 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
 	)
+}
+
+func getAllLogSourcesOfTenant(db *gorm.DB, tenantId uuid.UUID) ([]source.Source, error) {
+	var sources []source.Source
+	result := db.Where("tenant_id = ? AND status = 'ACTIVE'", tenantId).Find(&sources)
+
+	return sources, result.Error
 }
