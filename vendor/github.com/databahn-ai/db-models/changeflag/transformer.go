@@ -73,7 +73,17 @@ type RenameConfig struct {
 	RenameFields []RenameFields `json:"renameFields"`
 }
 type RenameConfiguration struct {
-	RenameFields []RenameFieldsWithOperators `json:"renameFields"`
+	RenameFields  []RenameFieldsWithOperators `json:"renameFields"`
+	DerivedFields []DerivedField              `json:"derivedFields"`
+}
+type DerivedField struct {
+	Include       bool                     `json:"include"`
+	AttributeName string                   `json:"attributeName"`
+	SourceField   SourceField              `json:"sourceField"`
+	Operators     []TransformationOperator `json:"operators"`
+}
+type SourceField struct {
+	DatabahnAttribute string `json:"databahnAttribute"`
 }
 type TrimConfig struct {
 	StripLeading  bool `json:"stripLeading"`
@@ -219,6 +229,7 @@ type OcsfTransformationBlock struct {
 	OcsfCategory       string                      `json:"ocsfCategory"`
 	OcsfClass          string                      `json:"ocsfClass"`
 	Mappings           []RenameFieldsWithOperators `json:"mappings"`
+	DerivedFields      []DerivedField              `json:"derivedFields"`
 	Default            bool                        `json:"default"`
 }
 type OcsfFilterCriteria struct {
