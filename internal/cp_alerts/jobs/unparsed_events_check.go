@@ -45,12 +45,13 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 	}()
 
 	for _, t := range tenants {
+
 		tenantUuid := t.Id
 		tenantId := tenantUuid.String()
 		logger.GetLogger().Info("checking for unparsed events", zap.String("tenantId", tenantId))
 
 		endTime := time.Now().UTC()
-		startTime := endTime.Add(-time.Hour)
+		startTime := endTime.Add(-24 * time.Hour)
 
 		unparsedAgg, err := getUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), tenantId)
 		if err != nil {
@@ -109,7 +110,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 				if percentage, hasPercentage := sourceIdToUnparsedPercentage[sourceId]; hasPercentage {
 					if percentage >= MinUnparsedEventsPercentage {
 						unparsedCount := int(sourceIdToUnparsedCount[sourceId])
-						ias := model.NewUnparsedEventSource(&s, unparsedCount)
+						ias := model.NewUnparsedEventSource(&s, unparsedCount, percentage)
 						sourcesToAlert = append(sourcesToAlert, ias)
 						logger.GetLogger().Info("source meets alert threshold",
 							zap.String("sourceId", sourceId),
@@ -173,8 +174,6 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 
 func getUnparsedEventsForTenant(ctx context.Context, startTime string, endTime string, tenantId string) (statistics.AggregateResponse, error) {
 
-	statsAlias := os.StatisticsIndexAlias(tenantId)
-
 	q := `tags.component_name: "parser" AND name: "total_events_delivered" AND namespace:"parsing-service-unparsed"`
 	query := statistics.AddDateRange(q, startTime, endTime)
 	groupBy := []string{"tags.db_event_source_id.keyword"}
@@ -186,7 +185,7 @@ func getUnparsedEventsForTenant(ctx context.Context, startTime string, endTime s
 	var after map[string]any
 
 	for {
-		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, statsAlias, query, groupBy, aggregations, after)
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatsIndex+"*", query, groupBy, aggregations, after)
 		if err != nil {
 			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
 			return statistics.AggregateResponse{}, err
@@ -214,8 +213,6 @@ func getUnparsedEventsForTenant(ctx context.Context, startTime string, endTime s
 
 func getTotalEventsForTenant(ctx context.Context, startTime string, endTime string, tenantId string) (statistics.AggregateResponse, error) {
 
-	statsAlias := os.StatisticsIndexAlias(tenantId)
-
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
 	groupBy := []string{"tags.db_event_source_id.keyword"}
@@ -227,7 +224,7 @@ func getTotalEventsForTenant(ctx context.Context, startTime string, endTime stri
 	var after map[string]any
 
 	for {
-		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, statsAlias, query, groupBy, aggregations, after)
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatsIndex+"*", query, groupBy, aggregations, after)
 		if err != nil {
 			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
 			return statistics.AggregateResponse{}, err
@@ -272,14 +269,15 @@ func sendInAppAlertsForUnparsedEvents(sourcesToAlert []*model.UnparsedEventSourc
 }
 
 func buildUnparsedEventAlert(ias model.UnparsedEventSource) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityTitle, ias.GetEntityName(), ias.GetUnparsedCount())
+	title := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityTitle, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage())
+	message := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityMessage, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage())
 	functionality := alerts_async.LogSource
 	return alerts_async.NewAlert(functionality,
 		alerts_async.WithEntity(ias),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.UnparsedChecker),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DBPW10001, ""),
 	)
 }
