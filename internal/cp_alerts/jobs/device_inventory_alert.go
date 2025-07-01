@@ -11,6 +11,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
+	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
@@ -24,26 +25,15 @@ import (
 )
 
 type DeviceClass struct {
-	Hostname   string `json:"hostname"`
-	MinTime    int64  `json:"min_time"`
-	MaxTime    int64  `json:"max_time"`
-	SourceID   string `json:"source_id"`
-	TenantId   string `json:"tenant_id"`
-	Reputation string `json:"reputation"`
-	TenantName string `json:"tenant_name"`
-	SourceName string `json:"source_name"`
-}
-
-var deviceFieldMap = map[string]string{
-	"hostname":   "Hostname",
-	"sourceid":   "SourceID",
-	"tenantid":   "TenantId",
-	"reputation": "Reputation",
-	"sourcename": "SourceName",
-}
-
-type RuleResult struct {
-	IsMatch bool
+	Hostname    string `json:"hostname"`
+	MinTime     int64  `json:"min_time"`
+	MaxTime     int64  `json:"max_time"`
+	SourceID    string `json:"source_id"`
+	TenantId    string `json:"tenant_id"`
+	Reputation  string `json:"reputation"`
+	TenantName  string `json:"tenant_name"`
+	SourceName  string `json:"source_name"`
+	DataPlaneId string `json:"data_plane_id"`
 }
 
 type StringHelpers struct{}
@@ -134,18 +124,37 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 			logging.GetLoggerWithContext(ctx).Info("no devices match alert criteria", zap.String("tenantId", tenantId))
 			continue
 		}
-		var alertsToSend []*model.DeviceInventoryAlerts
-		for _, alrt := range filteredDevices {
-			alertsToSend = append(alertsToSend, &model.DeviceInventoryAlerts{
-				DeviceClass: &alrt,
-			})
+
+		// Group filtered devices by source
+		sourceToFilteredDevices := make(map[string][]model.DeviceClass)
+		for _, device := range filteredDevices {
+			sourceToFilteredDevices[device.SourceID] = append(sourceToFilteredDevices[device.SourceID], device)
 		}
 
-		// Send alerts
-		if len(filteredDevices) > 0 {
-			err = sendInAppAlertsForDeviceInventory(alertsToSend, alertsManager)
+		// Create consolidated alerts for each source
+		var consolidatedAlerts []*model.SourceDeviceInventoryAlert
+		for sourceID, devices := range sourceToFilteredDevices {
+			if len(devices) > 0 {
+				// Get source name and data plane ID from the first device (all devices in a source have same source name and data plane ID)
+				sourceName := devices[0].SourceName
+				dataPlaneId := devices[0].DataPlaneId
+				consolidatedAlert := model.NewSourceDeviceInventoryAlert(
+					sourceID,
+					sourceName,
+					tenantId,
+					t.Name,
+					dataPlaneId,
+					devices,
+				)
+				consolidatedAlerts = append(consolidatedAlerts, consolidatedAlert)
+			}
+		}
+
+		// Send consolidated alerts
+		if len(consolidatedAlerts) > 0 {
+			err = sendInAppAlertsForDeviceInventoryConsolidated(consolidatedAlerts, alertsManager)
 			if err != nil {
-				logging.GetLoggerWithContext(ctx).Error("error while sending alerts", zap.Error(err))
+				logging.GetLoggerWithContext(ctx).Error("error while sending consolidated alerts", zap.Error(err))
 				continue
 			}
 		}
@@ -333,18 +342,10 @@ func getDeviceFieldValue(device model.DeviceClass, fieldName string) (string, er
 
 func applyOperator(fieldValue, operator, expectedValue string) (bool, error) {
 	switch operator {
-	case "==", "=":
-		return fieldValue == expectedValue, nil
-	case "!=":
-		return fieldValue != expectedValue, nil
 	case "contains":
 		return strings.Contains(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
 	case "doesNotContain":
 		return !strings.Contains(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
-	case "startsWith":
-		return strings.HasPrefix(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
-	case "endsWith":
-		return strings.HasSuffix(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
 	default:
 		return false, fmt.Errorf("unsupported operator: %s", operator)
 	}
@@ -376,13 +377,14 @@ func getDevices(ctx context.Context, client *opensearch.Client, index string, qu
 
 	for _, device := range deviceInventoryList {
 		silentDevices = append(silentDevices, model.DeviceClass{
-			Hostname:   device.Hostname,
-			MinTime:    device.MinTime,
-			MaxTime:    device.MaxTime,
-			SourceID:   device.SourceId,
-			TenantId:   device.TenantId,
-			Reputation: device.Reputation,
-			TenantName: tenantName,
+			Hostname:    device.Hostname,
+			MinTime:     device.MinTime,
+			MaxTime:     device.MaxTime,
+			SourceID:    device.SourceId,
+			TenantId:    device.TenantId,
+			Reputation:  device.Reputation,
+			TenantName:  tenantName,
+			DataPlaneId: "",
 		})
 	}
 	logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Int("count", len(silentDevices)))
@@ -421,6 +423,13 @@ func fetchDevices(ctx context.Context, tenantId string, tenantName string, sourc
 		searchAfter = newSearchAfter
 	}
 
+	// Fetch source names and populate them in devices
+	err = populateSourceNames(ctx, allSilentDevices, tenantId)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while populating source names", zap.Error(err))
+		return nil, err
+	}
+
 	logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Any("silentDevices", allSilentDevices))
 
 	return allSilentDevices, nil
@@ -456,6 +465,44 @@ func getQuery(sources []uuid.UUID, tenantId string) (string, error) {
 	return q, nil
 }
 
+func populateSourceNames(ctx context.Context, devices []model.DeviceClass, tenantId string) error {
+	db := config.GetDB()
+
+	// Get all log sources for the tenant
+	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, db, tenantId)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while fetching log sources", zap.Error(err))
+		return err
+	}
+
+	// Create maps of source ID to source name and data plane ID
+	sourceIdToName := make(map[string]string)
+	sourceIdToDataPlaneId := make(map[string]string)
+	for _, source := range logSources {
+		sourceIdToName[source.ID.String()] = source.Name
+		sourceIdToDataPlaneId[source.ID.String()] = source.DataPlaneID.String()
+	}
+
+	// Populate source names and data plane IDs in devices
+	for i := range devices {
+		if sourceName, exists := sourceIdToName[devices[i].SourceID]; exists {
+			devices[i].SourceName = sourceName
+		} else {
+			// If source name not found, use source ID as fallback
+			devices[i].SourceName = devices[i].SourceID
+		}
+
+		if dataPlaneId, exists := sourceIdToDataPlaneId[devices[i].SourceID]; exists {
+			devices[i].DataPlaneId = dataPlaneId
+		} else {
+			// If data plane ID not found, use empty string as fallback
+			devices[i].DataPlaneId = ""
+		}
+	}
+
+	return nil
+}
+
 func getLogSourceIdsFromEntityAlertConfig(ctx context.Context, db *gorm.DB) ([]entities.EntityAlertsConfig, map[string][]entities.EntityAlertsConfig, map[string][]uuid.UUID, error) {
 	var entityAlertConfig []entities.EntityAlertsConfig
 
@@ -480,34 +527,50 @@ func getLogSourceIdsFromEntityAlertConfig(ctx context.Context, db *gorm.DB) ([]e
 
 }
 
-func sendInAppAlertsForDeviceInventory(devicesToAlert []*model.DeviceInventoryAlerts, alertsManager *alert.AlertsManager) error {
-	alertsToSave := make([]*alerts_async.Alert, len(devicesToAlert))
-	for i, dvcAlert := range devicesToAlert {
-		newAlert, err := buildDeviceAlert(*dvcAlert)
+func sendInAppAlertsForDeviceInventoryConsolidated(consolidatedAlerts []*model.SourceDeviceInventoryAlert, alertsManager *alert.AlertsManager) error {
+	alertsToSave := make([]*alerts_async.Alert, len(consolidatedAlerts))
+	for i, consolidatedAlert := range consolidatedAlerts {
+		newAlert, err := buildConsolidatedDeviceAlert(*consolidatedAlert)
 		if err != nil {
-			logging.GetLogger().Error("error while building alert", zap.Error(err))
+			logging.GetLogger().Error("error while building consolidated alert", zap.Error(err))
 			return err
 		}
 		alertsToSave[i] = newAlert
 	}
 	err := alertsManager.SendAlerts(alertsToSave)
 	if err != nil {
-		logging.GetLogger().Error("error while sending inactive source alert", zap.Error(err))
+		logging.GetLogger().Error("error while sending consolidated device inventory alert", zap.Error(err))
 		return err
 	}
 	return nil
 }
 
-func buildDeviceAlert(dia model.DeviceInventoryAlerts) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf("Device Inventory Alert - Device %s has reputation %s", dia.GetEntityName(), dia.DeviceClass.Reputation)
+func buildConsolidatedDeviceAlert(sdia model.SourceDeviceInventoryAlert) (*alerts_async.Alert, error) {
+	// Create a detailed message with source info and device details
+	var deviceDetails strings.Builder
+	deviceDetails.WriteString(fmt.Sprintf("Source: %s\n", sdia.SourceName))
+	deviceDetails.WriteString(fmt.Sprintf("Total devices with alert criteria: %d\n\n", sdia.TotalCount))
+
+	deviceDetails.WriteString("Top devices:\n")
+	for i, device := range sdia.TopDevices {
+		deviceDetails.WriteString(fmt.Sprintf("%d. %s (Reputation: %s)\n", i+1, device.Hostname, device.Reputation))
+	}
+
+	if sdia.RemainingCount > 0 {
+		deviceDetails.WriteString(fmt.Sprintf("\n... and %d more devices", sdia.RemainingCount))
+	}
+
+	title := fmt.Sprintf("Device Inventory Alert - Source %s has %d devices with alert criteria", sdia.SourceName, sdia.TotalCount)
+	message := deviceDetails.String()
+
 	functionality := alerts_async.LogSource
 
 	return alerts_async.NewAlert(functionality,
-		alerts_async.WithEntity(dia),
+		alerts_async.WithEntity(sdia),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.DeviceReputationChecker),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10003, ""),
 	)
 }
