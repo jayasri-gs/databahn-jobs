@@ -33,21 +33,22 @@ func getAlertReportConfigFromRequest(ctx context.Context, req models.AuditReport
 	if err != nil {
 		return "", err
 	}
-	var configData map[string]interface{}
-	configData = alertReportConfiguration["filter"].(map[string]interface{})
-	if _, ok := configData["startTime"].(string); ok {
-		startTime = configData["startTime"].(string)
+	var timeFilters, orFilters map[string]interface{}
+	timeFilters = alertReportConfiguration["time_filters"].(map[string]interface{})
+	orFilters = alertReportConfiguration["or_filters"].(map[string]interface{})
+	if _, ok := timeFilters["startTime"].(string); ok {
+		startTime = timeFilters["startTime"].(string)
 	} else {
 		logging.GetLoggerWithContext(ctx).Error("startTime not found in config data or is a invalid string please check your config", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return "", fmt.Errorf("startTime not found in config data or is a invalid string please check your config")
 	}
-	if _, ok := configData["endTime"].(string); ok {
-		endTime = configData["endTime"].(string)
+	if _, ok := timeFilters["endTime"].(string); ok {
+		endTime = timeFilters["endTime"].(string)
 	} else {
 		logging.GetLoggerWithContext(ctx).Error("endTime not found in config data or is a invalid string please check your config", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return "", fmt.Errorf("endTime not found in config data or is a invalid string please check your config")
 	}
-	dismissed, ok := configData["dismissed"].(bool)
+	dismissed, ok := orFilters["dismissed"].(bool)
 	if !ok {
 		dismissed = false
 	}
@@ -68,7 +69,7 @@ func getAlertReportConfigFromRequest(ctx context.Context, req models.AuditReport
 	}
 	// write a function to update other fields in the query if present in the config obj
 	for k, v := range filterMappings {
-		value, ok := configData[k]
+		value, ok := orFilters[k]
 		if !ok || len(value.([]interface{})) == 0 {
 			logging.GetLogger().Info(fmt.Sprintf("no config not found for filter %s, ignoring this filter criteria", k), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			continue
@@ -160,11 +161,7 @@ func writeAlertRowsToFile(alertResponse []statistics.AlertDocument, writer *csv.
 func convertInterfaceSliceToStringSlice(interfaceSlice []interface{}) ([]string, error) {
 	stringSlice := make([]string, len(interfaceSlice))
 	for i, v := range interfaceSlice {
-		str, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("element at index %d is not a string", i)
-		}
-		stringSlice[i] = str
+		stringSlice[i] = fmt.Sprintf("%v", v)
 	}
 	return stringSlice, nil
 }

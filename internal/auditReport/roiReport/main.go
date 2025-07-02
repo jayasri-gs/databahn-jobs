@@ -32,16 +32,16 @@ func getROIReportConfigFromRequest(ctx context.Context, req models.AuditReport) 
 		logging.GetLoggerWithContext(ctx).Error("error while unmarshalling ROI configuration", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return "", "", err
 	}
-	var configData map[string]interface{}
-	configData = roiConfiguration["filter"].(map[string]interface{})
-	if _, ok := configData["startTime"].(string); ok {
-		startTime = configData["startTime"].(string)
+	var timeFilters map[string]interface{}
+	timeFilters = roiConfiguration["time_filters"].(map[string]interface{})
+	if _, ok := timeFilters["startTime"].(string); ok {
+		startTime = timeFilters["startTime"].(string)
 	} else {
 		logging.GetLoggerWithContext(ctx).Error("startTime is not a valid string in the configuration", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return "", "", fmt.Errorf("startTime is not a valid string in the configuration")
 	}
-	if _, ok := configData["endTime"].(string); ok {
-		endTime = configData["endTime"].(string)
+	if _, ok := timeFilters["endTime"].(string); ok {
+		endTime = timeFilters["endTime"].(string)
 	} else {
 		logging.GetLoggerWithContext(ctx).Error("endTime is not a valid string in the configuration", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return "", "", fmt.Errorf("endTime is not a valid string in the configuration")
