@@ -3,6 +3,7 @@ package volumeController
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
@@ -13,11 +14,11 @@ import (
 
 func WriteVcReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
 	logging.GetLoggerWithContext(ctx).Info("writing volume controller report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-	query, err := getQueryForVolumeControllerData(ctx, req)
+	query, startTime, endTime, err := getQueryForVcReportData(ctx, req)
 	if err != nil {
 		return err
 	}
-	err = getReportAndWriteToFile(ctx, req, query, file)
+	err = gatherDataAndWriteToFile(ctx, req, query, startTime, endTime, file)
 	if err != nil {
 		return err
 	}
@@ -66,7 +67,15 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 	}
 	return nil
 }
-func getQueryForVolumeControllerData(ctx context.Context, req models.AuditReport) (string, error) {
+
+func getQueryForVcReportData(ctx context.Context, req models.AuditReport) (string, string, string, error) {
+	var reportConfiguration map[string]interface{}
+	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while unmarshalling report filter", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return "", "", "", err
+	}
+
 	filterToDbColumnMap := map[string]string{
 		"scope":        "scope",
 		"status":       "status",
@@ -76,11 +85,15 @@ func getQueryForVolumeControllerData(ctx context.Context, req models.AuditReport
 		"dataplaneId":  "data_plane_id",
 	}
 
-	query, err := common.GetDbQueryWithoutTimeFilters(req, filterToDbColumnMap)
+	query, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+	logging.GetLoggerWithContext(ctx).Info("query for volume controller report data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	return query, startTime, endTime, nil
+}
+
+func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query string, startTime string, endTime string, file *os.File) error {
+	err := getReportAndWriteToFile(ctx, req, query, file)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting query from config", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-		return "", err
+		return err
 	}
-	logging.GetLoggerWithContext(ctx).Info("query for volume controller data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-	return query, nil
+	return nil
 }

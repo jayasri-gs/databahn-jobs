@@ -35,20 +35,20 @@ func getAuditReportConfigFromRequest(ctx context.Context, req models.AuditReport
 	if err != nil {
 		return "", "", err
 	}
-	var configData map[string]interface{}
-	configData = auditReportConfiguration["filter"].(map[string]interface{})
-	startTime, ok := configData["startTime"].(string)
+	var timeFilters map[string]interface{}
+	timeFilters = auditReportConfiguration["time_filters"].(map[string]interface{})
+	startTime, ok := timeFilters["startTime"].(string)
 	if !ok {
-		logging.GetLoggerWithContext(ctx).Error("startTime is not a string in audit report configuration", zap.Any("configData", configData))
+		logging.GetLoggerWithContext(ctx).Error("startTime is not a string in audit report configuration", zap.Any("configData", timeFilters))
 		return "", "", errors.New("startTime is not a string in audit report configuration")
 	}
-	endTime, ok := configData["endTime"].(string)
+	endTime, ok := timeFilters["endTime"].(string)
 	if !ok {
-		logging.GetLoggerWithContext(ctx).Error("endTime is not a string in audit report configuration", zap.Any("configData", configData))
+		logging.GetLoggerWithContext(ctx).Error("endTime is not a string in audit report configuration", zap.Any("configData", timeFilters))
 		return "", "", errors.New("endTime is not a string in audit report configuration")
 	}
 	if startTime == "" || endTime == "" {
-		logging.GetLoggerWithContext(ctx).Error("startTime and endTime cannot be empty in audit report configuration", zap.Any("configData", configData))
+		logging.GetLoggerWithContext(ctx).Error("startTime and endTime cannot be empty in audit report configuration", zap.Any("configData", timeFilters))
 		return "", "", errors.New("start time and end time cannot be empty")
 	}
 	// Parse time strings into time.Time objects
@@ -68,7 +68,7 @@ func getAuditReportConfigFromRequest(ctx context.Context, req models.AuditReport
 		logging.GetLoggerWithContext(ctx).Error("startTime is greater than endTime", zap.String("startTime", startTime), zap.String("endTime", endTime))
 		return "", "", errors.New("startTime greater than endTime")
 	}
-	return configData["startTime"].(string), configData["endTime"].(string), nil
+	return timeFilters["startTime"].(string), timeFilters["endTime"].(string), nil
 }
 func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, startTime, endTime string, file *os.File) error {
 	var writer *csv.Writer

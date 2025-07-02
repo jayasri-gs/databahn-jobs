@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
@@ -89,6 +90,13 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query,
 	return nil
 }
 func getQueryForLogSourceData(ctx context.Context, req models.AuditReport) (string, string, string, error) {
+	var reportConfiguration map[string]interface{}
+	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while unmarshalling report filter", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return "", "", "", err
+	}
+
 	filterToDbColumnMap := map[string]string{
 		"scope":       "scope",
 		"status":      "status",
@@ -98,14 +106,7 @@ func getQueryForLogSourceData(ctx context.Context, req models.AuditReport) (stri
 		"dataplaneId": "data_plane_id",
 	}
 
-	startTime, endTime, query, err := common.GetDbQueryWithTimeFilters(req, filterToDbColumnMap)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting query from config", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-		return "", "", "", err
-	}
-	if startTime == "" || endTime == "" {
-		return "", "", "", fmt.Errorf("startTime or endTime missing in logsource report config")
-	}
+	query, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
 	logging.GetLoggerWithContext(ctx).Info("query for logsource data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }

@@ -41,15 +41,16 @@ func getDeviceInventoryReportConfigFromRequest(ctx context.Context, req models.A
 		logging.GetLoggerWithContext(ctx).Error("error while unmarshalling audit report filter", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return []string{}, "", "", err
 	}
-	var configData map[string]interface{}
-	configData = deviceInventoryReportConfiguration["filter"].(map[string]interface{})
-	if _, ok := configData["sources"]; ok {
-		sources, _ = convertInterfaceSliceToStringSlice(configData["sources"].([]interface{}))
+	var timeFilters, orFilters map[string]interface{}
+	timeFilters = deviceInventoryReportConfiguration["time_filters"].(map[string]interface{})
+	orFilters = deviceInventoryReportConfiguration["or_filters"].(map[string]interface{})
+	if _, ok := orFilters["sources"]; ok {
+		sources, _ = convertInterfaceSliceToStringSlice(orFilters["sources"].([]interface{}))
 	}
-	if v, ok := configData["startTime"].(string); ok {
+	if v, ok := timeFilters["startTime"].(string); ok {
 		startTime = v
 	}
-	if v, ok := configData["endTime"].(string); ok {
+	if v, ok := timeFilters["endTime"].(string); ok {
 		endTime = v
 	}
 	if startTime == "" || endTime == "" {
