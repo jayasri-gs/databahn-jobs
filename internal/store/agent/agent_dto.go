@@ -1,37 +1,39 @@
 package agent
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Agent struct {
-	ID            uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
-	BootTime      int64     `gorm:"type:bigint" json:"boot_time"`
-	CpuArch       string    `gorm:"type:varchar(255)" json:"cpu_arch"`
-	CpuCount      int       `gorm:"type:int" json:"cpu_count"`
-	CreatedAt     time.Time `gorm:"type:timestamp" json:"created_at"`
-	CreatedBy     uuid.UUID `gorm:"type:uuid" json:"created_by"`
-	CustomerId    uuid.UUID `gorm:"type:uuid" json:"customer_id"`
-	Description   string    `gorm:"type:varchar(255)" json:"description"`
-	HeartbeatAt   time.Time `gorm:"type:timestamp" json:"heartbeat_at"`
-	Hostname      string    `gorm:"type:varchar(100)" json:"hostname"`
-	KernelArch    string    `gorm:"type:varchar(100)" json:"kernel_arch"`
-	KernelVersion string    `gorm:"type:varchar(100)" json:"kernel_version"`
-	Name          string    `gorm:"type:varchar(255)" json:"name"`
-	Os            string    `gorm:"type:varchar(100)" json:"os"`
-	Platform      string    `gorm:"type:varchar(100)" json:"platform"`
-	PrivateIp     string    `gorm:"type:varchar(20)" json:"private_ip"`
-	PublicIp      string    `gorm:"type:varchar(20)" json:"public_ip"`
-	Status        string    `gorm:"type:varchar(255)" json:"status"`
-	TenantId      uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
-	UpdatedAt     time.Time `gorm:"type:timestamp" json:"updated_at"`
-	UpdatedBy     uuid.UUID `gorm:"type:uuid" json:"updated_by"`
-	Uptime        int64     `gorm:"type:bigint" json:"uptime"`
-	FleetId       uuid.UUID `gorm:"type:uuid;not null" json:"fleet_id"`
-	LogsourceId   uuid.UUID `gorm:"type:uuid" json:"logsource_id"`
-	DataPlaneId   uuid.UUID `gorm:"type:uuid" json:"data_plane_id"`
-	Port          int       `gorm:"type:int" json:"port"`
+	ID                 uuid.UUID `gorm:"type:uuid;primary_key" json:"id"`
+	BootTime           int64     `gorm:"type:bigint" json:"boot_time"`
+	CpuArch            string    `gorm:"type:varchar(255)" json:"cpu_arch"`
+	CpuCount           int       `gorm:"type:int" json:"cpu_count"`
+	CreatedAt          time.Time `gorm:"type:timestamp" json:"created_at"`
+	CreatedBy          uuid.UUID `gorm:"type:uuid" json:"created_by"`
+	CustomerId         uuid.UUID `gorm:"type:uuid" json:"customer_id"`
+	Description        string    `gorm:"type:varchar(255)" json:"description"`
+	HeartbeatAt        time.Time `gorm:"type:timestamp" json:"heartbeat_at"`
+	Hostname           string    `gorm:"type:varchar(100)" json:"hostname"`
+	IsUpgradeAvailable bool      `gorm:"default:false" json:"is_upgrade_available"`
+	KernelArch         string    `gorm:"type:varchar(100)" json:"kernel_arch"`
+	KernelVersion      string    `gorm:"type:varchar(100)" json:"kernel_version"`
+	Name               string    `gorm:"type:varchar(255)" json:"name"`
+	Os                 string    `gorm:"type:varchar(100)" json:"os"`
+	Platform           string    `gorm:"type:varchar(100)" json:"platform"`
+	PrivateIp          string    `gorm:"type:varchar(20)" json:"private_ip"`
+	PublicIp           string    `gorm:"type:varchar(20)" json:"public_ip"`
+	Status             string    `gorm:"type:varchar(255)" json:"status"`
+	TenantId           uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
+	UpdatedAt          time.Time `gorm:"type:timestamp" json:"updated_at"`
+	UpdatedBy          uuid.UUID `gorm:"type:uuid" json:"updated_by"`
+	Uptime             int64     `gorm:"type:bigint" json:"uptime"`
+	FleetId            uuid.UUID `gorm:"type:uuid;not null" json:"fleet_id"`
+	LogsourceId        uuid.UUID `gorm:"type:uuid" json:"logsource_id"`
+	DataPlaneId        uuid.UUID `gorm:"type:uuid" json:"data_plane_id"`
+	Port               int       `gorm:"type:int" json:"port"`
 }
 
 type HardwareStats struct {

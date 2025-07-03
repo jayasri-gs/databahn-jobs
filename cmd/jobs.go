@@ -71,6 +71,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.UpdateLastEventTime(ctx)
 	case common.SILENT_DEVICE_ALERT:
 		err = jobs.ProcessSilentDevices(ctx)
+	case common.FHL_WINDOWS_ACTIVITY_CHECKER:
+		jobs.CheckAndRestartFHLAgent(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
