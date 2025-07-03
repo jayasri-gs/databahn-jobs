@@ -3,14 +3,15 @@ package tenant
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"strings"
+
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
-	"io"
-	"strings"
 )
 
 func GetIngestionByTenantId(ctx context.Context, tId uuid.UUID, startTime, endTime string) (float64, float64, error) {
@@ -49,8 +50,9 @@ func getTotalDataIngestedByTenantId(ctx context.Context, tId uuid.UUID, startTim
 	return totalIngestion, nil
 }
 
-func ExecuteAggQuery(ctx context.Context, client *opensearch.Client, q, aggBy, startTime, endTime string) (map[string]any, error) {
+func ExecuteAggQuery(ctx context.Context, client *opensearch.Client, q, aggBy, startTime, endTime, tenantId string) (map[string]any, error) {
 	query := statistics.AddDateRange(q, startTime, endTime)
+	statsAlias := os.StatisticsIndexAlias(tenantId)
 	searchBody := &statistics.AggregateQueryRequest{}
 	searchBody.Size = 0
 	searchBody.Query.QueryString.Query = query
@@ -58,7 +60,7 @@ func ExecuteAggQuery(ctx context.Context, client *opensearch.Client, q, aggBy, s
 	aggList := strings.Split(aggBy, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, os.StatsIndex+"*", &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, statsAlias, &searchBody, client)
 
 	if err != nil {
 		logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
