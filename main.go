@@ -20,7 +20,7 @@ func main() {
 	ctx := context.Background()
 	job := flag.String("job", "", "job name")
 	input := ReadInputData()
-	//flag.Parse()
+	// flag.Parse()
 	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
 	if *job != common.DATA_REPLAY {
 		config.GetAppConfiguration()
@@ -32,9 +32,9 @@ func main() {
 	if err != nil {
 		logger.GetLoggerWithContext(ctx).Error("error running job", zap.Error(err), zap.String("job", *job))
 		os.Exit(1)
-	} else {
-		logger.GetLoggerWithContext(ctx).Info("job completed successfully", zap.String("job", *job))
 	}
+
+	logger.GetLoggerWithContext(ctx).Info("job completed successfully", zap.String("job", *job))
 }
 
 func ReadInputData() model.Message {
