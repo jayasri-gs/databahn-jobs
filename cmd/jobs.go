@@ -18,10 +18,9 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/stats"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
 )
 
-func RunJob(ctx context.Context, jobName string, input model.Message) {
+func RunJob(ctx context.Context, jobName string, input model.Message) error {
 	var err error
 	switch jobName {
 	case common.INSIGHTS_AGGREGATION:
@@ -44,6 +43,9 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.HealthCheckAlertForFleetNode(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER:
 		err = jobs.SendAlertsForInactivity(ctx)
+		if err != nil {
+			logger.GetLogger().Error("failed to send alerts for inactivity", zap.Error(err))
+		}
 		err = jobs.AlertForDestinationInactivity(ctx)
 	case common.LOG_SOURCE_REPUTATION_CHECKER:
 		err = jobs.UpdateReputationForLogSources(ctx)
@@ -71,16 +73,18 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.UpdateLastEventTime(ctx)
 	case common.SILENT_DEVICE_ALERT:
 		err = jobs.ProcessSilentDevices(ctx)
+	case common.FHL_WINDOWS_ACTIVITY_CHECKER:
+		jobs.CheckAndRestartFHLAgent(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
 	if err != nil {
 		logger.GetLogger().Error("failed to process job", zap.Error(err), zap.String("jobName", jobName))
 		logger.GetLogger().Sync()
-		os.Exit(1)
+		return err
 	} else {
 		logger.GetLogger().Info("successfully processed job", zap.String("jobName", jobName))
 		logger.GetLogger().Sync()
-		os.Exit(0)
+		return nil
 	}
 }
