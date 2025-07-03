@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"os"
 	"strings"
 
 	"github.com/databahn-ai/databahn-jobs/cmd"
@@ -27,7 +28,13 @@ func main() {
 		config.GetDataReplayConfiguration()
 	}
 
-	cmd.RunJob(ctx, *job, input)
+	err := cmd.RunJob(ctx, *job, input)
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error running job", zap.Error(err), zap.String("job", *job))
+		os.Exit(1)
+	} else {
+		logger.GetLoggerWithContext(ctx).Info("job completed successfully", zap.String("job", *job))
+	}
 }
 
 func ReadInputData() model.Message {

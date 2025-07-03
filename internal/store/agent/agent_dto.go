@@ -52,8 +52,8 @@ type HardwareStats struct {
 	MemoryUsed         int64     `gorm:"type:bigint" json:"memory_used"`
 	MemoryUsedPercent  float64   `gorm:"type:float8" json:"memory_used_percent"`
 	TenantId           uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
-	FleetId            uuid.UUID `gorm:"type:uuid;not null" gorm:"foreignkey:FleetId" json:"fleet_id"`
-	NodeId             uuid.UUID `gorm:"type:uuid;not null" gorm:"foreignkey:NodeId" json:"node_id"`
+	FleetId            uuid.UUID `gorm:"type:uuid;not null;foreignkey:FleetId" json:"fleet_id"`
+	NodeId             uuid.UUID `gorm:"type:uuid;not null;foreignkey:NodeId" json:"node_id"`
 }
 
 type Config struct {
@@ -62,10 +62,10 @@ type Config struct {
 	Agent   *Agent
 }
 
-func (s *HardwareStats) TableName() string {
+func (*HardwareStats) TableName() string {
 	return "fleet_node_stats"
 }
 
-func (s *Agent) TableName() string {
+func (*Agent) TableName() string {
 	return "agent_node"
 }
