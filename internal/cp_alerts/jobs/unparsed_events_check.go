@@ -24,6 +24,7 @@ import (
 
 const (
 	MinUnparsedEventsPercentage = 1.0
+	UnparsedEventsCheckDuration = 24
 )
 
 func SendAlertsForUnparsedEvents(ctx context.Context) error {
@@ -51,15 +52,15 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 		logger.GetLogger().Info("checking for unparsed events", zap.String("tenantId", tenantId))
 
 		endTime := time.Now().UTC()
-		startTime := endTime.Add(-24 * time.Hour)
-
-		unparsedAgg, err := getUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), tenantId)
+		startTime := endTime.Add(-UnparsedEventsCheckDuration * time.Hour)
+		statsAlias := os.StatisticsIndexAlias(tenantId)
+		unparsedAgg, err := getUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
 			logger.GetLogger().Error("error getting unparsed events", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
 
-		totalEventsAgg, err := getTotalEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), tenantId)
+		totalEventsAgg, err := getTotalEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
 			logger.GetLogger().Error("error getting total events", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
@@ -172,7 +173,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 	return nil
 }
 
-func getUnparsedEventsForTenant(ctx context.Context, startTime string, endTime string, tenantId string) (statistics.AggregateResponse, error) {
+func getUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
 
 	q := `tags.component_name: "parser" AND name: "total_events_delivered" AND namespace:"parsing-service-unparsed"`
 	query := statistics.AddDateRange(q, startTime, endTime)
@@ -185,7 +186,7 @@ func getUnparsedEventsForTenant(ctx context.Context, startTime string, endTime s
 	var after map[string]any
 
 	for {
-		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatsIndex+"*", query, groupBy, aggregations, after)
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, statsAlias, query, groupBy, aggregations, after)
 		if err != nil {
 			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
 			return statistics.AggregateResponse{}, err
@@ -211,7 +212,7 @@ func getUnparsedEventsForTenant(ctx context.Context, startTime string, endTime s
 	return statistics.AggregateResponse{Agg: aggMap}, nil
 }
 
-func getTotalEventsForTenant(ctx context.Context, startTime string, endTime string, tenantId string) (statistics.AggregateResponse, error) {
+func getTotalEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
 
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
@@ -224,7 +225,7 @@ func getTotalEventsForTenant(ctx context.Context, startTime string, endTime stri
 	var after map[string]any
 
 	for {
-		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatsIndex+"*", query, groupBy, aggregations, after)
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, statsAlias, query, groupBy, aggregations, after)
 		if err != nil {
 			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
 			return statistics.AggregateResponse{}, err
@@ -269,7 +270,7 @@ func sendInAppAlertsForUnparsedEvents(sourcesToAlert []*model.UnparsedEventSourc
 }
 
 func buildUnparsedEventAlert(ias model.UnparsedEventSource) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityTitle, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage())
+	title := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityTitle, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage(), UnparsedEventsCheckDuration)
 	message := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityMessage, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage())
 	functionality := alerts_async.LogSource
 	return alerts_async.NewAlert(functionality,
