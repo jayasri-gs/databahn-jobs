@@ -5,12 +5,14 @@ import "github.com/databahn-ai/databahn-jobs/internal/store/source"
 type UnparsedEventSource struct {
 	Source        *source.Source
 	UnparsedCount int
+	Percentage    float64
 }
 
-func NewUnparsedEventSource(source *source.Source, unparsedCount int) *UnparsedEventSource {
+func NewUnparsedEventSource(source *source.Source, unparsedCount int, percentage float64) *UnparsedEventSource {
 	return &UnparsedEventSource{
 		Source:        source,
 		UnparsedCount: unparsedCount,
+		Percentage:    percentage,
 	}
 }
 
@@ -29,4 +31,8 @@ func (ias UnparsedEventSource) GetTenantId() string {
 
 func (ias UnparsedEventSource) GetUnparsedCount() int {
 	return ias.UnparsedCount
+}
+
+func (ias UnparsedEventSource) GetPercentage() float64 {
+	return ias.Percentage
 }

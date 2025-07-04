@@ -22,6 +22,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
+const (
+	MinUnparsedEventsPercentage = 1.0
+	UnparsedEventsCheckDuration = 24
+)
+
 func SendAlertsForUnparsedEvents(ctx context.Context) error {
 	db := config.GetDB()
 	tenants, err := tenant.GetTenants(ctx, db)
@@ -41,22 +46,50 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 	}()
 
 	for _, t := range tenants {
+
 		tenantUuid := t.Id
 		tenantId := tenantUuid.String()
 		logger.GetLogger().Info("checking for unparsed events", zap.String("tenantId", tenantId))
 
 		endTime := time.Now().UTC()
-		startTime := endTime.Add(-time.Hour)
-		unparsedAgg, err := getUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), tenantId)
+		startTime := endTime.Add(-UnparsedEventsCheckDuration * time.Hour)
+		statsAlias := os.StatisticsIndexAlias(tenantId)
+		unparsedAgg, err := getUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
 			logger.GetLogger().Error("error getting unparsed events", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
 
+		totalEventsAgg, err := getTotalEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
+		if err != nil {
+			logger.GetLogger().Error("error getting total events", zap.Error(err), zap.String("tenantId", tenantId))
+			continue
+		}
+
 		sourceIdToUnparsedCount := make(map[string]float64)
-		for sourceId, count := range unparsedAgg.Agg {
+		sourceIdToTotalCount := make(map[string]float64)
+		sourceIdToUnparsedPercentage := make(map[string]float64)
+
+		for sourceId, count := range totalEventsAgg.Agg {
 			if v, ok := count.(float64); ok && v > 0 {
+				sourceIdToTotalCount[sourceId] = v
+			}
+		}
+
+		for sourceId, unparsedCount := range unparsedAgg.Agg {
+			if v, ok := unparsedCount.(float64); ok && v > 0 {
 				sourceIdToUnparsedCount[sourceId] = v
+
+				if totalCount, hasTotal := sourceIdToTotalCount[sourceId]; hasTotal && totalCount > 0 {
+					percentage := (v / totalCount) * 100
+					sourceIdToUnparsedPercentage[sourceId] = percentage
+
+					logger.GetLogger().Info("calculated unparsed percentage",
+						zap.String("sourceId", sourceId),
+						zap.Float64("unparsedCount", v),
+						zap.Float64("totalCount", totalCount),
+						zap.Float64("percentage", percentage))
+				}
 			}
 		}
 
@@ -74,10 +107,21 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 				break
 			}
 			for _, s := range sources {
-				if _, ok := sourceIdToUnparsedCount[s.ID.String()]; ok {
-					unparsedCount := int(sourceIdToUnparsedCount[s.ID.String()])
-					ias := model.NewUnparsedEventSource(&s, unparsedCount)
-					sourcesToAlert = append(sourcesToAlert, ias)
+				sourceId := s.ID.String()
+				if percentage, hasPercentage := sourceIdToUnparsedPercentage[sourceId]; hasPercentage {
+					if percentage >= MinUnparsedEventsPercentage {
+						unparsedCount := int(sourceIdToUnparsedCount[sourceId])
+						ias := model.NewUnparsedEventSource(&s, unparsedCount, percentage)
+						sourcesToAlert = append(sourcesToAlert, ias)
+						logger.GetLogger().Info("source meets alert threshold",
+							zap.String("sourceId", sourceId),
+							zap.Float64("percentage", percentage),
+							zap.Int("unparsedCount", unparsedCount))
+					} else {
+						logger.GetLogger().Info("source below alert threshold",
+							zap.String("sourceId", sourceId),
+							zap.Float64("percentage", percentage))
+					}
 				} else {
 					sourcesToDismiss = append(sourcesToDismiss, &s)
 				}
@@ -129,9 +173,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 	return nil
 }
 
-func getUnparsedEventsForTenant(ctx context.Context, startTime string, endTime string, tenantId string) (statistics.AggregateResponse, error) {
-
-	statsAlias := os.StatisticsIndexAlias(tenantId)
+func getUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
 
 	q := `tags.component_name: "parser" AND name: "total_events_delivered" AND namespace:"parsing-service-unparsed"`
 	query := statistics.AddDateRange(q, startTime, endTime)
@@ -170,6 +212,45 @@ func getUnparsedEventsForTenant(ctx context.Context, startTime string, endTime s
 	return statistics.AggregateResponse{Agg: aggMap}, nil
 }
 
+func getTotalEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
+
+	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
+	query := statistics.AddDateRange(q, startTime, endTime)
+	groupBy := []string{"tags.db_event_source_id.keyword"}
+	aggregations := []os.AggregationFunction{
+		{Name: "sum_value", Function: "sum", Field: "counter.value"},
+	}
+
+	var allResponses []os.AggResponse
+	var after map[string]any
+
+	for {
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, statsAlias, query, groupBy, aggregations, after)
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
+			return statistics.AggregateResponse{}, err
+		}
+
+		allResponses = append(allResponses, responses...)
+
+		if nextAfter == nil {
+			break
+		}
+		after = nextAfter
+	}
+
+	logger.GetLoggerWithContext(ctx).Info("Number of total events responses received", zap.Int("count", len(allResponses)))
+
+	aggMap := make(map[string]any)
+	for _, resp := range allResponses {
+		if sumValue, ok := resp.Values["sum_value"]; ok {
+			aggMap[resp.Key["tags.db_event_source_id.keyword"].(string)] = sumValue
+		}
+	}
+
+	return statistics.AggregateResponse{Agg: aggMap}, nil
+}
+
 func sendInAppAlertsForUnparsedEvents(sourcesToAlert []*model.UnparsedEventSource, alertsManager *alert.AlertsManager) error {
 	alertsToSave := make([]*alerts_async.Alert, len(sourcesToAlert))
 	for i, srcAlert := range sourcesToAlert {
@@ -189,14 +270,15 @@ func sendInAppAlertsForUnparsedEvents(sourcesToAlert []*model.UnparsedEventSourc
 }
 
 func buildUnparsedEventAlert(ias model.UnparsedEventSource) (*alerts_async.Alert, error) {
-	details := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityTitle, ias.GetEntityName(), ias.GetUnparsedCount())
+	title := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityTitle, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage(), UnparsedEventsCheckDuration)
+	message := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityMessage, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage())
 	functionality := alerts_async.LogSource
 	return alerts_async.NewAlert(functionality,
 		alerts_async.WithEntity(ias),
 		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.UnparsedChecker),
-		alerts_async.WithTitle(details),
-		alerts_async.WithMessage(details),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DBPW10001, ""),
 	)
 }
