@@ -78,6 +78,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = cp_jobs.SendSilentDeviceNotification(ctx)
 	case common.DEVICE_INVENTORY_ALERT:
 		err = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
+	case common.VOLUME_DEVIATION_ALERT:
+		err = cp_jobs.SendAlertForVolumeDeviation(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
