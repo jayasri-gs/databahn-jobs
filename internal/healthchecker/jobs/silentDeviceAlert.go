@@ -24,6 +24,10 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	SilentReputation = "silent"
+)
+
 type Device struct {
 	Hostname         string `json:"hostname"`
 	MinTime          int64  `json:"min_time"`
@@ -92,7 +96,7 @@ func getSilentDevices(ctx context.Context, client *opensearch.Client, index stri
 	}
 
 	for _, device := range deviceInventoryList {
-		if device.Reputation != "silent" {
+		if device.Reputation != SilentReputation {
 			continue
 		}
 		silentDevices = append(silentDevices, Device{
