@@ -155,7 +155,7 @@ func ProcessSilentDevices(ctx context.Context) error {
 func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string, sources []string) ([]Device, error) {
 
 	// Build the query using getQueryFromFilters
-	query, err := GetQueryFromFilters(sources, tenantId)
+	query, err := getQueryFromFilters(sources, tenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while building query", zap.Error(err))
 		return nil, err
@@ -188,7 +188,7 @@ func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string,
 	return allSilentDevices, nil
 }
 
-func GetQueryFromFilters(sources []string, tenantId string) (string, error) {
+func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 	q := "tenant_id: " + tenantId
 	if len(sources) != 0 {
 		q += ` AND source_id: ` + "(" + strings.Join(sources, " OR ") + ")"
