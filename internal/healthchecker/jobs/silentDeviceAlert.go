@@ -195,9 +195,9 @@ func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 	}
 
 	// Devices silent for up to 14 days (last seen between now -14d and now)
-	maxThresholdTime := time.Now().Add(-14 * 24 * time.Hour)
+	maxThresholdTime := time.Now().UTC().Add(-14 * 24 * time.Hour)
 	maxThresholdEpoch := maxThresholdTime.UnixMilli()
-	currentEpoch := time.Now().UnixMilli()
+	currentEpoch := time.Now().UTC().UnixMilli()
 
 	q += ` AND max_time:>=` + strconv.FormatInt(maxThresholdEpoch, 10) +
 		` AND max_time:<` + strconv.FormatInt(currentEpoch, 10)
@@ -231,7 +231,7 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	// Register the calculateDuration function
 	tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
 		"calculateDuration": func(maxTime int64) string {
-			currentTime := time.Now().UnixMilli()
+			currentTime := time.Now().UTC().UnixMilli()
 			durationDays := (currentTime - maxTime) / (24 * 60 * 60 * 1000)
 			if durationDays == 0 {
 				durationHours := (currentTime - maxTime) / (60 * 60 * 1000)
