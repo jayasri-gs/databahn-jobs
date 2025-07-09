@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html/template"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	awsemail "github.com/databahn-ai/databahn-jobs/internal/healthchecker/aws"
@@ -17,10 +22,6 @@ import (
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"html/template"
-	"strconv"
-	"strings"
-	"time"
 )
 
 type Device struct {
@@ -91,6 +92,9 @@ func getSilentDevices(ctx context.Context, client *opensearch.Client, index stri
 	}
 
 	for _, device := range deviceInventoryList {
+		if device.Reputation != "silent" {
+			continue
+		}
 		silentDevices = append(silentDevices, Device{
 			Hostname:   device.Hostname,
 			MinTime:    device.MinTime,
@@ -147,7 +151,7 @@ func ProcessSilentDevices(ctx context.Context) error {
 func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string, sources []string) ([]Device, error) {
 
 	// Build the query using getQueryFromFilters
-	query, err := getQueryFromFilters(sources, tenantId)
+	query, err := GetQueryFromFilters(sources, tenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while building query", zap.Error(err))
 		return nil, err
@@ -180,27 +184,21 @@ func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string,
 	return allSilentDevices, nil
 }
 
-func getQueryFromFilters(sources []string, tenantId string) (string, error) {
+func GetQueryFromFilters(sources []string, tenantId string) (string, error) {
 	q := "tenant_id: " + tenantId
 	if len(sources) != 0 {
 		q += ` AND source_id: ` + "(" + strings.Join(sources, " OR ") + ")"
 	}
 
-	// Set endTime to 4 hours before the current time (previous day)
-	endTime := time.Now().Add(-4 * time.Hour).Format(time.RFC3339)
+	// Devices silent for up to 14 days (last seen between now -14d and now)
+	maxThresholdTime := time.Now().Add(-14 * 24 * time.Hour)
+	maxThresholdEpoch := maxThresholdTime.UnixMilli()
+	currentEpoch := time.Now().UnixMilli()
 
-	logging.GetLogger().Info("endTime", zap.String("endTime", endTime))
+	q += ` AND max_time:>=` + strconv.FormatInt(maxThresholdEpoch, 10) +
+		` AND max_time:<` + strconv.FormatInt(currentEpoch, 10)
 
-	// Parse endTime and add it to the query
-	t, err := time.Parse(time.RFC3339, endTime)
-	if err != nil {
-		return "", fmt.Errorf("error parsing endTime: %v", err)
-	}
-	endTimeEpoch := t.UnixMilli()
-
-	logging.GetLogger().Info("endTimeEpoch", zap.Int64("endTimeEpoch", endTimeEpoch))
-
-	q += ` AND max_time:<` + strconv.FormatInt(endTimeEpoch, 10)
+	logging.GetLogger().Info("final query", zap.String("query", q))
 
 	return q, nil
 }
