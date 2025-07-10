@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html/template"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	awsemail "github.com/databahn-ai/databahn-jobs/internal/healthchecker/aws"
@@ -17,10 +22,10 @@ import (
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"html/template"
-	"strconv"
-	"strings"
-	"time"
+)
+
+const (
+	SilentReputation = "silent"
 )
 
 type Device struct {
@@ -91,6 +96,9 @@ func getSilentDevices(ctx context.Context, client *opensearch.Client, index stri
 	}
 
 	for _, device := range deviceInventoryList {
+		if device.Reputation != SilentReputation {
+			continue
+		}
 		silentDevices = append(silentDevices, Device{
 			Hostname:   device.Hostname,
 			MinTime:    device.MinTime,
@@ -186,21 +194,15 @@ func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 		q += ` AND source_id: ` + "(" + strings.Join(sources, " OR ") + ")"
 	}
 
-	// Set endTime to 4 hours before the current time (previous day)
-	endTime := time.Now().Add(-4 * time.Hour).Format(time.RFC3339)
+	// Devices silent for up to 14 days (last seen between now -14d and now)
+	maxThresholdTime := time.Now().UTC().Add(-14 * 24 * time.Hour)
+	maxThresholdEpoch := maxThresholdTime.UnixMilli()
+	currentEpoch := time.Now().UTC().UnixMilli()
 
-	logging.GetLogger().Info("endTime", zap.String("endTime", endTime))
+	q += ` AND max_time:>=` + strconv.FormatInt(maxThresholdEpoch, 10) +
+		` AND max_time:<` + strconv.FormatInt(currentEpoch, 10)
 
-	// Parse endTime and add it to the query
-	t, err := time.Parse(time.RFC3339, endTime)
-	if err != nil {
-		return "", fmt.Errorf("error parsing endTime: %v", err)
-	}
-	endTimeEpoch := t.UnixMilli()
-
-	logging.GetLogger().Info("endTimeEpoch", zap.Int64("endTimeEpoch", endTimeEpoch))
-
-	q += ` AND max_time:<` + strconv.FormatInt(endTimeEpoch, 10)
+	logging.GetLogger().Info("final query", zap.String("query", q))
 
 	return q, nil
 }
@@ -229,7 +231,7 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	// Register the calculateDuration function
 	tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
 		"calculateDuration": func(maxTime int64) string {
-			currentTime := time.Now().UnixMilli()
+			currentTime := time.Now().UTC().UnixMilli()
 			durationDays := (currentTime - maxTime) / (24 * 60 * 60 * 1000)
 			if durationDays == 0 {
 				durationHours := (currentTime - maxTime) / (60 * 60 * 1000)
