@@ -293,7 +293,7 @@ func parseRolledOverP3OrOlderIndexName(index string) (*Index, bool) {
 			}
 			year, err := strconv.Atoi(yYear[1:])
 			if err != nil {
-				logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", split[5]))
+				logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", yYear))
 				return nil, false
 			}
 			dWeek := split[9] //w28
@@ -303,7 +303,7 @@ func parseRolledOverP3OrOlderIndexName(index string) (*Index, bool) {
 			}
 			week, err := strconv.Atoi(dWeek[1:])
 			if err != nil {
-				logger.GetLogger().Error("stats index name parsing: error while converting week", zap.Error(err), zap.String("index", index), zap.String("week", split[6]))
+				logger.GetLogger().Error("stats index name parsing: error while converting week", zap.Error(err), zap.String("index", index), zap.String("week", dWeek))
 				return nil, false
 			}
 			indexToRollover := Index{Index: index, Tenant: tenantId, Year: year, Week: week, Schema: indexSchema, Phase: IndexLifeCyclePhase(phase)}
@@ -337,7 +337,7 @@ func parseRolledOverV2P2IndexName(index string) (*Index, bool) {
 			}
 			year, err := strconv.Atoi(yYear[1:])
 			if err != nil {
-				logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", split[5]))
+				logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", yYear))
 				return nil, false
 			}
 			dDay := split[9]
@@ -347,7 +347,7 @@ func parseRolledOverV2P2IndexName(index string) (*Index, bool) {
 			}
 			day, err := strconv.Atoi(dDay[1:])
 			if err != nil {
-				logger.GetLogger().Error("stats index name parsing: error while converting day", zap.Error(err), zap.String("index", index), zap.String("day", split[6]))
+				logger.GetLogger().Error("stats index name parsing: error while converting day", zap.Error(err), zap.String("index", index), zap.String("day", dDay))
 				return nil, false
 			}
 			indexToRollover := Index{Index: index, Tenant: tenantId, Year: year, Day: day, Schema: indexSchema, Phase: IndexLifeCyclePhase(phase)}
