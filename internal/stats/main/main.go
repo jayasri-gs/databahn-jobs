@@ -71,11 +71,12 @@ func main() {
 		var indexName string
 		if isDaily {
 			indexName = fmt.Sprintf("db_statistics_%s_v2_p1_y%d_d%d", tenantId, year, day)
+			logger.GetLogger().Info("creating for year and day", zap.Int("year", year), zap.Int("day", day), zap.String("index", indexName))
 		} else {
 			yy, ww := getYearAndWeekFromEpochMillis(startRange)
 			indexName = fmt.Sprintf("rolled_over_1m_db_statistics_%s_v2_%d_%d", tenantId, yy, ww)
+			logger.GetLogger().Info("creating for year and week", zap.Int("year", yy), zap.Int("week", ww), zap.String("index", indexName))
 		}
-		logger.GetLogger().Info("creating for year and day", zap.Int("year", year), zap.Int("day", day), zap.String("index", indexName))
 
 		var docs []*Doc
 		for timeStamp := startRange; timeStamp < endRange; {
