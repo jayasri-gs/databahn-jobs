@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"reflect"
 	"strconv"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 )
 
@@ -190,7 +190,11 @@ func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.Alert
 		}
 
 		var alerts []statistics.AlertDocument
-		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+		decoder, err := util.CreateAlertDecoder(&alerts)
+		if err != nil {
+			logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
+			return nil, err
+		}
 		err = decoder.Decode(res)
 
 		if err != nil {
