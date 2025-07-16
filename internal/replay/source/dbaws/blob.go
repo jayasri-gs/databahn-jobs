@@ -30,7 +30,7 @@ func downloadFileFromAzureBlob(input model.Message, fileName string, mst *replay
 
 	client, err := getNewAzureClient(connString)
 	if err != nil {
-		logger.GetLogger().Error("couldn't create Azure Blob client", zap.String("connectionString", zap.Error(err))
+		logger.GetLogger().Error("couldn't create Azure Blob client", zap.Error(err))
 		return err
 	}
 
