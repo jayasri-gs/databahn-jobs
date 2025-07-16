@@ -29,6 +29,12 @@ type DatabahnParsedData struct {
 	RawEvent string `json:"rawevent"`
 }
 
+type Scanner interface {
+	Scan() bool
+	Text() string
+	Err() error
+}
+
 func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaDataStore, reqId string, threadId int, topic string, req model.Message, throughPutController *util.ThroughputController) (error, string) {
 
 	filePath := filepath.Join(mst.GetPath("dataDir"), fileName)
@@ -47,12 +53,14 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	}(file)
 
 	stats, _ := file.Stat()
+	forwardDataType := req.AdditionalConfig["forward_data_type"]
+	isParquetFile := false
 
 	mst.UpdateMetaData(fileName, constants.StatusProcessing, 0, 0, stats.Size(), 0, "")
 	logger.GetLogger().Info("getting producer", zap.String("traceId", reqId), zap.Int("thread ", threadId))
 	var producer = GetProducer(reqId, topic)
 
-	var scanner *bufio.Scanner
+	var scanner Scanner
 
 	switch strings.ToLower(req.DataStore) {
 	case constants.S3_STORAGE_TYPE, "":
@@ -79,7 +87,19 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			return err, constants.StatusFailed
 		}
 	case constants.AZURE_BLOB_STORAGE_TYPE:
-		scanner = bufio.NewScanner(file)
+		// Check if file is parquet by extension
+		if strings.HasSuffix(strings.ToLower(fileName), ".parquet") {
+			isParquetFile = true
+			parquetScanner, err := NewParquetScanner(file, forwardDataType)
+			if err != nil {
+				logger.GetLogger().Error("error creating parquet scanner", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+				return err, constants.StatusFailed
+			}
+			defer parquetScanner.Close()
+			scanner = parquetScanner
+		} else {
+			scanner = bufio.NewScanner(file)
+		}
 		if err = scanner.Err(); err != nil {
 			logger.GetLogger().Error("error reading file, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 			return err, constants.StatusFailed
@@ -92,7 +112,6 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	//var lineSlice string
 	lineCounter := 0
 	var byteSize int64 = 0
-	forwardDataType := req.AdditionalConfig["forward_data_type"]
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -106,7 +125,8 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			logger.GetLogger().Info("seek to line completed", zap.Int("offset", offsetSeek), zap.Int("lineCounter", lineCounter), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 		}
 
-		if strings.ToLower(forwardDataType) == "parsed" {
+		// while reading from parquet file itself we consider forwardDataType
+		if !isParquetFile && strings.ToLower(forwardDataType) == "parsed" {
 			line, err = getRawDataFromDataBahnParsedObject(line)
 			if err != nil {
 				return err, constants.StatusFailed
