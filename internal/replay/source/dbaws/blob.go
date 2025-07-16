@@ -23,14 +23,14 @@ func downloadFileFromAzureBlob(input model.Message, fileName string, mst *replay
 	objectKey := fullPath
 	bucketName := input.BucketName
 
-	logger.GetLogger().Info("blob params", zap.String("azure_blob_storage_account_connection_string", input.AdditionalConfig["azure_blob_storage_account_connection_string"]), zap.String("azure_blob_container", input.AdditionalConfig["azure_blob_container"]), zap.String("fullPath", fullPath), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
+	logger.GetLogger().Info("blob params", zap.String("azure_blob_container", input.AdditionalConfig["azure_blob_container"]), zap.String("fullPath", fullPath), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
 
 	connString := input.AdditionalConfig["azure_blob_storage_account_connection_string"]
 	containerName := input.AdditionalConfig["azure_blob_container"]
 
 	client, err := getNewAzureClient(connString)
 	if err != nil {
-		logger.GetLogger().Error("couldn't create Azure Blob client", zap.String("connectionString", input.AdditionalConfig["azure_blob_storage_account_connection_string"]), zap.Error(err))
+		logger.GetLogger().Error("couldn't create Azure Blob client", zap.String("connectionString", zap.Error(err))
 		return err
 	}
 

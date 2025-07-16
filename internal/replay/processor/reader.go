@@ -83,7 +83,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 
 		scanner = bufio.NewScanner(gzipReader)
 		if err = scanner.Err(); err != nil {
-			logger.GetLogger().Error("error reading file, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+			logger.GetLogger().Error("error reading file", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 			return err, constants.StatusFailed
 		}
 	case constants.AZURE_BLOB_STORAGE_TYPE:
@@ -101,7 +101,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			scanner = bufio.NewScanner(file)
 		}
 		if err = scanner.Err(); err != nil {
-			logger.GetLogger().Error("error reading file, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+			logger.GetLogger().Error("error reading file", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 			return err, constants.StatusFailed
 		}
 	default:
@@ -126,7 +126,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		}
 
 		// while reading from parquet file itself we consider forwardDataType
-		if !isParquetFile && strings.ToLower(forwardDataType) == "parsed" {
+		if !isParquetFile && strings.EqualFold(forwardDataType, "parsed") {
 			line, err = getRawDataFromDataBahnParsedObject(line)
 			if err != nil {
 				return err, constants.StatusFailed

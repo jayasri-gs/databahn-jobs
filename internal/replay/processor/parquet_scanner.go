@@ -2,6 +2,7 @@ package processor
 
 import (
 	"os"
+	"strings"
 
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
@@ -42,7 +43,7 @@ func getParquetReader(f *os.File, forwardDataType string) (*reader.ParquetReader
 	if err != nil {
 		return nil, err
 	}
-	if forwardDataType == "parsed" {
+	if strings.EqualFold(forwardDataType, "parsed") {
 		return reader.NewParquetReader(fr, new(ParsedParquetRow), 4)
 	}
 	return reader.NewParquetReader(fr, new(RawParquetRow), 4)
@@ -71,7 +72,7 @@ func (s *ParquetScanner) Scan() bool {
 }
 
 func (s *ParquetScanner) getRowData(forwardDataType string) (string, error) {
-	if forwardDataType == "parsed" {
+	if strings.EqualFold(forwardDataType, "parsed") {
 		rows := make([]*ParsedParquetRow, 1)
 		if err := s.reader.Read(&rows); err != nil {
 			return "", err
