@@ -5,6 +5,13 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -14,12 +21,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaDataStore, reqId string, threadId int, topic string, req model.Message, sst *replaymanager.SortStore) (error, string) {
@@ -59,7 +60,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 
 	scanner := bufio.NewScanner(gzipReader)
 	if err = scanner.Err(); err != nil {
-		logger.GetLogger().Error("error reading file, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+		logger.GetLogger().Error("error reading file", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 		return err, constants.StatusFailed
 
 	}
@@ -105,7 +106,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	}
 
 	if err = scanner.Err(); err != nil {
-		logger.GetLogger().Error("error reading file, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+		logger.GetLogger().Error("error reading file", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 		return err, constants.StatusFailed
 	}
 	if PrintDataInSequence(sst, outerKey) != nil {
