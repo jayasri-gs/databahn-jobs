@@ -87,7 +87,10 @@ func filterStatsIndicesForP1Migration(indexNames []string) []Index {
 func shouldMigrateP1ToP2(index Index, dayDiffToConsiderForRollback int) bool {
 	thisYear, thisDay := getYearAndDay()
 	thisDayNumber := yearDayNumber(thisYear, thisDay)
-	if index.Schema != Schema_V2 || index.Phase != Phase_P1 {
+	if index.Phase != Phase_P1 {
+		return false
+	}
+	if index.Schema != Schema_V2 && index.Schema != Schema_V3_temp {
 		return false
 	}
 	indexDayNumber := yearDayNumber(index.Year, index.Day)
