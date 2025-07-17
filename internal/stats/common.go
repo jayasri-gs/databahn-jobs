@@ -29,6 +29,7 @@ type RolloverConfig struct {
 	s3BackupEnabled               bool
 	deleteExistingRolledOverIndex bool
 	skipValidation                bool
+	specificTenants               string
 }
 
 type IndexSchema string

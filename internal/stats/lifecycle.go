@@ -128,6 +128,23 @@ func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfi
 		logger.GetLogger().Info("no valid rolled over indices found for p3_p4 migration")
 		return nil
 	}
+	if config.specificTenants != "" {
+		specificTenants := strings.Split(config.specificTenants, ",")
+		var filteredRolledOverIndices []Index
+		for _, index := range validRolledOverIndices {
+			for _, tenant := range specificTenants {
+				if index.Tenant == tenant {
+					filteredRolledOverIndices = append(filteredRolledOverIndices, index)
+					break
+				}
+			}
+		}
+		validRolledOverIndices = filteredRolledOverIndices
+		if len(validRolledOverIndices) == 0 {
+			logger.GetLogger().Info("no valid rolled over indices found for p3_p4 migration for specific tenants", zap.String("tenants", config.specificTenants))
+			return nil
+		}
+	}
 	sort.Slice(validRolledOverIndices, func(i, j int) bool {
 		return yearWeekNumber(validRolledOverIndices[i].Year, validRolledOverIndices[i].Week) < yearWeekNumber(validRolledOverIndices[j].Year, validRolledOverIndices[j].Week)
 	})
