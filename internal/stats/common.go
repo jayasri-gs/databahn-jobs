@@ -35,6 +35,7 @@ type IndexSchema string
 
 const Schema_V1 = IndexSchema("v1")
 const Schema_V2 = IndexSchema("v2")
+const Schema_V3_temp = IndexSchema("v3")
 
 type IndexLifeCyclePhase string
 
@@ -80,14 +81,15 @@ func (in Index) newIndexNameForRollover(duration time.Duration) (string, error) 
 	if in.Schema == Schema_V1 {
 		name := fmt.Sprintf("rolled_over_%s_db_statistics", strDur)
 		return strings.ReplaceAll(in.Index, "db_statistics", name), nil
-	} else if in.Schema == Schema_V2 {
+	} else if in.Schema == Schema_V2 || in.Schema == Schema_V3_temp {
 		nextPhase, err := in.Phase.next()
 		if err != nil {
 			return "", err
 		}
 		name := fmt.Sprintf("rolled_over_%s_db_statistics", strDur)
 		oldPhaseStr := fmt.Sprintf("_%s_%s_", in.Schema, in.Phase)
-		newPhaseStr := fmt.Sprintf("_%s_%s_", in.Schema, nextPhase)
+		newPhaseStr := fmt.Sprintf("_%s_%s_", Schema_V2, nextPhase)
+		//_v2_p1 -> _v2_p2_, _v3_p1 -> _v2_p2_
 		newIndexName := strings.ReplaceAll(in.Index, oldPhaseStr, newPhaseStr)
 		return strings.ReplaceAll(newIndexName, "db_statistics", name), nil
 	} else {
@@ -152,7 +154,7 @@ func parseIndexName(index string) (*Index, bool) {
 	} else if len(split) == 7 {
 		schema := split[3]
 		indexSchema := IndexSchema(schema)
-		if Schema_V2 == indexSchema {
+		if Schema_V2 == indexSchema || Schema_V3_temp == indexSchema {
 			phase := split[4]
 			tenantId := split[2]
 			yYear := split[5]
