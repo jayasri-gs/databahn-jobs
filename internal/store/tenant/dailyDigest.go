@@ -2,6 +2,8 @@ package tenant
 
 import (
 	"context"
+	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"reflect"
 	"strconv"
 	"time"
@@ -14,7 +16,6 @@ import (
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/dustin/go-humanize"
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 )
 
@@ -50,7 +51,6 @@ func formatNumber(num float64) string {
 }
 
 func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string, alerts []statistics.AlertDocument) *Digest {
-
 	return &Digest{
 		TenantId:  tenantId,
 		Name:      tenantName,
@@ -58,6 +58,7 @@ func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string, a
 		EndTime:   endTime,
 		Alerts:    alerts,
 	}
+
 }
 
 func (d *Digest) CalculateVolumeReductionAchievements() {
@@ -89,7 +90,7 @@ func (d *Digest) GetIngestionBreakdown() error {
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	agg := "tags.db_event_source_id.keyword"
 
-	ingestionStats, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime, d.TenantId)
+	ingestionStats, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime, d.TenantId.String())
 	if err != nil {
 		return err
 	}
@@ -160,9 +161,9 @@ func (d *Digest) CalculateIngestionStats(eventsIngested any, sizeIngested any) {
 
 func (d *Digest) GetSensitiveDataTrackingStats() error {
 	d.SensitiveDataTracking = make(map[string]string)
-	q := `name: "sensitive_total"`
+	q := fmt.Sprintf(`name: "sensitive_total" AND tags.db_tenant_id.keyword: "%s"`, d.TenantId.String())
 	agg := "tags.sensitive_type.keyword"
-	s, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime, d.TenantId)
+	s, err := ExecuteAggQuery(context.Background(), os.GetClient(), q, agg, d.StartTime, d.EndTime, d.TenantId.String())
 	if err != nil {
 		return err
 	}
@@ -178,18 +179,22 @@ func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.Alert
 	checkTime := time.Now().Add(-24 * time.Hour)
 	q := `lastObservedAt:>` + strconv.FormatInt(checkTime.UnixMilli(), 10)
 
-	var allAlerts []statistics.AlertDocument
+	alertsByTenant := make(map[string][]statistics.AlertDocument)
 	var searchAfter []any
 
 	for {
-		res, newSearchAfter, err := os.SearchPaginated(ctx, os.GetClient(), common.AlertsIndex, q, 5, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "desc"}})
+		res, newSearchAfter, err := os.SearchPaginated(ctx, os.GetClient(), common.AlertsIndex, q, 100, searchAfter, []os.Sort{{Field: "lastObservedAt", Order: "desc"}})
 		if err != nil {
 			logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", common.AlertsIndex))
 			return nil, err
 		}
 
 		var alerts []statistics.AlertDocument
-		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+		decoder, err := util.CreateAlertDecoder(&alerts)
+		if err != nil {
+			logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
+			return nil, err
+		}
 		err = decoder.Decode(res)
 
 		if err != nil {
@@ -197,18 +202,30 @@ func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.Alert
 			return nil, err
 		}
 
-		allAlerts = append(allAlerts, alerts...)
+		for _, alert := range alerts {
+			tenantId := alert.TenantId
+			if len(alertsByTenant[tenantId]) < 5 {
+				alertsByTenant[tenantId] = append(alertsByTenant[tenantId], alert)
+			}
+		}
 
 		if len(res) == 0 || newSearchAfter == nil {
+			break
+		}
+
+		allTenantsHaveMaxAlerts := true
+		for _, tenantAlerts := range alertsByTenant {
+			if len(tenantAlerts) < 5 {
+				allTenantsHaveMaxAlerts = false
+				break
+			}
+		}
+		if allTenantsHaveMaxAlerts {
 			break
 		}
 
 		searchAfter = newSearchAfter
 	}
 
-	alertsByTenant := make(map[string][]statistics.AlertDocument)
-	for _, alert := range allAlerts {
-		alertsByTenant[alert.TenantId] = append(alertsByTenant[alert.TenantId], alert)
-	}
 	return alertsByTenant, nil
 }

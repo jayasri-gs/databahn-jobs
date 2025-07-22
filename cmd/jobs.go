@@ -8,6 +8,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	cp_jobs "github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs"
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore"
 	evntjobCmd "github.com/databahn-ai/databahn-jobs/internal/eventsequencing/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
@@ -18,9 +19,10 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/stats"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+	"os"
 )
 
-func RunJob(ctx context.Context, jobName string, input model.Message) error {
+func RunJob(ctx context.Context, jobName string, input model.Message) {
 	var err error
 	switch jobName {
 	case common.INSIGHTS_AGGREGATION:
@@ -42,19 +44,20 @@ func RunJob(ctx context.Context, jobName string, input model.Message) error {
 	case common.FLEET_HEALTH_CHECKER:
 		err = jobs.HealthCheckAlertForFleetNode(ctx)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER:
-		err = jobs.SendAlertsForInactivity(ctx)
-		if err != nil {
-			logger.GetLogger().Error("failed to send alerts for inactivity", zap.Error(err))
-		}
+		err = jobs.SendAlertsForActivity(ctx)
 		err = jobs.AlertForDestinationInactivity(ctx)
-	case common.LOG_SOURCE_REPUTATION_CHECKER:
-		err = jobs.UpdateReputationForLogSources(ctx)
-	case common.AGENT_HEALTH_CHECKER:
-		err = jobs.AgentAlertForFleetNode(ctx)
+	case common.LOG_SOURCE_ACTIVITY_CHECKER_NEW:
+		err = cp_jobs.AlertForNoEventsFromSources(ctx)
+	case common.DESTINATION_ACTIVITY_CHECKER:
+		err = cp_jobs.AlertForNoEventsToDestination(ctx)
+	case common.NOTIFICATIONS_FOR_ALERTS:
+		err = cp_jobs.SendNotificationsForAlerts(ctx)
+	case common.HEALTH_CHECKER:
+		err = cp_jobs.HealthCheckJob(ctx)
 	case common.TENANT_DAILY_DIGEST:
-		err = jobs.TenantDailyDigest(ctx)
+		err = cp_jobs.SendTenantDailyDigest(ctx)
 	case common.UNPARSED_EVENTS:
-		err = jobs.AlertForUnparsedEvents(ctx)
+		err = cp_jobs.SendAlertsForUnparsedEvents(ctx)
 	case common.KAFKA_QUERY:
 		threadCount := utils.GetEnvInt("KAFKA_QUERY_THREAD_COUNT", 4)
 		waitMinutes := utils.GetEnvInt("KAFKA_QUERY_WAIT_MINUTES", 5)
@@ -72,19 +75,21 @@ func RunJob(ctx context.Context, jobName string, input model.Message) error {
 	case common.ENTITY_CHECKER_ALERT_GEN_V2:
 		err = jobs.UpdateLastEventTime(ctx)
 	case common.SILENT_DEVICE_ALERT:
-		err = jobs.ProcessSilentDevices(ctx)
-	case common.FHL_WINDOWS_ACTIVITY_CHECKER:
-		jobs.CheckAndRestartFHLAgent(ctx)
+		err = cp_jobs.SendSilentDeviceNotification(ctx)
+	case common.DEVICE_INVENTORY_ALERT:
+		err = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
+	case common.VOLUME_DEVIATION_ALERT:
+		err = cp_jobs.SendAlertForVolumeDeviation(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
 	if err != nil {
 		logger.GetLogger().Error("failed to process job", zap.Error(err), zap.String("jobName", jobName))
 		logger.GetLogger().Sync()
-		return err
+		os.Exit(1)
 	} else {
 		logger.GetLogger().Info("successfully processed job", zap.String("jobName", jobName))
 		logger.GetLogger().Sync()
-		return nil
+		os.Exit(0)
 	}
 }

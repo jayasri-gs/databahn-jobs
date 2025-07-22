@@ -50,8 +50,9 @@ func getTotalDataIngestedByTenantId(ctx context.Context, tId uuid.UUID, startTim
 	return totalIngestion, nil
 }
 
-func ExecuteAggQuery(ctx context.Context, client *opensearch.Client, q, aggBy, startTime, endTime string, tenantId uuid.UUID) (map[string]any, error) {
+func ExecuteAggQuery(ctx context.Context, client *opensearch.Client, q, aggBy, startTime, endTime, tenantId string) (map[string]any, error) {
 	query := statistics.AddDateRange(q, startTime, endTime)
+	statsAlias := os.StatisticsIndexAlias(tenantId)
 	searchBody := &statistics.AggregateQueryRequest{}
 	searchBody.Size = 0
 	searchBody.Query.QueryString.Query = query
@@ -59,7 +60,7 @@ func ExecuteAggQuery(ctx context.Context, client *opensearch.Client, q, aggBy, s
 	aggList := strings.Split(aggBy, ",")
 	searchBody.NestedAgg = statistics.BuildNextAggregation(aggList, 0)
 
-	searchResponse, err := os.MakeSearchCall(ctx, os.StatisticsIndexAlias(tenantId.String()), &searchBody, client)
+	searchResponse, err := os.MakeSearchCall(ctx, statsAlias, &searchBody, client)
 
 	if err != nil {
 		logger.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err))
