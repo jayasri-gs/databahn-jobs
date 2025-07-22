@@ -75,7 +75,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.ENTITY_CHECKER_ALERT_GEN_V2:
 		err = jobs.UpdateLastEventTime(ctx)
 	case common.SILENT_DEVICE_ALERT:
-		err = cp_jobs.SendSilentDeviceNotification(ctx)
+		err = jobs.ProcessSilentDevices(ctx)
 	case common.DEVICE_INVENTORY_ALERT:
 		err = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
 	case common.VOLUME_DEVIATION_ALERT:
