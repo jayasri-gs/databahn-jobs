@@ -8,6 +8,8 @@ RUN go build -tags musl -o databahn-jobs main.go
 FROM alpine:3.20.3 AS runner
 WORKDIR /home/databahn/service
 
+ADD templates /home/databahn/templates
+
 RUN apk add librdkafka-dev
 
 ENV SERVICE_NAME="databahn-jobs"

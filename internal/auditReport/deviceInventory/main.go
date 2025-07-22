@@ -6,155 +6,121 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
-	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
-	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	opensearch "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
-	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
-func FetchDeviceInventory(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup, parallelismCntrl chan struct{}, failedRequests *[]models.FailedRequests, successAlerts *[]helper.AlertBaseObjectV2, failedRequestMutex *sync.Mutex, successAlertsMutex *sync.Mutex) {
-	var file *os.File
+func WriteDeviceInventoryReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
+	logging.GetLoggerWithContext(ctx).Info("writing device inventory report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	sources, startTime, endTime, err := getDeviceInventoryReportConfigFromRequest(ctx, req)
+	if err != nil {
+		return err
+	}
+	err = gatherDataAndWriteToFile(ctx, req, startTime, endTime, sources, file)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func getDeviceInventoryReportConfigFromRequest(ctx context.Context, req models.AuditReport) ([]string, string, string, error) {
+	var deviceInventoryReportConfiguration map[string]interface{}
+	var sources []string
+	var startTime, endTime string
+	err := json.Unmarshal(req.AuditReportFilter, &deviceInventoryReportConfiguration)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while unmarshalling audit report filter", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return []string{}, "", "", err
+	}
+	var timeFilters, orFilters map[string]interface{}
+	timeFilters = deviceInventoryReportConfiguration["time_filters"].(map[string]interface{})
+	orFilters = deviceInventoryReportConfiguration["or_filters"].(map[string]interface{})
+	if _, ok := orFilters["sources"]; ok {
+		sources, _ = convertInterfaceSliceToStringSlice(orFilters["sources"].([]interface{}))
+	}
+	if v, ok := timeFilters["startTime"].(string); ok {
+		startTime = v
+	}
+	if v, ok := timeFilters["endTime"].(string); ok {
+		endTime = v
+	}
+	if startTime == "" || endTime == "" {
+		logging.GetLoggerWithContext(ctx).Error("startTime or endTime missing or empty in device inventory report config", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return nil, "", "", fmt.Errorf("startTime or endTime missing or empty in device inventory report config")
+	}
+	return sources, startTime, endTime, nil
+}
+func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, startTime, endTime string, sources []string, file *os.File) error {
 	var writer *csv.Writer
 	defer func() {
-		writer.Flush()
-		if err := writer.Error(); err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while flushing writer", zap.Error(err))
+		if writer != nil {
+			writer.Flush()
+			if err := writer.Error(); err != nil {
+				logging.GetLoggerWithContext(ctx).Error("error while flushing writer", zap.Error(err))
+			}
 		}
-		if err := file.Close(); err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while closing file", zap.Error(err))
-		}
-		wg.Done()
-		<-parallelismCntrl
 	}()
 
-	var failedRequestsTemp []models.FailedRequests
-	var successAlertsTemp []helper.AlertBaseObjectV2
-	logging.GetLogger().Info("Fetching device inventory report", zap.String("request_id", req.Id.String()), zap.String("tenant_id", req.TenantId))
-	err := models.UpdateRequestStatus(config.GetDB(), req.Id.String(), consts.INPROGRESS)
+	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while updating status to in progress", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		failedRequestsTemp = append(failedRequestsTemp, errRequest)
+		logging.GetLoggerWithContext(ctx).Error("error while fetching log sources", zap.Error(err), zap.String("tenant_id", req.TenantId))
+		return err
 	}
-	file, writer, err = gatherDataAndWriteToFile(ctx, req, failedRequests, file, writer)
-	if err != nil {
-		return
-	}
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Id.String())
-
-	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		failedRequestsTemp = append(failedRequestsTemp, errRequest)
-	} else {
-		successAlertsTemp = append(successAlertsTemp, helper.AlertBaseObjectV2{EntityName: req.Name, EntityId: utils.UUIDFromStringOrNil(req.Id.String()), EntityTenantUUId: utils.UUIDFromStringOrNil(req.TenantId), AlertType: alerts_common.AlertTypeExternalAndExternal})
+	var sourceIdsToNames = make(map[string]string)
+	for _, source := range logSources {
+		sourceIdsToNames[source.ID.String()] = source.Name
 	}
 
-	// Lock the mutex before updating the success alerts
-	successAlertsMutex.Lock()
-	*successAlerts = append(*successAlerts, successAlertsTemp...)
-	successAlertsMutex.Unlock()
-
-	// Lock the mutex before updating the failed requests
-	failedRequestMutex.Lock()
-	*failedRequests = append(*failedRequests, failedRequestsTemp...)
-	failedRequestMutex.Unlock()
-}
-
-func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests, file *os.File, writer *csv.Writer) (*os.File, *csv.Writer, error) {
-	sourceIdsToNames, query, file, writer, err := getFileAndRequestConfig(ctx, req, failedRequests, file, writer)
+	headers := []string{"Hostname", "First Seen", "Last Seen", "Source Name", "Reputation"}
+	writer = csv.NewWriter(file)
+	err = writer.Write(headers)
 	if err != nil {
-		return nil, nil, err
+		logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return err
 	}
 	var searchAfter []any
 	pageSize := utils.GetEnvInt("DEVICE_INVENTORY_REPORT_PAGE_SIZE", 1000)
 	index := "db_insights_sights_sourcehostname_" + req.TenantId
+	query, err := getQueryFromFilters(sources, startTime, endTime, req.TenantId)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while getting query from filters", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return err
+	}
 	for {
 		res, newSearchAfter, err := opensearch.SearchPaginated(ctx, opensearch.GetClient(), index, query, pageSize, searchAfter, []opensearch.Sort{{Field: "updated_at", Order: "asc"}})
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-			*failedRequests = append(*failedRequests, errRequest)
-			return nil, nil, err
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index), zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+			return err
 		}
 
 		var deviceInventoryList []statistics.DeviceInventoryDocument
 		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &deviceInventoryList})
 		err = decoder.Decode(res)
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-			*failedRequests = append(*failedRequests, errRequest)
-			return nil, nil, err
+			logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+			return err
 		}
 
 		err = writeDeviceInventoryRowsToFile(deviceInventoryList, sourceIdsToNames, writer)
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err))
-			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-			*failedRequests = append(*failedRequests, errRequest)
-			return nil, nil, err
+			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+			return err
 		}
-
 		if len(res) == 0 || newSearchAfter == nil {
 			break
 		}
 		searchAfter = newSearchAfter
 	}
-	return file, writer, nil
-}
-
-func getFileAndRequestConfig(ctx context.Context, req models.AuditReport, failedRequests *[]models.FailedRequests, file *os.File, writer *csv.Writer) (map[string]string, string, *os.File, *csv.Writer, error) {
-	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while fetching log sources", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return map[string]string{}, "", nil, nil, err
-	}
-	var sourceIdsToNames = make(map[string]string)
-	for _, source := range logSources {
-		sourceIdsToNames[source.ID.String()] = source.Name
-	}
-	file, err = common.CreateTempFile(req.Id.String())
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return map[string]string{}, "", nil, nil, err
-	}
-	headers := []string{"Hostname", "First Seen", "Last Seen", "Source Name", "Reputation"}
-	writer = csv.NewWriter(file)
-	err = writer.Write(headers)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return map[string]string{}, "", nil, nil, err
-	}
-
-	sources, startTime, endTime, err := getDeviceInventoryReportConfigFromRequest(req)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting config from request", zap.Error(err))
-		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
-		*failedRequests = append(*failedRequests, errRequest)
-		return map[string]string{}, "", nil, nil, err
-	}
-	query, err := getQueryFromFilters(sources, startTime, endTime, req.TenantId)
-	return sourceIdsToNames, query, file, writer, err
+	return nil
 }
 func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInventoryDocument, sourceIdsToNames map[string]string, writer *csv.Writer) error {
 	for _, deviceInventory := range deviceInventoryList {
@@ -171,27 +137,6 @@ func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInven
 	logging.GetLogger().Info("Writing rows to the file completed")
 	writer.Flush()
 	return writer.Error()
-}
-func getDeviceInventoryReportConfigFromRequest(req models.AuditReport) ([]string, string, string, error) {
-	var deviceInventoryReportConfiguration map[string]interface{}
-	var sources []string
-	var startTime, endTime string
-	err := json.Unmarshal(req.AuditReportFilter, &deviceInventoryReportConfiguration)
-	if err != nil {
-		return []string{}, "", "", err
-	}
-	var configData map[string]interface{}
-	configData = deviceInventoryReportConfiguration["filter"].(map[string]interface{})
-	if _, ok := configData["sources"]; ok {
-		sources, _ = convertInterfaceSliceToStringSlice(configData["sources"].([]interface{}))
-	}
-	if _, ok := configData["startTime"].(string); ok {
-		startTime = configData["startTime"].(string)
-	}
-	if _, ok := configData["endTime"].(string); ok {
-		endTime = configData["endTime"].(string)
-	}
-	return sources, startTime, endTime, nil
 }
 func convertInterfaceSliceToStringSlice(interfaceSlice []interface{}) ([]string, error) {
 	stringSlice := make([]string, len(interfaceSlice))

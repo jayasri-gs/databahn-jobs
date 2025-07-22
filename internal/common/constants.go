@@ -9,17 +9,19 @@ const ACK_PROCESSOR = "ack_processor"
 
 const FLEET_HEALTH_CHECKER = "fleet-health-checker"
 const LOG_SOURCE_ACTIVITY_CHECKER = "log-source-activity-checker"
-
-// TO BE deleted post agent fix
-const FHL_WINDOWS_ACTIVITY_CHECKER = "fhl-windows-activity-checker"
+const LOG_SOURCE_ACTIVITY_CHECKER_NEW = "log-source-activity-checker-new"
+const DESTINATION_ACTIVITY_CHECKER = "destination-activity-checker"
+const NOTIFICATIONS_FOR_ALERTS = "notifications-for-alerts"
 const LOG_SOURCE_REPUTATION_CHECKER = "log-source-reputation-checker"
 const ENTITY_CHECKER_ALERT_GEN_V2 = "entity-reputation-checker-alert-gen-v2"
 const SILENT_DEVICE_ALERT = "silent-device-alert"
+const DEVICE_INVENTORY_ALERT = "device-inventory-alert"
 const TENANT_DAILY_DIGEST = "tenant-daily-digest"
-const AGENT_HEALTH_CHECKER = "agent-health-checker"
+const HEALTH_CHECKER = "health-checker"
 const KAFKA_QUERY = "kafka_query"
 const UNPARSED_EVENTS = "unparsed-events"
 const EVENT_SEQUENCING = "event-sequencing"
+const VOLUME_DEVIATION_ALERT = "volume-deviation-alert"
 const InfoAlert = "info"
 const WarningAlert = "warning"
 const SevereAlert = "severe"
@@ -44,14 +46,23 @@ const FleetNodeHealthCheckMessage = "This alert indicates that the cloud has not
 
 const AgentHealthCheck = "agent health check"
 const AgentFunctionality = "endpoint health checker"
-const AgentHealthCheckTitle = "unhealthy agent nodes found"
-const AgentHealthCheckMessage = "health from agent not reported for more than 5 minutes, marking unhealthy"
+const AgentHealthCheckerFunctionalityTitle = "Health from agent not reported for more than %s, marking unhealthy for agent %s"
+const FleetNodeHealthCheckerFunctionalityTitle = "Health from fleet_node not reported for more than %s, marking unhealthy for fleet node %s"
+const FleetConnectorHealthCheckerFunctionalityTitle = "Health from fleet_connector not reported for more than %s, marking unhealthy for fleet connector %s"
+const AgentHealthCheckTitle = "Unhealthy agent nodes found"
+const AgentHealthCheckMessage = "Health from agent not reported for more than 5 minutes, marking unhealthy"
+
+// New message constants with time information
+const AgentHealthCheckerFunctionalityMessage = "This agent is configured to be alerted when health is not reported for more than %s. As of '%s' last heartbeat was received at '%s'."
+const FleetNodeHealthCheckerFunctionalityMessage = "This fleet node is configured to be alerted when health is not reported for more than %s. As of '%s' last heartbeat was received at '%s'."
+const FleetConnectorHealthCheckerFunctionalityMessage = "This fleet connector is configured to be alerted when health is not reported for more than %s. As of '%s' last heartbeat was received at '%s'."
+const FleetComponentHealthCheckerFunctionalityMessage = "This fleet component is configured to be alerted when health is not reported for more than %s. As of '%s' last heartbeat was received at '%s'."
 
 const FleetConnectorHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified connector for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 const FleetComponentHealthCheckMessage = "This alert indicates that the cloud has not received a heartbeat signal from the specified component for the past 30 minutes. Heartbeat signals are periodic messages sent by connector to confirm that they are running and operational. The absence of these signals suggests a potential issue that may require immediate attention."
 
 const FleetConnectorHealthCheckTitle = "No heartbeat received in the last 30 minutes"
-const FleetComponentHealthCheckTitle = "fleet component is not reporting health"
+const FleetComponentHealthCheckTitle = "Fleet component %s is not reporting health for more than %s"
 
 const ALERT_REPORT_PROCESSOR = "alert_report_processor"
 

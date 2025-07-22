@@ -15,11 +15,9 @@ type ParsedChangeFlags[T WithSecret] struct {
 
 func (p ParsedChangeFlags[T]) BuildAck() (*flagUtil.Acknowledgement, bool) {
 	if p.Error != nil {
-		return flagUtil.ErrorAcknowledgement(p.ChangeFlag.RequestId, p.ChangeFlag.EntityType,
-			p.ChangeFlag.EntityId, p.ChangeFlag.TenantId, p.ChangeFlag.Action, p.Error.Error()), false
+		return flagUtil.ErrorAcknowledgementFromChangeFlag(*p.ChangeFlag, p.Error.Error()), false
 	}
-	return flagUtil.SuccessAcknowledgement(p.ChangeFlag.RequestId, p.ChangeFlag.EntityType,
-		p.ChangeFlag.EntityId, p.ChangeFlag.TenantId, p.ChangeFlag.Action), true
+	return flagUtil.SuccessAcknowledgementFromChangeFlag(*p.ChangeFlag), true
 }
 
 func FilterSelectAll[T WithSecret](ws T) bool {

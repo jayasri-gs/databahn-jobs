@@ -47,7 +47,7 @@ func uploadFile(ctx context.Context, filePath string, bucketName string, objectK
 	}
 	defer file.Close()
 
-	err = s3_store.GetClient().UploadFile(ctx, bucketName, objectKey, file)
+	err = s3_store.GetClient().UploadFile(bucketName, objectKey, file)
 	if err != nil {
 		return err
 	}

@@ -50,16 +50,21 @@ const (
 	// AuthenticationUrl identity urls
 	AuthenticationUrl = configs.AuthenticationUrl
 
-	BackupEventsS3Bucket = "s3.events.bucket"
-	BackupEventsS3Region = "s3.events.region"
-	ArtifactsS3Bucket    = "s3.artifacts.bucket"
-	S3BinaryPrefix       = "s3.artifacts.paths.binaries"
-	S3BinaryName         = "s3.artifacts.paths.binary_name"
-	AuthCognitoId        = "auth.auth_cognito_id"
-	AuthClientId         = "auth.client_id"
-	Region               = "region"
-	S3Endpoint           = "s3.endpoint"
-	S3ForcePathStyle     = "s3.force_path_style"
-	S3AccessKeyId        = "s3.access_key"
-	S3SecretKey          = "s3.secret_key"
+	BackupEventsS3Bucket                = "s3.events.bucket"
+	BackupEventsS3Region                = "s3.events.region"
+	ArtifactsS3Bucket                   = "s3.artifacts.bucket"
+	S3BinaryPrefix                      = "s3.artifacts.paths.binaries"
+	S3BinaryName                        = "s3.artifacts.paths.binary_name"
+	AuthCognitoId                       = "auth.auth_cognito_id"
+	AuthClientId                        = "auth.client_id"
+	Region                              = "region"
+	S3Endpoint                          = "s3.endpoint"
+	S3ForcePathStyle                    = "s3.force_path_style"
+	S3AccessKeyId                       = "s3.access_key"
+	S3SecretKey                         = "s3.secret_key"
+	EventHubCheckpointStorageConnection = "event_hub.checkpoint_storage_connection"
+
+	GlobalDestMaxS3Topics        = "globalDestination.max_s3_topics"         // Maximum number of topics for S3 destination
+	GlobalDestMaxAzureBlobTopics = "globalDestination.max_azure_blob_topics" // Maximum number of topics for Azure Blob destination
+	GlobalDestMaxSnowflakeTopics = "globalDestination.max_snowflake_topics"  // Maximum number of topics for Snowflake destination
 )

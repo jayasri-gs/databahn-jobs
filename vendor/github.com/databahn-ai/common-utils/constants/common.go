@@ -7,4 +7,6 @@ const (
 	SourceScopeFleet         = "FLEET"
 	SourceScopeDataGenerator = "DATA_GENERATOR"
 	SourceScopeCloud         = "CLOUD"
+	OtelComponentName        = "component_name"
+	OtelSourceScope          = "scope"
 )
