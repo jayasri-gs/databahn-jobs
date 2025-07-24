@@ -2,6 +2,7 @@ package util
 
 import (
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
@@ -19,6 +20,10 @@ func CreateAlertDecoder(result interface{}) (*mapstructure.Decoder, error) {
 				if f.Kind() == reflect.String && t.Kind() == reflect.Int64 {
 					// Handle timestamp string to int64 conversion
 					if str, ok := data.(string); ok {
+						if val, err := strconv.ParseInt(str, 10, 64); err == nil {
+							return val, nil
+						}
+
 						// Try to parse as RFC3339 timestamp
 						if t, err := time.Parse(time.RFC3339, str); err == nil {
 							return t.UnixMilli(), nil
