@@ -27,6 +27,7 @@ var (
 	FleetConnector    = functionalityEnum{value: "fleet_connector"}
 	FleetComponent    = functionalityEnum{value: "fleet_component"}
 	Dispenser         = functionalityEnum{value: "dispenser"}
+	DataVolume        = functionalityEnum{value: "data_volume"}
 	VolumeControlRule = functionalityEnum{value: "volume_control_rule"}
 	Lookup            = functionalityEnum{value: "lookup"}
 	Enrichment        = functionalityEnum{value: "enrichment"}

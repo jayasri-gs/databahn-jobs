@@ -67,6 +67,8 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 			logger.GetLogger().Info("checkpoint found", zap.String("tenant", tenantIdStr), zap.Int64("lastObservedAtFrom", lastObservedAtFrom))
 		}
 		lastObservedAtTo := time.Now().Add(-2 * time.Minute).UTC().UnixMilli()
+		logger.GetLogger().Info("checking alerts between", zap.Int64("from", lastObservedAtFrom),
+			zap.String("tenant", tenantIdStr), zap.Int64("to", lastObservedAtTo))
 		q := "dismissed:false AND lastObservedAt:{" + strconv.FormatInt(lastObservedAtFrom, 10) + " TO " + strconv.FormatInt(lastObservedAtTo, 10) + "] AND tenantId:" + tenantIdStr
 		pageSize := 200
 		var after []any
@@ -91,8 +93,8 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 		} else {
 			finalCheckpoint = checkpoint
 		}
-		var latestLastObserveAt int64 = 0
-		alertsByFunctionalityAndTitle := make(map[string]map[string][]alerts_async.Alert)
+		var latestLastObserveAt int64 = finalCheckpoint.CheckpointValue.LastObservedAt
+		alertsByFunctionalityAndFunctionalityType := make(map[string]map[string][]alerts_async.Alert)
 		for {
 			alertMap, newAfter, err := os.SearchPaginated(ctx, osClient, common.AlertsIndex, q, pageSize, after, sort)
 			if err != nil {
@@ -112,16 +114,16 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 			}
 
 			for _, alert := range alerts {
-				if alertsByFunctionality, ok := alertsByFunctionalityAndTitle[alert.Functionality]; ok {
-					if alertsByTitle, ok := alertsByFunctionality[alert.Title]; ok {
-						alertsByTitle = append(alertsByTitle, alert)
-						alertsByFunctionality[alert.Title] = alertsByTitle
+				if alertsByFunctionality, ok := alertsByFunctionalityAndFunctionalityType[alert.Functionality]; ok {
+					if alertsByFunctionalityType, ok := alertsByFunctionality[alert.FunctionalityType]; ok {
+						alertsByFunctionalityType = append(alertsByFunctionalityType, alert)
+						alertsByFunctionality[alert.FunctionalityType] = alertsByFunctionalityType
 					} else {
-						alertsByFunctionality[alert.Title] = []alerts_async.Alert{alert}
+						alertsByFunctionality[alert.FunctionalityType] = []alerts_async.Alert{alert}
 					}
 				} else {
-					alertsByFunctionalityAndTitle[alert.Functionality] = map[string][]alerts_async.Alert{
-						alert.Title: {alert},
+					alertsByFunctionalityAndFunctionalityType[alert.Functionality] = map[string][]alerts_async.Alert{
+						alert.FunctionalityType: {alert},
 					}
 				}
 				if alert.LastObservedAt > latestLastObserveAt {
@@ -137,29 +139,30 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 			after = newAfter
 		}
 
-		if len(targetsByModuleName) > 0 {
-			for functionality, alertsByTitle := range alertsByFunctionalityAndTitle {
-				for title, alerts := range alertsByTitle {
-					for _, alert := range alerts {
-						err := sendSupportNotification(alert, t, notificationManager)
-						if err != nil {
-							logger.GetLogger().Error("failed to send support notification", zap.Error(err), zap.String("tenant", tenantIdStr))
-							return err
-						} else {
-							logger.GetLogger().Info("support notification sent successfully", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality), zap.String("title", title))
-						}
+		for functionality, alertsByFunctionalityType := range alertsByFunctionalityAndFunctionalityType {
+			for functionalityType, alerts := range alertsByFunctionalityType {
+				for _, alert := range alerts {
+					err := sendSupportNotification(alert, t, notificationManager)
+					if err != nil {
+						logger.GetLogger().Error("failed to send support notification", zap.Error(err), zap.String("tenant", tenantIdStr))
+						return err
+					} else {
+						logger.GetLogger().Info("support notification sent successfully", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality), zap.String("title", alert.Title))
 					}
-					err := sendCustomerNotification(t, title, functionality, alerts, targetsByModuleName, notificationManager, moduleTenantConfigMap)
+				}
+				if len(targetsByModuleName) > 0 {
+					err := sendCustomerNotification(t, functionalityType, functionality, alerts, targetsByModuleName, notificationManager, moduleTenantConfigMap)
 					if err != nil {
 						logger.GetLogger().Error("failed to send customer notification", zap.Error(err), zap.String("tenant", tenantIdStr))
 						return err
 					} else {
-						logger.GetLogger().Info("customer notification sent successfully for tenant", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality), zap.String("title", title))
+						logger.GetLogger().Info("customer notification sent successfully for tenant", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality),
+							zap.String("functionalityType", functionalityType), zap.Int("alertsCount", len(alerts)))
 					}
+				} else {
+					logger.GetLogger().Info("no targets found for tenant, no customer alerts", zap.String("tenant", tenantIdStr))
 				}
 			}
-		} else {
-			logger.GetLogger().Info("no targets found for tenant", zap.String("tenant", tenantIdStr))
 		}
 
 		finalCheckpoint.CheckpointValue.LastObservedAt = latestLastObserveAt
@@ -192,47 +195,7 @@ func loadModuleTenantConfigs(db *gorm.DB) (map[string]*entities.ModuleTenantConf
 	return configMap, nil
 }
 
-func sendCustomerNotification(t tenant.Tenant, title, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, moduleTenantConfigMap map[string]*entities.ModuleTenantConfigData) error {
-
-	// Filter alerts based on module_tenant_config
-	var filteredAlerts []alerts_async.Alert
-
-	config := moduleTenantConfigMap[t.Id.String()]
-	if config != nil && config.SourceList.IncludeExclude == "EXCLUDE" {
-		// Create a map of source IDs for efficient lookup
-		sourceIdMap := make(map[string]bool)
-		for _, sourceId := range config.SourceList.SourceIds {
-			sourceIdMap[sourceId] = true
-		}
-
-		// Filter alerts using the map
-		for _, alert := range alerts {
-			if !sourceIdMap[alert.FunctionalityEntityId] {
-				filteredAlerts = append(filteredAlerts, alert)
-			}
-		}
-	} else {
-		// If no config or not EXCLUDE, include all alerts
-		filteredAlerts = alerts
-	}
-
-	// If no alerts remain after filtering, don't send notification
-	if len(filteredAlerts) == 0 {
-		logger.GetLogger().Info("no alerts remaining after filtering, skipping notification",
-			zap.String("tenant", t.Id.String()),
-			zap.String("functionality", functionality))
-		return nil
-	}
-
-	subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, title)
-
-	// Rebuild email body with filtered alerts
-	body, err := buildEmailBody(title, filteredAlerts)
-	if err != nil {
-		logger.GetLogger().Error("error while building email body with filtered alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
-		return err
-	}
-
+func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, moduleTenantConfigMap map[string]*entities.ModuleTenantConfigData) error {
 	for modulesName, targets := range targetsByModuleName {
 		if alertFunctionalityMatchesModuleName(functionality, modulesName) {
 			var databahnTargets []*notification_common.DatabahnTarget
@@ -242,12 +205,53 @@ func sendCustomerNotification(t tenant.Tenant, title, functionality string, aler
 					TargetId: target.ID.String(),
 				})
 			}
+			var filteredAlerts []alerts_async.Alert
+			if alerts_async.LogSource.String() == functionality || alerts_async.CloudLogSource.String() == functionality {
+				config := moduleTenantConfigMap[t.Id.String()]
+				if config != nil && config.SourceList.IncludeExclude == "EXCLUDE" {
+					// Create a map of source IDs for efficient lookup
+					sourceIdMap := make(map[string]bool)
+					for _, sourceId := range config.SourceList.SourceIds {
+						sourceIdMap[sourceId] = true
+					}
+
+					// Filter alerts using the map
+					for _, alert := range alerts {
+						if !sourceIdMap[alert.FunctionalityEntityId] {
+							filteredAlerts = append(filteredAlerts, alert)
+						}
+					}
+				} else {
+					filteredAlerts = alerts
+				}
+			} else {
+				filteredAlerts = alerts
+			}
+
+			// If no alerts remain after filtering, don't send notification
+			if len(filteredAlerts) == 0 {
+				logger.GetLogger().Info("no alerts remaining after filtering, skipping notification",
+					zap.String("tenant", t.Id.String()),
+					zap.String("functionality", functionality))
+				continue
+			}
+
+			emailTitle := buildEmailTitle(functionalityType)
+
+			subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, emailTitle)
+
+			// Rebuild email body with filtered alerts
+			body, err := buildEmailBody(emailTitle, filteredAlerts)
+			if err != nil {
+				logger.GetLogger().Error("error while building email body with filtered alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
+				return err
+			}
 			emailRequest := notification_common.EmailNotificationRequest{
 				Targets: databahnTargets,
 				Body:    body,
 				Subject: subject,
 			}
-			err := notificationManager.SendEmailNotification(emailRequest)
+			err = notificationManager.SendEmailNotification(emailRequest)
 			if err != nil {
 				logger.GetLogger().Error("error while sending email notification", zap.Error(err), zap.String("tenant", t.Id.String()))
 				return err
@@ -297,7 +301,19 @@ func buildOpsGenieBody(tnt tenant.Tenant, alert alerts_async.Alert) (string, err
 	return emailBody, nil
 }
 
-func buildEmailBody(title string, alerts []alerts_async.Alert) (string, error) {
+func buildEmailTitle(functionalityType string) string {
+	titleMap := make(map[string]string)
+	titleMap[alerts_async.IngestionChecker.String()] = "No new data ingested"
+	titleMap[alerts_async.DeliveryChecker.String()] = "No data delivered"
+	if title, exists := titleMap[functionalityType]; exists {
+		return title
+	}
+	title := strings.ReplaceAll(functionalityType, "_", " ")
+	title = strings.ReplaceAll(title, "-", " ")
+	return title
+}
+
+func buildEmailBody(emailTitle string, alerts []alerts_async.Alert) (string, error) {
 	var templatePath = EmailTemplatesBasePath + "green_alert.html"
 	switch alerts[0].Criticality {
 	case alerts_async.Warning.String(), alerts_async.Sever.String():
@@ -317,12 +333,13 @@ func buildEmailBody(title string, alerts []alerts_async.Alert) (string, error) {
 			FunctionalityEntityName: alert.FunctionalityEntityName,
 			FunctionalityType:       alert.FunctionalityType,
 			Message:                 alert.Message,
+			Title:                   alert.Title,
 			FirstObservedAt:         time.UnixMilli(alert.FirstObservedAt).Format(time.RFC3339),
 		})
 	}
 	emailTemplate := EmailTemplate{
 		Name:    "Dear Team,",
-		Title:   title,
+		Title:   emailTitle,
 		Details: emailTemplateDetails,
 	}
 	err = t.Execute(buf, emailTemplate)
@@ -349,6 +366,7 @@ type EmailTemplateDetails struct {
 	FunctionalityType       string
 	Message                 string
 	FirstObservedAt         string
+	Title                   string
 }
 
 type OpsGenieDetails struct {

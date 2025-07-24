@@ -27,6 +27,7 @@ var (
 	DIOE20001 = errorCodeEnum{value: "DIOE20001", messageTemplate: "Kafka Service unavailable. {0}"}
 	DIOE30001 = errorCodeEnum{value: "DIOE30001", messageTemplate: "Service unavailable. {0}"}
 	DIOE40001 = errorCodeEnum{value: "DIOE40001", messageTemplate: "Checkpointing failed. {0}"}
+	DIOE50001 = errorCodeEnum{value: "DIOE50001", messageTemplate: "File processing failure. {0}"}
 	DWBE30001 = errorCodeEnum{value: "DWBE30001", messageTemplate: "HTTP GET call failed. {0}"}
 	DWBE30002 = errorCodeEnum{value: "DWBE30002", messageTemplate: "HTTP DELETE call failed. {0}"}
 	DWBE30003 = errorCodeEnum{value: "DWBE30003", messageTemplate: "HTTP PUT call failed. {0}"}
@@ -40,6 +41,9 @@ var (
 	DNDW10001 = errorCodeEnum{value: "DNDW10001", messageTemplate: "No Data For Logsource Received. {0}"}
 	DNDW10002 = errorCodeEnum{value: "DNDW10002", messageTemplate: "No Data For Destination Received. {0}"}
 	DNDW10003 = errorCodeEnum{value: "DNDW10003", messageTemplate: "Reputation update for device . {0}"}
+	DNDW10004 = errorCodeEnum{value: "DNDW10004", messageTemplate: "Destination threshold limit has exceeded . {0}"}
+	DNDW10005 = errorCodeEnum{value: "DNDW10005", messageTemplate: "Volume deviation detected . {0}"}
+	DNDW10006 = errorCodeEnum{value: "DNDW10006", messageTemplate: "Incoming/Outgoing data ratio exceeded . {0}"}
 	DGRW10001 = errorCodeEnum{value: "DGRW10001", messageTemplate: "System guardrail triggered. {0}"}
 	DDBE10001 = errorCodeEnum{value: "DDBE10001", messageTemplate: "Database source unavailable. {0}"}
 	DHRW10001 = errorCodeEnum{value: "DHRW10001", messageTemplate: "Agent is unhealthy. {0}"}

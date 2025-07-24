@@ -103,6 +103,15 @@ type TransformationOperator struct {
 	CaseOperatorConfig           *CaseOperatorConfig           `json:"caseOperatorConfig,omitempty"`
 }
 
+type JsonExtractionConfig struct {
+	IsString bool   `json:"isString"`
+	JsonKey  string `json:"jsonKey"`
+}
+
+type XmlExtractionConfig struct {
+	XmlKey string `json:"xmlKey"`
+}
+
 type RenameFields struct {
 	LogAttribute                       string                    `json:"logAttribute"`
 	DatabahnAttribute                  string                    `json:"databahnAttribute"`
@@ -151,7 +160,8 @@ type RenameFields struct {
 	StringEncodeASCIIOnlyOperatorEnabled   bool                         `json:"stringEncodeASCIIOnlyOperatorEnabled"`
 	StringDecodeASCIIOnlyOperatorEnabled   bool                         `json:"stringDecodeASCIIOnlyOperatorEnabled"`
 	StringReplaceWithLengthOperatorEnabled bool                         `json:"stringReplaceWithLengthOperatorEnabled"`
-
+	JsonExtractionConfig                   JsonExtractionConfig         `json:"jsonExtractionConfig"`
+	XmlExtractionConfig                    XmlExtractionConfig          `json:"xmlExtractionConfig"`
 	// ✅ NEW: New Time Operators
 	TimeFromUnixTimestampSecondsOperatorEnabled      bool `json:"timeFromUnixTimestampSecondsOperatorEnabled"`
 	TimeFromUnixTimestampMillisecondsOperatorEnabled bool `json:"timeFromUnixTimestampMillisecondsOperatorEnabled"`
