@@ -258,7 +258,7 @@ func sendCustomerNotification(t tenant.Tenant, title, functionality string, aler
 }
 
 func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notificationManager *notification.NotificationManager) error {
-	emailTitle := fmt.Sprintf("%s:%s:%s", alert.Functionality, t.Name, alert.FunctionalityEntityName)
+	emailTitle := fmt.Sprintf("%s:%s:%s", alert.FunctionalityType, t.Name, alert.FunctionalityEntityName)
 	body, err := buildOpsGenieBody(t, alert)
 	if err != nil {
 		logger.GetLogger().Error("error while building opsgenie body", zap.Error(err), zap.String("tenant", t.Id.String()))
