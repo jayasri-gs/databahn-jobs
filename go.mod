@@ -1,6 +1,8 @@
 module github.com/databahn-ai/databahn-jobs
 
-go 1.24
+go 1.24.2
+
+toolchain go1.24.4
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
@@ -11,8 +13,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
 	github.com/aws/aws-sdk-go-v2/service/ses v1.30.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19
-	github.com/databahn-ai/common-utils v0.173.0
-	github.com/databahn-ai/db-models v0.177.0
+	github.com/databahn-ai/common-utils v0.175.0
+	github.com/databahn-ai/db-models v0.190.0
 	github.com/databahn-ai/go-logging v0.19.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/uuid v1.6.0

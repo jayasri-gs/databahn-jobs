@@ -282,12 +282,13 @@ github.com/cespare/xxhash/v2
 ## explicit; go 1.21
 github.com/confluentinc/confluent-kafka-go/v2/kafka
 github.com/confluentinc/confluent-kafka-go/v2/kafka/librdkafka_vendor
-# github.com/databahn-ai/common-utils v0.173.0
-## explicit; go 1.24
+# github.com/databahn-ai/common-utils v0.175.0
+## explicit; go 1.24.2
 github.com/databahn-ai/common-utils/ack
 github.com/databahn-ai/common-utils/alert
 github.com/databahn-ai/common-utils/authentication
 github.com/databahn-ai/common-utils/aws
+github.com/databahn-ai/common-utils/cache
 github.com/databahn-ai/common-utils/changeflag
 github.com/databahn-ai/common-utils/configs
 github.com/databahn-ai/common-utils/configuration
@@ -300,8 +301,8 @@ github.com/databahn-ai/common-utils/queue
 github.com/databahn-ai/common-utils/redis
 github.com/databahn-ai/common-utils/utils
 github.com/databahn-ai/common-utils/vault
-# github.com/databahn-ai/db-models v0.177.0
-## explicit; go 1.24
+# github.com/databahn-ai/db-models v0.190.0
+## explicit; go 1.24.2
 github.com/databahn-ai/db-models/alerts_async
 github.com/databahn-ai/db-models/alerts_common
 github.com/databahn-ai/db-models/changeflag

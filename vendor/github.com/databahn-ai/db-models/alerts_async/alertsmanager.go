@@ -2,15 +2,20 @@ package alerts_async
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"github.com/databahn-ai/common-utils/cache"
+	"sync"
+	"time"
+
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/queue"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"sync"
-	"time"
 )
 
 /*
@@ -26,6 +31,7 @@ type AlertsManager struct {
 	deDupeQueueSize int
 	deDupeMaxSize   int
 	closeOnce       sync.Once
+	cache           *cache.Cache[Alert]
 }
 
 var defaultDeDupeSeconds = utils.GetEnvInt("ALERTS_DEDUPE_DURATION_SECONDS", 60)
@@ -50,6 +56,12 @@ func WithDeDupeQueueSize(size int) AlertManagerOption {
 func WithDeDupeMaxSize(size int) AlertManagerOption {
 	return func(a *AlertsManager) {
 		a.deDupeMaxSize = size
+	}
+}
+
+func WithCacheEnabled(ttl time.Duration, maxCachedItems int, cleanupDuration time.Duration) AlertManagerOption {
+	return func(a *AlertsManager) {
+		a.cache = cache.NewCache[Alert](ttl, maxCachedItems, cache.WithCleanupInterval[Alert](cleanupDuration))
 	}
 }
 
@@ -113,6 +125,50 @@ func (a *AlertsManager) processAlerts() {
 	a.dq.OnOutput(a.sendAlerts)
 }
 
+func (a *AlertsManager) RecordAlertTry(alert *Alert) bool {
+	if alert == nil {
+		logger.GetLogger().Error("alert is nil, ignoring")
+		return false
+	}
+	if !a.dq.PushTry(alert) {
+		logger.GetLogger().Warn("alert queue is full, alert not recorded",
+			zap.String("title", alert.Title),
+			zap.String("tenantId", alert.TenantId),
+			zap.String("entityId", alert.FunctionalityEntityId))
+		return false
+	}
+	return true
+}
+
+func (a *AlertsManager) RecordAlertTryWithCacheingAndKey(cacheKey string, alertBuilder func() (*Alert, error)) bool {
+	if a.cache == nil {
+		logger.GetLogger().Error("cache is not enabled, cannot record alert with cache")
+		return false
+	}
+	if _, ok := a.cache.GetCachedItem(cacheKey); ok {
+		logger.GetLogger().Debug("Alert already cached, skipping duplicate", zap.String("key", cacheKey))
+		return false
+	}
+	alert, err := alertBuilder()
+	if err != nil {
+		logger.GetLogger().Error("failed to create alert", zap.Error(err))
+		return false
+	}
+	if a.RecordAlertTry(alert) {
+		a.cache.CacheItem(cacheKey, *alert)
+		logger.GetLogger().Debug("Alert recorded and cached", zap.String("key", cacheKey), zap.String("alertId", alert.Id))
+		return true
+	} else {
+		logger.GetLogger().Warn("Failed to record alert, queue is full", zap.String("key", cacheKey), zap.String("alertId", alert.Id))
+		return false
+	}
+}
+
+func (a *AlertsManager) RecordAlertTryWithCacheing(entityId, tenantId, reason, errorMessage string, alertBuilder func() (*Alert, error)) bool {
+	cacheKey := GenerateCacheKey(entityId, tenantId, reason, errorMessage)
+	return a.RecordAlertTryWithCacheingAndKey(cacheKey, alertBuilder)
+}
+
 func (a *AlertsManager) RecordAlert(alert *Alert) {
 	if alert == nil {
 		logger.GetLogger().Error("alert is nil, ignoring")
@@ -125,5 +181,22 @@ func (a *AlertsManager) Close(ctx context.Context) {
 	a.closeOnce.Do(func() {
 		a.dq.Close()
 		a.producer.Close(ctx)
+		if a.cache != nil {
+			a.cache.Close()
+		}
 	})
+}
+
+// GenerateCacheKey Helper function to generate a simple cache key from important parameters
+func GenerateCacheKey(entityId, tenantId, reason, err string) string {
+	const maxErrorLength = 30
+
+	if len(err) <= maxErrorLength {
+		// For short error messages, use direct concatenation (faster)
+		return fmt.Sprintf("%s|%s|%s|%s", entityId, tenantId, reason, err)
+	}
+
+	// For long error messages, use hash to keep key length manageable
+	hash := sha256.Sum256([]byte(err))
+	return fmt.Sprintf("%s|%s|%s|%s", entityId, tenantId, reason, hex.EncodeToString(hash[:8]))
 }

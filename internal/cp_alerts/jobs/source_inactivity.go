@@ -301,7 +301,7 @@ func getAlertDuration(alertConfig entities.EntityAlertsConfig, sourceId, tenantI
 	}
 	if !dbConfig.Enabled {
 		logger.GetLogger().Warn("alert config is disabled for source, not notifying", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
-		return defaultAlertDuration30Min, nil, false
+		return defaultAlertDuration30Min, nil, true
 	}
 	inactivityAlertConfig := dbConfig.LogSourceInactivityAlertConfig
 	if inactivityAlertConfig == nil {

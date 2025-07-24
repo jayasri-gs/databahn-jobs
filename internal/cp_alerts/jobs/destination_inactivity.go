@@ -228,7 +228,7 @@ func buildDestAlert(iad model.InactiveDestination) (*alerts_async.Alert, error) 
 	return alerts_async.NewAlert(functionality,
 		alerts_async.WithEntity(iad),
 		alerts_async.WithCriticality(alerts_async.Critical),
-		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
+		alerts_async.WithFunctionalityType(alerts_async.DeliveryChecker),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10002, ""),

@@ -20,13 +20,18 @@ var (
 	CloudSourcePullFailure         = functionalityTypeEnum{value: "cloud_source_pull_failure"}
 	Suppression                    = functionalityTypeEnum{value: "suppression"}
 	ConfigurationProcessingFailure = functionalityTypeEnum{value: "configuration_processing_failure"}
+	DataForwardingFailure          = functionalityTypeEnum{value: "data_forwarding_failure"}
 	CheckpointUpdateFailure        = functionalityTypeEnum{value: "checkpoint_update_failure"}
 	CheckpointParsingFailure       = functionalityTypeEnum{value: "checkpoint_parsing_failure"}
 	SourceConfigParsingFailure     = functionalityTypeEnum{value: "source_config_parsing_failure"}
 	SourceConfigProcessingFailure  = functionalityTypeEnum{value: "source_config_processing_failure"}
 	IngestionChecker               = functionalityTypeEnum{value: "ingestion_checker"}
+	DeliveryChecker                = functionalityTypeEnum{value: "delivery_checker"}
 	UnparsedChecker                = functionalityTypeEnum{value: "unparsed_checker"}
+	DispenserThresholdChecker      = functionalityTypeEnum{value: "dispenser_threshold_checker"}
 	DeviceReputationChecker        = functionalityTypeEnum{value: "device_reputation_checker"}
+	DataRatioAlertChecker          = functionalityTypeEnum{value: "data_ratio_alert_checker"}
+	VolumeDeviationChecker         = functionalityTypeEnum{value: "volume_deviation_checker"}
 	HealthCheck                    = functionalityTypeEnum{value: "health_check"}
 	HttpUnauthorizedAccess         = functionalityTypeEnum{value: "unauthorized_access"}
 	HttpResourceNotFound           = functionalityTypeEnum{value: "resource_not_found"}
@@ -43,4 +48,6 @@ var (
 	HttpServerError                = functionalityTypeEnum{value: "server_error"}
 	UnknownError                   = functionalityTypeEnum{value: "unknown_error"}
 	AuditReportGeneration          = functionalityTypeEnum{value: "audit_report_generation"}
+	RateLimitExceeded              = functionalityTypeEnum{value: "rate_limit_exceeded"}
+	FileProcessingFailure          = functionalityTypeEnum{value: "file_processing_failure"}
 )

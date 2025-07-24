@@ -81,8 +81,18 @@ func convertMapToArray[T any](m map[string]T) []T {
 	}
 	return values
 }
+
 func (aq *DedupeQueue[T]) Push(item T) {
 	aq.input <- item
+}
+
+func (aq *DedupeQueue[T]) PushTry(item T) bool {
+	select {
+	case aq.input <- item:
+		return true
+	default:
+		return false
+	}
 }
 
 func WithKeyFunc[T any](keyFunc KeyFunc[T]) DedupeQueueOption[T] {
