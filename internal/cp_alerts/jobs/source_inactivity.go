@@ -20,7 +20,6 @@ import (
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -122,7 +121,7 @@ func AlertForNoEventsFromSources(ctx context.Context) error {
 				return err
 			}
 			var alerts []statistics.AlertDocument
-			decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+			decoder, err := util.CreateAlertDecoder(&alerts)
 			if err != nil {
 				logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
 				return err
