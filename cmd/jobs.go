@@ -78,7 +78,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.SILENT_DEVICE_ALERT:
 		err = jobs.ProcessSilentDevices(ctx)
 	case common.FHL_WINDOWS_ACTIVITY_CHECKER:
-		jobs.CheckAndRestartFHLAgent(ctx)
+		err = jobs.CheckAndRestartFHLAgent(ctx)
 	case common.DEVICE_INVENTORY_ALERT:
 		err = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
 	case common.VOLUME_DEVIATION_ALERT:
