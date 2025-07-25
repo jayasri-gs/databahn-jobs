@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
 	ack "github.com/databahn-ai/databahn-jobs/internal/acknowledgement"
@@ -19,7 +21,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/stats"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
 )
 
 func RunJob(ctx context.Context, jobName string, input model.Message) {
@@ -76,6 +77,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = jobs.UpdateLastEventTime(ctx)
 	case common.SILENT_DEVICE_ALERT:
 		err = jobs.ProcessSilentDevices(ctx)
+	case common.FHL_WINDOWS_ACTIVITY_CHECKER:
+		err = jobs.CheckAndRestartFHLAgent(ctx)
 	case common.DEVICE_INVENTORY_ALERT:
 		err = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
 	case common.VOLUME_DEVIATION_ALERT:

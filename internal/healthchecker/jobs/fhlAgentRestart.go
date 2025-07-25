@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func CheckAndRestartFHLAgent(ctx context.Context) {
+func CheckAndRestartFHLAgent(ctx context.Context) error {
 	osClient := os.GetClient()
 	db := config.GetDB()
 
@@ -30,7 +30,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) {
 	sourceIdToLastEventTime, err := getSourceIdToLastEventTimeNew(ctx, osClient, tenantId, interval, sourceIds)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error getting sourceIdToLastEventTime", zap.Error(err))
-		return
+		return err
 	}
 
 	// Check if all sources haven't sent data for more than 20 minutes
@@ -72,7 +72,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) {
 				zap.Error(err),
 				zap.String("agentId", agentId),
 				zap.String("tenantId", tenantId))
-			return
+			return err
 		}
 
 		// Update the is_upgrade_available field to true
@@ -87,7 +87,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) {
 				zap.Error(err),
 				zap.String("agentId", agentId),
 				zap.String("tenantId", tenantId))
-			return
+			return err
 		}
 
 		logging.GetLoggerWithContext(ctx).Info("Successfully updated agent is_upgrade_available to true",
@@ -99,4 +99,5 @@ func CheckAndRestartFHLAgent(ctx context.Context) {
 			zap.String("agentId", agentId),
 			zap.String("tenantId", tenantId))
 	}
+	return nil
 }
