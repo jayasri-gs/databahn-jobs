@@ -113,7 +113,7 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 		}
 		if len(alertsToDismiss) > 0 {
 			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
-			logger.GetLogger().Info("alert dismissed for tenant", zap.String("tenant_id", tenantId), zap.Any("destination_id", alertsToDismiss))
+			logger.GetLogger().Info("alert dismissed for tenant", zap.String("tenant_id", tenantId), zap.Any("alertsToDismiss", alertsToDismiss))
 			if err != nil {
 				logger.GetLogger().Error("error while dismissing alerts", zap.Error(err))
 			}
