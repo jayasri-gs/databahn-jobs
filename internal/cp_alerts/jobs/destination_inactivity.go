@@ -113,6 +113,7 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 		}
 		if len(alertsToDismiss) > 0 {
 			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
+			logger.GetLogger().Info("alert dismissed for tenant", zap.String("tenant_id", tenantId), zap.Any("destination_id", alertsToDismiss))
 			if err != nil {
 				logger.GetLogger().Error("error while dismissing alerts", zap.Error(err))
 			}
@@ -154,12 +155,20 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 			return nil, nil, err
 		}
 
+		logger.GetLogger().Info("found destinations", zap.Any("Destinations", destinations))
+
 		if len(destinations) == 0 {
 			break
 		}
 		for _, d := range destinations {
 			destinationId := d.ID.String()
+
+			logger.GetLogger().Info("Checking for destination", zap.String("destination_id", destinationId))
+
 			lastEventTime, ok := destinationIdToLastEventTime[destinationId]
+
+			logger.GetLogger().Info("Last event time for destination", zap.String("destination_id", destinationId))
+
 			if !ok {
 				logger.GetLogger().Warn("no last event time found for destination", zap.String("destination_id", destinationId))
 				continue
@@ -172,6 +181,7 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 				}
 				iad := model.NewInactiveDestination(&d, lastEventTime)
 				destinationsToAlert = append(destinationsToAlert, iad)
+				logger.GetLogger().Info("Alerting destinations", zap.Any("alert_destinations", destinationsToAlert))
 			} else {
 				logger.GetLogger().Info("destination received data within alert duration , not eligible for alert", zap.String("destination_id", destinationId), zap.Duration("duration ", defaultAlertDuration30Min), zap.Time("last_event_time", lastEventTime))
 				activeDestinations = append(activeDestinations, &d)
