@@ -167,7 +167,7 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 
 			lastEventTime, ok := destinationIdToLastEventTime[destinationId]
 
-			logger.GetLogger().Info("Last event time for destination", zap.String("destination_id", destinationId))
+			logger.GetLogger().Info("Last event time for destination", zap.String("destination_id", destinationId), zap.String("last_event_time", lastEventTime.String()))
 
 			if !ok {
 				logger.GetLogger().Warn("no last event time found for destination", zap.String("destination_id", destinationId))
