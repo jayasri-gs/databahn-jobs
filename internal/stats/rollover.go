@@ -95,6 +95,7 @@ func parseConfig() (*RolloverConfig, error) {
 	limit := utils.GetEnvInt("STATS_ROLLOVER_INDEX_LIMIT", 10)
 	specificIndex := utils.GetEnvOrDefault("STATS_ROLLOVER_SPECIFIC_INDEX", "")
 	skipIndices := utils.GetEnvOrDefault("STATS_ROLLOVER_SKIP_INDICES", "")
+	specificTenants := utils.GetEnvOrDefault("STATS_ROLLOVER_SPECIFIC_TENANTS", "")
 	aggBatchSize := utils.GetEnvInt("STATS_ROLLOVER_AGG_BATCH_SIZE", 500)
 	aggQueryRange := utils.GetEnvOrDefault("STATS_ROLLOVER_AGG_QUERY_RANGE", "3h")
 	validationRange := utils.GetEnvOrDefault("STATS_ROLLOVER_VALIDATION_RANGE", "24h")
@@ -144,6 +145,7 @@ func parseConfig() (*RolloverConfig, error) {
 		s3BackupEnabled:               s3BackupEnabled,
 		deleteExistingRolledOverIndex: deleteExistingRolledOverIndex,
 		skipValidation:                skipValidation,
+		specificTenants:               specificTenants,
 	}
 	return &rolloverConf, nil
 }
