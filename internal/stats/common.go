@@ -29,6 +29,7 @@ type RolloverConfig struct {
 	s3BackupEnabled               bool
 	deleteExistingRolledOverIndex bool
 	skipValidation                bool
+	specificTenants               string
 }
 
 type IndexSchema string
@@ -39,6 +40,7 @@ const Schema_V3_temp = IndexSchema("v3")
 
 type IndexLifeCyclePhase string
 
+const Phase_P0 = IndexLifeCyclePhase("p0")
 const Phase_P1 = IndexLifeCyclePhase("p1")
 const Phase_P2 = IndexLifeCyclePhase("p2")
 const Phase_P3 = IndexLifeCyclePhase("p3")
@@ -56,6 +58,7 @@ type IndexLifeCycleMigration string
 
 const Migrate_P1_P2 = IndexLifeCycleMigration("p1_p2")
 const Migrate_P2_P3 = IndexLifeCycleMigration("p2_p3")
+const Migrate_P3_P4 = IndexLifeCycleMigration("p3_p4")
 
 type Index struct {
 	Index  string
@@ -231,6 +234,92 @@ func parseIndexName(index string) (*Index, bool) {
 	}
 }
 
+func parseRolledOverP3OrOlderIndexName(index string) (*Index, bool) {
+	split := strings.Split(index, "_")
+	if !strings.HasPrefix(index, "rolled_over") {
+		return nil, false
+	}
+	if strings.Contains(index, "_p4_") {
+		return nil, false
+	}
+	if len(split) == 8 { //rolled_over_1m_db_statistics_085f5671-8243-470c-af44-fb0125ffd092_2025_14
+		tenantId := split[5]
+		year, err := strconv.Atoi(split[6])
+		if err != nil {
+			logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", split[5]))
+			return nil, false
+		}
+		week, err := strconv.Atoi(split[7])
+		if err != nil {
+			logger.GetLogger().Error("stats index name parsing: error while converting week", zap.Error(err), zap.String("index", index), zap.String("week", split[4]))
+			return nil, false
+		}
+		indexToRollover := Index{Index: index, Tenant: tenantId, Year: year, Week: week, Schema: Schema_V1, Phase: Phase_P0}
+		if indexToRollover.Year != 1970 {
+			return &indexToRollover, true
+		} else {
+			logger.GetLogger().Info("skipping index with year 1970", zap.String("index", index))
+			return nil, false
+		}
+	} else if len(split) == 9 { //rolled_over_1m_db_statistics_085f5671-8243-470c-af44-fb0125ffd092_v3_2025_16
+		tenantId := split[5]
+		year, err := strconv.Atoi(split[7])
+		if err != nil {
+			logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", split[5]))
+			return nil, false
+		}
+		week, err := strconv.Atoi(split[8])
+		if err != nil {
+			logger.GetLogger().Error("stats index name parsing: error while converting week", zap.Error(err), zap.String("index", index), zap.String("week", split[4]))
+			return nil, false
+		}
+		indexToRollover := Index{Index: index, Tenant: tenantId, Year: year, Week: week, Schema: Schema_V1, Phase: Phase_P0}
+		if indexToRollover.Year != 1970 {
+			return &indexToRollover, true
+		} else {
+			logger.GetLogger().Info("skipping index with year 1970", zap.String("index", index))
+			return nil, false
+		}
+	} else if len(split) == 10 { //rolled_over_1d_db_statistics_v2_p3_15ec2c52-c786-400f-b312-23f7c5d22f09_y2025_w24
+		schema := split[5] //v2
+		phase := split[6]  //p3
+		tenantId := split[7]
+		indexSchema := IndexSchema(schema)
+		indexPhase := IndexLifeCyclePhase(phase)
+		if indexSchema == Schema_V2 && indexPhase == Phase_P3 {
+			yYear := split[8] //y2025
+			if !strings.HasPrefix(yYear, "y") {
+				logger.GetLogger().Error("stats index name parsing: unexpected year format", zap.String("year", yYear), zap.String("index", index))
+				return nil, false
+			}
+			year, err := strconv.Atoi(yYear[1:])
+			if err != nil {
+				logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", yYear))
+				return nil, false
+			}
+			dWeek := split[9] //w28
+			if !strings.HasPrefix(dWeek, "w") {
+				logger.GetLogger().Error("stats index name parsing: unexpected week format", zap.String("week", dWeek), zap.String("index", index))
+				return nil, false
+			}
+			week, err := strconv.Atoi(dWeek[1:])
+			if err != nil {
+				logger.GetLogger().Error("stats index name parsing: error while converting week", zap.Error(err), zap.String("index", index), zap.String("week", dWeek))
+				return nil, false
+			}
+			indexToRollover := Index{Index: index, Tenant: tenantId, Year: year, Week: week, Schema: indexSchema, Phase: IndexLifeCyclePhase(phase)}
+			if indexToRollover.Year != 1970 {
+				return &indexToRollover, true
+			} else {
+				logger.GetLogger().Info("skipping index with year 1970", zap.String("index", index))
+				return nil, false
+			}
+		}
+	}
+	logger.GetLogger().Error("v2 or older stats index name parsing: unexpected index name format", zap.String("index", index))
+	return nil, false
+}
+
 func parseRolledOverV2P2IndexName(index string) (*Index, bool) {
 	split := strings.Split(index, "_")
 	if !strings.HasPrefix(index, "rolled_over") {
@@ -249,7 +338,7 @@ func parseRolledOverV2P2IndexName(index string) (*Index, bool) {
 			}
 			year, err := strconv.Atoi(yYear[1:])
 			if err != nil {
-				logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", split[5]))
+				logger.GetLogger().Error("stats index name parsing: error while converting year", zap.Error(err), zap.String("index", index), zap.String("year", yYear))
 				return nil, false
 			}
 			dDay := split[9]
@@ -259,7 +348,7 @@ func parseRolledOverV2P2IndexName(index string) (*Index, bool) {
 			}
 			day, err := strconv.Atoi(dDay[1:])
 			if err != nil {
-				logger.GetLogger().Error("stats index name parsing: error while converting day", zap.Error(err), zap.String("index", index), zap.String("day", split[6]))
+				logger.GetLogger().Error("stats index name parsing: error while converting day", zap.Error(err), zap.String("index", index), zap.String("day", dDay))
 				return nil, false
 			}
 			indexToRollover := Index{Index: index, Tenant: tenantId, Year: year, Day: day, Schema: indexSchema, Phase: IndexLifeCyclePhase(phase)}

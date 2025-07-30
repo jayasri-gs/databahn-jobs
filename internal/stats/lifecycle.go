@@ -22,6 +22,8 @@ func RolloverLifecycle(ctx context.Context) error {
 		indexLifeCycleMigration = Migrate_P1_P2
 	} else if lifeCycleMigration == string(Migrate_P2_P3) {
 		indexLifeCycleMigration = Migrate_P2_P3
+	} else if lifeCycleMigration == string(Migrate_P3_P4) {
+		indexLifeCycleMigration = Migrate_P3_P4
 	} else {
 		logger.GetLogger().Error("invalid lifecycle migration", zap.String("migration", lifeCycleMigration))
 		return errors.New("invalid lifecycle migration")
@@ -61,6 +63,12 @@ func RolloverLifecycle(ctx context.Context) error {
 		config.aggQueryRange = 24 * time.Hour
 		config.validationRange = 24 * time.Hour
 		return mergeP2Indices(ctx, config, indexNames, os.GetClient())
+	} else if indexLifeCycleMigration == Migrate_P3_P4 {
+		logger.GetLogger().Info("performing p3 to p4 migration")
+		config.aggWindow = 24 * time.Hour
+		config.aggQueryRange = 24 * time.Hour
+		config.validationRange = 24 * time.Hour
+		return mergeP3AndOlderRolledOverIndices(ctx, config, indexNames, os.GetClient())
 	}
 	return errors.New("invalid lifecycle migration, only p1_p2 and p2_p3 supported")
 }
@@ -96,6 +104,118 @@ func shouldMigrateP1ToP2(index Index, dayDiffToConsiderForRollback int) bool {
 	indexDayNumber := yearDayNumber(index.Year, index.Day)
 	dayDifference := thisDayNumber - indexDayNumber
 	return dayDifference > dayDiffToConsiderForRollback
+}
+
+func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfig, allIndices []string, client *opensearch.Client) error {
+	weekDiff := utils.GetEnvInt("ROLLOVER_P3_P4_WEEK_DIFFERENCE", 15)
+	year, week := getWeekOfYear()
+	thisWeek := yearWeekNumber(year, week)
+	var validRolledOverIndices []Index
+	for _, indexName := range allIndices {
+		if strings.HasPrefix(indexName, "rolled_over") {
+			index, ok := parseRolledOverP3OrOlderIndexName(indexName)
+			if ok {
+				y := index.Year
+				w := index.Week
+				indexWeek := yearWeekNumber(y, w)
+				if thisWeek-indexWeek > weekDiff {
+					validRolledOverIndices = append(validRolledOverIndices, *index)
+				}
+			}
+		}
+	}
+	if len(validRolledOverIndices) == 0 {
+		logger.GetLogger().Info("no valid rolled over indices found for p3_p4 migration")
+		return nil
+	}
+	if config.specificTenants != "" {
+		specificTenants := strings.Split(config.specificTenants, ",")
+		var filteredRolledOverIndices []Index
+		for _, index := range validRolledOverIndices {
+			for _, tenant := range specificTenants {
+				if index.Tenant == tenant {
+					filteredRolledOverIndices = append(filteredRolledOverIndices, index)
+					break
+				}
+			}
+		}
+		validRolledOverIndices = filteredRolledOverIndices
+		if len(validRolledOverIndices) == 0 {
+			logger.GetLogger().Info("no valid rolled over indices found for p3_p4 migration for specific tenants", zap.String("tenants", config.specificTenants))
+			return nil
+		}
+	}
+	sort.Slice(validRolledOverIndices, func(i, j int) bool {
+		return yearWeekNumber(validRolledOverIndices[i].Year, validRolledOverIndices[i].Week) < yearWeekNumber(validRolledOverIndices[j].Year, validRolledOverIndices[j].Week)
+	})
+	limit := config.limit
+	if len(validRolledOverIndices) > limit {
+		validRolledOverIndices = validRolledOverIndices[:limit]
+	}
+	logger.GetLogger().Info("found valid rolled over indices for p3_p4 migration", zap.Int("size", len(validRolledOverIndices)), zap.Any("indices", validRolledOverIndices))
+	var validIndicesByTenant = make(map[string][]Index)
+	for _, validIndex := range validRolledOverIndices {
+		if _, ok := validIndicesByTenant[validIndex.Tenant]; !ok {
+			validIndicesByTenant[validIndex.Tenant] = []Index{}
+		}
+		validIndicesByTenant[validIndex.Tenant] = append(validIndicesByTenant[validIndex.Tenant], validIndex)
+	}
+	for tenant, validIndicesOfTenant := range validIndicesByTenant {
+		if len(validIndicesOfTenant) == 0 {
+			logger.GetLogger().Info("no valid rolled over indices found for tenant", zap.String("tenant", tenant))
+			continue
+		}
+		logger.GetLogger().Info("found valid rolled over indices for tenant", zap.String("tenant", tenant), zap.Int("size", len(validIndicesOfTenant)), zap.Any("indices", validIndicesOfTenant))
+		var indicesByYear = make(map[int][]Index)
+		for _, validIndex := range validIndicesOfTenant {
+			if _, ok := indicesByYear[validIndex.Year]; !ok {
+				indicesByYear[validIndex.Year] = []Index{}
+			}
+			indicesByYear[validIndex.Year] = append(indicesByYear[validIndex.Year], validIndex)
+		}
+		for indexYear, validIndicesOfYear := range indicesByYear {
+			targetIndexName := fmt.Sprintf("rolled_over_1d_db_statistics_v2_p4_%s_y%d", tenant, indexYear)
+			var successIndices []Index
+			var rolloverError error = nil
+			for _, validIndex := range validIndicesOfYear {
+				logger.GetLogger().Info("staring rolled over index found for p3_p4 migration", zap.Any("index", validIndex))
+				err := doRolloverAndValidate(ctx, validIndex, client, config, targetIndexName)
+				if err != nil {
+					logger.GetLogger().Error("error while rolling over index", zap.Error(err), zap.String("index", validIndex.Index))
+					rolloverError = err
+					break
+				} else {
+					successIndices = append(successIndices, validIndex)
+				}
+			}
+
+			if len(successIndices) > 0 {
+				aliasName := successIndices[0].aliasName()
+				successIndicesNames := make([]string, len(successIndices))
+				for i, index := range successIndices {
+					successIndicesNames[i] = index.Index
+				}
+				err := dbos.UpdateMultipleAliases(client, aliasName, successIndicesNames, targetIndexName)
+				if err != nil {
+					return err
+				}
+				logger.GetLogger().Info("rolled over and alias updated", zap.Any("older indices", successIndices), zap.String("rolled_over_index", targetIndexName))
+				for _, index := range successIndices {
+					err = dbos.DeleteIndex(ctx, client, index.Index)
+					if err != nil {
+						return err
+					}
+					logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
+				}
+			}
+			if rolloverError != nil {
+				return rolloverError
+			}
+			logger.GetLogger().Info("completed roll over index for indices", zap.String("tenantId", tenant), zap.Int("year", year), zap.Any("indices", successIndices), zap.String("new_index", targetIndexName))
+		}
+	}
+
+	return nil
 }
 
 func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []string, client *opensearch.Client) error {
@@ -178,31 +298,42 @@ func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []st
 
 func mergeP2IndicesIntoP3(ctx context.Context, config *RolloverConfig, tenantId string, indicesToRollOver []Index, year, week int, client *opensearch.Client) error {
 	newIndexToMergeInto := fmt.Sprintf("rolled_over_1d_db_statistics_v2_p3_%s_y%d_w%d", tenantId, year, week)
+	var successIndices []Index
+	var rolloverError error = nil
 	for _, index := range indicesToRollOver {
 		err := doRolloverAndValidate(ctx, index, client, config, newIndexToMergeInto)
 		if err != nil {
 			logger.GetLogger().Error("error while rolling over index", zap.Error(err), zap.String("index", index.Index))
+			rolloverError = err
+			break
+		} else {
+			successIndices = append(successIndices, index)
 		}
 	}
 
-	var olderIndices []string
-	for _, index := range indicesToRollOver {
-		olderIndices = append(olderIndices, index.Index)
-	}
-	aliasName := indicesToRollOver[0].aliasName()
-	err := dbos.UpdateMultipleAliases(client, aliasName, olderIndices, newIndexToMergeInto)
-	if err != nil {
-		return err
-	}
-	logger.GetLogger().Info("rolled over and alias updated", zap.Any("older indices", olderIndices), zap.String("rolled_over_index", newIndexToMergeInto))
-	for _, index := range indicesToRollOver {
-		err = dbos.DeleteIndex(ctx, client, index.Index)
+	if len(successIndices) > 0 {
+		var doneIndices []string
+		for _, index := range successIndices {
+			doneIndices = append(doneIndices, index.Index)
+		}
+		aliasName := successIndices[0].aliasName()
+		err := dbos.UpdateMultipleAliases(client, aliasName, doneIndices, newIndexToMergeInto)
 		if err != nil {
 			return err
 		}
-		logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
+		logger.GetLogger().Info("rolled over and alias updated", zap.Any("older indices", doneIndices), zap.String("rolled_over_index", newIndexToMergeInto))
+		for _, index := range successIndices {
+			err = dbos.DeleteIndex(ctx, client, index.Index)
+			if err != nil {
+				return err
+			}
+			logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
+		}
+	}
+	if rolloverError != nil {
+		return rolloverError
 	}
 
-	logger.GetLogger().Info("completed roll over index for indices", zap.Any("indices", indicesToRollOver), zap.String("new_index", newIndexToMergeInto))
+	logger.GetLogger().Info("completed roll over index for indices", zap.Any("indices", successIndices), zap.String("new_index", newIndexToMergeInto))
 	return nil
 }

@@ -50,23 +50,34 @@ var sourceIds = []string{"f188efab-2169-4d07-aa62-c66904fe7511", "f188efab-2169-
 var destinationIds = []string{"28c543e4-1b34-44c8-ad16-6d6adfaebc11", "28c543e4-1b34-44c8-ad16-6d6adfaebc22", "28c543e4-1b34-44c8-ad16-6d6adfaebc33"}
 
 func main() {
+	isDaily := true
 	ctx := context.Background()
 	osClient := dbos.GetClient()
 	thisYear, thisDay := getYearAndDay()
-	updateOlderDays := 24
-	olderDays := 4
+	updateOlderDays := 60
+	olderDays := 15
 	for i := olderDays; i < updateOlderDays; i++ {
 		year, day := thisYear, thisDay-i
 		if day <= 0 {
 			year, day = year-1, day+365
 		}
 		tenantId := randomItem(tenantIds)
-		indexName := fmt.Sprintf("db_statistics_%s_v2_p1_y%d_d%d", tenantId, year, day)
-		logger.GetLogger().Info("creating for year and day", zap.Int("year", year), zap.Int("day", day), zap.String("index", indexName))
+
 		dayEpochStart, dayEpochEnd := getEpochTimeRange(year, day)
 		startRange := dayEpochStart + (10 * 60 * 1000)
 		endRange := dayEpochEnd - (10 * 60 * 1000)
 		twentySeconds := int64(20 * 1000)
+
+		var indexName string
+		if isDaily {
+			indexName = fmt.Sprintf("db_statistics_%s_v2_p1_y%d_d%d", tenantId, year, day)
+			logger.GetLogger().Info("creating for year and day", zap.Int("year", year), zap.Int("day", day), zap.String("index", indexName))
+		} else {
+			yy, ww := getYearAndWeekFromEpochMillis(startRange)
+			indexName = fmt.Sprintf("rolled_over_1m_db_statistics_%s_v2_%d_%d", tenantId, yy, ww)
+			logger.GetLogger().Info("creating for year and week", zap.Int("year", yy), zap.Int("week", ww), zap.String("index", indexName))
+		}
+
 		var docs []*Doc
 		for timeStamp := startRange; timeStamp < endRange; {
 			sourceId := randomItem(sourceIds)
@@ -184,6 +195,12 @@ func getEpochTimeRange(year, day int) (int64, int64) {
 	start := dayDate.UnixMilli()
 	end := dayDate.AddDate(0, 0, 1).UnixMilli()
 	return start, end
+}
+
+func getYearAndWeekFromEpochMillis(epochMillis int64) (int, int) {
+	t := time.UnixMilli(epochMillis)
+	year, week := t.ISOWeek()
+	return year, week
 }
 
 func yearWeekNumber(year, week int) int {
