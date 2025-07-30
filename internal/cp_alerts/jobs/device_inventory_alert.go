@@ -351,16 +351,16 @@ func convertSingleRuleToQuery(filter *entities.VcRuleFilter) (string, error) {
 	// Add quotes around value if fieldName is key1 (hostname field)
 	value := filter.Value
 	if fieldName == "key1" {
-		value = fmt.Sprintf(`"%s"`, filter.Value)
+		value = fmt.Sprintf(`"*%s*"`, filter.Value) // Wildcard inside quotes
 	}
 
 	switch filter.Operator {
 	case "contains":
 		// Use wildcard query for contains
-		return fmt.Sprintf(`%s: *%s*`, fieldName, value), nil
+		return fmt.Sprintf(`%s: %s`, fieldName, value), nil
 	case "doesNotContain":
 		// Use NOT with wildcard for does not contain
-		return fmt.Sprintf(`NOT %s: *%s*`, fieldName, value), nil
+		return fmt.Sprintf(`NOT %s: %s`, fieldName, value), nil
 	default:
 		return "", fmt.Errorf("unsupported operator: %s", filter.Operator)
 	}
