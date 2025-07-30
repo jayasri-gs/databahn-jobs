@@ -174,7 +174,7 @@ func getExistingAlertsForUnparsedEvents(ctx context.Context, sources map[string]
 	}
 
 	q := `dismissed:false AND functionalityEntityId:` + "(" + strings.Join(MapKeys(sources), " OR ") + ")" + ` AND functionalityType:UNPARSED_EVENTS`
-	searchResponse, err := os.Search(ctx, os.GetClient(), common.AlertsIndex, q)
+	searchResponse, _, err := os.Search(ctx, os.GetClient(), common.AlertsIndex, q)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying openSearch for unresolved alerts", zap.Error(err))
 		return nil, err

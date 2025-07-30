@@ -640,7 +640,7 @@ func buildFleetComponentAlert(uf model.UnhealthyFleetComponents) (*alerts_async.
 
 func getExistingAlerts(ctx context.Context, tenantId string, sourceIds []string, osClient *opensearch.Client, functionalityType string) ([]statistics.AlertDocument, error) {
 	q := "tenantId:" + tenantId + " AND dismissed:false AND functionalityEntityId:" + "(" + strings.Join(sourceIds, " OR ") + ")" + ` AND functionalityType:(` + functionalityType + " OR " + alerts_async.IngestionChecker.String() + ")"
-	openAlerts, err := os.Search(ctx, osClient, common.AlertsIndex, q)
+	openAlerts, _, err := os.Search(ctx, osClient, common.AlertsIndex, q)
 	if err != nil {
 		logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q))
 		return nil, err

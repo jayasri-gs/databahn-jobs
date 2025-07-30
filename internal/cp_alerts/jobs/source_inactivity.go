@@ -115,7 +115,7 @@ func AlertForNoEventsFromSources(ctx context.Context) error {
 				sourceIds[i] = s.ID.String()
 			}
 			q := "tenantId:" + tenantId + " AND dismissed:false AND functionalityEntityId:" + "(" + strings.Join(sourceIds, " OR ") + ")" + ` AND functionalityType:(` + constants.IngestionCheckerFunctionalityType + " OR " + alerts_async.IngestionChecker.String() + ")"
-			openAlerts, err := os.Search(ctx, osClient, common.AlertsIndex, q)
+			openAlerts, _, err := os.Search(ctx, osClient, common.AlertsIndex, q)
 			if err != nil {
 				logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q))
 				return err
