@@ -167,11 +167,9 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 	return nil
 }
 
-func getDevices(ctx context.Context, client *opensearch.Client, index string, query string, pageSize int, searchAfter []any, tenantName string) ([]model.DeviceClass, int, error) {
+func getDevices(ctx context.Context, client *opensearch.Client, index string, query string, tenantName string) ([]model.DeviceClass, int, error) {
 
 	logging.GetLogger().Info("query", zap.String("query", query))
-	logging.GetLogger().Info("pageSize", zap.Int("pageSize", pageSize))
-	logging.GetLogger().Info("searchAfter", zap.Any("searchAfter", searchAfter))
 	logging.GetLogger().Info("index", zap.String("index", index))
 
 	var silentDevices []model.DeviceClass
@@ -219,11 +217,9 @@ func fetchDevicesWithConfig(ctx context.Context, tenantId string, tenantName str
 
 	logging.GetLoggerWithContext(ctx).Info("query built with filters", zap.String("query", query))
 
-	var searchAfter []any
-	pageSize := 5
 	index := "db_insights_sights_sourcehostname_" + tenantId
 
-	devices, totalHostnames, err := getDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
+	devices, totalHostnames, err := getDevices(ctx, os.GetClient(), index, query, tenantName)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
 		return nil, 0, err
