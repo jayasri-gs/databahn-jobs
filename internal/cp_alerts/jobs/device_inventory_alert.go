@@ -149,7 +149,7 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 				)
 				// Set total count to show all devices that matched
 				consolidatedAlert.TotalCount = totalDevices
-				consolidatedAlert.RemainingCount = totalDevices - len(devices)
+				consolidatedAlert.RemainingCount = totalDevices - len(deviceSubset)
 				consolidatedAlerts = append(consolidatedAlerts, consolidatedAlert)
 			}
 		}
