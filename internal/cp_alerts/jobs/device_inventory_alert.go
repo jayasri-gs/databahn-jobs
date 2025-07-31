@@ -343,6 +343,9 @@ func convertRuleGroupToQuery(filter *entities.VcRuleFilter) (string, error) {
 }
 
 func convertSingleRuleToQuery(filter *entities.VcRuleFilter) (string, error) {
+	if filter.Field == "" || filter.Value == "" || filter.Operator == "" {
+		return "", nil
+	}
 	fieldName := getOpenSearchFieldName(filter.Field)
 	if fieldName == "" {
 		return "", fmt.Errorf("unsupported field: %s", filter.Field)
