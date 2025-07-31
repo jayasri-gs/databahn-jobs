@@ -81,7 +81,6 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 	defer alertsManager.Close(ctx)
 
 	for _, t := range tenants {
-
 		tenantId := t.Id.String()
 		logging.GetLoggerWithContext(ctx).Info("Processing tenant", zap.String("tenantId", tenantId))
 
@@ -95,57 +94,62 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 			logging.GetLoggerWithContext(ctx).Error("error while reading log source entity configs", zap.Error(err))
 			return err
 		}
-		alertConfigsBySourceId := make(map[uuid.UUID]entities.EntityAlertsConfig)
-		for _, conf := range alertConfigs {
-			alertConfigsBySourceId[conf.EntityID] = conf
-		}
 
-		devices, err := fetchDevices(ctx, tenantId, t.Name, tenantIdToSourceMap[tenantId])
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while fetching devices", zap.Error(err), zap.String("tenantId", tenantId))
-			continue
-		}
-
-		if len(devices) == 0 {
-			logging.GetLoggerWithContext(ctx).Info("no devices found for tenant", zap.String("tenantId", tenantId))
-			continue
-		}
-		sourceIdToDevice := make(map[string][]model.DeviceClass)
-		for _, device := range devices {
-			sourceIdToDevice[device.SourceID] = append(sourceIdToDevice[device.SourceID], device)
-		}
-		filteredDevices, err := filterDevicesWithConfig(devices, alertConfigsBySourceId)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while filtering devices", zap.Error(err), zap.String("tenantId", tenantId))
-			continue
-		}
-
-		if len(filteredDevices) == 0 {
-			logging.GetLoggerWithContext(ctx).Info("no devices match alert criteria", zap.String("tenantId", tenantId))
-			continue
-		}
-
-		// Group filtered devices by source
-		sourceToFilteredDevices := make(map[string][]model.DeviceClass)
-		for _, device := range filteredDevices {
-			sourceToFilteredDevices[device.SourceID] = append(sourceToFilteredDevices[device.SourceID], device)
-		}
-
-		// Create consolidated alerts for each source
+		// Process each source separately with its own configuration
 		var consolidatedAlerts []*model.SourceDeviceInventoryAlert
-		for sourceID, devices := range sourceToFilteredDevices {
+		for _, entityAlertConfig := range alertConfigs {
+			if entityAlertConfig.Config == nil || !entityAlertConfig.Config.Enabled {
+				logging.GetLoggerWithContext(ctx).Info("alert configuration is nil or disabled for source",
+					zap.String("sourceID", entityAlertConfig.EntityID.String()))
+				continue
+			}
+
+			// Fetch devices for this specific source with its configuration
+			sourceSlice := []uuid.UUID{entityAlertConfig.EntityID}
+			devices, totalDevices, err := fetchDevicesWithConfig(ctx, tenantId, t.Name, sourceSlice, entityAlertConfig.Config.LogSourceDeviceInventoryAlertConfig)
+			if err != nil {
+				logging.GetLoggerWithContext(ctx).Error("error while fetching devices with config",
+					zap.Error(err), zap.String("tenantId", tenantId), zap.String("sourceID", entityAlertConfig.EntityID.String()))
+				continue
+			}
+
+			if len(devices) == 0 {
+				logging.GetLoggerWithContext(ctx).Info("no devices found for source",
+					zap.String("tenantId", tenantId), zap.String("sourceID", entityAlertConfig.EntityID.String()))
+				continue
+			}
+
+			logging.GetLoggerWithContext(ctx).Info("devices found for alerting",
+				zap.String("tenantId", tenantId),
+				zap.String("sourceID", entityAlertConfig.EntityID.String()),
+				zap.Int("count", len(devices)))
+
+			// Create consolidated alert for this source
 			if len(devices) > 0 {
-				// Get source name and data plane ID from the first device (all devices in a source have same source name and data plane ID)
+				// Get source name and data plane ID from the first device
 				sourceName := devices[0].SourceName
 				dataPlaneId := devices[0].DataPlaneId
+
+				var deviceSubset []model.DeviceClass
+				if len(devices) > 5 {
+					// If more than 5 devices, take only the first 5 for the alert
+					deviceSubset = devices[:5]
+				} else {
+					// Otherwise, take all devices
+					deviceSubset = devices
+				}
+
 				consolidatedAlert := model.NewSourceDeviceInventoryAlert(
-					sourceID,
+					entityAlertConfig.EntityID.String(),
 					sourceName,
 					tenantId,
 					t.Name,
 					dataPlaneId,
-					devices,
+					deviceSubset,
 				)
+				// Set total count to show all devices that matched
+				consolidatedAlert.TotalCount = totalDevices
+				consolidatedAlert.RemainingCount = totalDevices - len(deviceSubset)
 				consolidatedAlerts = append(consolidatedAlerts, consolidatedAlert)
 			}
 		}
@@ -163,216 +167,27 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 	return nil
 }
 
-func filterDevicesWithConfig(devices []model.DeviceClass, alertConfigsBySourceId map[uuid.UUID]entities.EntityAlertsConfig) ([]model.DeviceClass, error) {
-	var filteredDevices []model.DeviceClass
-
-	for _, device := range devices {
-		// Convert device.SourceID string to UUID to match with alertConfigsBySourceId
-		sourceID, err := uuid.Parse(device.SourceID)
-		if err != nil {
-			logging.GetLogger().Error("error parsing device source ID", zap.Error(err), zap.String("sourceID", device.SourceID))
-			continue
-		}
-
-		// Get the alert configuration for this specific source
-		alrtconfig, exists := alertConfigsBySourceId[sourceID]
-		if !exists {
-			logging.GetLogger().Info("no alert configuration found for source", zap.String("sourceID", device.SourceID))
-			continue
-		}
-
-		if alrtconfig.Config == nil || !alrtconfig.Config.Enabled {
-			logging.GetLogger().Info("alert configuration is nil or disabled for source", zap.String("sourceID", device.SourceID))
-			continue
-		}
-
-		// Check if device matches the alert criteria for this specific source
-		matches, err := matchesAlertCriteria(device, alrtconfig.Config.LogSourceDeviceInventoryAlertConfig)
-		if err != nil {
-			logging.GetLogger().Error("error checking alert criteria", zap.Error(err), zap.String("hostname", device.Hostname))
-			continue
-		}
-		if matches {
-			filteredDevices = append(filteredDevices, device)
-		}
-	}
-
-	return filteredDevices, nil
-}
-
-func matchesAlertCriteria(device model.DeviceClass, config *entities.LogSourceDeviceInventoryAlertConfig) (bool, error) {
-	logging.GetLogger().Info("Checking alert criteria for device",
-		zap.String("hostname", device.Hostname),
-		zap.String("reputation", device.Reputation),
-		zap.String("tenantId", device.TenantId))
-
-	// Check reputation
-	if len(config.ReputationsToAlert) > 0 {
-		reputationMatch := false
-		for _, rep := range config.ReputationsToAlert {
-			reputationLowerCase := strings.ToLower(string(rep))
-			if reputationLowerCase == device.Reputation {
-				reputationMatch = true
-				break
-			}
-		}
-		if !reputationMatch {
-			logging.GetLogger().Info("Device reputation does not match",
-				zap.String("hostname", device.Hostname),
-				zap.String("deviceReputation", device.Reputation),
-				zap.Any("allowedReputations", config.ReputationsToAlert))
-			return false, nil
-		}
-		logging.GetLogger().Info("Device reputation matches",
-			zap.String("hostname", device.Hostname),
-			zap.String("reputation", device.Reputation))
-	}
-
-	// Check rule filters
-	if config.VcRuleFilters != nil {
-		logging.GetLogger().Info("Processing rule filters",
-			zap.String("hostname", device.Hostname),
-			zap.Int("ruleCount", len(config.VcRuleFilters.Rules)),
-			zap.String("combinator", config.VcRuleFilters.Combinator))
-
-		ruleMatches, err := evaluateDeviceAgainstFiltersWithGrule(device, config.VcRuleFilters)
-		if err != nil {
-			return false, fmt.Errorf("error evaluating grule rules: %w", err)
-		}
-		if !ruleMatches {
-			logging.GetLogger().Info("Device does not match rule filters",
-				zap.String("hostname", device.Hostname))
-			return false, nil
-		}
-		logging.GetLogger().Info("Device matches rule filters",
-			zap.String("hostname", device.Hostname))
-	} else {
-		logging.GetLogger().Info("No rule filters configured, skipping rule evaluation",
-			zap.String("hostname", device.Hostname))
-	}
-
-	logging.GetLogger().Info("Device matches all alert criteria",
-		zap.String("hostname", device.Hostname))
-	return true, nil
-}
-
-func evaluateDeviceAgainstFiltersWithGrule(device model.DeviceClass, filters *entities.VcRuleFilter) (bool, error) {
-	if filters == nil || len(filters.Rules) == 0 {
-		return true, nil
-	}
-
-	return evaluateFilterRecursive(device, filters)
-}
-
-// Simple native Go rule evaluator - much faster than Grule
-func evaluateFilterRecursive(device model.DeviceClass, filter *entities.VcRuleFilter) (bool, error) {
-	// Handle rule groups (nested rules with combinators)
-	if len(filter.Rules) > 0 {
-		return evaluateRuleGroup(device, filter)
-	}
-
-	// Handle single rule
-	return evaluateSingleRule(device, filter)
-}
-
-func evaluateRuleGroup(device model.DeviceClass, filter *entities.VcRuleFilter) (bool, error) {
-	if len(filter.Rules) == 0 {
-		return true, nil
-	}
-
-	// Evaluate all rules in the group
-	results := make([]bool, len(filter.Rules))
-	for i, rule := range filter.Rules {
-		result, err := evaluateFilterRecursive(device, &rule)
-		if err != nil {
-			return false, err
-		}
-		results[i] = result
-	}
-
-	// Apply combinator (AND by default, OR if specified)
-	if strings.ToUpper(filter.Combinator) == "OR" {
-		// OR logic - return true if any rule matches
-		for _, result := range results {
-			if result {
-				return true, nil
-			}
-		}
-		return false, nil
-	} else {
-		// AND logic - return true only if all rules match
-		for _, result := range results {
-			if !result {
-				return false, nil
-			}
-		}
-		return true, nil
-	}
-}
-
-func evaluateSingleRule(device model.DeviceClass, filter *entities.VcRuleFilter) (bool, error) {
-	// Get the field value from the device
-	fieldValue, err := getDeviceFieldValue(device, filter.Field)
-	if err != nil {
-		return false, err
-	}
-
-	// Apply the operator
-	return applyOperator(fieldValue, filter.Operator, filter.Value)
-}
-
-func getDeviceFieldValue(device model.DeviceClass, fieldName string) (string, error) {
-	normalizedField := strings.ToLower(strings.ReplaceAll(fieldName, " ", ""))
-
-	switch normalizedField {
-	case "hostname":
-		return device.Hostname, nil
-	case "sourceid":
-		return device.SourceID, nil
-	case "tenantid":
-		return device.TenantId, nil
-	case "reputation":
-		return device.Reputation, nil
-	case "sourcename":
-		return device.SourceName, nil
-	default:
-		return "", fmt.Errorf("unsupported field: %s", fieldName)
-	}
-}
-
-func applyOperator(fieldValue, operator, expectedValue string) (bool, error) {
-	switch operator {
-	case "contains":
-		return strings.Contains(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
-	case "doesNotContain":
-		return !strings.Contains(strings.ToLower(fieldValue), strings.ToLower(expectedValue)), nil
-	default:
-		return false, fmt.Errorf("unsupported operator: %s", operator)
-	}
-}
-
-func getDevices(ctx context.Context, client *opensearch.Client, index string, query string, pageSize int, searchAfter []any, tenantName string) ([]model.DeviceClass, []any, error) {
+func getDevices(ctx context.Context, client *opensearch.Client, index string, query string, tenantName string) ([]model.DeviceClass, int, error) {
 
 	logging.GetLogger().Info("query", zap.String("query", query))
-	logging.GetLogger().Info("pageSize", zap.Int("pageSize", pageSize))
-	logging.GetLogger().Info("searchAfter", zap.Any("searchAfter", searchAfter))
 	logging.GetLogger().Info("index", zap.String("index", index))
 
 	var silentDevices []model.DeviceClass
-	res, newSearchAfter, err := os.SearchPaginated(ctx, client, index, query, pageSize, searchAfter, []os.Sort{{Field: "max_time", Order: "desc"}})
+	res, totalHits, err := os.Search(ctx, client, index, query)
 	if err != nil {
-		return nil, nil, err
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
+		return nil, 0, err
 	}
 
 	if len(res) == 0 {
-		return nil, nil, nil
+		return nil, 0, nil
 	}
 
 	var deviceInventoryList []statistics.DeviceInventoryDocument
 	decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &deviceInventoryList})
 	err = decoder.Decode(res)
 	if err != nil {
-		return nil, nil, err
+		return nil, 0, err
 	}
 
 	for _, device := range deviceInventoryList {
@@ -388,54 +203,41 @@ func getDevices(ctx context.Context, client *opensearch.Client, index string, qu
 		})
 	}
 	logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Int("count", len(silentDevices)))
-
-	return silentDevices, newSearchAfter, nil
+	return silentDevices, totalHits, nil
 }
 
-func fetchDevices(ctx context.Context, tenantId string, tenantName string, sources []uuid.UUID) ([]model.DeviceClass, error) {
-
-	// Build the query using getQueryFromFilters
-	query, err := getQuery(sources, tenantId)
+// New function to fetch devices with specific alert config
+func fetchDevicesWithConfig(ctx context.Context, tenantId string, tenantName string, sources []uuid.UUID, config *entities.LogSourceDeviceInventoryAlertConfig) ([]model.DeviceClass, int, error) {
+	// Build the query using the new function with filters
+	query, err := getQueryWithFilters(sources, tenantId, config)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while building query", zap.Error(err))
-		return nil, err
+		return nil, 0, err
 	}
 
-	logging.GetLoggerWithContext(ctx).Info("query built", zap.String("query", query))
+	logging.GetLoggerWithContext(ctx).Info("query built with filters", zap.String("query", query))
 
-	var searchAfter []any
-	pageSize := 100
 	index := "db_insights_sights_sourcehostname_" + tenantId
 
-	var allSilentDevices []model.DeviceClass
-	for {
-		silentDevices, newSearchAfter, err := getDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
-			return nil, err
-		}
-
-		allSilentDevices = append(allSilentDevices, silentDevices...)
-
-		if len(silentDevices) == 0 || newSearchAfter == nil {
-			break
-		}
-		searchAfter = newSearchAfter
+	devices, totalHostnames, err := getDevices(ctx, os.GetClient(), index, query, tenantName)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
+		return nil, 0, err
 	}
 
 	// Fetch source names and populate them in devices
-	err = populateSourceNames(ctx, allSilentDevices, tenantId)
+	err = populateSourceNames(ctx, devices, tenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while populating source names", zap.Error(err))
-		return nil, err
+		return nil, 0, err
 	}
 
-	logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Any("silentDevices", allSilentDevices))
-
-	return allSilentDevices, nil
+	logging.GetLoggerWithContext(ctx).Info("devices fetched with config", zap.Int("count", len(devices)))
+	return devices, totalHostnames, nil
 }
 
-func getQuery(sources []uuid.UUID, tenantId string) (string, error) {
+// New function to get query with vcRuleFilters
+func getQueryWithFilters(sources []uuid.UUID, tenantId string, config *entities.LogSourceDeviceInventoryAlertConfig) (string, error) {
 	q := "tenant_id: " + tenantId
 	if len(sources) != 0 {
 		// Convert UUIDs to strings for the query
@@ -446,23 +248,141 @@ func getQuery(sources []uuid.UUID, tenantId string) (string, error) {
 		q += ` AND source_id: ` + "(" + strings.Join(sourceStrings, " OR ") + ")"
 	}
 
-	// Set endTime to 4 hours before the current time (previous day)
+	// Set endTime to 4 hours before the current time
 	endTime := time.Now().Add(-4 * time.Hour).Format(time.RFC3339)
-
-	logging.GetLogger().Info("endTime", zap.String("endTime", endTime))
-
-	// Parse endTime and add it to the query
 	t, err := time.Parse(time.RFC3339, endTime)
 	if err != nil {
 		return "", fmt.Errorf("error parsing endTime: %v", err)
 	}
 	endTimeEpoch := t.UnixMilli()
-
-	logging.GetLogger().Info("endTimeEpoch", zap.Int64("endTimeEpoch", endTimeEpoch))
-
 	q += ` AND max_time:<` + strconv.FormatInt(endTimeEpoch, 10)
 
+	// Only add filters if config is provided
+	if config != nil {
+		// Add reputation filter if specified
+		if len(config.ReputationsToAlert) > 0 {
+			reputations := make([]string, len(config.ReputationsToAlert))
+			for i, rep := range config.ReputationsToAlert {
+				reputations[i] = strings.ToLower(string(rep))
+			}
+			q += ` AND reputation: (` + strings.Join(reputations, " OR ") + `)`
+		}
+
+		// Add vcRuleFilters as OpenSearch query
+		if config.VcRuleFilters != nil {
+			ruleQuery, err := convertVcRuleFiltersToOpenSearchQuery(config.VcRuleFilters)
+			if err != nil {
+				return "", fmt.Errorf("error converting vcRuleFilters to query: %w", err)
+			}
+
+			if ruleQuery != "" {
+				// Handle include/exclude logic
+				if config.IncludeExclude == "EXCLUDE" {
+					// If EXCLUDE, we want devices that DON'T match the rule
+					q += ` AND NOT (` + ruleQuery + `)`
+					logging.GetLogger().Info("Applied EXCLUDE logic - devices NOT matching the rule will be included", zap.String("ruleQuery", ruleQuery))
+				} else {
+					// If INCLUDE (or default), we want devices that DO match the rule
+					q += ` AND (` + ruleQuery + `)`
+					logging.GetLogger().Info("Applied INCLUDE logic - devices matching the rule will be included", zap.String("ruleQuery", ruleQuery))
+				}
+			}
+		}
+	}
+
+	logging.GetLogger().Info("Generated OpenSearch query", zap.String("query", q), zap.String("tenantId", tenantId))
 	return q, nil
+}
+
+// Convert vcRuleFilters to OpenSearch query syntax
+func convertVcRuleFiltersToOpenSearchQuery(filter *entities.VcRuleFilter) (string, error) {
+	if filter == nil {
+		return "", nil
+	}
+
+	// Handle rule groups (nested rules with combinators)
+	if len(filter.Rules) > 0 {
+		return convertRuleGroupToQuery(filter)
+	}
+
+	// Handle single rule
+	return convertSingleRuleToQuery(filter)
+}
+
+func convertRuleGroupToQuery(filter *entities.VcRuleFilter) (string, error) {
+	if len(filter.Rules) == 0 {
+		return "", nil
+	}
+
+	var ruleQueries []string
+	for _, rule := range filter.Rules {
+		ruleQuery, err := convertVcRuleFiltersToOpenSearchQuery(&rule)
+		if err != nil {
+			return "", err
+		}
+		if ruleQuery != "" {
+			ruleQueries = append(ruleQueries, ruleQuery)
+		}
+	}
+
+	if len(ruleQueries) == 0 {
+		return "", nil
+	}
+
+	if len(ruleQueries) == 1 {
+		return ruleQueries[0], nil
+	}
+
+	// Apply combinator (AND by default, OR if specified)
+	combinator := " AND "
+	if strings.ToUpper(filter.Combinator) == "OR" {
+		combinator = " OR "
+	}
+
+	return "(" + strings.Join(ruleQueries, combinator) + ")", nil
+}
+
+func convertSingleRuleToQuery(filter *entities.VcRuleFilter) (string, error) {
+	fieldName := getOpenSearchFieldName(filter.Field)
+	if fieldName == "" {
+		return "", fmt.Errorf("unsupported field: %s", filter.Field)
+	}
+
+	// Add quotes around value if fieldName is key1 (hostname field)
+	value := filter.Value
+	if fieldName == "key1" {
+		value = fmt.Sprintf(`"*%s*"`, filter.Value) // Wildcard inside quotes
+	}
+
+	switch filter.Operator {
+	case "contains":
+		// Use wildcard query for contains
+		return fmt.Sprintf(`%s: %s`, fieldName, value), nil
+	case "doesNotContain":
+		// Use NOT with wildcard for does not contain
+		return fmt.Sprintf(`NOT %s: %s`, fieldName, value), nil
+	default:
+		return "", fmt.Errorf("unsupported operator: %s", filter.Operator)
+	}
+}
+
+func getOpenSearchFieldName(fieldName string) string {
+	normalizedField := strings.ToLower(strings.ReplaceAll(fieldName, " ", ""))
+
+	switch normalizedField {
+	case "hostname":
+		return "key1"
+	case "sourceid":
+		return "source_id"
+	case "tenantid":
+		return "tenant_id"
+	case "reputation":
+		return "reputation"
+	case "sourcename":
+		return "source_name"
+	default:
+		return ""
+	}
 }
 
 func populateSourceNames(ctx context.Context, devices []model.DeviceClass, tenantId string) error {
@@ -549,18 +469,18 @@ func buildConsolidatedDeviceAlert(sdia model.SourceDeviceInventoryAlert) (*alert
 	// Create a detailed message with source info and device details
 	var deviceDetails strings.Builder
 	deviceDetails.WriteString(fmt.Sprintf("Source: %s\n", sdia.SourceName))
-	deviceDetails.WriteString(fmt.Sprintf("Total devices with alert criteria: %d\n\n", sdia.TotalCount))
+	deviceDetails.WriteString(fmt.Sprintf("Total devices matching alert criteria: %d\n\n", sdia.TotalCount))
 
-	deviceDetails.WriteString("Top devices:\n")
+	deviceDetails.WriteString("Sample devices (showing up to 5):\n")
 	for i, device := range sdia.TopDevices {
 		deviceDetails.WriteString(fmt.Sprintf("%d. %s (Reputation: %s)\n", i+1, device.Hostname, device.Reputation))
 	}
 
 	if sdia.RemainingCount > 0 {
-		deviceDetails.WriteString(fmt.Sprintf("\n... and %d more devices", sdia.RemainingCount))
+		deviceDetails.WriteString(fmt.Sprintf("\n... and %d more devices matching the criteria", sdia.RemainingCount))
 	}
 
-	title := fmt.Sprintf("Device Inventory Alert - Source %s has %d devices with alert criteria", sdia.SourceName, sdia.TotalCount)
+	title := fmt.Sprintf("Device Inventory Alert - Source %s has %d devices matching alert criteria", sdia.SourceName, sdia.TotalCount)
 	message := deviceDetails.String()
 
 	functionality := alerts_async.LogSource

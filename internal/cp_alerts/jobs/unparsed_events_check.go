@@ -141,7 +141,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 			for _, src := range sourcesToDismiss {
 
 				q := "tenantId:" + tenantId + " AND dismissed:false AND functionalityEntityId:" + src.ID.String() + " AND functionalityType:UNPARSED_EVENTS"
-				openAlerts, err := os.Search(ctx, osClient, common.AlertsIndex, q)
+				openAlerts, _, err := os.Search(ctx, osClient, common.AlertsIndex, q)
 				if err != nil {
 					logger.GetLogger().Error("error while searching for unparsed events alerts", zap.Error(err), zap.String("query", q))
 					return err
