@@ -490,14 +490,24 @@ func findActiveAndInactiveFleetConnectors(db *gorm.DB, tenantId string, healthCh
 
 func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCheckTime, healthCheckIgnoreTime time.Time, page, pageSize int) ([]*fleet.Components, []*model.UnhealthyFleetComponents, error) {
 	var activeFleetComponents []fleet.Components
-	var inactiveFleetComponents []fleet.Components
 	offset := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
 
-	err := db.Where("tenant_id = ? AND (heartbeat_at < ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+	var inactiveResults []struct {
+		fleet.Components
+		FleetNodeName string `gorm:"column:fleet_node_name"`
+		FleetName     string `gorm:"column:fleet_name"`
+	}
+
+	err := db.Table("fleet_components").
+		Select("fleet_components.*, fleet_node.name as fleet_node_name, fleet.name as fleet_name").
+		Joins("JOIN fleet_node ON fleet_components.fleet_node_id = fleet_node.id").
+		Joins("JOIN fleet ON fleet_node.fleet_id = fleet.id").
+		Where("fleet_components.tenant_id = ? AND (fleet_components.heartbeat_at < ? AND fleet_components.heartbeat_at > ?) AND fleet_components.status NOT IN ?",
+			tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offset).
-		Find(&inactiveFleetComponents).Error
+		Find(&inactiveResults).Error
 
 	if err != nil {
 		return nil, nil, err
@@ -512,15 +522,16 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 		return nil, nil, err
 	}
 
-	if len(activeFleetComponents) == 0 && len(inactiveFleetComponents) == 0 {
+	if len(activeFleetComponents) == 0 && len(inactiveResults) == 0 {
 		logger.GetLogger().Info("nothing found in db")
 		return nil, nil, nil
 	}
 
 	healthCheckDuration := time.Since(healthCheckTime)
 	var inactiveResult []*model.UnhealthyFleetComponents
-	for _, fc := range inactiveFleetComponents {
-		inactiveResult = append(inactiveResult, model.NewUnhealthyFleetComponents(&fc, healthCheckDuration))
+
+	for _, result := range inactiveResults {
+		inactiveResult = append(inactiveResult, model.NewUnhealthyFleetComponentsWithNames(&result.Components, result.FleetNodeName, result.FleetName, healthCheckDuration))
 	}
 
 	var activeResult []*fleet.Components
@@ -529,7 +540,6 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 	}
 
 	return activeResult, inactiveResult, nil
-
 }
 func sendAgentInAppAlerts(inactiveAgents []*model.UnhealthyAgent, alertsManager *alert.AlertsManager) error {
 	alertsToSave := make([]*alerts_async.Alert, len(inactiveAgents))
