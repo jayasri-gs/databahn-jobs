@@ -32,6 +32,7 @@ type HealthyFleetConnector struct {
 type UnhealthyFleetComponents struct {
 	FleetComponent  *fleet.Components
 	FleetNode       *fleet.Node
+	Fleet           *fleet.Fleet
 	HealthCheckTime time.Duration
 	CheckedAt       time.Time
 	LastHeartbeatAt time.Time
@@ -66,10 +67,11 @@ func NewUnhealthyFleetConnector(fleetConnector *fleet.Connector, healthCheckTime
 	}
 }
 
-func NewUnhealthyFleetComponents(fleetComponent *fleet.Components, fleetNode *fleet.Node, healthCheckTime time.Duration) *UnhealthyFleetComponents {
+func NewUnhealthyFleetComponents(fleetComponent *fleet.Components, fleetNode *fleet.Node, fleet *fleet.Fleet, healthCheckTime time.Duration) *UnhealthyFleetComponents {
 	return &UnhealthyFleetComponents{
 		FleetComponent:  fleetComponent,
 		FleetNode:       fleetNode,
+		Fleet:           fleet,
 		HealthCheckTime: healthCheckTime,
 		CheckedAt:       time.Now().UTC(),
 		LastHeartbeatAt: fleetComponent.HeartbeatAt,
@@ -111,10 +113,16 @@ func (ufc UnhealthyFleetComponents) GetEntityId() string {
 	return ufc.FleetComponent.Id.String()
 }
 func (ufc UnhealthyFleetComponents) GetEntityName() string {
-	if ufc.FleetNode != nil {
-		return fmt.Sprintf("%s in fleet %s", ufc.FleetComponent.ServiceName, ufc.FleetNode.Name)
+	if ufc.Fleet != nil && ufc.FleetNode != nil {
+		return fmt.Sprintf("%s in fleet %s (node: %s)", ufc.FleetComponent.ServiceName, ufc.Fleet.Name, ufc.FleetNode.Name)
 	}
-	// Fallback if fleet node is not available
+	if ufc.Fleet != nil {
+		return fmt.Sprintf("%s in fleet %s", ufc.FleetComponent.ServiceName, ufc.Fleet.Name)
+	}
+	if ufc.FleetNode != nil {
+		return fmt.Sprintf("%s in fleet (node: %s)", ufc.FleetComponent.ServiceName, ufc.FleetNode.Name)
+	}
+	// Fallback if neither fleet nor fleet node is available
 	return fmt.Sprintf("%s in fleet (unknown)", ufc.FleetComponent.ServiceName)
 }
 func (ufc UnhealthyFleetComponents) GetTenantId() string {

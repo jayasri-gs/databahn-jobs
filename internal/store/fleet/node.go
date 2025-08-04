@@ -1,9 +1,27 @@
 package fleet
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+type Fleet struct {
+	Id            uuid.UUID `json:"id" gorm:"primary_key"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	Status        string    `json:"status"`
+	TenantId      uuid.UUID `json:"tenant_id"`
+	CustomerId    uuid.UUID `json:"customer_id"`
+	DataPlaneId   uuid.UUID `json:"data_plane_id"`
+	Topology      string    `json:"topology"`
+	Secret        string    `json:"secret"`
+	AdvanceConfig string    `json:"advance_config" gorm:"type:jsonb"`
+	CreatedAt     time.Time `json:"created_at"`
+	CreatedBy     uuid.UUID `json:"created_by"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	UpdatedBy     uuid.UUID `json:"updated_by"`
+}
 
 type Node struct {
 	AlertLastReported time.Time `json:"alert_last_reported" gorm:"-"`
@@ -60,4 +78,8 @@ func (s *HardwareStats) TableName() string {
 
 func (s *Node) TableName() string {
 	return "fleet_node"
+}
+
+func (s *Fleet) TableName() string {
+	return "fleet"
 }
