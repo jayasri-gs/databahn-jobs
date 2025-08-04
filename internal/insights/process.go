@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/databahn-ai/common-utils/utils"
@@ -28,79 +27,6 @@ import (
 // Index-level cardinality threshold for tracking unique event keys
 
 const cardinalityThreshold = 360000
-
-// TenantCardinalityManager handles tenant-level cardinality tracking
-// Note: This is now also used for index-level cardinality tracking
-type TenantCardinalityManager struct {
-	cache map[string]map[string]bool
-	mutex sync.RWMutex
-}
-
-// NewTenantCardinalityManager creates a new cardinality manager
-func NewTenantCardinalityManager() *TenantCardinalityManager {
-	return &TenantCardinalityManager{
-		cache: make(map[string]map[string]bool),
-		mutex: sync.RWMutex{},
-	}
-}
-
-// AddUniqueKeys adds unique keys for a tenant
-func (tcm *TenantCardinalityManager) AddUniqueKeys(tenantId string, keys []string) {
-	tcm.mutex.Lock()
-	defer tcm.mutex.Unlock()
-
-	if tcm.cache[tenantId] == nil {
-		tcm.cache[tenantId] = make(map[string]bool)
-	}
-
-	for _, key := range keys {
-		tcm.cache[tenantId][key] = true
-	}
-}
-
-// GetUniqueCount returns the unique key count for a tenant
-func (tcm *TenantCardinalityManager) GetUniqueCount(tenantId string) int {
-	tcm.mutex.RLock()
-	defer tcm.mutex.RUnlock()
-
-	if tcm.cache[tenantId] == nil {
-		return 0
-	}
-	return len(tcm.cache[tenantId])
-}
-
-// RemoveTenant removes a tenant from the cache
-func (tcm *TenantCardinalityManager) RemoveTenant(tenantId string) {
-	tcm.mutex.Lock()
-	defer tcm.mutex.Unlock()
-
-	delete(tcm.cache, tenantId)
-}
-
-func (tcm *TenantCardinalityManager) IsKeyPresent(tenantId, key string) bool {
-	tcm.mutex.RLock()
-	defer tcm.mutex.RUnlock()
-
-	if tcm.cache[tenantId] == nil {
-		return false
-	}
-	_, exists := tcm.cache[tenantId][key]
-	return exists
-}
-
-// CheckAndAlertCardinality checks cardinality and generates alerts if needed
-func (tcm *TenantCardinalityManager) CheckAndAlertCardinality(ctx context.Context, tenantId string) error {
-	uniqueCount := tcm.GetUniqueCount(tenantId)
-	logger.GetLogger().Info("tenant cardinality check",
-		zap.String("tenant_id", tenantId),
-		zap.Int("unique_count", uniqueCount),
-		zap.Int("threshold", cardinalityThreshold))
-
-	if uniqueCount > cardinalityThreshold {
-		return generateCardinalityAlert(ctx, tenantId, uniqueCount, cardinalityThreshold)
-	}
-	return nil
-}
 
 // checkIndexCardinalityAndAlert checks cardinality for a single index and generates alerts if needed
 func checkIndexCardinalityAndAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount int) error {
@@ -129,9 +55,6 @@ func checkIndexCardinalityAndAlert(ctx context.Context, indexMetadata IndexMetad
 	}
 	return nil
 }
-
-// Global cardinality manager instance
-var globalCardinalityManager = NewTenantCardinalityManager()
 
 // getInsightRuleName fetches the insight rule name from database using index metadata
 func getInsightRuleName(indexMetadata IndexMetadata) (string, error) {
@@ -357,6 +280,9 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		logger.GetLogger().Error("failed to check index cardinality", zap.Error(err), zap.String("index", indexName))
 		// Don't fail the aggregation process for alert failures
 	}
+
+	// Clean up cache after index processing
+	indexUniqueKeys = nil
 
 	return nil
 
@@ -677,7 +603,7 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 			indexMetadata.TenantId,
 		),
 		alerts_async.WithCriticality(alerts_async.Warning),
-		alerts_async.WithFunctionalityType(alerts_async.RateLimitExceeded), // Using closest existing type
+		alerts_async.WithFunctionalityType(alerts_async.RateLimitExceeded),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithAlertType(alerts_async.Internal),
@@ -704,59 +630,6 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 		zap.String("insight_rule_id", indexMetadata.Type),
 		zap.String("tenant_id", indexMetadata.TenantId),
 		zap.String("data_plane_id", dataPlaneId),
-		zap.Int("unique_count", uniqueKeyCount),
-		zap.Int("threshold", threshold),
-		zap.String("alert_id", cardinalityAlert.Id))
-
-	return nil
-}
-
-// generateCardinalityAlert creates and sends an alert when unique event key count exceeds threshold
-func generateCardinalityAlert(ctx context.Context, tenantId string, uniqueKeyCount, threshold int) error {
-	alertsManager, err := alert.NewAlertsManager(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create alerts manager: %w", err)
-	}
-	defer alertsManager.Close(ctx)
-
-	// Create alert for high cardinality
-	alertTime := time.Now()
-	title := fmt.Sprintf("High Event Key Cardinality Detected - Tenant %s", tenantId)
-	message := fmt.Sprintf("Tenant %s generated %d unique events across all sources, exceeding the threshold of %d. This may indicate data quality issues, excessive event diversity.",
-		tenantId, uniqueKeyCount, threshold)
-
-	cardinalityAlert, err := alerts_async.NewAlert(
-		alerts_async.InsightsRule,
-		alerts_async.WithEntityDetails(
-			tenantId,
-			fmt.Sprintf("tenant-%s", tenantId),
-			"", // dataPlaneId - not applicable for tenant-level alerts
-			tenantId,
-		),
-		alerts_async.WithCriticality(alerts_async.Warning),
-		alerts_async.WithFunctionalityType(alerts_async.RateLimitExceeded), // Using closest existing type
-		alerts_async.WithTitle(title),
-		alerts_async.WithMessage(message),
-		alerts_async.WithAlertType(alerts_async.Internal),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create cardinality alert: %w", err)
-	}
-
-	// Set timestamps
-	cardinalityAlert.CreatedAt = alertTime.UnixMilli()
-	cardinalityAlert.UpdatedAt = alertTime.UnixMilli()
-	cardinalityAlert.FirstObservedAt = alertTime.UnixMilli()
-	cardinalityAlert.LastObservedAt = alertTime.UnixMilli()
-
-	// Send alert
-	err = alertsManager.SendAlerts([]*alerts_async.Alert{cardinalityAlert})
-	if err != nil {
-		return fmt.Errorf("failed to send cardinality alert: %w", err)
-	}
-
-	logger.GetLogger().Info("cardinality alert sent successfully",
-		zap.String("tenant_id", tenantId),
 		zap.Int("unique_count", uniqueKeyCount),
 		zap.Int("threshold", threshold),
 		zap.String("alert_id", cardinalityAlert.Id))
