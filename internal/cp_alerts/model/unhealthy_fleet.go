@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/databahn-ai/databahn-jobs/internal/store/fleet"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 )
@@ -63,7 +65,7 @@ func NewUnhealthyFleetConnector(fleetConnector *fleet.Connector, healthCheckTime
 	}
 }
 
-func NewUnhealthyFleetComponents(fleetComponent *fleet.Components, healthCheckTime time.Duration) *UnhealthyFleetComponents {
+func NewUnhealthyFleetComponents(fleetComponent *fleet.Components, fleetNode *fleet.Node, healthCheckTime time.Duration) *UnhealthyFleetComponents {
 	return &UnhealthyFleetComponents{
 		FleetComponent:  fleetComponent,
 		HealthCheckTime: healthCheckTime,
@@ -81,9 +83,7 @@ func (uf UnhealthyFleet) GetEntityName() string {
 func (uf UnhealthyFleet) GetTenantId() string {
 	return uf.FleetNode.TenantId.String()
 }
-func (uf UnhealthyFleet) GetDataPlaneId() string {
-	return "DataPlaneId not applicable for Fleet Node"
-}
+func (uf UnhealthyFleet) GetDataPlaneId() string { return uuid.Nil.String() }
 
 func (uf UnhealthyFleet) GetHealthCheckTime() time.Duration {
 	return uf.HealthCheckTime
@@ -112,9 +112,7 @@ func (ufc UnhealthyFleetComponents) GetEntityName() string { return "Fleet Compo
 func (ufc UnhealthyFleetComponents) GetTenantId() string {
 	return ufc.FleetComponent.TenantId.String()
 }
-func (ufc UnhealthyFleetComponents) GetDataPlaneId() string {
-	return "DataPlaneId not applicable for Fleet Component"
-}
+func (ufc UnhealthyFleetComponents) GetDataPlaneId() string { return uuid.Nil.String() }
 
 func (ufc UnhealthyFleetComponents) GetHealthCheckTime() time.Duration {
 	return ufc.HealthCheckTime
@@ -145,9 +143,7 @@ func (ufc UnhealthyFleetConnector) GetEntityName() string {
 func (ufc UnhealthyFleetConnector) GetTenantId() string {
 	return ufc.FleetConnector.TenantID.String()
 }
-func (ufc UnhealthyFleetConnector) GetDataPlaneId() string {
-	return "DataPlaneId not applicable for Fleet Connector"
-}
+func (ufc UnhealthyFleetConnector) GetDataPlaneId() string { return uuid.Nil.String() }
 
 func (ufc UnhealthyFleetConnector) GetHealthCheckTime() time.Duration {
 	return ufc.HealthCheckTime
