@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -29,11 +30,12 @@ type AlertNotificationCheckpoint struct {
 	Id              uuid.UUID        `gorm:"type:uuid;default:uuid_generate_v4();primary_key;column:id"`
 	TenantId        uuid.UUID        `gorm:"type:uuid;not null;column:tenant_id"`
 	CheckpointValue *CheckpointValue `gorm:"type:jsonb;not null;column:checkpoint_value"`
+	AlertType       string           `gorm:"type:varchar(32);not null;column:alert_type"`
 }
 
-func GetAlertNotificationCheckpoint(db *gorm.DB, tenantId uuid.UUID) (*AlertNotificationCheckpoint, error) {
+func GetAlertNotificationCheckpoint(db *gorm.DB, tenantId uuid.UUID, alertType alerts_async.AlertType) (*AlertNotificationCheckpoint, error) {
 	cp := &AlertNotificationCheckpoint{}
-	err := db.Where("tenant_id = ?", tenantId).First(cp).Error
+	err := db.Where("tenant_id = ? AND alert_type = ?", tenantId, alertType.String()).First(cp).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}

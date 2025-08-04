@@ -146,7 +146,7 @@ func SearchPaginated(ctx context.Context, client *opensearch.Client, index strin
 	request.Query.QueryString.Query = query
 	request.SearchAfter = after
 	request.Sort = sortBy
-	response, err := MakeSearchCall(ctx, index+"*", request, client)
+	response, err := MakeSearchCall(ctx, index, request, client)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -90,6 +90,27 @@ func GetAllModuleTenantConfigToTenantId(db *gorm.DB, tenantId uuid.UUID) (map[st
 	return moduleTenantConfigToTenantId, nil
 }
 
+// LoadTenantToModuleToConfigs loads the tenant to module to configurations mapping from the database.
+func LoadTenantToModuleToConfigs(db *gorm.DB) (map[string]map[string]*ModuleTenantConfigData, error) {
+	var mappings []ModuleTenantMapping
+	err := db.Preload("Module").Find(&mappings, "enabled = true").Error
+	if err != nil {
+		return nil, err
+	}
+
+	configMap := make(map[string]map[string]*ModuleTenantConfigData)
+	for _, mapping := range mappings {
+		if mapping.ModuleTenantConfig != nil {
+			moduleName := mapping.Module.Name
+			if _, exists := configMap[mapping.TenantID.String()]; !exists {
+				configMap[mapping.TenantID.String()] = make(map[string]*ModuleTenantConfigData)
+			}
+			configMap[mapping.TenantID.String()][moduleName] = mapping.ModuleTenantConfig
+		}
+	}
+	return configMap, nil
+}
+
 func GetTargetsForModule(db *gorm.DB, tenantId uuid.UUID, moduleName string) ([]Targets, error) {
 	var moduleTenants []ModuleTenantMapping
 	err := db.Preload("Module").Where("tenant_id = ?", tenantId).Find(&moduleTenants).Error
