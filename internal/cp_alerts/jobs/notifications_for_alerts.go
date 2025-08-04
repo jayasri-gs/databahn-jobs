@@ -21,7 +21,6 @@ import (
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 const EmailTemplatesBasePath = "/home/databahn/templates/"
@@ -48,7 +47,7 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	}()
 
 	// Load module tenant configs once for all tenants
-	moduleTenantConfigMap, err := loadModuleTenantConfigs(db)
+	tenantToModuleToConfigMap, err := entities.LoadTenantToModuleToConfigs(db)
 	if err != nil {
 		logger.GetLogger().Error("error while loading module tenant configs", zap.Error(err))
 		return err
@@ -151,7 +150,7 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 					}
 				}
 				if len(targetsByModuleName) > 0 {
-					err := sendCustomerNotification(t, functionalityType, functionality, alerts, targetsByModuleName, notificationManager, moduleTenantConfigMap)
+					err := sendCustomerNotification(t, functionalityType, functionality, alerts, targetsByModuleName, notificationManager, tenantToModuleToConfigMap)
 					if err != nil {
 						logger.GetLogger().Error("failed to send customer notification", zap.Error(err), zap.String("tenant", tenantIdStr))
 						return err
@@ -177,25 +176,7 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	return nil
 }
 
-// loadModuleTenantConfigs loads all module tenant configs and creates a map for efficient lookup
-func loadModuleTenantConfigs(db *gorm.DB) (map[string]*entities.ModuleTenantConfigData, error) {
-	var mappings []entities.ModuleTenantMapping
-	err := db.Find(&mappings).Error
-	if err != nil {
-		return nil, err
-	}
-
-	configMap := make(map[string]*entities.ModuleTenantConfigData)
-	for _, mapping := range mappings {
-		if mapping.ModuleTenantConfig != nil {
-			configMap[mapping.TenantID.String()] = mapping.ModuleTenantConfig
-		}
-	}
-
-	return configMap, nil
-}
-
-func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, moduleTenantConfigMap map[string]*entities.ModuleTenantConfigData) error {
+func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, tenantToModuleToConfigMap map[string]map[string]*entities.ModuleTenantConfigData) error {
 	for modulesName, targets := range targetsByModuleName {
 		if alertFunctionalityMatchesModuleName(functionality, modulesName) {
 			var databahnTargets []*notification_common.DatabahnTarget
@@ -207,11 +188,19 @@ func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality 
 			}
 			var filteredAlerts []alerts_async.Alert
 			if alerts_async.LogSource.String() == functionality || alerts_async.CloudLogSource.String() == functionality {
-				config := moduleTenantConfigMap[t.Id.String()]
-				if config != nil && config.SourceList.IncludeExclude == "EXCLUDE" {
+				var configFound *entities.ModuleTenantConfigData
+				moduleConfigMap := tenantToModuleToConfigMap[t.Id.String()]
+				if moduleConfigMap != nil {
+					cfg := moduleConfigMap[modulesName]
+					if cfg != nil {
+						configFound = cfg
+						logger.GetLogger().Info("module config found for tenant", zap.String("tenant", t.Id.String()), zap.String("module", modulesName))
+					}
+				}
+				if configFound != nil && configFound.SourceList.IncludeExclude == "EXCLUDE" {
 					// Create a map of source IDs for efficient lookup
 					sourceIdMap := make(map[string]bool)
-					for _, sourceId := range config.SourceList.SourceIds {
+					for _, sourceId := range configFound.SourceList.SourceIds {
 						sourceIdMap[sourceId] = true
 					}
 
@@ -352,6 +341,9 @@ func buildEmailBody(emailTitle string, alerts []alerts_async.Alert) (string, err
 }
 
 func alertFunctionalityMatchesModuleName(functionality string, moduleName string) bool {
+	if strings.EqualFold("fleet", moduleName) {
+		return strings.HasPrefix(strings.ToLower(functionality), "fleet")
+	}
 	return strings.EqualFold(functionality, moduleName)
 }
 
