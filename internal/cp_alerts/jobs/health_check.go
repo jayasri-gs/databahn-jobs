@@ -520,7 +520,16 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 	healthCheckDuration := time.Since(healthCheckTime)
 	var inactiveResult []*model.UnhealthyFleetComponents
 	for _, fc := range inactiveFleetComponents {
-		inactiveResult = append(inactiveResult, model.NewUnhealthyFleetComponents(&fc, healthCheckDuration))
+		// Fetch the fleet node for this component
+		var fleetNode fleet.Node
+		err := db.Where("id = ?", fc.FleetNodeId).First(&fleetNode).Error
+		if err != nil {
+			logger.GetLogger().Error("error while fetching fleet node for component", zap.Error(err), zap.String("fleetNodeId", fc.FleetNodeId.String()))
+			// Continue with a nil fleet node if we can't fetch it
+			inactiveResult = append(inactiveResult, model.NewUnhealthyFleetComponents(&fc, nil, healthCheckDuration))
+		} else {
+			inactiveResult = append(inactiveResult, model.NewUnhealthyFleetComponents(&fc, &fleetNode, healthCheckDuration))
+		}
 	}
 
 	var activeResult []*fleet.Components
