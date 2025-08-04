@@ -493,15 +493,14 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 	offset := page * pageSize
 	checkStatus := []string{healthchecker.StatusCreated, healthchecker.StatusInactive, healthchecker.StatusDisabled, healthchecker.StatusDeleted}
 
-	// Query for inactive fleet components with JOIN to get fleet and fleet node info
 	var inactiveResults []struct {
 		fleet.Components
-		FleetNode fleet.Node  `gorm:"embedded"`
-		Fleet     fleet.Fleet `gorm:"embedded"`
+		FleetNodeName string `gorm:"column:fleet_node_name"`
+		FleetName     string `gorm:"column:fleet_name"`
 	}
 
 	err := db.Table("fleet_components").
-		Select("fleet_components.*, fleet_node.*, fleet.*").
+		Select("fleet_components.*, fleet_node.name as fleet_node_name, fleet.name as fleet_name").
 		Joins("JOIN fleet_node ON fleet_components.fleet_node_id = fleet_node.id").
 		Joins("JOIN fleet ON fleet_node.fleet_id = fleet.id").
 		Where("fleet_components.tenant_id = ? AND (fleet_components.heartbeat_at < ? AND fleet_components.heartbeat_at > ?) AND fleet_components.status NOT IN ?",
@@ -514,7 +513,6 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 		return nil, nil, err
 	}
 
-	// Query for active fleet components
 	err = db.Where("tenant_id = ? AND (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
 		Limit(pageSize).
 		Offset(offset).
@@ -532,9 +530,8 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 	healthCheckDuration := time.Since(healthCheckTime)
 	var inactiveResult []*model.UnhealthyFleetComponents
 
-	// Process inactive results with fleet and fleet node info
 	for _, result := range inactiveResults {
-		inactiveResult = append(inactiveResult, model.NewUnhealthyFleetComponents(&result.Components, &result.FleetNode, &result.Fleet, healthCheckDuration))
+		inactiveResult = append(inactiveResult, model.NewUnhealthyFleetComponentsWithNames(&result.Components, result.FleetNodeName, result.FleetName, healthCheckDuration))
 	}
 
 	var activeResult []*fleet.Components
