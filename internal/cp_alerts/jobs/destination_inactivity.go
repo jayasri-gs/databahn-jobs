@@ -83,7 +83,7 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 			for i, d := range activeDestinationsPartition {
 				destinationIds[i] = d.ID.String()
 			}
-			q := "tenantId:" + tenantId + " AND dismissed:false AND functionalityEntityId:" + "(" + strings.Join(destinationIds, " OR ") + ")" + ` AND functionalityType:(` + constants.DeliveryCheckerFunctionalityType + " OR " + alerts_async.IngestionChecker.String() + ")"
+			q := "tenantId:" + tenantId + " AND dismissed:false AND functionalityEntityId:" + "(" + strings.Join(destinationIds, " OR ") + ")" + ` AND functionalityType:(` + constants.DeliveryCheckerFunctionalityType + " OR " + alerts_async.DeliveryChecker.String() + ")"
 			openAlerts, err := os.Search(ctx, osClient, common.AlertsIndex, q)
 			if err != nil {
 				logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q))
