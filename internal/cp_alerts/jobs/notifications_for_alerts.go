@@ -76,6 +76,10 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 				Field: "lastObservedAt",
 				Order: "asc",
 			},
+			os.Sort{
+				Field: "id",
+				Order: "asc",
+			},
 		}
 		targetsByModuleName, err := entities.GetTargetsForTenantByModule(db, t.Id)
 		if err != nil {
