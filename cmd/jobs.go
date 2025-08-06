@@ -51,6 +51,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = cp_jobs.AlertForNoEventsFromSources(ctx)
 	case common.DESTINATION_ACTIVITY_CHECKER:
 		err = cp_jobs.AlertForNoEventsToDestination(ctx)
+	case common.DESTINATION_MORE_THAN_INJECTED:
+		err = cp_jobs.AlertDestinationsWithMoreDataDeliveredThanInjection(ctx)
 	case common.NOTIFICATIONS_FOR_ALERTS:
 		err = cp_jobs.SendNotificationsForAlerts(ctx)
 	case common.HEALTH_CHECKER:

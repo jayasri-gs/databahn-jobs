@@ -22,7 +22,7 @@ type Doc struct {
 		DbFleetId       string `json:"db_fleet_id"`
 		DbDeviceVendor  string `json:"db_device_vendor"`
 		DbEventSourceId string `json:"db_event_source_id"`
-		DbDestinationId string `json:"db_destination_id"`
+		DbDestinationId string `json:"destination_id"`
 		DbDataPlaneId   string `json:"db_data_plane_id"`
 		DbConnectorId   string `json:"db_connector_id"`
 		ServiceName     string `json:"service_name"`
