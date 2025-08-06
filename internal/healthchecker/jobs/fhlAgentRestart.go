@@ -25,7 +25,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) error {
 	var tenantId = "59876413-3295-44a0-9fd6-251aecfda9f5"
 	var agentId = "a648dbc1-c493-49bd-ba76-3382803aaddc"
 	interval := 20
-	allSourcesInactive := false
+	oneInactiveSource := false
 	// Get last event times for all specified sources
 	sourceIdToLastEventTime, err := getSourceIdToLastEventTimeNew(ctx, osClient, tenantId, interval, sourceIds)
 	if err != nil {
@@ -42,20 +42,28 @@ func CheckAndRestartFHLAgent(ctx context.Context) error {
 		zap.String("tenantId", tenantId),
 		zap.Time("thresholdTime", thresholdTime))
 
-	for sourceId, lastEventTime := range sourceIdToLastEventTime {
+	for _, sourceId := range sourceIds {
+		lastEventTime, ok := sourceIdToLastEventTime[sourceId]
+		if !ok {
+			logging.GetLoggerWithContext(ctx).Error("sourceId not found in sourceIdToLastEventTime", zap.String("sourceId", sourceId))
+			oneInactiveSource = true
+			logging.GetLoggerWithContext(ctx).Info("Source is not active - has sent data within threshold time")
+			break
+		}
+
 		logger := logging.GetLoggerWithContext(ctx).With(zap.String("sourceId", sourceId), zap.Time("lastEventTime", lastEventTime))
 		logger.Info("Checking last event time for source")
 
 		// If any source has sent data within the last 20 minutes, mark as active
 		if !lastEventTime.After(thresholdTime) {
-			allSourcesInactive = true
+			oneInactiveSource = true
 			logger.Info("Source is not active - has sent data within threshold time")
 			break
 		}
 	}
 
 	// If no sources have sent data for more than 20 minutes, update the agent
-	if allSourcesInactive {
+	if oneInactiveSource {
 		logging.GetLoggerWithContext(ctx).Info("All sources inactive for more than 20 minutes, updating agent upgrade availability",
 			zap.String("agentId", agentId),
 			zap.String("tenantId", tenantId))
