@@ -176,14 +176,14 @@ func getPipelineVolumeControllerStats(ctx context.Context, tenantId, sourceId, d
 	endTimeStr := strconv.FormatInt(endTime.UnixMilli(), 10)
 
 	// Get ingestion stats for this specific source
-	ingestionQuery := fmt.Sprintf(`tags.component_name: "storage" AND name: "total_events_delivered" AND tags.db_event_source_id: "%s"`, sourceId.String())
+	ingestionQuery := fmt.Sprintf("tags.component_name: \"storage\" AND name: \"total_data_received\" AND tags.db_event_source_id: \"%s\"", sourceId.String())
 	ingestionResponse, err := statistics.GetStatsSum(ctx, ingestionQuery, tenantId, startTimeStr, endTimeStr)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("error getting ingestion stats for source %s: %w", sourceId.String(), err)
 	}
 
 	// Get delivery stats for this specific destination from the source
-	deliveryQuery := fmt.Sprintf(`tags.component_name: "dispenser" AND name: "total_events_delivered" AND tags.db_event_source_id: "%s" AND tags.destination_id: "%s"`, sourceId.String(), destinationId.String())
+	deliveryQuery := fmt.Sprintf("tags.component_name: \"dispenser\" AND name: \"total_events_delivered\" AND tags.db_event_source_id: \"%s\" AND tags.destination_id: \"%s\"", sourceId.String(), destinationId.String())
 	deliveryResponse, err := statistics.GetStatsSum(ctx, deliveryQuery, tenantId, startTimeStr, endTimeStr)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("error getting delivery stats for source %s to destination %s: %w", sourceId.String(), destinationId.String(), err)
