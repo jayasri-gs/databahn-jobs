@@ -1,10 +1,13 @@
 package model
 
+import "github.com/databahn-ai/db-models/alerts_async"
+
 type AuditReportAlert struct {
 	EntityId          string
 	EntityName        string
 	EntityTenantId    string
 	EntityDataPlaneId string
+	alerts_async.NoSecondaryEntityId
 }
 
 func (id AuditReportAlert) GetEntityId() string    { return id.EntityId }

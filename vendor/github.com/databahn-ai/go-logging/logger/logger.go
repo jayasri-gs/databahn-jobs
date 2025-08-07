@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/databahn-ai/go-logging/logger/constants"
@@ -101,7 +102,7 @@ func NewDbConfig() zap.Config {
 
 func getLogLevel() zap.AtomicLevel {
 	var level zap.AtomicLevel
-	switch os.Getenv(constants.LoggingMode) {
+	switch strings.ToUpper(os.Getenv(constants.LoggingMode)) {
 	case constants.LogModeDebug:
 		level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
 	case constants.LogModeError:
@@ -152,7 +153,7 @@ func SetLoggingPath(newPath string) {
 
 func isSamplingEnabled() bool {
 	env := os.Getenv(constants.EnableLogSampling)
-	return env != "false"
+	return env == "true"
 }
 
 func getSamplingConfig() (int, int) {

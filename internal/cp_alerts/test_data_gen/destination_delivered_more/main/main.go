@@ -39,8 +39,15 @@ type Doc struct {
 }
 
 var tenantId = "f5e31bb8-af80-40d8-a0e4-16f12187e4e4"
-var sourceIds = []string{"c4ce4579-534f-405b-841d-136873c508c1"}
-var destinationId = "07b35e56-29fa-4b4c-9902-3879397bc52d"
+var sourceIdsToCountsForInput = map[string]int{
+	"2e730869-b988-436a-a123-48bcf4b3c90f": 100,
+	"b89e7d5f-abeb-4d17-9b3f-c0c7a25aaa55": 100,
+}
+var sourceIdsToCountsForOutput = map[string]int{
+	"2e730869-b988-436a-a123-48bcf4b3c90f": 106,
+	"b89e7d5f-abeb-4d17-9b3f-c0c7a25aaa55": 108,
+}
+var destinationId = "444d43f6-7378-46b1-96d0-0ba4e63ecf81"
 
 func main() {
 	ctx := context.Background()
@@ -48,19 +55,19 @@ func main() {
 	thisYear, thisDay := getYearAndDay()
 
 	eventByteSize := 1000
-	inputStatCountsPerSource := 10
-	outputStatsCountForDestination := 14
 	indexName := fmt.Sprintf("db_statistics_%s_v2_p1_y%d_d%d", tenantId, thisYear, thisDay)
 	logger.GetLogger().Info("creating for year and day", zap.Int("year", thisYear), zap.Int("day", thisDay), zap.String("index", indexName))
 
-	to := time.Now().UTC().UnixMilli()
-	from := time.Now().Add(-20 * time.Hour).UnixMilli()
+	to := time.Now().Add(-1 * time.Hour).UnixMilli()
+	from := time.Now().Add(-3 * time.Hour).UnixMilli()
 
 	var docs []*Doc
-	for i := 0; i < outputStatsCountForDestination; i++ {
-		timeStamp := randomTimeBetween(from, to)
-		doc := randomDoc(timeStamp, randomItem(sourceIds), destinationId, eventByteSize, "total_bytes_delivered", "dispenser")
-		docs = append(docs, &doc)
+	for sourceId, count := range sourceIdsToCountsForOutput {
+		for i := 0; i < count; i++ {
+			timeStamp := randomTimeBetween(from, to)
+			doc := randomDoc(timeStamp, sourceId, destinationId, eventByteSize, "total_bytes_delivered", "dispenser")
+			docs = append(docs, &doc)
+		}
 	}
 	err := Save(ctx, osClient, docs, indexName)
 	if err != nil {
@@ -68,8 +75,8 @@ func main() {
 	}
 
 	docs = nil
-	for _, sourceId := range sourceIds {
-		for i := 0; i < inputStatCountsPerSource; i++ {
+	for sourceId, count := range sourceIdsToCountsForInput {
+		for i := 0; i < count; i++ {
 			timeStamp := randomTimeBetween(from, to)
 			doc := randomDoc(timeStamp, sourceId, destinationId, eventByteSize, "total_data_received", "storage")
 			docs = append(docs, &doc)

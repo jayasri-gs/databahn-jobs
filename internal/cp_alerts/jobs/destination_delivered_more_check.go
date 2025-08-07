@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
@@ -18,7 +19,8 @@ import (
 )
 
 type DestinationToAlert struct {
-	Id              string
+	DestinationId   string
+	SourceId        string
 	TenantId        string
 	DataPlaneId     string
 	DestinationName string
@@ -28,8 +30,15 @@ type DestinationToAlert struct {
 	ToTime          int64
 }
 
+type DeliveredVolume struct {
+	TenantId      string
+	DestinationId string
+	SourceId      string
+	OutData       int64
+}
+
 func (d DestinationToAlert) GetEntityId() string {
-	return d.Id
+	return d.DestinationId
 }
 func (d DestinationToAlert) GetEntityName() string {
 	return d.DestinationName
@@ -40,11 +49,15 @@ func (d DestinationToAlert) GetDataPlaneId() string {
 func (d DestinationToAlert) GetTenantId() string {
 	return d.TenantId
 }
+func (d DestinationToAlert) GetSecondaryEntityId() string {
+	return d.SourceId
+}
 
 func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) error {
 	db := config.GetDB()
-	percentageThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_PERCENTAGE_THRESHOLD", 20))
-	timeCheckHoursBack := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_LAST_HOURS_CHECK", 24)
+	percentageThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_PERCENTAGE_THRESHOLD", 5))
+	fromHourMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_FROM_HOURS_MINUS", 4)
+	toHoursMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_TO_HOURS_MINUS", 1)
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
@@ -63,11 +76,11 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 		alertsManager.Close(ctx)
 	}()
 
-	fromTime, toTime := getTimeRange(timeCheckHoursBack)
+	fromTime, toTime := getTimeRange(fromHourMinus, toHoursMinus)
 	for _, t := range tenants {
-
-		//todo remove please
-		if t.Id.String() != "f5e31bb8-af80-40d8-a0e4-16f12187e4e4" {
+		sourceIdToSourceNameMap, err := common.GetLogSourceIdToNamesMap(ctx, t.Id.String())
+		if err != nil {
+			logger.GetLogger().Error("error while getting log source id to names map", zap.Error(err), zap.String("tenantId", t.Id.String()))
 			continue
 		}
 
@@ -77,14 +90,15 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 			continue
 		}
 
-		destinationIdToOutVolume, err := findDeliveredVolumesForDestinations(ctx, t.Id.String(), osClient, fromTime, toTime)
-		if err != nil {
-			logger.GetLogger().Error("error while finding delivered volumes per destination", zap.Error(err), zap.String("tenantId", t.Id.String()))
-			continue
-		}
 		logSourceIdToInVolume, err := findIngestedVolumesForSources(ctx, t.Id.String(), osClient, fromTime, toTime)
 		if err != nil {
 			logger.GetLogger().Error("error while finding ingested volumes per source", zap.Error(err), zap.String("tenantId", t.Id.String()))
+			continue
+		}
+
+		deliveredVolumeByDestIdSourceId, err := getDeliveredVolumeByDestinationAndSourceId(ctx, err, t, osClient, fromTime, toTime)
+		if err != nil {
+			logger.GetLogger().Error("error while getting delivered volume by destination and source id", zap.Error(err), zap.String("tenantId", t.Id.String()))
 			continue
 		}
 
@@ -94,78 +108,89 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 				logger.GetLogger().Info("skipping inactive destination", zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
 				continue
 			}
+			deliveredVolumeForThisDestBySourceId, ok := deliveredVolumeByDestIdSourceId[dest.ID.String()]
+			if !ok {
+				logger.GetLogger().Info("no data delivered for destination", zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
+				continue
+			}
 
-			if outData, ok := destinationIdToOutVolume[dest.ID.String()]; ok {
-				sourcesList, err := destination.GetSourceByDestinationId(dest.ID, db)
-				if err != nil {
-					logger.GetLogger().Error("error while getting sources for destination", zap.Error(err), zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
+			sourcesList, err := destination.GetSourceByDestinationId(dest.ID, db)
+			if err != nil {
+				logger.GetLogger().Error("error while getting sources for destination", zap.Error(err), zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
+				continue
+			}
+			var sourceIds []string
+			for _, source := range sourcesList {
+				if source.Status == "ACTIVE" {
+					sourceIds = append(sourceIds, source.ID.String())
+				}
+			}
+
+			if len(sourceIds) == 0 {
+				logger.GetLogger().Info("no valid sources found for destination:"+dest.ID.String(),
+					zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
+				continue
+			}
+
+			for _, sourceId := range sourceIds {
+				inVolume, ok := logSourceIdToInVolume[sourceId]
+				if !ok {
+					logger.GetLogger().Info("no ingested volume found for source for destination:"+dest.ID.String(),
+						zap.String("sourceId", sourceId), zap.String("tenantId", t.Id.String()))
 					continue
 				}
-				if len(sourcesList) == 0 {
-					logger.GetLogger().Info("no sources found for destination", zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
+				outVolume, ok := deliveredVolumeForThisDestBySourceId[sourceId]
+				if !ok {
+					logger.GetLogger().Info("no delivered volume found for source in destination:"+dest.ID.String(),
+						zap.String("sourceId", sourceId), zap.String("tenantId", t.Id.String()))
 					continue
-				}
-				var sourceIds []string
-				for _, source := range sourcesList {
-					if source.Status == "ACTIVE" {
-						sourceIds = append(sourceIds, source.ID.String())
-					}
 				}
 
-				if len(sourceIds) == 0 {
-					logger.GetLogger().Info("no active sources found for destination", zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
+				if inVolume == 0 {
+					logger.GetLogger().Info("0 ingested data for source:"+dest.ID.String(), zap.String("sourceId", sourceId),
+						zap.String("tenantId", t.Id.String()))
 					continue
 				}
 
-				totalIngestedSize := int64(0)
-				for _, sourceId := range sourceIds {
-					if inVolume, ok := logSourceIdToInVolume[sourceId]; ok {
-						totalIngestedSize += inVolume
-					}
-				}
-				if totalIngestedSize == 0 {
-					logger.GetLogger().Warn("no ingested data found for destination", zap.String("destinationId", dest.ID.String()),
-						zap.String("tenantId", t.Id.String()), zap.Any("sourceIds", sourceIds), zap.Int64("outData", outData))
-					continue
-				}
 				logger.GetLogger().Info("destination data check volumes for destination"+dest.ID.String(), zap.String("tenantId", t.Id.String()),
-					zap.Int64("outData", outData), zap.Int64("totalIngestedSize", totalIngestedSize), zap.Any("sourceIds", sourceIds))
+					zap.Int64("outData", outVolume), zap.Int64("totalIngestedSize", inVolume), zap.Any("sourceIds", sourceIds))
 
-				if outData > totalIngestedSize {
-					morePercentage := ((float64(outData - totalIngestedSize)) / float64(totalIngestedSize)) * 100
+				if outVolume > inVolume {
+					morePercentage := ((float64(outVolume - inVolume)) / float64(inVolume)) * 100
 					if morePercentage > float64(percentageThreshold) {
 						destToAlert := DestinationToAlert{
-							Id:              dest.ID.String(),
+							DestinationId:   dest.ID.String(),
+							SourceId:        sourceId,
 							TenantId:        t.Id.String(),
 							DataPlaneId:     dest.DataPlaneId.String(),
 							DestinationName: dest.Name,
-							OutData:         outData,
-							InData:          totalIngestedSize,
+							OutData:         outVolume,
+							InData:          inVolume,
 							FromTime:        fromTime,
 							ToTime:          toTime,
 						}
 						alertDestinations = append(alertDestinations, destToAlert)
+						logger.GetLogger().Info("alerting for destination, more out than in:"+dest.ID.String(),
+							zap.Float64("percentage", morePercentage), zap.String("tenantId", t.Id.String()),
+							zap.Int64("outData", outVolume), zap.Int64("inData", inVolume))
 					} else {
-						logger.GetLogger().Info("no alert for destination, more out than in but within limit", zap.Float64("percentage", morePercentage),
-							zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()), zap.Int64("outData", outData), zap.Int64("inData", totalIngestedSize))
+						logger.GetLogger().Info("no alert for destination, more out than in but within limit:"+dest.ID.String(),
+							zap.Float64("percentage", morePercentage), zap.String("tenantId", t.Id.String()), zap.Int64("outData", outVolume), zap.Int64("inData", inVolume))
 						continue
 					}
 				} else {
-					logger.GetLogger().Info("no alert for destination, lesser out than in", zap.String("destinationId", dest.ID.String()),
-						zap.String("tenantId", t.Id.String()), zap.Int64("outData", outData), zap.Int64("inData", totalIngestedSize))
+					logger.GetLogger().Info("no alert for destination, lesser out than in:"+dest.ID.String(),
+						zap.String("tenantId", t.Id.String()), zap.Int64("outData", outVolume), zap.Int64("inData", inVolume))
 					continue
 				}
-			} else {
-				logger.GetLogger().Info("no data delivered for destination", zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
-				continue
 			}
 		}
 		if len(alertDestinations) > 0 {
 			var alerts []*alerts_async.Alert
 			for _, alertDest := range alertDestinations {
-				newAlert, err := buildModeDeliveredAlert(alertDest)
+				newAlert, err := buildMoreDeliveredAlert(alertDest, sourceIdToSourceNameMap)
 				if err != nil {
-					logger.GetLogger().Error("error while building alert", zap.Error(err), zap.String("destinationId", alertDest.Id), zap.String("tenantId", t.Id.String()))
+					logger.GetLogger().Error("error while building alert", zap.Error(err), zap.String("destinationId", alertDest.DestinationId), zap.String("tenantId", t.Id.String()))
 					continue
 				}
 				alerts = append(alerts, newAlert)
@@ -180,6 +205,12 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 			logger.GetLogger().Info("no destinations to alert for tenant", zap.String("tenantId", t.Id.String()))
 		}
 
+		var destinationIds []string
+		for _, dest := range destinations {
+			if dest.Status == "ACTIVE" {
+				destinationIds = append(destinationIds, dest.ID.String())
+			}
+		}
 	}
 
 	alertsManager.Close(ctx)
@@ -187,11 +218,36 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 	return nil
 }
 
-func buildModeDeliveredAlert(toAlert DestinationToAlert) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf("Destination '%s' delivered more data than injected", toAlert.DestinationName)
-	message := fmt.Sprintf("Destination '%s' delivered %s data, but injected volume is %s in the time from %s to %s",
+func getDeliveredVolumeByDestinationAndSourceId(ctx context.Context, err error, t tenant.Tenant, osClient *opensearch.Client, fromTime int64, toTime int64) (map[string]map[string]int64, error) {
+	deliveredVolumes, err := findDeliveredVolumesForDestinations(ctx, t.Id.String(), osClient, fromTime, toTime)
+	if err != nil {
+		logger.GetLogger().Error("error while finding delivered volumes per destination", zap.Error(err), zap.String("tenantId", t.Id.String()))
+		return nil, err
+	}
+	deliveredVolumeByDestIdSourceId := make(map[string]map[string]int64)
+	for _, dv := range deliveredVolumes {
+		if dv.OutData <= 0 {
+			logger.GetLogger().Info("skipping delivered volume with zero or negative out data", zap.String("destinationId", dv.DestinationId), zap.String("tenantId", t.Id.String()))
+			return nil, err
+		}
+		if _, ok := deliveredVolumeByDestIdSourceId[dv.DestinationId]; !ok {
+			deliveredVolumeByDestIdSourceId[dv.DestinationId] = make(map[string]int64)
+		}
+		deliveredVolumeByDestIdSourceId[dv.DestinationId][dv.SourceId] = dv.OutData
+	}
+	return deliveredVolumeByDestIdSourceId, nil
+}
+
+func buildMoreDeliveredAlert(toAlert DestinationToAlert, sourceIdToSourceNameMap map[string]string) (*alerts_async.Alert, error) {
+	sourceName, ok := sourceIdToSourceNameMap[toAlert.SourceId]
+	if !ok {
+		return nil, fmt.Errorf("source name not found for source id: %s and tenant %s", toAlert.SourceId, toAlert.TenantId)
+	}
+	title := fmt.Sprintf("Destination '%s' delivered more data than injected for source '%s", toAlert.DestinationName, sourceName)
+	message := fmt.Sprintf("Destination '%s' delivered %s data, but injected volume by source '%s' is %s in the time from %s to %s",
 		toAlert.DestinationName,
 		util.HumanReadableBytes(toAlert.OutData),
+		sourceName,
 		util.HumanReadableBytes(toAlert.InData),
 		util.HumanReadableTimeWithZone(time.UnixMilli(toAlert.FromTime)),
 		util.HumanReadableTimeWithZone(time.UnixMilli(toAlert.ToTime)),
@@ -205,16 +261,18 @@ func buildModeDeliveredAlert(toAlert DestinationToAlert) (*alerts_async.Alert, e
 		alerts_async.WithErrorCode(alerts_async.DNDW10005, "More data delivered than injected for destination."),
 	)
 	if err != nil {
-		logger.GetLogger().Error("error while creating alert", zap.Error(err), zap.String("destinationId", toAlert.Id), zap.String("tenantId", toAlert.TenantId))
+		logger.GetLogger().Error("error while creating alert", zap.Error(err), zap.String("destinationId", toAlert.DestinationId), zap.String("tenantId", toAlert.TenantId))
 		return nil, err
 	}
 	return newAlert, nil
 }
 
-func getTimeRange(hoursBack int) (int64, int64) {
-	duration := time.Duration(hoursBack) * time.Hour
-	from := time.Now().UTC().Add(-duration).UnixMilli()
-	to := time.Now().UTC().UnixMilli()
+func getTimeRange(fromHourMinus, toHoursMinus int) (int64, int64) {
+	durationForFrom := time.Duration(fromHourMinus) * time.Hour
+	durationForTo := time.Duration(toHoursMinus) * time.Hour
+	now := time.Now().UTC()
+	from := now.Add(-durationForFrom).UnixMilli()
+	to := now.Add(-durationForTo).UnixMilli()
 	return from, to
 }
 
@@ -245,16 +303,16 @@ func findIngestedVolumesForSources(ctx context.Context, tenantId string, client 
 	return sourceIdToIngestionBytes, nil
 }
 
-func findDeliveredVolumesForDestinations(ctx context.Context, tenantId string, client *opensearch.Client, from, to int64) (map[string]int64, error) {
+func findDeliveredVolumesForDestinations(ctx context.Context, tenantId string, client *opensearch.Client, from, to int64) ([]DeliveredVolume, error) {
 	statsAlias := os.StatisticsIndexAlias(tenantId)
 	q := fmt.Sprintf(`name:"total_bytes_delivered" AND tags.component_name:"dispenser" AND tags.db_ts_win:[%d TO %d}`, from, to)
 	aggregations := []os.AggregationFunction{
 		{Name: "sum_value", Function: "sum", Field: "counter.value"},
 	}
 	var after map[string]any = nil
-	destinationIdToBytesOut := make(map[string]int64)
+	var deliveredVolumes []DeliveredVolume
 	for {
-		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, client, 100, statsAlias, q, []string{"tags.destination_id.keyword"}, aggregations, after)
+		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, client, 100, statsAlias, q, []string{"tags.destination_id.keyword", "tags.db_event_source_id.keyword"}, aggregations, after)
 		if err != nil {
 			return nil, err
 		}
@@ -263,11 +321,18 @@ func findDeliveredVolumesForDestinations(ctx context.Context, tenantId string, c
 		}
 		for _, response := range responses {
 			destinationId := response.Key["tags.destination_id.keyword"].(string)
+			sourceId := response.Key["tags.db_event_source_id.keyword"].(string)
 			bytesOut := int64(response.Values["sum_value"].(float64))
-			destinationIdToBytesOut[destinationId] = bytesOut
+			deliveredVolume := DeliveredVolume{
+				TenantId:      tenantId,
+				DestinationId: destinationId,
+				SourceId:      sourceId,
+				OutData:       bytesOut,
+			}
+			deliveredVolumes = append(deliveredVolumes, deliveredVolume)
 		}
 
 		after = newAfter
 	}
-	return destinationIdToBytesOut, nil
+	return deliveredVolumes, nil
 }

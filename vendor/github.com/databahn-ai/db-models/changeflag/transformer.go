@@ -35,6 +35,7 @@ type FlagTransform struct {
 	Status                        int                   `json:"status"`
 	TransformationType            string                `json:"transformation_type"`
 	TransformationOutput          string                `json:"transformation_output"`
+	TransformationDestinationType string                `json:"transformation_destination_type"`
 	IncludeRawEvent               bool                  `json:"include_raw_event"`
 	Function                      FlagTransformFunction `json:"function,omitempty"`
 	Device                        string                `json:"device"`

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"github.com/databahn-ai/db-models/alerts_async"
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
@@ -19,6 +20,7 @@ type VolumeDeviationAlert struct {
 	IsAboveStdDev      bool
 	AlertType          VolumeDeviationAlertType
 	DetectionTime      time.Time
+	alerts_async.NoSecondaryEntityId
 }
 
 type VolumeDeviationAlertType string

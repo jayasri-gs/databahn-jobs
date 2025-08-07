@@ -33,6 +33,8 @@ var (
 	DataRatioAlertChecker          = functionalityTypeEnum{value: "data_ratio_alert_checker"}
 	VolumeDeviationChecker         = functionalityTypeEnum{value: "volume_deviation_checker"}
 	HealthCheck                    = functionalityTypeEnum{value: "health_check"}
+	SmartEdgeError                 = functionalityTypeEnum{value: "smart_edge_error"}
+	AgentError                     = functionalityTypeEnum{value: "agent_error"}
 	HttpUnauthorizedAccess         = functionalityTypeEnum{value: "unauthorized_access"}
 	HttpResourceNotFound           = functionalityTypeEnum{value: "resource_not_found"}
 	HttpBadGateway                 = functionalityTypeEnum{value: "bad_gateway"}
@@ -50,4 +52,7 @@ var (
 	AuditReportGeneration          = functionalityTypeEnum{value: "audit_report_generation"}
 	RateLimitExceeded              = functionalityTypeEnum{value: "rate_limit_exceeded"}
 	FileProcessingFailure          = functionalityTypeEnum{value: "file_processing_failure"}
+	DataParsingFailure             = functionalityTypeEnum{value: "data_parsing_failure"}
+	DataProcessingFailure          = functionalityTypeEnum{value: "data_processing_failure"}
+	DataConversionFailure          = functionalityTypeEnum{value: "data_conversion_failure"}
 )
