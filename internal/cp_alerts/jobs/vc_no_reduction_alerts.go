@@ -63,7 +63,7 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 	// endTime = now - offsetHours; startTime = endTime - windowDurationHours
 	now := time.Now().UTC()
 	endTime := now.Add(-time.Duration(offsetHours) * time.Hour)
-	startTime := endTime.Add(-time.Duration(windowDurationHours) * time.Hour)
+	startTime := endTime.Add(-time.Duration(windowDurationHours+offsetHours) * time.Hour)
 
 	// Note: configured via VC_WINDOW_OFFSET_HOURS and VC_WINDOW_DURATION_HOURS
 
