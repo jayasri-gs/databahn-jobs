@@ -1,5 +1,7 @@
 package model
 
+import "github.com/databahn-ai/db-models/alerts_async"
+
 type DeviceInventoryAlerts struct {
 	DeviceClass *DeviceClass
 }
@@ -14,6 +16,7 @@ type SourceDeviceInventoryAlert struct {
 	TopDevices     []DeviceClass `json:"top_devices"`
 	TotalCount     int           `json:"total_count"`
 	RemainingCount int           `json:"remaining_count"`
+	alerts_async.NoSecondaryEntityId
 }
 
 type DeviceClass struct {

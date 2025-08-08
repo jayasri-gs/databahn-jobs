@@ -3,6 +3,7 @@ package model
 import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/db-models/alerts_async"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type InActiveSource struct {
 	LastEventTime time.Time
 	AlertDuration time.Duration
 	CheckedAt     time.Time
+	alerts_async.NoSecondaryEntityId
 }
 
 func (ias InActiveSource) GetEntityId() string {

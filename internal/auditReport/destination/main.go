@@ -70,7 +70,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query,
 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return err
 	}
-	logsourceIdToNameMap, err := common.GetLogSourceIdToNamesMap(ctx, req)
+	logsourceIdToNameMap, err := common.GetLogSourceIdToNamesMap(ctx, req.TenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while fetching logsource names", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return err
