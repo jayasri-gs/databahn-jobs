@@ -197,7 +197,7 @@ func getDestinationIdToLastEventTime(ctx context.Context, osClient *opensearch.C
 
 	aggFunc := os.AggregationFunction{
 		Function: "max",
-		Field:    "tags.db_ts_win",
+		Field:    "timestamp",
 		Name:     "last_event_time",
 	}
 

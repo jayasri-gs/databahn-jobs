@@ -272,7 +272,12 @@ func sendInAppAlertsForUnparsedEvents(sourcesToAlert []*model.UnparsedEventSourc
 func buildUnparsedEventAlert(ias model.UnparsedEventSource) (*alerts_async.Alert, error) {
 	title := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityTitle, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage(), UnparsedEventsCheckDuration)
 	message := fmt.Sprintf(constants.UnparsedEventCheckerFunctionalityMessage, ias.GetEntityName(), ias.GetUnparsedCount(), ias.GetPercentage())
+
 	functionality := alerts_async.LogSource
+	if ias.Source.Scope == "CLOUD" {
+		functionality = alerts_async.CloudLogSource
+	}
+
 	return alerts_async.NewAlert(functionality,
 		alerts_async.WithEntity(ias),
 		alerts_async.WithCriticality(alerts_async.Critical),
