@@ -42,6 +42,11 @@ func (vra VCNoReductionAlert) GetTenantId() string {
 	return vra.Tenant.Id.String()
 }
 
+// GetSecondaryEntityId satisfies the alerts_async.AlertEntity interface. Not used for this alert type.
+func (vra VCNoReductionAlert) GetSecondaryEntityId() string {
+	return vra.DestinationID.String()
+}
+
 func NewVCNoReductionAlert(
 	tenant *tenant.Tenant,
 	pipelineWithMappings *pipeline.PipelineWithMappings,

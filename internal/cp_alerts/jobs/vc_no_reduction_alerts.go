@@ -24,15 +24,21 @@ import (
 // Default values for environment variables
 const (
 	DefaultMinReductionThreshold = 0.0
+	DefaultWindowOffsetHours     = 1
+	DefaultWindowDurationHours   = 3
 )
 
 // SendAlertForVCNoReduction generates alerts when volume controller doesn't perform any reduction
 func SendAlertForVCNoReduction(ctx context.Context) error {
 	// Load configuration from environment variables
 	minReductionThreshold := utils.GetEnvInt("VC_MIN_REDUCTION_THRESHOLD", int(DefaultMinReductionThreshold))
+	offsetHours := utils.GetEnvInt("VC_WINDOW_OFFSET_HOURS", DefaultWindowOffsetHours)
+	windowDurationHours := utils.GetEnvInt("VC_WINDOW_DURATION_HOURS", DefaultWindowDurationHours)
 
 	logger.GetLoggerWithContext(ctx).Info("Volume controller alert configuration loaded",
 		zap.Int("min_reduction_threshold", minReductionThreshold),
+		zap.Int("window_offset_hours", offsetHours),
+		zap.Int("window_duration_hours", windowDurationHours),
 	)
 
 	db := config.GetDB()
@@ -53,12 +59,13 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 		alertsManager.Close(ctx)
 	}()
 
-	// Calculate time ranges for the specified window (now-4 to now-1)
+	// Calculate time ranges using configured offset and window duration
+	// endTime = now - offsetHours; startTime = endTime - windowDurationHours
 	now := time.Now().UTC()
-	endTime := now.Add(-1 * time.Hour)   // now-1
-	startTime := now.Add(-4 * time.Hour) // now-4
+	endTime := now.Add(-time.Duration(offsetHours) * time.Hour)
+	startTime := endTime.Add(-time.Duration(windowDurationHours) * time.Hour)
 
-	// Note: vcCheckDurationHours is used for validation but actual window is fixed at 3 hours (now-4 to now-1)
+	// Note: configured via VC_WINDOW_OFFSET_HOURS and VC_WINDOW_DURATION_HOURS
 
 	for _, t := range tenants {
 		tenantId := t.Id.String()
@@ -176,7 +183,7 @@ func getPipelineVolumeControllerStats(ctx context.Context, tenantId, sourceId, d
 	endTimeStr := strconv.FormatInt(endTime.UnixMilli(), 10)
 
 	// Get ingestion stats for this specific source
-	ingestionQuery := fmt.Sprintf("tags.component_name: \"storage\" AND name: \"total_data_received\" AND tags.db_event_source_id: \"%s\"", sourceId.String())
+	ingestionQuery := fmt.Sprintf("tags.component_name: \"ingestion\" AND name: \"total_events_delivered\" AND tags.db_event_source_id: \"%s\"", sourceId.String())
 	ingestionResponse, err := statistics.GetStatsSum(ctx, ingestionQuery, tenantId, startTimeStr, endTimeStr)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("error getting ingestion stats for source %s: %w", sourceId.String(), err)
@@ -228,19 +235,20 @@ func shouldAlert(totalIngested, totalDelivered, reductionPercent, minReductionTh
 
 // buildVCNoReductionAlert builds an alert for volume controller with no reduction
 func buildVCNoReductionAlert(vcAlert model.VCNoReductionAlert, minReductionThreshold float64) (*alerts_async.Alert, error) {
-	checkDuration := vcAlert.CheckEndTime.Sub(vcAlert.CheckStartTime).Hours()
+	startStr := vcAlert.CheckStartTime.UTC().Format(time.RFC3339)
+	endStr := vcAlert.CheckEndTime.UTC().Format(time.RFC3339)
 
 	var title, message string
 
 	if vcAlert.ReductionPercent <= 0 {
 		title = "Volume Controller Alert: No Data Reduction Detected"
 		message = fmt.Sprintf(
-			"Volume controller is not performing any data reduction for pipeline '%s' in tenant '%s'. "+
-				"In the last %.0f hours, %.0f events were ingested from source '%s' and %.0f events were delivered to destination '%s' "+
+			"Volume controller is not performing any data reduction for pipeline '%s'. "+
+				"Between %s and %s, %.0f events were ingested from source '%s' and %.0f events were delivered to destination '%s' "+
 				"(%.2f%% reduction). This may indicate volume controller rules are not functioning properly.",
 			vcAlert.Pipeline.Pipeline.Name,
-			vcAlert.Tenant.Name,
-			checkDuration,
+			startStr,
+			endStr,
 			vcAlert.TotalIngested,
 			vcAlert.SourceName,
 			vcAlert.TotalDelivered,
@@ -250,12 +258,12 @@ func buildVCNoReductionAlert(vcAlert model.VCNoReductionAlert, minReductionThres
 	} else {
 		title = fmt.Sprintf("Volume Controller Alert: Low Data Reduction (%.1f%%)", vcAlert.ReductionPercent)
 		message = fmt.Sprintf(
-			"Volume controller is performing minimal data reduction for pipeline '%s' in tenant '%s'. "+
-				"In the last %.0f hours, %.0f events were ingested from source '%s' and %.0f events were delivered to destination '%s' "+
+			"Volume controller is performing minimal data reduction for pipeline '%s'. "+
+				"Between %s and %s, %.0f events were ingested from source '%s' and %.0f events were delivered to destination '%s' "+
 				"(%.2f%% reduction). Expected reduction should be at least %.0f%%.",
 			vcAlert.Pipeline.Pipeline.Name,
-			vcAlert.Tenant.Name,
-			checkDuration,
+			startStr,
+			endStr,
 			vcAlert.TotalIngested,
 			vcAlert.SourceName,
 			vcAlert.TotalDelivered,
