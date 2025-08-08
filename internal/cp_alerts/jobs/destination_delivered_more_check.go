@@ -213,8 +213,6 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 		}
 	}
 
-	alertsManager.Close(ctx)
-
 	return nil
 }
 
