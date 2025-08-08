@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"strconv"
 	"time"
 
@@ -235,23 +236,21 @@ func shouldAlert(totalIngested, totalDelivered, reductionPercent, minReductionTh
 
 // buildVCNoReductionAlert builds an alert for volume controller with no reduction
 func buildVCNoReductionAlert(vcAlert model.VCNoReductionAlert, minReductionThreshold float64) (*alerts_async.Alert, error) {
-	startStr := vcAlert.CheckStartTime.UTC().Format(time.RFC3339)
-	endStr := vcAlert.CheckEndTime.UTC().Format(time.RFC3339)
-
 	var title, message string
 
 	if vcAlert.ReductionPercent <= 0 {
 		title = "Volume Controller Alert: No Data Reduction Detected"
 		message = fmt.Sprintf(
 			"Volume controller is not performing any data reduction for pipeline '%s'. "+
-				"Between %s and %s, %.0f events were ingested from source '%s' and %.0f events were delivered to destination '%s' "+
-				"(%.2f%% reduction). This may indicate volume controller rules are not functioning properly.",
+				"As of '%s', between '%s' and '%s', %s events were ingested from source '%s' and %s events were delivered to destination '%s' "+
+				"(%.2f%% reduction). This may indicate volume controller rules are not performing well.",
 			vcAlert.Pipeline.Pipeline.Name,
-			startStr,
-			endStr,
-			vcAlert.TotalIngested,
+			util.HumanReadableTimeWithZone(time.Now()),
+			util.HumanReadableTimeWithZone(vcAlert.CheckStartTime),
+			util.HumanReadableTimeWithZone(vcAlert.CheckEndTime),
+			util.HumanReadableNumber(int64(vcAlert.TotalIngested)),
 			vcAlert.SourceName,
-			vcAlert.TotalDelivered,
+			util.HumanReadableNumber(int64(vcAlert.TotalDelivered)),
 			vcAlert.DestinationName,
 			vcAlert.ReductionPercent,
 		)
@@ -259,17 +258,17 @@ func buildVCNoReductionAlert(vcAlert model.VCNoReductionAlert, minReductionThres
 		title = fmt.Sprintf("Volume Controller Alert: Low Data Reduction (%.1f%%)", vcAlert.ReductionPercent)
 		message = fmt.Sprintf(
 			"Volume controller is performing minimal data reduction for pipeline '%s'. "+
-				"Between %s and %s, %.0f events were ingested from source '%s' and %.0f events were delivered to destination '%s' "+
-				"(%.2f%% reduction). Expected reduction should be at least %.0f%%.",
+				"As of '%s', between '%s' and '%s', %s events were ingested from source '%s' and %s events were delivered to destination '%s' "+
+				"(%.2f%% reduction). This may indicate volume controller rules are not performing well.",
 			vcAlert.Pipeline.Pipeline.Name,
-			startStr,
-			endStr,
-			vcAlert.TotalIngested,
+			util.HumanReadableTimeWithZone(time.Now()),
+			util.HumanReadableTimeWithZone(vcAlert.CheckStartTime),
+			util.HumanReadableTimeWithZone(vcAlert.CheckEndTime),
+			util.HumanReadableNumber(int64(vcAlert.TotalIngested)),
 			vcAlert.SourceName,
-			vcAlert.TotalDelivered,
+			util.HumanReadableNumber(int64(vcAlert.TotalDelivered)),
 			vcAlert.DestinationName,
 			vcAlert.ReductionPercent,
-			minReductionThreshold,
 		)
 	}
 

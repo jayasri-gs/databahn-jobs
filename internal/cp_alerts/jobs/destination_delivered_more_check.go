@@ -241,14 +241,15 @@ func buildMoreDeliveredAlert(toAlert DestinationToAlert, sourceIdToSourceNameMap
 	if !ok {
 		return nil, fmt.Errorf("source name not found for source id: %s and tenant %s", toAlert.SourceId, toAlert.TenantId)
 	}
-	title := fmt.Sprintf("Destination '%s' delivered more data than injected for source '%s", toAlert.DestinationName, sourceName)
-	message := fmt.Sprintf("Destination '%s' delivered %s data, but injected volume by source '%s' is %s in the time from %s to %s",
+	title := fmt.Sprintf("Destination '%s' delivered more data than injected for source '%s'", toAlert.DestinationName, sourceName)
+	message := fmt.Sprintf("Destination '%s' delivered %s data, but injected volume by source '%s' was %s in the time from '%s' to '%s' as observed on '%s'",
 		toAlert.DestinationName,
 		util.HumanReadableBytes(toAlert.OutData),
 		sourceName,
 		util.HumanReadableBytes(toAlert.InData),
 		util.HumanReadableTimeWithZone(time.UnixMilli(toAlert.FromTime)),
 		util.HumanReadableTimeWithZone(time.UnixMilli(toAlert.ToTime)),
+		util.HumanReadableTimeWithZone(time.Now().UTC()),
 	)
 	newAlert, err := alerts_async.NewAlert(alerts_async.Dispenser,
 		alerts_async.WithEntity(toAlert),
