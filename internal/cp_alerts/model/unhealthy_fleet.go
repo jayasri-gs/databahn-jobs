@@ -5,6 +5,8 @@ import (
 	"github.com/databahn-ai/db-models/alerts_async"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/databahn-ai/databahn-jobs/internal/store/fleet"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 )
@@ -32,6 +34,8 @@ type HealthyFleetConnector struct {
 }
 type UnhealthyFleetComponents struct {
 	FleetComponent  *fleet.Components
+	FleetNodeName   *string
+	FleetName       *string
 	HealthCheckTime time.Duration
 	CheckedAt       time.Time
 	LastHeartbeatAt time.Time
@@ -67,9 +71,11 @@ func NewUnhealthyFleetConnector(fleetConnector *fleet.Connector, healthCheckTime
 	}
 }
 
-func NewUnhealthyFleetComponents(fleetComponent *fleet.Components, healthCheckTime time.Duration) *UnhealthyFleetComponents {
+func NewUnhealthyFleetComponentsWithNames(fleetComponent *fleet.Components, fleetNodeName, fleetName string, healthCheckTime time.Duration) *UnhealthyFleetComponents {
 	return &UnhealthyFleetComponents{
 		FleetComponent:  fleetComponent,
+		FleetNodeName:   &fleetNodeName,
+		FleetName:       &fleetName,
 		HealthCheckTime: healthCheckTime,
 		CheckedAt:       time.Now().UTC(),
 		LastHeartbeatAt: fleetComponent.HeartbeatAt,
@@ -85,9 +91,7 @@ func (uf UnhealthyFleet) GetEntityName() string {
 func (uf UnhealthyFleet) GetTenantId() string {
 	return uf.FleetNode.TenantId.String()
 }
-func (uf UnhealthyFleet) GetDataPlaneId() string {
-	return "DataPlaneId not applicable for Fleet Node"
-}
+func (uf UnhealthyFleet) GetDataPlaneId() string { return uuid.Nil.String() }
 
 func (uf UnhealthyFleet) GetHealthCheckTime() time.Duration {
 	return uf.HealthCheckTime
@@ -112,13 +116,22 @@ func (uf UnhealthyFleet) CheckedTimeStr() string {
 func (ufc UnhealthyFleetComponents) GetEntityId() string {
 	return ufc.FleetComponent.Id.String()
 }
-func (ufc UnhealthyFleetComponents) GetEntityName() string { return "Fleet Component Name" }
+func (ufc UnhealthyFleetComponents) GetEntityName() string {
+	if ufc.FleetName != nil && ufc.FleetNodeName != nil {
+		return fmt.Sprintf("%s in Fleet '%s' (node: %s)", ufc.FleetComponent.ServiceName, *ufc.FleetName, *ufc.FleetNodeName)
+	}
+	if ufc.FleetName != nil {
+		return fmt.Sprintf("%s in Fleet '%s'", ufc.FleetComponent.ServiceName, *ufc.FleetName)
+	}
+	if ufc.FleetNodeName != nil {
+		return fmt.Sprintf("%s in Fleet (node: %s)", ufc.FleetComponent.ServiceName, *ufc.FleetNodeName)
+	}
+	return fmt.Sprintf("%s in Fleet (unknown)", ufc.FleetComponent.ServiceName)
+}
 func (ufc UnhealthyFleetComponents) GetTenantId() string {
 	return ufc.FleetComponent.TenantId.String()
 }
-func (ufc UnhealthyFleetComponents) GetDataPlaneId() string {
-	return "DataPlaneId not applicable for Fleet Component"
-}
+func (ufc UnhealthyFleetComponents) GetDataPlaneId() string { return uuid.Nil.String() }
 
 func (ufc UnhealthyFleetComponents) GetHealthCheckTime() time.Duration {
 	return ufc.HealthCheckTime
@@ -149,9 +162,7 @@ func (ufc UnhealthyFleetConnector) GetEntityName() string {
 func (ufc UnhealthyFleetConnector) GetTenantId() string {
 	return ufc.FleetConnector.TenantID.String()
 }
-func (ufc UnhealthyFleetConnector) GetDataPlaneId() string {
-	return "DataPlaneId not applicable for Fleet Connector"
-}
+func (ufc UnhealthyFleetConnector) GetDataPlaneId() string { return uuid.Nil.String() }
 
 func (ufc UnhealthyFleetConnector) GetHealthCheckTime() time.Duration {
 	return ufc.HealthCheckTime
