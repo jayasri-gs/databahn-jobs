@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"github.com/databahn-ai/db-models/alerts_async"
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/agent"
@@ -13,6 +14,7 @@ type UnhealthyAgent struct {
 	HealthCheckTime time.Duration
 	CheckedAt       time.Time
 	LastHeartbeatAt time.Time
+	alerts_async.NoSecondaryEntityId
 }
 
 type HealthyAgent struct {

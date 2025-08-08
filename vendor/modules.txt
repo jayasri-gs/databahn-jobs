@@ -301,7 +301,7 @@ github.com/databahn-ai/common-utils/queue
 github.com/databahn-ai/common-utils/redis
 github.com/databahn-ai/common-utils/utils
 github.com/databahn-ai/common-utils/vault
-# github.com/databahn-ai/db-models v0.190.0
+# github.com/databahn-ai/db-models v0.196.0
 ## explicit; go 1.24.2
 github.com/databahn-ai/db-models/alerts_async
 github.com/databahn-ai/db-models/alerts_common
@@ -314,7 +314,7 @@ github.com/databahn-ai/db-models/lookup
 github.com/databahn-ai/db-models/rule
 github.com/databahn-ai/db-models/tags
 github.com/databahn-ai/db-models/utils
-# github.com/databahn-ai/go-logging v0.19.0
+# github.com/databahn-ai/go-logging v0.24.0
 ## explicit; go 1.22
 github.com/databahn-ai/go-logging/logger
 github.com/databahn-ai/go-logging/logger/constants

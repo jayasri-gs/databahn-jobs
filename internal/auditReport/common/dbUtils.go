@@ -24,8 +24,8 @@ func GetRowsAndColumnsByQueryFromTable(tableName, query string, page int, offset
 	return rows, columns, nil
 }
 
-func GetLogSourceIdToNamesMap(ctx context.Context, req models.AuditReport) (map[string]string, error) {
-	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), req.TenantId)
+func GetLogSourceIdToNamesMap(ctx context.Context, tenantId string) (map[string]string, error) {
+	logSources, err := helper.GetAllLogSourcesByTenantId(ctx, config.GetDB(), tenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while fetching logsources", zap.Error(err))
 		return nil, err

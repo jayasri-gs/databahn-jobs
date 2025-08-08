@@ -20,7 +20,7 @@ import (
 // The max size is the maximum size of the log file in megabytes before it is rotated.
 // The max backups is the maximum number of old log files to keep.
 // The max age is the maximum number of days to keep old log files.
-func newEndpointLogger(logLocation string, maxSize int, maxBackups int, maxAge int) *zap.Logger {
+func newEndpointLogger(logLocation string, maxSize int, maxBackups int, maxAge int, fields ...zap.Field) *zap.Logger {
 	loggerOnceEndpointLogger.Do(func() {
 		w := zapcore.AddSync(&lumberjack.Logger{
 			Filename:   logLocation,
@@ -42,10 +42,18 @@ func newEndpointLogger(logLocation string, maxSize int, maxBackups int, maxAge i
 		if serviceName := os.Getenv(constants.ServiceName); serviceName != "" {
 			logger = logger.With(zap.String("service_name", serviceName))
 		}
+		if len(fields) > 0 {
+			logger = logger.With(fields...)
+		}
 	})
 	return logger
 }
 
+func GetEndpointLoggerWithFields(logLocation string, maxSize int, maxBackups int, maxAge int, fields ...zap.Field) *zap.Logger {
+	logger := newEndpointLogger(logLocation, maxSize, maxBackups, maxAge, fields...)
+	return logger
+}
+
 func GetEndpointLogger(logLocation string, maxSize int, maxBackups int, maxAge int) *zap.Logger {
-	return newEndpointLogger(logLocation, maxSize, maxBackups, maxAge)
+	return GetEndpointLoggerWithFields(logLocation, maxSize, maxBackups, maxAge)
 }

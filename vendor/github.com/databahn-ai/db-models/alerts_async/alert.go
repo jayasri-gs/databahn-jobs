@@ -21,4 +21,5 @@ type Alert struct {
 	ErrorMessage            string `json:"errorMessage"`
 	ErrorCode               string `json:"errorCode"`
 	DataPlaneId             string `json:"dataPlaneId"`
+	SecondaryEntityId       string `json:"secondaryEntityId,omitempty"`
 }

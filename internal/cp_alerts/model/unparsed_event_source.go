@@ -1,11 +1,15 @@
 package model
 
-import "github.com/databahn-ai/databahn-jobs/internal/store/source"
+import (
+	"github.com/databahn-ai/databahn-jobs/internal/store/source"
+	"github.com/databahn-ai/db-models/alerts_async"
+)
 
 type UnparsedEventSource struct {
 	Source        *source.Source
 	UnparsedCount int
 	Percentage    float64
+	alerts_async.NoSecondaryEntityId
 }
 
 func NewUnparsedEventSource(source *source.Source, unparsedCount int, percentage float64) *UnparsedEventSource {
