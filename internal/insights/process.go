@@ -6,19 +6,71 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/databahn-ai/common-utils/utils"
-	osstore "github.com/databahn-ai/databahn-jobs/internal/store/os"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
-	"github.com/databahn-ai/go-logging/logger"
-	"github.com/opensearch-project/opensearch-go/v2"
-	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
-	"go.uber.org/zap"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	osstore "github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/db-models/alerts_async"
+	"github.com/databahn-ai/go-logging/logger"
+	"github.com/opensearch-project/opensearch-go/v2"
+	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
+	"go.uber.org/zap"
 )
+
+// Index-level cardinality threshold for tracking unique event keys
+
+const cardinalityThreshold = 360000
+
+// checkIndexCardinalityAndAlert checks cardinality for a single index and generates alerts if needed
+func checkIndexCardinalityAndAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount int) error {
+	// Fetch insight rule name for better logging
+	insightRuleName, err := getInsightRuleName(indexMetadata)
+	if err != nil {
+		// Log with rule ID if we can't fetch the name
+		logger.GetLogger().Info("index cardinality check",
+			zap.String("insight_rule_id", indexMetadata.Type),
+			zap.String("tenant_id", indexMetadata.TenantId),
+			zap.String("data_plane_id", dataPlaneId),
+			zap.Int("unique_count", uniqueKeyCount),
+			zap.Int("threshold", cardinalityThreshold))
+	} else {
+		logger.GetLogger().Info("insight rule cardinality check",
+			zap.String("insight_rule_name", insightRuleName),
+			zap.String("insight_rule_id", indexMetadata.Type),
+			zap.String("tenant_id", indexMetadata.TenantId),
+			zap.String("data_plane_id", dataPlaneId),
+			zap.Int("unique_count", uniqueKeyCount),
+			zap.Int("threshold", cardinalityThreshold))
+	}
+
+	if uniqueKeyCount > cardinalityThreshold {
+		return generateIndexCardinalityAlert(ctx, indexMetadata, dataPlaneId, uniqueKeyCount, cardinalityThreshold)
+	}
+	return nil
+}
+
+// getInsightRuleName fetches the insight rule name from database using index metadata
+func getInsightRuleName(indexMetadata IndexMetadata) (string, error) {
+	rule := make(map[string]interface{})
+	tx := config.GetDB().Raw("select name from insights_rule where tenant_id = ? AND id = ?", indexMetadata.TenantId, indexMetadata.Type).First(&rule)
+	if tx.Error != nil {
+		return "", fmt.Errorf("failed to fetch insight rule: %w", tx.Error)
+	}
+
+	ruleName, ok := rule["name"].(string)
+	if !ok {
+		return "", fmt.Errorf("rule name not found or invalid type for insight rule ID: %s", indexMetadata.Type)
+	}
+
+	return ruleName, nil
+}
 
 // todo: Do we need to update acc to key3, key4, key5 ?
 const sightsScript = `
@@ -102,6 +154,10 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		return err
 	}
 	hasData := false
+
+	// Track unique event keys for this entire index
+	indexUniqueKeys := make(map[string]bool)
+	var indexDataPlaneId string
 	for {
 		sourceKey1 := createSource("key1")
 		sourceKey2 := createSource("key2")
@@ -179,6 +235,14 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc.Count = bucket.PageCnt.Value
 			doc.Timestamp = time.Now().UnixMilli()
 			docs = append(docs, doc)
+
+			// Collect unique event key for cardinality tracking
+			indexUniqueKeys[doc.Id] = true
+
+			// Capture data plane ID from first document (should be same for entire index)
+			if indexDataPlaneId == "" {
+				indexDataPlaneId = doc.DataPlaneId
+			}
 		}
 
 		if index.Type == APP_TYPE_SOURCEHOSTNAME {
@@ -208,6 +272,17 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	}
 
 	logger.GetLogger().Info("processed all documents", zap.String("index", indexName), zap.Int("total_count", count))
+
+	// Check cardinality for this index and generate alert if needed
+	uniqueKeyCount := len(indexUniqueKeys)
+	err = checkIndexCardinalityAndAlert(ctx, index, indexDataPlaneId, uniqueKeyCount)
+	if err != nil {
+		logger.GetLogger().Error("failed to check index cardinality", zap.Error(err), zap.String("index", indexName))
+		// Don't fail the aggregation process for alert failures
+	}
+
+	// Clean up cache after index processing
+	indexUniqueKeys = nil
 
 	return nil
 
@@ -497,6 +572,69 @@ type Sight struct {
 	Reputation  string `json:"reputation"`
 	Timestamp   int64  `json:"timestamp"`
 	UpdatedAt   int64  `json:"updated_at"`
+}
+
+// generateIndexCardinalityAlert creates and sends an alert when unique event key count exceeds threshold for a single index
+func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount, threshold int) error {
+	alertsManager, err := alert.NewAlertsManager(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create alerts manager: %w", err)
+	}
+	defer alertsManager.Close(ctx)
+
+	// Fetch insight rule name from database
+	insightRuleName, err := getInsightRuleName(indexMetadata)
+	if err != nil {
+		return fmt.Errorf("failed to get insight rule name: %w", err)
+	}
+
+	// Create alert for high cardinality in single index
+	alertTime := time.Now()
+	title := fmt.Sprintf("High Event Key Cardinality Detected - Rule %s", insightRuleName)
+	message := fmt.Sprintf("Insight rule '%s' generated %d unique event keys, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
+		insightRuleName, uniqueKeyCount, threshold)
+
+	cardinalityAlert, err := alerts_async.NewAlert(
+		alerts_async.InsightsRule,
+		alerts_async.WithEntityDetails(
+			indexMetadata.TenantId,
+			fmt.Sprintf("rule-%s", insightRuleName),
+			dataPlaneId, // Use the data plane ID from the index
+			indexMetadata.TenantId,
+		),
+		alerts_async.WithCriticality(alerts_async.Warning),
+		alerts_async.WithFunctionalityType(alerts_async.RateLimitExceeded),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
+		alerts_async.WithAlertType(alerts_async.Internal),
+		alerts_async.WithErrorCode(alerts_async.DNDW10005, ""),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create index cardinality alert: %w", err)
+	}
+
+	// Set timestamps
+	cardinalityAlert.CreatedAt = alertTime.UnixMilli()
+	cardinalityAlert.UpdatedAt = alertTime.UnixMilli()
+	cardinalityAlert.FirstObservedAt = alertTime.UnixMilli()
+	cardinalityAlert.LastObservedAt = alertTime.UnixMilli()
+
+	// Send alert
+	err = alertsManager.SendAlerts([]*alerts_async.Alert{cardinalityAlert})
+	if err != nil {
+		return fmt.Errorf("failed to send index cardinality alert: %w", err)
+	}
+
+	logger.GetLogger().Info("insight rule cardinality alert sent successfully",
+		zap.String("insight_rule_name", insightRuleName),
+		zap.String("insight_rule_id", indexMetadata.Type),
+		zap.String("tenant_id", indexMetadata.TenantId),
+		zap.String("data_plane_id", dataPlaneId),
+		zap.Int("unique_count", uniqueKeyCount),
+		zap.Int("threshold", threshold),
+		zap.String("alert_id", cardinalityAlert.Id))
+
+	return nil
 }
 
 type ReputationUpdateRequest struct {
