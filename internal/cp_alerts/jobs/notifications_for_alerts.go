@@ -344,11 +344,18 @@ func buildEmailBody(emailTitle string, alerts []alerts_async.Alert) (string, err
 	return emailBody, nil
 }
 
+var prefixMatchModules = []string{"fleet", "volume_control"}
+
 func alertFunctionalityMatchesModuleName(functionality string, moduleName string) bool {
-	if strings.EqualFold("fleet", moduleName) {
-		return strings.HasPrefix(strings.ToLower(functionality), "fleet")
+	exactMatch := strings.EqualFold(functionality, moduleName)
+	if !exactMatch {
+		for _, prefix := range prefixMatchModules {
+			if strings.EqualFold(prefix, moduleName) {
+				return strings.HasPrefix(strings.ToLower(functionality), prefix)
+			}
+		}
 	}
-	return strings.EqualFold(functionality, moduleName)
+	return exactMatch
 }
 
 type EmailTemplate struct {
