@@ -70,7 +70,7 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 	// endTime = now - offsetHours; startTime = endTime - windowDurationHours
 	now := time.Now().UTC()
 	endTime := now.Add(-time.Duration(offsetHours) * time.Hour)
-	startTime := endTime.Add(-time.Duration(windowDurationHours+offsetHours) * time.Hour)
+	startTime := endTime.Add(-time.Duration(windowDurationHours) * time.Hour)
 
 	// Note: configured via VC_WINDOW_OFFSET_HOURS and VC_WINDOW_DURATION_HOURS
 
@@ -282,9 +282,10 @@ func shouldAlert(totalIngested, totalDelivered, reductionPercent, minReductionTh
 // buildVCNoReductionAlert builds an alert for volume controller with no reduction
 func buildVCNoReductionAlert(vcAlert model.VCNoReductionAlert, minReductionThreshold float64) (*alerts_async.Alert, error) {
 	var title, message string
+	pipelineName := vcAlert.Pipeline.Pipeline.Name
 
 	if vcAlert.ReductionPercent <= 0 {
-		title = "Volume Controller Alert: No Data Reduction Detected"
+		title = fmt.Sprintf("Volume Controller Alert: No Data Reduction Detected for Pipeline '%s'", pipelineName)
 		message = fmt.Sprintf(
 			"Volume controller is not performing any data reduction for pipeline '%s'. "+
 				"As of '%s', between '%s' and '%s', %s events were ingested from source '%s' and %s events were delivered to destination '%s' "+
@@ -300,7 +301,7 @@ func buildVCNoReductionAlert(vcAlert model.VCNoReductionAlert, minReductionThres
 			vcAlert.ReductionPercent,
 		)
 	} else {
-		title = fmt.Sprintf("Volume Controller Alert: Low Data Reduction (%.1f%%)", vcAlert.ReductionPercent)
+		title = fmt.Sprintf("Volume Controller Alert: Low Data Reduction (%.1f%%) for Pipeline '%s'", vcAlert.ReductionPercent, pipelineName)
 		message = fmt.Sprintf(
 			"Volume controller is performing minimal data reduction for pipeline '%s'. "+
 				"As of '%s', between '%s' and '%s', %s events were ingested from source '%s' and %s events were delivered to destination '%s' "+
