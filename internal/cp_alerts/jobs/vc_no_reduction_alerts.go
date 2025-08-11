@@ -3,14 +3,17 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"strconv"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/util"
+
 	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
@@ -18,6 +21,7 @@ import (
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -60,6 +64,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 		alertsManager.Close(ctx)
 	}()
 
+	osClient := os.GetClient()
+
 	// Calculate time ranges using configured offset and window duration
 	// endTime = now - offsetHours; startTime = endTime - windowDurationHours
 	now := time.Now().UTC()
@@ -84,6 +90,10 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 			logger.GetLoggerWithContext(ctx).Info("No active pipelines found for tenant", zap.String("tenant_id", tenantId))
 			continue
 		}
+
+		// Track healthy source-destination pairs (where no alert is needed), so we can auto-resolve existing open alerts
+		type srcDstPair struct{ srcId, dstId string }
+		var healthyPairs []srcDstPair
 
 		for _, pipelineMapping := range pipelines {
 			pipelineId := pipelineMapping.Pipeline.ID.String()
@@ -171,6 +181,41 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 					zap.String("source", sourceName),
 					zap.String("destination", destinationName),
 					zap.Float64("reduction_percent", reductionPercent))
+				healthyPairs = append(healthyPairs, srcDstPair{srcId: pipelineMapping.LogSourceID.String(), dstId: pipelineMapping.DestinationID.String()})
+			}
+		}
+
+		// Auto-resolve any open VC alerts for healthy source-destination pairs
+		if len(healthyPairs) > 0 {
+			var alertsToDismiss []string
+			for _, pair := range healthyPairs {
+				q := fmt.Sprintf("tenantId:%s AND dismissed:false AND functionalityType:%s AND functionalityEntityId:%s AND secondaryEntityId:%s",
+					tenantId, alerts_async.VolumeDeviationChecker.String(), pair.srcId, pair.dstId)
+				openAlerts, _, err := os.Search(ctx, osClient, common.AlertsIndex, q)
+				if err != nil {
+					logger.GetLoggerWithContext(ctx).Error("error while searching VC alerts to auto-resolve", zap.Error(err), zap.String("query", q))
+					continue
+				}
+				var alerts []statistics.AlertDocument
+				decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+				if err != nil {
+					logger.GetLoggerWithContext(ctx).Error("error while creating decoder for VC alerts", zap.Error(err))
+					continue
+				}
+				if err := decoder.Decode(openAlerts); err != nil {
+					logger.GetLoggerWithContext(ctx).Error("error while decoding OpenSearch VC alert response", zap.Error(err), zap.String("tenantId", tenantId))
+					continue
+				}
+				for _, alrt := range alerts {
+					alertsToDismiss = append(alertsToDismiss, alrt.Id)
+				}
+			}
+			if len(alertsToDismiss) > 0 {
+				if err := alertsManager.AutoResolveAlerts(alertsToDismiss); err != nil {
+					logger.GetLoggerWithContext(ctx).Error("error while auto-resolving VC alerts", zap.Error(err), zap.String("tenant_id", tenantId))
+				} else {
+					logger.GetLoggerWithContext(ctx).Info("auto-resolved VC alerts for healthy pipelines", zap.String("tenant_id", tenantId), zap.Any("alertsToDismiss", alertsToDismiss))
+				}
 			}
 		}
 	}

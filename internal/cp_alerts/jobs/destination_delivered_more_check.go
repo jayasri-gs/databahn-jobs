@@ -3,19 +3,23 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
+	cpcommon "github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
+	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
-	"time"
 )
 
 type DestinationToAlert struct {
@@ -103,6 +107,9 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 		}
 
 		var alertDestinations []DestinationToAlert
+		// Track healthy destination-source pairs to auto-resolve open alerts
+		type dstSrcPair struct{ dstId, srcId string }
+		var healthyPairs []dstSrcPair
 		for _, dest := range destinations {
 			if dest.Status != "ACTIVE" {
 				logger.GetLogger().Info("skipping inactive destination", zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
@@ -176,11 +183,13 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 					} else {
 						logger.GetLogger().Info("no alert for destination, more out than in but within limit:"+dest.ID.String(),
 							zap.Float64("percentage", morePercentage), zap.String("tenantId", t.Id.String()), zap.Int64("outData", outVolume), zap.Int64("inData", inVolume))
+						healthyPairs = append(healthyPairs, dstSrcPair{dstId: dest.ID.String(), srcId: sourceId})
 						continue
 					}
 				} else {
 					logger.GetLogger().Info("no alert for destination, lesser out than in:"+dest.ID.String(),
 						zap.String("tenantId", t.Id.String()), zap.Int64("outData", outVolume), zap.Int64("inData", inVolume))
+					healthyPairs = append(healthyPairs, dstSrcPair{dstId: dest.ID.String(), srcId: sourceId})
 					continue
 				}
 			}
@@ -205,10 +214,37 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 			logger.GetLogger().Info("no destinations to alert for tenant", zap.String("tenantId", t.Id.String()))
 		}
 
-		var destinationIds []string
-		for _, dest := range destinations {
-			if dest.Status == "ACTIVE" {
-				destinationIds = append(destinationIds, dest.ID.String())
+		// Auto-resolve any open "destination delivered more than injected" alerts for healthy pairs
+		if len(healthyPairs) > 0 {
+			var alertsToDismiss []string
+			for _, pair := range healthyPairs {
+				q := fmt.Sprintf("tenantId:%s AND dismissed:false AND functionality:dispenser AND functionalityType:%s AND functionalityEntityId:%s AND secondaryEntityId:%s",
+					t.Id.String(), alerts_async.VolumeDeviationChecker.String(), pair.dstId, pair.srcId)
+				openAlerts, _, err := os.Search(ctx, osClient, cpcommon.AlertsIndex, q)
+				if err != nil {
+					logger.GetLogger().Error("error while searching for destination delivered-more alerts to auto-resolve", zap.Error(err), zap.String("query", q))
+					continue
+				}
+				var alerts []statistics.AlertDocument
+				decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+				if err != nil {
+					logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
+					continue
+				}
+				if err := decoder.Decode(openAlerts); err != nil {
+					logger.GetLogger().Error("error while decoding OpenSearch alert response", zap.Error(err), zap.String("tenantId", t.Id.String()))
+					continue
+				}
+				for _, alrt := range alerts {
+					alertsToDismiss = append(alertsToDismiss, alrt.Id)
+				}
+			}
+			if len(alertsToDismiss) > 0 {
+				if err := alertsManager.AutoResolveAlerts(alertsToDismiss); err != nil {
+					logger.GetLogger().Error("error while auto-resolving destination delivered-more alerts", zap.Error(err), zap.String("tenantId", t.Id.String()))
+				} else {
+					logger.GetLogger().Info("auto-resolved destination delivered-more alerts", zap.String("tenantId", t.Id.String()), zap.Any("alertsToDismiss", alertsToDismiss))
+				}
 			}
 		}
 	}
