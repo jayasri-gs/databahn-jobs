@@ -174,7 +174,7 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 
 				logger.GetLoggerWithContext(ctx).Info("Successfully sent VC no reduction alert",
 					zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
-			} else {
+			} else if totalIngested > 1000 {
 				logger.GetLoggerWithContext(ctx).Info("Pipeline volume controller performing adequate reduction, no alert needed",
 					zap.String("tenant_id", tenantId),
 					zap.String("pipeline_id", pipelineId),
