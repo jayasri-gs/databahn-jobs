@@ -301,7 +301,7 @@ func buildVCNoReductionAlert(vcAlert model.VCNoReductionAlert, minReductionThres
 			vcAlert.ReductionPercent,
 		)
 	} else {
-		title = fmt.Sprintf("Volume Controller Alert: Low Data Reduction (%.1f%%) for Pipeline '%s'", vcAlert.ReductionPercent, pipelineName)
+		title = fmt.Sprintf("Volume Controller Alert: Low Data Reduction (%.2f%%) for Pipeline '%s'", vcAlert.ReductionPercent, pipelineName)
 		message = fmt.Sprintf(
 			"Volume controller is performing minimal data reduction for pipeline '%s'. "+
 				"As of '%s', between '%s' and '%s', %s events were ingested from source '%s' and %s events were delivered to destination '%s' "+
