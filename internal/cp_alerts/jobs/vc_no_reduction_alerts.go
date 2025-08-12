@@ -279,13 +279,7 @@ func shouldAlertOrResolve(totalIngested, totalDelivered, reductionPercent, minRe
 		return false, false
 	}
 
-	// Alert if reduction is exactly 0% (no reduction)
-	if reductionPercent <= minReductionThreshold {
-		return true, false
-	}
-
-	// resolve existing alerts if reduction is above threshold
-	return false, true
+	return reductionPercent <= minReductionThreshold, !(reductionPercent <= minReductionThreshold)
 }
 
 // buildVCNoReductionAlert builds an alert for volume controller with no reduction
