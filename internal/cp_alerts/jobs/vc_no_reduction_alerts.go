@@ -146,8 +146,10 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 				zap.Float64("total_delivered", totalDelivered),
 				zap.Float64("reduction_percent", reductionPercent))
 
+			shouldAlert, shouldResolve := shouldAlertOrResolve(totalIngested, totalDelivered, reductionPercent, float64(minReductionThreshold))
+
 			// Check if volume controller is not performing adequate reduction
-			if shouldAlert(totalIngested, totalDelivered, reductionPercent, float64(minReductionThreshold)) {
+			if shouldAlert {
 				logger.GetLoggerWithContext(ctx).Info("Pipeline volume controller not performing adequate reduction, sending alert",
 					zap.String("tenant_id", tenantId),
 					zap.String("pipeline_id", pipelineId),
@@ -174,7 +176,9 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 
 				logger.GetLoggerWithContext(ctx).Info("Successfully sent VC no reduction alert",
 					zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
-			} else if totalIngested > 1000 {
+			}
+
+			if shouldResolve {
 				logger.GetLoggerWithContext(ctx).Info("Pipeline volume controller performing adequate reduction, no alert needed",
 					zap.String("tenant_id", tenantId),
 					zap.String("pipeline_id", pipelineId),
@@ -267,16 +271,21 @@ func getSourceDataPlaneID(ctx context.Context, db *gorm.DB, sourceId uuid.UUID) 
 	return src.DataPlaneId, nil
 }
 
-// shouldAlert determines if an alert should be sent based on volume controller performance
-func shouldAlert(totalIngested, totalDelivered, reductionPercent, minReductionThreshold float64) bool {
+// shouldAlertOrResolve determines if an alert should be sent based on volume controller performance
+func shouldAlertOrResolve(totalIngested, totalDelivered, reductionPercent, minReductionThreshold float64) (bool, bool) {
 	// Only alert if there's significant traffic but low reduction
 	// Minimum threshold of 1000 events to avoid noise from low-traffic tenants
 	if totalIngested < 1000 {
-		return false
+		return false, false
 	}
 
 	// Alert if reduction is exactly 0% (no reduction)
-	return reductionPercent <= minReductionThreshold
+	if reductionPercent <= minReductionThreshold {
+		return true, false
+	}
+
+	// resolve existing alerts if reduction is above threshold
+	return false, true
 }
 
 // buildVCNoReductionAlert builds an alert for volume controller with no reduction
