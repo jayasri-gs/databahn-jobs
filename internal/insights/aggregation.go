@@ -3,6 +3,12 @@ package insights
 import (
 	"context"
 	"errors"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
@@ -10,11 +16,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"sort"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 )
 
 func AggregateInsightsAndStore(ctx context.Context, parallelism int) error {

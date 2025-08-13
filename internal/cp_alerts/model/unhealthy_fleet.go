@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"github.com/databahn-ai/db-models/alerts_async"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ type UnhealthyFleet struct {
 	HealthCheckTime time.Duration
 	CheckedAt       time.Time
 	LastHeartbeatAt time.Time
+	alerts_async.NoSecondaryEntityId
 }
 
 type HealthyFleet struct {
@@ -25,6 +27,7 @@ type UnhealthyFleetConnector struct {
 	HealthCheckTime time.Duration
 	CheckedAt       time.Time
 	LastHeartbeatAt time.Time
+	alerts_async.NoSecondaryEntityId
 }
 type HealthyFleetConnector struct {
 	FleetConnector *fleet.Connector
@@ -36,6 +39,7 @@ type UnhealthyFleetComponents struct {
 	HealthCheckTime time.Duration
 	CheckedAt       time.Time
 	LastHeartbeatAt time.Time
+	alerts_async.NoSecondaryEntityId
 }
 
 func NewUnhealthyFleet(fleetNode *fleet.Node, healthCheckTime time.Duration) *UnhealthyFleet {

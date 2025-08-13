@@ -176,31 +176,31 @@ func SearchPaginated(ctx context.Context, client *opensearch.Client, index strin
 	return data, searchAfter, nil
 }
 
-func Search(ctx context.Context, client *opensearch.Client, index string, query string) ([]map[string]any, error) {
+func Search(ctx context.Context, client *opensearch.Client, index string, query string) ([]map[string]any, int, error) {
 	request := SearchRequest{}
 	request.Query.QueryString.Query = query
 	response, err := MakeSearchCall(ctx, index+"*", request, client)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if response.IsError() {
 		msg := fmt.Sprintf("[%d] Status from OpenSearch body: %s", response.StatusCode, response.String())
-		return nil, errors.New(msg)
+		return nil, 0, errors.New(msg)
 	}
 	bodyContent, _ := io.ReadAll(response.Body)
 	searchResponse := SearchResponse{}
 	err = json.Unmarshal(bodyContent, &searchResponse)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if searchResponse.Error.Reason != "" {
-		return nil, errors.New(searchResponse.Error.Reason)
+		return nil, 0, errors.New(searchResponse.Error.Reason)
 	}
 	data := make([]map[string]any, 0)
 	for _, hit := range searchResponse.Hits.Hits {
 		data = append(data, hit.Source)
 	}
-	return data, nil
+	return data, searchResponse.Hits.Total.Value, nil
 }
 
 func CompositePaginatedAggregate(ctx context.Context, cli *opensearch.Client, size int, indexName, query string, groupBy []string, aggregations []AggregationFunction, after map[string]any) ([]AggResponse, map[string]any, error) {

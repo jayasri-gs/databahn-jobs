@@ -18,6 +18,7 @@ type Destination struct {
 	TenantID         uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
 	Count            string    `json:"count" gorm:"-"`
 	Stats            float64   `json:"-" gorm:"-"`
+	Status           string    `gorm:"type:string" json:"status"`
 	DataPlaneId      uuid.UUID `gorm:"type:uuid" json:"data_plane_id"`
 }
 
@@ -42,6 +43,6 @@ func GetSourceByDestinationId(dId uuid.UUID, db *gorm.DB) ([]source.Source, erro
 	err := db.Raw(`select l.* from log_source l
 					join pipeline_log_sources_mapping pls on l.id = pls.log_source_id
 					join pipeline_destinations_mapping pd on pd.pipeline_id = pls.pipeline_id
-					join pipelines p on pd.pipeline_id = p.id where pd.destination_id = ?;`, dId).Scan(&sources).Error
+					join pipelines p on pd.pipeline_id = p.id where pd.destination_id = ? and p.status = 'ACTIVE';`, dId).Scan(&sources).Error
 	return sources, err
 }

@@ -51,6 +51,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = cp_jobs.AlertForNoEventsFromSources(ctx)
 	case common.DESTINATION_ACTIVITY_CHECKER:
 		err = cp_jobs.AlertForNoEventsToDestination(ctx)
+	case common.DESTINATION_MORE_THAN_INJECTED:
+		err = cp_jobs.AlertDestinationsWithMoreDataDeliveredThanInjection(ctx)
 	case common.NOTIFICATIONS_FOR_ALERTS:
 		err = cp_jobs.SendNotificationsForAlerts(ctx)
 	case common.HEALTH_CHECKER:
@@ -83,6 +85,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
 	case common.VOLUME_DEVIATION_ALERT:
 		err = cp_jobs.SendAlertForVolumeDeviation(ctx)
+	case common.VC_NO_REDUCTION_ALERT:
+		err = cp_jobs.SendAlertForVCNoReduction(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}

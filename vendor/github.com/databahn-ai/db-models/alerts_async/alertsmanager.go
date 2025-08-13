@@ -96,7 +96,7 @@ func NewAlertsManager(ctx context.Context, configReader configuration.ConfigRead
 		queue.WithMaxBatchDuration[*Alert](manager.deDupeDuration),
 		queue.WithInputBuffSize[*Alert](manager.deDupeQueueSize),
 		queue.WithKeyFunc(func(alert *Alert) string {
-			return alert.Functionality + alert.FunctionalityType + alert.FunctionalityEntityId + alert.Title + alert.Message
+			return alert.Id
 		}),
 	)
 	if err != nil {

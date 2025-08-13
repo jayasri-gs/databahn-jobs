@@ -9,11 +9,18 @@ import (
 	"time"
 )
 
+type NoSecondaryEntityId struct{}
+
+func (NoSecondaryEntityId) GetSecondaryEntityId() string {
+	return ""
+}
+
 type AlertEntity interface {
 	GetEntityId() string
 	GetEntityName() string
 	GetDataPlaneId() string
 	GetTenantId() string
+	GetSecondaryEntityId() string
 }
 
 type AlertOption func(alert *Alert)
@@ -53,6 +60,9 @@ func buildId(a *Alert) string {
 		a.Functionality,
 		a.FunctionalityType,
 	)
+	if a.SecondaryEntityId != "" {
+		alertIdBuilder += fmt.Sprintf("&secondaryEntityId=%s", a.SecondaryEntityId)
+	}
 	hash := sha256.Sum256([]byte(alertIdBuilder))
 	return hex.EncodeToString(hash[:])
 }
@@ -109,6 +119,7 @@ func WithEntity(entity AlertEntity) AlertOption {
 		alert.FunctionalityEntityName = entity.GetEntityName()
 		alert.DataPlaneId = entity.GetDataPlaneId()
 		alert.TenantId = entity.GetTenantId()
+		alert.SecondaryEntityId = entity.GetSecondaryEntityId()
 	}
 }
 
@@ -118,6 +129,16 @@ func WithEntityDetails(entityId, entityName string, dataPlaneId string, tenantId
 		alert.FunctionalityEntityName = entityName
 		alert.DataPlaneId = dataPlaneId
 		alert.TenantId = tenantId
+	}
+}
+
+func WithEntityDetailsWithSecondaryEntityId(entityId, entityName string, dataPlaneId string, tenantId string, secondaryEntityId string) AlertOption {
+	return func(alert *Alert) {
+		alert.FunctionalityEntityId = entityId
+		alert.FunctionalityEntityName = entityName
+		alert.DataPlaneId = dataPlaneId
+		alert.TenantId = tenantId
+		alert.SecondaryEntityId = secondaryEntityId
 	}
 }
 

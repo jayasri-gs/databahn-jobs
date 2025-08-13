@@ -63,7 +63,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, start
 		logging.GetLoggerWithContext(ctx).Error("error while getting destination id to names map", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return err
 	}
-	logsourceIdToNameMap, err := common.GetLogSourceIdToNamesMap(ctx, req)
+	logsourceIdToNameMap, err := common.GetLogSourceIdToNamesMap(ctx, req.TenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while getting log source id to names map", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return err

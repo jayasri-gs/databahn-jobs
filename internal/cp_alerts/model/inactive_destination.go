@@ -2,12 +2,14 @@ package model
 
 import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
+	"github.com/databahn-ai/db-models/alerts_async"
 	"time"
 )
 
 type InactiveDestination struct {
 	Destination   *destination.Destination
 	LastEventTime time.Time
+	alerts_async.NoSecondaryEntityId
 }
 
 func (id InactiveDestination) GetEntityId() string    { return id.Destination.ID.String() }
