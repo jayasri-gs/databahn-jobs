@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/opensearch-project/opensearch-go/v2"
+	"gorm.io/gorm"
 	"strconv"
 	"strings"
 	"text/template"
