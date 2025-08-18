@@ -265,7 +265,7 @@ func (p *VCAlertProcessor) processVCAlertsForTenant(t *tenant.Tenant, alertsToSe
 							todayMatched, yesterdayMatched, todayEvaluated, yesterdayEvaluated,
 							matchedPercent, unmatchedPercent)
 
-						alert, err := buildVCAlert(*vcAlert)
+						alert, err := buildVCAlert(*vcAlert, p.highUnmatchedThreshold, p.dropRuleIncreaseThreshold)
 						if err != nil {
 							logger.GetLogger().Error("error building VC alert", zap.Error(err),
 								zap.String("tenantId", tenantId.String()), zap.String("ruleId", vcRule.ID.String()),
@@ -469,24 +469,24 @@ func (p *VCAlertProcessor) autoResolveHealthyRules(tenantId string, healthyRuleI
 }
 
 // buildVCAlert builds an alert from VC alert model
-func buildVCAlert(vcAlert model.VCAlert) (*alerts_async.Alert, error) {
+func buildVCAlert(vcAlert model.VCAlert, highUnmatchedThreshold, dropRuleIncreaseThreshold float64) (*alerts_async.Alert, error) {
 	var title, message string
 
 	switch vcAlert.AlertType {
 	case model.VCAlertTypeDropRuleIncrease:
 		title = fmt.Sprintf("DROP rule '%s' match rate increased significantly", vcAlert.RuleName)
-		message = fmt.Sprintf("DROP rule '%s' in pipeline '%s' has increased its match rate by more than 50%% compared to yesterday. "+
+		message = fmt.Sprintf("DROP rule '%s' in pipeline '%s' has increased its match rate by more than %.1f%% compared to yesterday. "+
 			"Today: %d matched out of %d evaluated (%.2f%%), Yesterday: %d matched out of %d evaluated. "+
 			"This indicates the rule is dropping more events than expected.",
-			vcAlert.RuleName, vcAlert.Pipeline.Name, vcAlert.TodayMatched, vcAlert.TodayEvaluated, vcAlert.MatchedPercent,
+			vcAlert.RuleName, vcAlert.Pipeline.Name, dropRuleIncreaseThreshold, vcAlert.TodayMatched, vcAlert.TodayEvaluated, vcAlert.MatchedPercent,
 			vcAlert.YesterdayMatched, vcAlert.YesterdayEvaluated)
 
 	case model.VCAlertTypeHighUnmatched:
 		title = fmt.Sprintf("Rule '%s' has high unmatched event rate", vcAlert.RuleName)
 		message = fmt.Sprintf("Rule '%s' in pipeline '%s' has %.2f%% unmatched events today (%d unmatched out of %d evaluated). "+
-			"This exceeds the 20%% threshold and indicates events are not being processed by any destination through route processor.",
+			"This exceeds the %.1f%% threshold and indicates events are not being processed by any destination through route processor.",
 			vcAlert.RuleName, vcAlert.Pipeline.Name, vcAlert.UnmatchedPercent,
-			vcAlert.TodayEvaluated-vcAlert.TodayMatched, vcAlert.TodayEvaluated)
+			vcAlert.TodayEvaluated-vcAlert.TodayMatched, vcAlert.TodayEvaluated, highUnmatchedThreshold)
 
 	default:
 		return nil, fmt.Errorf("unknown VC alert type: %s", vcAlert.AlertType)
