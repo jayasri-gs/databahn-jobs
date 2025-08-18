@@ -597,26 +597,28 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 	alertTime := time.Now()
 
 	// Determine entity ID, title, and message based on data type
-	var entityId, title, message string
+	var entityId, title, message, entityName string
 	if indexMetadata.Type == APP_TYPE_SOURCEHOSTNAME {
-		// For insights data, use insight rule ID as entity ID
-		entityId = indexMetadata.Type
-		title = fmt.Sprintf("High Unique Device Count Detected - Rule %s", insightRuleName)
-		message = fmt.Sprintf("Insight rule '%s' generated %d unique devices, exceeding the threshold of %d. This may indicate excessive device diversity or data quality issues in device tracking.",
-			insightRuleName, uniqueKeyCount, threshold)
-	} else {
-		// For non-insights data, use tenant ID as entity ID
+		// For sourcehostname data, use tenant ID as entity ID
 		entityId = indexMetadata.TenantId
+		title = "High Unique Device Count Detected"
+		message = fmt.Sprintf("%d unique devices, exceeding the threshold of %d. This may indicate excessive device diversity or data quality issues in device tracking.",
+			uniqueKeyCount, threshold)
+		entityName = "sourcehostname"
+	} else {
+		// For insight rules, use insight rule ID as entity ID
+		entityId = indexMetadata.Type
 		title = fmt.Sprintf("High Unique Event Count Detected - Rule %s", insightRuleName)
 		message = fmt.Sprintf("Insight rule '%s' generated %d unique events, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
 			insightRuleName, uniqueKeyCount, threshold)
+		entityName = fmt.Sprintf("insight rule %s", insightRuleName)
 	}
 
 	cardinalityAlert, err := alerts_async.NewAlert(
 		alerts_async.InsightsRule,
 		alerts_async.WithEntityDetails(
 			entityId,
-			fmt.Sprintf("rule-%s", insightRuleName),
+			entityName,
 			dataPlaneId, // Use the data plane ID from the index
 			indexMetadata.TenantId,
 		),
