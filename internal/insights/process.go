@@ -29,28 +29,43 @@ const DefaultCardinalityThreshold = 360000
 
 // checkIndexCardinalityAndAlert checks cardinality for a single index and generates alerts if needed
 func checkIndexCardinalityAndAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount, cardinalityThreshold int) error {
-	// Fetch insight rule name for better logging
-	insightRuleName, err := getInsightRuleName(indexMetadata)
-	if err != nil {
-		// Log with rule ID if we can't fetch the name
-		logger.GetLogger().Info("index cardinality check",
-			zap.String("insight_rule_id", indexMetadata.Type),
+	var insightRuleName string
+	var err error
+
+	// Handle logging differently for sourcehostname vs insight rules
+	if indexMetadata.Type == APP_TYPE_SOURCEHOSTNAME {
+		logger.GetLogger().Info("sourcehostname cardinality check",
+			zap.String("type", indexMetadata.Type),
 			zap.String("tenant_id", indexMetadata.TenantId),
 			zap.String("data_plane_id", dataPlaneId),
 			zap.Int("unique_count", uniqueKeyCount),
 			zap.Int("threshold", cardinalityThreshold))
+		insightRuleName = "" // Not applicable for sourcehostname
 	} else {
-		logger.GetLogger().Info("insight rule cardinality check",
-			zap.String("insight_rule_name", insightRuleName),
-			zap.String("insight_rule_id", indexMetadata.Type),
-			zap.String("tenant_id", indexMetadata.TenantId),
-			zap.String("data_plane_id", dataPlaneId),
-			zap.Int("unique_count", uniqueKeyCount),
-			zap.Int("threshold", cardinalityThreshold))
+		// Fetch insight rule name once for both logging and alert generation
+		insightRuleName, err = getInsightRuleName(indexMetadata)
+		if err != nil {
+			// Log with rule ID if we can't fetch the name
+			logger.GetLogger().Info("index cardinality check",
+				zap.String("insight_rule_id", indexMetadata.Type),
+				zap.String("tenant_id", indexMetadata.TenantId),
+				zap.String("data_plane_id", dataPlaneId),
+				zap.Int("unique_count", uniqueKeyCount),
+				zap.Int("threshold", cardinalityThreshold))
+			insightRuleName = "" // Set to empty if we couldn't fetch it
+		} else {
+			logger.GetLogger().Info("insight rule cardinality check",
+				zap.String("insight_rule_name", insightRuleName),
+				zap.String("insight_rule_id", indexMetadata.Type),
+				zap.String("tenant_id", indexMetadata.TenantId),
+				zap.String("data_plane_id", dataPlaneId),
+				zap.Int("unique_count", uniqueKeyCount),
+				zap.Int("threshold", cardinalityThreshold))
+		}
 	}
 
 	if uniqueKeyCount > cardinalityThreshold {
-		return generateIndexCardinalityAlert(ctx, indexMetadata, dataPlaneId, uniqueKeyCount, cardinalityThreshold)
+		return generateIndexCardinalityAlert(ctx, indexMetadata, dataPlaneId, uniqueKeyCount, cardinalityThreshold, insightRuleName)
 	}
 	return nil
 }
@@ -580,18 +595,12 @@ type Sight struct {
 }
 
 // generateIndexCardinalityAlert creates and sends an alert when unique event key count exceeds threshold for a single index
-func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount, threshold int) error {
+func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount, threshold int, insightRuleName string) error {
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create alerts manager: %w", err)
 	}
 	defer alertsManager.Close(ctx)
-
-	// Fetch insight rule name from database
-	insightRuleName, err := getInsightRuleName(indexMetadata)
-	if err != nil {
-		return fmt.Errorf("failed to get insight rule name: %w", err)
-	}
 
 	// Create alert for high cardinality in single index
 	alertTime := time.Now()
@@ -608,10 +617,18 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 	} else {
 		// For insight rules, use insight rule ID as entity ID
 		entityId = indexMetadata.Type
-		title = fmt.Sprintf("High Unique Event Count Detected - Rule %s", insightRuleName)
-		message = fmt.Sprintf("Insight rule '%s' generated %d unique events, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
-			insightRuleName, uniqueKeyCount, threshold)
-		entityName = fmt.Sprintf("insight rule %s", insightRuleName)
+		if insightRuleName != "" {
+			title = fmt.Sprintf("High Unique Event Count Detected - Rule %s", insightRuleName)
+			message = fmt.Sprintf("Insight rule '%s' generated %d unique events, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
+				insightRuleName, uniqueKeyCount, threshold)
+			entityName = fmt.Sprintf("insight rule %s", insightRuleName)
+		} else {
+			// Fallback if rule name couldn't be fetched
+			title = fmt.Sprintf("High Unique Event Count Detected - Rule %s", indexMetadata.Type)
+			message = fmt.Sprintf("Insight rule ID '%s' generated %d unique events, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
+				indexMetadata.Type, uniqueKeyCount, threshold)
+			entityName = fmt.Sprintf("insight rule %s", indexMetadata.Type)
+		}
 	}
 
 	cardinalityAlert, err := alerts_async.NewAlert(
@@ -645,14 +662,35 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 		return fmt.Errorf("failed to send index cardinality alert: %w", err)
 	}
 
-	logger.GetLogger().Info("insight rule cardinality alert sent successfully",
-		zap.String("insight_rule_name", insightRuleName),
-		zap.String("insight_rule_id", indexMetadata.Type),
-		zap.String("tenant_id", indexMetadata.TenantId),
-		zap.String("data_plane_id", dataPlaneId),
-		zap.Int("unique_count", uniqueKeyCount),
-		zap.Int("threshold", threshold),
-		zap.String("alert_id", cardinalityAlert.Id))
+	// Log success with appropriate context based on type
+	if indexMetadata.Type == APP_TYPE_SOURCEHOSTNAME {
+		logger.GetLogger().Info("sourcehostname cardinality alert sent successfully",
+			zap.String("type", indexMetadata.Type),
+			zap.String("tenant_id", indexMetadata.TenantId),
+			zap.String("data_plane_id", dataPlaneId),
+			zap.Int("unique_count", uniqueKeyCount),
+			zap.Int("threshold", threshold),
+			zap.String("alert_id", cardinalityAlert.Id))
+	} else {
+		if insightRuleName != "" {
+			logger.GetLogger().Info("insight rule cardinality alert sent successfully",
+				zap.String("insight_rule_name", insightRuleName),
+				zap.String("insight_rule_id", indexMetadata.Type),
+				zap.String("tenant_id", indexMetadata.TenantId),
+				zap.String("data_plane_id", dataPlaneId),
+				zap.Int("unique_count", uniqueKeyCount),
+				zap.Int("threshold", threshold),
+				zap.String("alert_id", cardinalityAlert.Id))
+		} else {
+			logger.GetLogger().Info("insight rule cardinality alert sent successfully",
+				zap.String("insight_rule_id", indexMetadata.Type),
+				zap.String("tenant_id", indexMetadata.TenantId),
+				zap.String("data_plane_id", dataPlaneId),
+				zap.Int("unique_count", uniqueKeyCount),
+				zap.Int("threshold", threshold),
+				zap.String("alert_id", cardinalityAlert.Id))
+		}
+	}
 
 	return nil
 }
