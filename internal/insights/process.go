@@ -624,10 +624,10 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 			entityName = fmt.Sprintf("insight rule %s", insightRuleName)
 		} else {
 			// Fallback if rule name couldn't be fetched
-			title = fmt.Sprintf("High Unique Event Count Detected - Rule %s", indexMetadata.Type)
-			message = fmt.Sprintf("Insight rule ID '%s' generated %d unique events, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
-				indexMetadata.Type, uniqueKeyCount, threshold)
-			entityName = fmt.Sprintf("insight rule %s", indexMetadata.Type)
+			title = fmt.Sprintf("High Unique Event Count Detected - Rule ID %s", insightRuleName)
+			message = fmt.Sprintf("Insight rule Name '%s' generated %d unique events, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
+				insightRuleName, uniqueKeyCount, threshold)
+			entityName = fmt.Sprintf("insight rule ID %s", insightRuleName)
 		}
 	}
 
