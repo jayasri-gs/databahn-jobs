@@ -24,12 +24,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// Index-level cardinality threshold for tracking unique event keys
-
-const cardinalityThreshold = 360000
+// Default cardinality threshold for tracking unique event keys
+const DefaultCardinalityThreshold = 360000
 
 // checkIndexCardinalityAndAlert checks cardinality for a single index and generates alerts if needed
-func checkIndexCardinalityAndAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount int) error {
+func checkIndexCardinalityAndAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount, cardinalityThreshold int) error {
 	// Fetch insight rule name for better logging
 	insightRuleName, err := getInsightRuleName(indexMetadata)
 	if err != nil {
@@ -140,6 +139,12 @@ func createSource(key string) Source {
 }
 
 func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata, sourceIdToNameMap map[string]string) error {
+	// Load cardinality threshold from environment variable
+	cardinalityThreshold := utils.GetEnvInt("INSIGHTS_CARDINALITY_THRESHOLD", DefaultCardinalityThreshold)
+
+	logger.GetLogger().Info("Insights cardinality threshold configuration loaded",
+		zap.Int("cardinality_threshold", cardinalityThreshold))
+
 	indexName := INSIGHTS_STAGING_INDEX_PREFIX + index.String()
 	page := 0
 	count := 0
@@ -275,7 +280,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 
 	// Check cardinality for this index and generate alert if needed
 	uniqueKeyCount := len(indexUniqueKeys)
-	err = checkIndexCardinalityAndAlert(ctx, index, indexDataPlaneId, uniqueKeyCount)
+	err = checkIndexCardinalityAndAlert(ctx, index, indexDataPlaneId, uniqueKeyCount, cardinalityThreshold)
 	if err != nil {
 		logger.GetLogger().Error("failed to check index cardinality", zap.Error(err), zap.String("index", indexName))
 		// Don't fail the aggregation process for alert failures
@@ -590,14 +595,27 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 
 	// Create alert for high cardinality in single index
 	alertTime := time.Now()
-	title := fmt.Sprintf("High Event Key Cardinality Detected - Rule %s", insightRuleName)
-	message := fmt.Sprintf("Insight rule '%s' generated %d unique event keys, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
-		insightRuleName, uniqueKeyCount, threshold)
+
+	// Determine entity ID, title, and message based on data type
+	var entityId, title, message string
+	if indexMetadata.Type == APP_TYPE_SOURCEHOSTNAME {
+		// For insights data, use insight rule ID as entity ID
+		entityId = indexMetadata.Type
+		title = fmt.Sprintf("High Unique Device Count Detected - Rule %s", insightRuleName)
+		message = fmt.Sprintf("Insight rule '%s' generated %d unique devices, exceeding the threshold of %d. This may indicate excessive device diversity or data quality issues in device tracking.",
+			insightRuleName, uniqueKeyCount, threshold)
+	} else {
+		// For non-insights data, use tenant ID as entity ID
+		entityId = indexMetadata.TenantId
+		title = fmt.Sprintf("High Unique Event Count Detected - Rule %s", insightRuleName)
+		message = fmt.Sprintf("Insight rule '%s' generated %d unique events, exceeding the threshold of %d. This may indicate data quality issues or excessive event diversity in this specific rule.",
+			insightRuleName, uniqueKeyCount, threshold)
+	}
 
 	cardinalityAlert, err := alerts_async.NewAlert(
 		alerts_async.InsightsRule,
 		alerts_async.WithEntityDetails(
-			indexMetadata.TenantId,
+			entityId,
 			fmt.Sprintf("rule-%s", insightRuleName),
 			dataPlaneId, // Use the data plane ID from the index
 			indexMetadata.TenantId,
