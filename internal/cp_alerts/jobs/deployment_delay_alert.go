@@ -59,9 +59,6 @@ func SendAlertForDeploymentDelayAlert(ctx context.Context) error {
 
 	for _, t := range tenants {
 		tenantId := t.Id.String()
-		if tenantId != "f5e31bb8-af80-40d8-a0e4-16f12187e4e4" {
-			continue
-		}
 		logger.GetLoggerWithContext(ctx).Info("checking deploying entities for tenant", zap.String("tenant_id", tenantId))
 
 		// Create deploying state checker for this tenant
