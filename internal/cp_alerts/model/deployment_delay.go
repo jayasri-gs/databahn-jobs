@@ -26,7 +26,7 @@ type DeployingEntity struct {
 	Name        string     `json:"name"`
 	Type        EntityType `json:"type"`
 	TenantID    uuid.UUID  `json:"tenant_id"`
-	DataPlaneID uuid.UUID  `json:"data_plane_id"`
+	DataPlaneID string     `json:"data_plane_id"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	alerts_async.NoSecondaryEntityId
 }
@@ -43,7 +43,7 @@ func (e DeployingEntity) GetEntityName() string {
 
 // GetDataPlaneId implements AlertEntity interface
 func (e DeployingEntity) GetDataPlaneId() string {
-	return e.DataPlaneID.String()
+	return e.DataPlaneID
 }
 
 // GetTenantId implements AlertEntity interface
@@ -55,16 +55,4 @@ func (e DeployingEntity) GetTenantId() string {
 type HealthyEntity struct {
 	EntityId   string
 	EntityType EntityType
-}
-
-// NewDeployingEntity creates a new deploying entity
-func NewDeployingEntity(id uuid.UUID, name string, entityType EntityType, tenantID uuid.UUID, dataPlaneID uuid.UUID, updatedAt time.Time) *DeployingEntity {
-	return &DeployingEntity{
-		ID:          id,
-		Name:        name,
-		Type:        entityType,
-		TenantID:    tenantID,
-		DataPlaneID: dataPlaneID,
-		UpdatedAt:   updatedAt,
-	}
 }

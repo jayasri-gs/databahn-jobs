@@ -26,6 +26,7 @@ import (
 // Default values for environment variables
 const (
 	DefaultDeploymentTimeoutMinutes = 15
+	DefaultDataPlaneId              = "dbd00000-0000-0000-0000-000000000000" // Default value for data plane ID if not set
 )
 
 func SendAlertForDeploymentDelayAlert(ctx context.Context) error {
@@ -288,119 +289,86 @@ func (checker *DeployingStateChecker) autoResolveHealthyEntityAlerts(healthyEnti
 	}
 
 	osClient := os.GetClient()
-	var alertsToDismiss []string
+
 	tenantIdStr := checker.tenantId.String()
 
 	for _, healthy := range healthyEntities {
 		var functionalityType string
 		switch healthy.EntityType {
 		case model.EntityTypeSource:
-			functionalityType = "configuration_processing_failure"
+			functionalityType = alerts_async.DeploymentStatus.String()
 		case model.EntityTypeDestination:
-			functionalityType = "configuration_processing_failure"
+			functionalityType = alerts_async.DeploymentStatus.String()
 		case model.EntityTypeInsightRule:
-			functionalityType = "configuration_processing_failure"
+			functionalityType = alerts_async.DeploymentStatus.String()
 		case model.EntityTypeVCRule:
-			functionalityType = "configuration_processing_failure"
+			functionalityType = alerts_async.DeploymentStatus.String()
 		case model.EntityTypeEnrichment:
-			functionalityType = "configuration_processing_failure"
+			functionalityType = alerts_async.DeploymentStatus.String()
 		case model.EntityTypeRouteProcessor:
-			functionalityType = "configuration_processing_failure"
+			functionalityType = alerts_async.DeploymentStatus.String()
 		case model.EntityTypeLookup:
-			functionalityType = "configuration_processing_failure"
+			functionalityType = alerts_async.DeploymentStatus.String()
 		}
 
 		q := fmt.Sprintf("tenantId:%s AND dismissed:false AND functionalityType:%s AND functionalityEntityId:%s",
 			tenantIdStr, functionalityType, healthy.EntityId)
-		openAlerts, _, err := os.Search(checker.ctx, osClient, common.AlertsIndex, q)
-		if err != nil {
-			logger.GetLoggerWithContext(checker.ctx).Error("error while searching deploying alerts to auto-resolve",
-				zap.Error(err), zap.String("query", q))
-			continue
-		}
 
-		var alerts []statistics.AlertDocument
-		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-		if err != nil {
-			logger.GetLoggerWithContext(checker.ctx).Error("error while creating decoder for deploying alerts", zap.Error(err))
-			continue
-		}
+		// Use pagination to handle potentially large result sets
+		var after []any
+		pageSize := 100
+		sort := []os.Sort{{Field: "updatedAt", Order: "asc"}}
+		for {
+			var alertsToDismiss []string
+			openAlerts, newAfter, err := os.SearchPaginated(checker.ctx, osClient, common.AlertsIndex, q, pageSize, after, sort)
+			if err != nil {
+				logger.GetLoggerWithContext(checker.ctx).Error("error while searching deploying alerts to auto-resolve",
+					zap.Error(err), zap.String("query", q))
+				break
+			}
 
-		if err := decoder.Decode(openAlerts); err != nil {
-			logger.GetLoggerWithContext(checker.ctx).Error("error while decoding OpenSearch deploying alert response",
-				zap.Error(err), zap.String("tenantId", tenantIdStr))
-			continue
-		}
+			var alerts []statistics.AlertDocument
+			decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+			if err != nil {
+				logger.GetLoggerWithContext(checker.ctx).Error("error while creating decoder for deploying alerts", zap.Error(err))
+				break
+			}
 
-		for _, alrt := range alerts {
-			alertsToDismiss = append(alertsToDismiss, alrt.Id)
+			if err := decoder.Decode(openAlerts); err != nil {
+				logger.GetLoggerWithContext(checker.ctx).Error("error while decoding OpenSearch deploying alert response",
+					zap.Error(err), zap.String("tenantId", tenantIdStr))
+				break
+			}
+
+			for _, alrt := range alerts {
+				alertsToDismiss = append(alertsToDismiss, alrt.Id)
+			}
+
+			if err := checker.alertsManager.AutoResolveAlerts(alertsToDismiss); err != nil {
+				logger.GetLoggerWithContext(checker.ctx).Error("error while auto-resolving deploying alerts",
+					zap.Error(err), zap.String("tenant_id", tenantIdStr))
+			}
+
+			// Break if we received fewer results than page size (end of data)
+			if len(openAlerts) < pageSize {
+				break
+			}
+
+			after = newAfter
 		}
 	}
 
-	if len(alertsToDismiss) > 0 {
-		if err := checker.alertsManager.AutoResolveAlerts(alertsToDismiss); err != nil {
-			logger.GetLoggerWithContext(checker.ctx).Error("error while auto-resolving deploying alerts",
-				zap.Error(err), zap.String("tenant_id", tenantIdStr))
-		} else {
-			logger.GetLoggerWithContext(checker.ctx).Info("auto-resolved deploying alerts for healthy entities",
-				zap.String("tenant_id", tenantIdStr), zap.Any("alertsToDismiss", alertsToDismiss))
-		}
-	}
+	// if len(alertsToDismiss) > 0 {
+	// 	if err := checker.alertsManager.AutoResolveAlerts(alertsToDismiss); err != nil {
+	// 		logger.GetLoggerWithContext(checker.ctx).Error("error while auto-resolving deploying alerts",
+	// 			zap.Error(err), zap.String("tenant_id", tenantIdStr))
+	// 	} else {
+	// 		logger.GetLoggerWithContext(checker.ctx).Info("auto-resolved deploying alerts for healthy entities",
+	// 			zap.String("tenant_id", tenantIdStr), zap.Any("alertsToDismiss", alertsToDismiss))
+	// 	}
+	// }
 
 	return nil
-}
-
-// getDataPlaneIDFromPipeline gets data plane ID from pipeline by finding associated log source
-func getDataPlaneIDFromPipeline(ctx context.Context, db *gorm.DB, pipelineId uuid.UUID, cache *DataPlaneCache) (uuid.UUID, error) {
-	// Check cache first
-	if dataPlaneId, exists := cache.pipelineToDataPlane[pipelineId]; exists {
-		return dataPlaneId, nil
-	}
-
-	query := `
-		SELECT ls.data_plane_id 
-		FROM log_source ls
-		JOIN pipeline_log_sources_mapping plsm ON ls.id = plsm.log_source_id
-		WHERE plsm.pipeline_id = ?
-		LIMIT 1
-	`
-
-	var dataPlaneId uuid.UUID
-	err := db.WithContext(ctx).Raw(query, pipelineId).Scan(&dataPlaneId).Error
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	// Cache the result
-	cache.pipelineToDataPlane[pipelineId] = dataPlaneId
-	return dataPlaneId, nil
-}
-
-// getDataPlaneIDFromLookup gets data plane ID for lookup by finding associated enrichment -> pipeline -> log source
-func getDataPlaneIDFromLookup(ctx context.Context, db *gorm.DB, lookupId uuid.UUID, cache *DataPlaneCache) (uuid.UUID, error) {
-	// Check cache first
-	if dataPlaneId, exists := cache.lookupToDataPlane[lookupId]; exists {
-		return dataPlaneId, nil
-	}
-
-	query := `
-		SELECT ls.data_plane_id 
-		FROM log_source ls
-		JOIN pipeline_log_sources_mapping plsm ON ls.id = plsm.log_source_id
-		JOIN enrichment e ON e.pipeline_id = plsm.pipeline_id
-		WHERE e.lookup_id = ?
-		LIMIT 1
-	`
-
-	var dataPlaneId uuid.UUID
-	err := db.WithContext(ctx).Raw(query, lookupId).Scan(&dataPlaneId).Error
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	// Cache the result
-	cache.lookupToDataPlane[lookupId] = dataPlaneId
-	return dataPlaneId, nil
 }
 
 // getDeployingSources queries log_source table for entities stuck in DEPLOYING state
@@ -424,14 +392,6 @@ func getDeployingSources(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, c
 		err := rows.Scan(&entity.ID, &entity.Name, &entity.TenantID, &entity.DataPlaneID, &entity.UpdatedAt)
 		if err != nil {
 			return nil, err
-		}
-
-		// Validate that source has a valid data plane ID
-		if entity.DataPlaneID == uuid.Nil {
-			logger.GetLoggerWithContext(ctx).Error("Source missing data plane ID, skipping alert",
-				zap.String("source_id", entity.ID.String()),
-				zap.String("source_name", entity.Name))
-			continue
 		}
 
 		entity.Type = model.EntityTypeSource
@@ -464,14 +424,6 @@ func getDeployingDestinations(ctx context.Context, db *gorm.DB, tenantId uuid.UU
 			return nil, err
 		}
 
-		// Validate that destination has a valid data plane ID
-		if entity.DataPlaneID == uuid.Nil {
-			logger.GetLoggerWithContext(ctx).Error("Destination missing data plane ID, skipping alert",
-				zap.String("destination_id", entity.ID.String()),
-				zap.String("destination_name", entity.Name))
-			continue
-		}
-
 		entity.Type = model.EntityTypeDestination
 		destinations = append(destinations, entity)
 	}
@@ -502,14 +454,6 @@ func getDeployingInsightRules(ctx context.Context, db *gorm.DB, tenantId uuid.UU
 			return nil, err
 		}
 
-		// Validate that insight rule has a valid data plane ID
-		if entity.DataPlaneID == uuid.Nil {
-			logger.GetLoggerWithContext(ctx).Error("Insight rule missing data plane ID, skipping alert",
-				zap.String("insight_rule_id", entity.ID.String()),
-				zap.String("insight_rule_name", entity.Name))
-			continue
-		}
-
 		entity.Type = model.EntityTypeInsightRule
 		insightRules = append(insightRules, entity)
 	}
@@ -538,14 +482,6 @@ func getDeployingVCRules(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, c
 		err := rows.Scan(&entity.ID, &entity.Name, &entity.TenantID, &entity.DataPlaneID, &entity.UpdatedAt)
 		if err != nil {
 			return nil, err
-		}
-
-		// Validate that VC rule has a valid data plane ID
-		if entity.DataPlaneID == uuid.Nil {
-			logger.GetLoggerWithContext(ctx).Error("VC rule missing data plane ID, skipping alert",
-				zap.String("vc_rule_id", entity.ID.String()),
-				zap.String("vc_rule_name", entity.Name))
-			continue
 		}
 
 		entity.Type = model.EntityTypeVCRule
@@ -691,13 +627,6 @@ func getDeployingEnrichments(ctx context.Context, db *gorm.DB, tenantId uuid.UUI
 		}
 
 		// Validate that enrichment has a valid data plane ID
-		if entity.DataPlaneID == uuid.Nil {
-			logger.GetLoggerWithContext(ctx).Error("Enrichment missing data plane ID, skipping alert",
-				zap.String("enrichment_id", entity.ID.String()),
-				zap.String("enrichment_name", entity.Name))
-			continue
-		}
-
 		entity.Type = model.EntityTypeEnrichment
 		enrichments = append(enrichments, entity)
 	}
@@ -755,20 +684,6 @@ func getDeployingRouteProcessors(ctx context.Context, db *gorm.DB, tenantId uuid
 		err := rows.Scan(&entity.ID, &entity.TenantID, &entity.DataPlaneID, &pipelineId, &entity.UpdatedAt)
 		if err != nil {
 			return nil, err
-		}
-
-		// If route processor doesn't have data_plane_id, get it from pipeline
-		if entity.DataPlaneID == uuid.Nil {
-			dataPlaneId, err := getDataPlaneIDFromPipeline(ctx, db, pipelineId, cache)
-			if err != nil {
-				logger.GetLoggerWithContext(ctx).Error("Could not resolve data plane ID for route processor, skipping alert",
-					zap.String("route_processor_id", entity.ID.String()),
-					zap.String("pipeline_id", pipelineId.String()),
-					zap.Error(err))
-				// Skip this entity - don't generate alert without valid data plane ID
-				continue
-			}
-			entity.DataPlaneID = dataPlaneId
 		}
 
 		entity.Type = model.EntityTypeRouteProcessor
@@ -831,17 +746,7 @@ func getDeployingLookups(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, c
 			return nil, err
 		}
 
-		// Lookup table doesn't have data_plane_id, so get it from enrichment -> pipeline -> log source
-		dataPlaneId, err := getDataPlaneIDFromLookup(ctx, db, entity.ID, cache)
-		if err != nil {
-			logger.GetLoggerWithContext(ctx).Error("Could not resolve data plane ID for lookup, skipping alert",
-				zap.String("lookup_id", entity.ID.String()),
-				zap.Error(err))
-			// Skip this entity - don't generate alert without valid data plane ID
-			continue
-		}
-		entity.DataPlaneID = dataPlaneId
-
+		entity.DataPlaneID = DefaultDataPlaneId
 		entity.Type = model.EntityTypeLookup
 		lookups = append(lookups, entity)
 	}
@@ -947,7 +852,7 @@ func buildDeployingAlert(entity model.DeployingEntity) (*alerts_async.Alert, err
 		functionality,
 		alerts_async.WithEntity(entity),
 		alerts_async.WithCriticality(alerts_async.Warning),
-		alerts_async.WithFunctionalityType(alerts_async.ConfigurationProcessingFailure),
+		alerts_async.WithFunctionalityType(alerts_async.DeploymentStatus),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DIOE30001, fmt.Sprintf("%s stuck in deploying state", entityTypeName)),
