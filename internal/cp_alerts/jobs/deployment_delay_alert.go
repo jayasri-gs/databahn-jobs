@@ -80,14 +80,12 @@ func SendAlertForDeploymentDelayAlert(ctx context.Context) error {
 // DataPlaneCache caches data plane IDs to avoid repeated queries
 type DataPlaneCache struct {
 	pipelineToDataPlane map[uuid.UUID]uuid.UUID
-	lookupToDataPlane   map[uuid.UUID]uuid.UUID
 }
 
 // NewDataPlaneCache creates a new data plane cache
 func NewDataPlaneCache() *DataPlaneCache {
 	return &DataPlaneCache{
 		pipelineToDataPlane: make(map[uuid.UUID]uuid.UUID),
-		lookupToDataPlane:   make(map[uuid.UUID]uuid.UUID),
 	}
 }
 
@@ -181,6 +179,13 @@ func (checker *DeployingStateChecker) processDeployingEntities() error {
 	// Check lookups
 	if err := checker.processEntityType("lookups", func() ([]model.DeployingEntity, error) {
 		return getDeployingLookups(checker.ctx, checker.db, checker.tenantId, checker.cutoffTime, checker.cache)
+	}); err != nil {
+		return err
+	}
+
+	// Check data transformations
+	if err := checker.processEntityType("data transformations", func() ([]model.DeployingEntity, error) {
+		return getDeployingDataTransformations(checker.ctx, checker.db, checker.tenantId, checker.cutoffTime)
 	}); err != nil {
 		return err
 	}
@@ -279,6 +284,16 @@ func (checker *DeployingStateChecker) collectHealthyEntities() ([]model.HealthyE
 		}
 	}
 
+	// Collect healthy data transformations
+	if healthyDataTransformations, err := getHealthyDataTransformations(checker.ctx, checker.db, checker.tenantId); err != nil {
+		logger.GetLoggerWithContext(checker.ctx).Error("Error getting healthy data transformations",
+			zap.Error(err), zap.String("tenant_id", checker.tenantId.String()))
+	} else {
+		for _, entityId := range healthyDataTransformations {
+			healthyEntities = append(healthyEntities, model.HealthyEntity{EntityId: entityId, EntityType: model.EntityTypeDataTransformation})
+		}
+	}
+
 	return healthyEntities, nil
 }
 
@@ -293,23 +308,7 @@ func (checker *DeployingStateChecker) autoResolveHealthyEntityAlerts(healthyEnti
 	tenantIdStr := checker.tenantId.String()
 
 	for _, healthy := range healthyEntities {
-		var functionalityType string
-		switch healthy.EntityType {
-		case model.EntityTypeSource:
-			functionalityType = alerts_async.DeploymentStatus.String()
-		case model.EntityTypeDestination:
-			functionalityType = alerts_async.DeploymentStatus.String()
-		case model.EntityTypeInsightRule:
-			functionalityType = alerts_async.DeploymentStatus.String()
-		case model.EntityTypeVCRule:
-			functionalityType = alerts_async.DeploymentStatus.String()
-		case model.EntityTypeEnrichment:
-			functionalityType = alerts_async.DeploymentStatus.String()
-		case model.EntityTypeRouteProcessor:
-			functionalityType = alerts_async.DeploymentStatus.String()
-		case model.EntityTypeLookup:
-			functionalityType = alerts_async.DeploymentStatus.String()
-		}
+		functionalityType := alerts_async.DeploymentStatus.String()
 
 		q := fmt.Sprintf("tenantId:%s AND dismissed:false AND functionalityType:%s AND functionalityEntityId:%s",
 			tenantIdStr, functionalityType, healthy.EntityId)
@@ -782,6 +781,64 @@ func getHealthyLookups(ctx context.Context, db *gorm.DB, tenantId uuid.UUID) ([]
 	return entityIds, nil
 }
 
+// getDeployingDataTransformations queries data_transformation table for entities stuck in DEPLOYING state
+func getDeployingDataTransformations(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, cutoffTime time.Time) ([]model.DeployingEntity, error) {
+	var dataTransformations []model.DeployingEntity
+
+	query := `
+		SELECT id, name, tenant_id, data_plane_id, updated_at
+		FROM data_transformation 
+		WHERE tenant_id = ? AND status = 'DEPLOYING' AND updated_at < ?
+	`
+
+	rows, err := db.WithContext(ctx).Raw(query, tenantId, cutoffTime).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var entity model.DeployingEntity
+		err := rows.Scan(&entity.ID, &entity.Name, &entity.TenantID, &entity.DataPlaneID, &entity.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		entity.Type = model.EntityTypeDataTransformation
+		dataTransformations = append(dataTransformations, entity)
+	}
+
+	return dataTransformations, nil
+}
+
+// getHealthyDataTransformations queries data_transformation table for entities that are no longer in DEPLOYING state
+func getHealthyDataTransformations(ctx context.Context, db *gorm.DB, tenantId uuid.UUID) ([]string, error) {
+	var entityIds []string
+
+	query := `
+		SELECT id
+		FROM data_transformation 
+		WHERE tenant_id = ? AND status != 'DEPLOYING'
+	`
+
+	rows, err := db.WithContext(ctx).Raw(query, tenantId).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var entityId string
+		err := rows.Scan(&entityId)
+		if err != nil {
+			return nil, err
+		}
+		entityIds = append(entityIds, entityId)
+	}
+
+	return entityIds, nil
+}
+
 // sendDeployingAlert sends an alert for an entity stuck in deploying state
 func sendDeployingAlert(ctx context.Context, alertsManager *alert.AlertsManager, entity model.DeployingEntity) error {
 	deployingAlert, err := buildDeployingAlert(entity)
@@ -829,6 +886,9 @@ func buildDeployingAlert(entity model.DeployingEntity) (*alerts_async.Alert, err
 	case model.EntityTypeLookup:
 		entityTypeName = "Lookup"
 		functionality = alerts_async.Lookup
+	case model.EntityTypeDataTransformation:
+		entityTypeName = "Data Transformation"
+		functionality = alerts_async.Transformer
 	default:
 		entityTypeName = "Entity"
 		functionality = alerts_async.Unknown

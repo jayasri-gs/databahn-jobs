@@ -11,13 +11,14 @@ import (
 type EntityType string
 
 const (
-	EntityTypeSource         EntityType = "source"
-	EntityTypeDestination    EntityType = "destination"
-	EntityTypeInsightRule    EntityType = "insight_rule"
-	EntityTypeVCRule         EntityType = "vc_rule"
-	EntityTypeEnrichment     EntityType = "enrichment"
-	EntityTypeRouteProcessor EntityType = "route_processor"
-	EntityTypeLookup         EntityType = "lookup"
+	EntityTypeSource             EntityType = "source"
+	EntityTypeDestination        EntityType = "destination"
+	EntityTypeInsightRule        EntityType = "insight_rule"
+	EntityTypeVCRule             EntityType = "vc_rule"
+	EntityTypeEnrichment         EntityType = "enrichment"
+	EntityTypeRouteProcessor     EntityType = "route_processor"
+	EntityTypeLookup             EntityType = "lookup"
+	EntityTypeDataTransformation EntityType = "data_transformation"
 )
 
 // DeployingEntity represents an entity that has been in deploying state for too long
