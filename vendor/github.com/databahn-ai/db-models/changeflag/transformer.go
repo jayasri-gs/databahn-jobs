@@ -22,6 +22,7 @@ const (
 	Case                              TransformationOpType = "CASE"
 	Integerify                        TransformationOpType = "INTEGERIFY"
 	Stringify                         TransformationOpType = "STRINGIFY"
+	Booleanify                        TransformationOpType = "BOOLEANIFY"
 )
 
 type FlagTransform struct {
