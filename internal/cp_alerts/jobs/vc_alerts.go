@@ -19,6 +19,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/db-models/rule"
 	"github.com/databahn-ai/go-logging/logger"
@@ -1071,28 +1072,29 @@ func buildVCAlert(vcAlert model.VCAlert, config *VCAlertConfig) (*alerts_async.A
 	case model.VCAlertTypeDropRuleIncrease:
 		title = fmt.Sprintf("DROP rule '%s' match rate increased significantly", vcAlert.RuleName)
 		message = fmt.Sprintf("DROP rule '%s' in pipeline '%s' has increased its match rate by more than %.1f%% compared to yesterday. "+
-			"Today: %d matched out of %d evaluated (%.2f%%), Yesterday: %d matched out of %d evaluated. "+
+			"Today: %s matched out of %s evaluated (%.2f%%), Yesterday: %s matched out of %s evaluated. "+
 			"This indicates the rule is dropping more events than expected.",
-			vcAlert.RuleName, vcAlert.Pipeline.Name, config.DropRuleIncreaseThreshold, vcAlert.TodayMatched, vcAlert.TodayEvaluated, vcAlert.MatchedPercent,
-			vcAlert.YesterdayMatched, vcAlert.YesterdayEvaluated)
+			vcAlert.RuleName, vcAlert.Pipeline.Name, config.DropRuleIncreaseThreshold,
+			util.HumanReadableNumber(vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), vcAlert.MatchedPercent,
+			util.HumanReadableNumber(vcAlert.YesterdayMatched), util.HumanReadableNumber(vcAlert.YesterdayEvaluated))
 
 	case model.VCAlertTypePipelineDataReduction:
 		title = fmt.Sprintf("Pipeline '%s' has excessive data reduction", vcAlert.Pipeline.Name)
 		reductionPercent := ((float64(vcAlert.TodayEvaluated) - float64(vcAlert.TodayMatched)) / float64(vcAlert.TodayEvaluated)) * 100
-		message = fmt.Sprintf("Pipeline '%s' is reducing data by %.2f%% today (%d delivered out of %d ingested), "+
-			"which is more than %.1f%% higher than yesterday (%d delivered out of %d ingested). "+
+		message = fmt.Sprintf("Pipeline '%s' is reducing data by %.2f%% today (%s delivered out of %s ingested), "+
+			"which is more than %.1f%% higher than yesterday (%s delivered out of %s ingested). "+
 			"This indicates volume control rules are dropping significantly more events than normal.",
-			vcAlert.Pipeline.Name, reductionPercent, vcAlert.TodayMatched, vcAlert.TodayEvaluated,
-			config.PipelineDataReductionThreshold, vcAlert.YesterdayMatched, vcAlert.YesterdayEvaluated)
+			vcAlert.Pipeline.Name, reductionPercent, util.HumanReadableNumber(vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated),
+			config.PipelineDataReductionThreshold, util.HumanReadableNumber(vcAlert.YesterdayMatched), util.HumanReadableNumber(vcAlert.YesterdayEvaluated))
 
 	case model.VCAlertTypeUnmatchedNoRouteProcessor:
 		title = fmt.Sprintf("Rule '%s' has high unmatched events with no route processor", vcAlert.RuleName)
-		message = fmt.Sprintf("Rule '%s' in pipeline '%s' has %.2f%% unmatched events (%d unmatched out of %d evaluated), "+
+		message = fmt.Sprintf("Rule '%s' in pipeline '%s' has %.2f%% unmatched events (%s unmatched out of %s evaluated), "+
 			"exceeding the %.1f%% threshold. The source is not configured to send unmatched events to primary destination "+
 			"and the pipeline lacks proper route processor configuration for handling unmatched events. "+
 			"These events may be lost or not processed properly.",
 			vcAlert.RuleName, vcAlert.Pipeline.Name, vcAlert.UnmatchedPercent,
-			vcAlert.TodayEvaluated-vcAlert.TodayMatched, vcAlert.TodayEvaluated, config.UnmatchedNoRouteProcessorThreshold)
+			util.HumanReadableNumber(vcAlert.TodayEvaluated-vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), config.UnmatchedNoRouteProcessorThreshold)
 
 	default:
 		return nil, fmt.Errorf("unknown VC alert type: %s", vcAlert.AlertType)
