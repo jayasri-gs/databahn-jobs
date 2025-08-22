@@ -357,16 +357,6 @@ func (checker *DeployingStateChecker) autoResolveHealthyEntityAlerts(healthyEnti
 		}
 	}
 
-	// if len(alertsToDismiss) > 0 {
-	// 	if err := checker.alertsManager.AutoResolveAlerts(alertsToDismiss); err != nil {
-	// 		logger.GetLoggerWithContext(checker.ctx).Error("error while auto-resolving deploying alerts",
-	// 			zap.Error(err), zap.String("tenant_id", tenantIdStr))
-	// 	} else {
-	// 		logger.GetLoggerWithContext(checker.ctx).Info("auto-resolved deploying alerts for healthy entities",
-	// 			zap.String("tenant_id", tenantIdStr), zap.Any("alertsToDismiss", alertsToDismiss))
-	// 	}
-	// }
-
 	return nil
 }
 
