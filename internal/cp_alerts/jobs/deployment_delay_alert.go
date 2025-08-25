@@ -860,7 +860,7 @@ func buildDeployingAlert(entity model.DeployingEntity) (*alerts_async.Alert, err
 		functionality = alerts_async.LogSource
 	case model.EntityTypeDestination:
 		entityTypeName = "Destination"
-		functionality = alerts_async.GlobalDestination
+		functionality = alerts_async.Dispenser
 	case model.EntityTypeInsightRule:
 		entityTypeName = "Insight Rule"
 		functionality = alerts_async.InsightsRule
