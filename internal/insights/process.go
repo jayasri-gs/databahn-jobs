@@ -643,7 +643,6 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 		alerts_async.WithFunctionalityType(alerts_async.RateLimitExceeded),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
-		alerts_async.WithAlertType(alerts_async.External),
 		alerts_async.WithErrorCode(alerts_async.DNDW10005, ""),
 	)
 	if err != nil {
