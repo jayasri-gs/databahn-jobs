@@ -2,11 +2,11 @@ package alertReport
 
 import (
 	"context"
+
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	logging "github.com/databahn-ai/go-logging/logger"
-	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 )
 
@@ -22,9 +22,7 @@ func getAlertsFromOpenSearch(ctx context.Context, query string) ([]statistics.Al
 			return nil, err
 		}
 
-		var alerts []statistics.AlertDocument
-		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-		err = decoder.Decode(res)
+		alerts, err := statistics.ParseAlertDocuments(res)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
 			return allAlerts, err

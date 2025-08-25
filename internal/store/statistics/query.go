@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -195,6 +196,21 @@ type AlertDocument struct {
 	Dismissed               bool   `json:"dismissed"`
 	DismissedAt             int64  `json:"dismissedAt"`
 	DismissedBy             string `json:"dismissedBy"`
+}
+
+func ParseAlertDocuments(osDocuments []map[string]any) ([]AlertDocument, error) {
+	var alerts []AlertDocument
+	decoder, err := util.CreateAlertDecoder(&alerts)
+	if err != nil {
+		logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
+		return nil, err
+	}
+	err = decoder.Decode(osDocuments)
+	if err != nil {
+		logger.GetLogger().Error("error while decoding openSearch response", zap.Error(err))
+		return nil, err
+	}
+	return alerts, nil
 }
 
 type DeviceInventoryDocument struct {

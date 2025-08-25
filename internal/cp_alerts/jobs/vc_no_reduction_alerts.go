@@ -21,7 +21,6 @@ import (
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -200,13 +199,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 					logger.GetLoggerWithContext(ctx).Error("error while searching VC alerts to auto-resolve", zap.Error(err), zap.String("query", q))
 					continue
 				}
-				var alerts []statistics.AlertDocument
-				decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+				alerts, err := statistics.ParseAlertDocuments(openAlerts)
 				if err != nil {
-					logger.GetLoggerWithContext(ctx).Error("error while creating decoder for VC alerts", zap.Error(err))
-					continue
-				}
-				if err := decoder.Decode(openAlerts); err != nil {
 					logger.GetLoggerWithContext(ctx).Error("error while decoding OpenSearch VC alert response", zap.Error(err), zap.String("tenantId", tenantId))
 					continue
 				}
