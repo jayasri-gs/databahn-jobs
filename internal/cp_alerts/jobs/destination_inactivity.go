@@ -3,6 +3,9 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
@@ -16,12 +19,9 @@ import (
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"strings"
-	"time"
 )
 
 func AlertForNoEventsToDestination(ctx context.Context) error {
@@ -90,13 +90,7 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 				return err
 
 			}
-			var alerts []statistics.AlertDocument
-			decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-			if err != nil {
-				logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
-				return err
-			}
-			err = decoder.Decode(openAlerts)
+			alerts, err := statistics.ParseAlertDocuments(openAlerts)
 			if err != nil {
 				logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
 				return err

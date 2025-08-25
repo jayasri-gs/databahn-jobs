@@ -17,7 +17,6 @@ import (
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
-	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"reflect"
 	"strconv"
@@ -204,9 +203,7 @@ func PaginatedOpenSearchCallToGetAllExistingAlerts(ctx context.Context, logsourc
 			return nil, err
 		}
 
-		var alerts []statistics.AlertDocument
-		decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-		err = decoder.Decode(res)
+		alerts, err := statistics.ParseAlertDocuments(res)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while decoding response", zap.Error(err))
 			return allAlerts, err
