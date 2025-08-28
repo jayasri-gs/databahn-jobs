@@ -9,6 +9,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/opensearch-project/opensearch-go/v2"
+	"gorm.io/gorm"
+
 	notification_common "github.com/databahn-ai/common-utils/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -16,7 +20,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
@@ -59,137 +62,228 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	}
 
 	for _, t := range tenants {
-		checkpoint, err := entities.GetAlertNotificationCheckpoint(db, t.Id)
-		tenantIdStr := t.Id.String()
+		err := processExternalAlerts(ctx, db, t, osClient, notificationManager, tenantToModuleToConfigMap)
 		if err != nil {
-			logger.GetLogger().Error("error while getting checkpoint", zap.Error(err), zap.String("tenant", tenantIdStr))
+			logger.GetLogger().Error("failed process external alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
 			continue
-		}
-		lastObservedAtFrom := time.Now().Add(-30 * time.Minute).UTC().UnixMilli()
-		if checkpoint != nil {
-			lastObservedAtFrom = checkpoint.CheckpointValue.LastObservedAt
-			logger.GetLogger().Info("checkpoint found", zap.String("tenant", tenantIdStr), zap.Int64("lastObservedAtFrom", lastObservedAtFrom))
-		}
-		lastObservedAtTo := time.Now().Add(-2 * time.Minute).UTC().UnixMilli()
-		logger.GetLogger().Info("checking alerts between", zap.Int64("from", lastObservedAtFrom),
-			zap.String("tenant", tenantIdStr), zap.Int64("to", lastObservedAtTo))
-		q := "dismissed:false AND lastObservedAt:{" + strconv.FormatInt(lastObservedAtFrom, 10) + " TO " + strconv.FormatInt(lastObservedAtTo, 10) + "] AND tenantId:" + tenantIdStr
-		pageSize := 200
-		var after []any
-		sort := []os.Sort{
-			os.Sort{
-				Field: "lastObservedAt",
-				Order: "asc",
-			},
-			os.Sort{
-				Field: "id",
-				Order: "asc",
-			},
-		}
-		targetsByModuleName, err := entities.GetTargetsForTenantByModule(db, t.Id)
-		if err != nil {
-			logger.GetLogger().Error("error while getting targets for tenant", zap.Error(err), zap.String("tenant", tenantIdStr))
-			continue
-		}
-
-		var finalCheckpoint *entities.AlertNotificationCheckpoint
-		if checkpoint == nil {
-			finalCheckpoint = &entities.AlertNotificationCheckpoint{}
-			finalCheckpoint.Id = uuid.New()
-			finalCheckpoint.TenantId = t.Id
-			finalCheckpoint.CheckpointValue = &entities.CheckpointValue{}
-		} else {
-			finalCheckpoint = checkpoint
-		}
-		var latestLastObserveAt int64 = finalCheckpoint.CheckpointValue.LastObservedAt
-		alertsByFunctionalityAndFunctionalityType := make(map[string]map[string][]alerts_async.Alert)
-		for {
-			alertMap, newAfter, err := os.SearchPaginated(ctx, osClient, common.AlertsIndex, q, pageSize, after, sort)
-			if err != nil {
-				logger.GetLogger().Error("error while searching alerts", zap.Error(err), zap.String("tenant", tenantIdStr))
-				break
-			}
-			var alerts []alerts_async.Alert
-			decoder, err := util.CreateAlertDecoder(&alerts)
-			if err != nil {
-				logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
-				return err
-			}
-			err = decoder.Decode(alertMap)
-			if err != nil {
-				logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantIdStr))
-				return err
-			}
-
-			for _, alert := range alerts {
-				if alertsByFunctionality, ok := alertsByFunctionalityAndFunctionalityType[alert.Functionality]; ok {
-					if alertsByFunctionalityType, ok := alertsByFunctionality[alert.FunctionalityType]; ok {
-						alertsByFunctionalityType = append(alertsByFunctionalityType, alert)
-						alertsByFunctionality[alert.FunctionalityType] = alertsByFunctionalityType
-					} else {
-						alertsByFunctionality[alert.FunctionalityType] = []alerts_async.Alert{alert}
-					}
-				} else {
-					alertsByFunctionalityAndFunctionalityType[alert.Functionality] = map[string][]alerts_async.Alert{
-						alert.FunctionalityType: {alert},
-					}
-				}
-				if alert.LastObservedAt > latestLastObserveAt {
-					latestLastObserveAt = alert.LastObservedAt
-				}
-			}
-
-			if len(alertMap) < pageSize {
-				logger.GetLogger().Info("no more alerts to process", zap.String("tenant", tenantIdStr))
-				break
-			}
-
-			after = newAfter
-		}
-
-		for functionality, alertsByFunctionalityType := range alertsByFunctionalityAndFunctionalityType {
-			// Check if functionality requires aggregation
-			if aggregationRequired(functionality) {
-				aggregatedAlerts := aggregateAlertbyfunctionalityType(alertsByFunctionalityType)
-				// Replace the original alerts with the aggregated alerts
-				alertsByFunctionalityType = aggregatedAlerts
-			}
-
-			for functionalityType, alerts := range alertsByFunctionalityType {
-				for _, alert := range alerts {
-					err := sendSupportNotification(alert, t, notificationManager)
-					if err != nil {
-						logger.GetLogger().Error("failed to send support notification", zap.Error(err), zap.String("tenant", tenantIdStr))
-						return err
-					} else {
-						logger.GetLogger().Info("support notification sent successfully", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality), zap.String("title", alert.Title))
-					}
-				}
-				if len(targetsByModuleName) > 0 {
-					err := sendCustomerNotification(t, functionalityType, functionality, alerts, targetsByModuleName, notificationManager, tenantToModuleToConfigMap)
-					if err != nil {
-						logger.GetLogger().Error("failed to send customer notification", zap.Error(err), zap.String("tenant", tenantIdStr))
-						return err
-					} else {
-						logger.GetLogger().Info("customer notification sent successfully for tenant", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality),
-							zap.String("functionalityType", functionalityType), zap.Int("alertsCount", len(alerts)))
-					}
-				} else {
-					logger.GetLogger().Info("no targets found for tenant, no customer alerts", zap.String("tenant", tenantIdStr))
-				}
-			}
-		}
-
-		finalCheckpoint.CheckpointValue.LastObservedAt = latestLastObserveAt
-		err = entities.UpdateAlertNotificationCheckpoint(db, finalCheckpoint)
-		if err != nil {
-			logger.GetLogger().Error("error while updating checkpoint", zap.Error(err), zap.String("tenant", tenantIdStr))
-			return err
-		} else {
-			logger.GetLogger().Info("checkpoint updated successfully", zap.String("tenant", tenantIdStr), zap.Int64("lastObservedAt", latestLastObserveAt))
 		}
 	}
+	t := tenant.Tenant{
+		Id:   uuid.MustParse(common.DatabahnTenantId),
+		Name: "Databahn Engineering",
+	}
+	tenants = append(tenants, t)
+	for _, t := range tenants {
+		err := processInternalAlerts(ctx, db, t, osClient, notificationManager)
+		if err != nil {
+			logger.GetLogger().Error("failed process internal alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
+			continue
+		}
+	}
+
 	return nil
+}
+
+func processExternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, osClient *opensearch.Client, notificationManager *notification.NotificationManager, tenantToModuleToConfigMap map[string]map[string]*entities.ModuleTenantConfigData) error {
+	checkpoint, err := entities.GetAlertNotificationCheckpoint(db, t.Id, alerts_async.External)
+	tenantIdStr := t.Id.String()
+	if err != nil {
+		logger.GetLogger().Error("error while getting checkpoint", zap.Error(err), zap.String("tenant", tenantIdStr))
+		return err
+	}
+	lastObservedAtFrom := time.Now().Add(-30 * time.Minute).UTC().UnixMilli()
+	if checkpoint != nil {
+		lastObservedAtFrom = checkpoint.CheckpointValue.LastObservedAt
+		logger.GetLogger().Info("checkpoint found", zap.String("tenant", tenantIdStr), zap.Int64("lastObservedAtFrom", lastObservedAtFrom))
+	}
+
+	targetsByModuleName, err := entities.GetTargetsForTenantByModule(db, t.Id)
+	if err != nil {
+		logger.GetLogger().Error("error while getting targets for tenant", zap.Error(err), zap.String("tenant", tenantIdStr))
+		return err
+	}
+
+	var finalCheckpoint *entities.AlertNotificationCheckpoint
+	if checkpoint == nil {
+		finalCheckpoint = &entities.AlertNotificationCheckpoint{}
+		finalCheckpoint.Id = uuid.New()
+		finalCheckpoint.TenantId = t.Id
+		finalCheckpoint.CheckpointValue = &entities.CheckpointValue{}
+		finalCheckpoint.AlertType = alerts_async.External.String()
+	} else {
+		finalCheckpoint = checkpoint
+	}
+
+	alertsByFunctionalityAndFunctionalityType, latestLastObserveAt, err := readAlertsSinceCheckpoint(ctx, common.AlertsIndex, lastObservedAtFrom, tenantIdStr, osClient, finalCheckpoint.CheckpointValue.LastObservedAt)
+	if err != nil {
+		return err
+	}
+	for functionality, alertsByFunctionalityType := range alertsByFunctionalityAndFunctionalityType {
+		// Check if functionality requires aggregation
+		if aggregationRequired(functionality) {
+			aggregatedAlerts := aggregateAlertbyfunctionalityType(alertsByFunctionalityType)
+			// Replace the original alerts with the aggregated alerts
+			alertsByFunctionalityType = aggregatedAlerts
+		}
+		for functionalityType, alerts := range alertsByFunctionalityType {
+			for _, alert := range alerts {
+				err := sendSupportNotification(alert, t, notificationManager, false)
+				if err != nil {
+					logger.GetLogger().Error("failed to send support notification", zap.Error(err), zap.String("tenant", tenantIdStr))
+					return err
+				} else {
+					logger.GetLogger().Info("support notification sent successfully", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality), zap.String("title", alert.Title))
+				}
+			}
+			if len(targetsByModuleName) > 0 {
+				err := sendCustomerNotification(t, functionalityType, functionality, alerts, targetsByModuleName, notificationManager, tenantToModuleToConfigMap)
+				if err != nil {
+					logger.GetLogger().Error("failed to send customer notification", zap.Error(err), zap.String("tenant", tenantIdStr))
+					return err
+				} else {
+					logger.GetLogger().Info("customer notification sent successfully for tenant", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality),
+						zap.String("functionalityType", functionalityType), zap.Int("alertsCount", len(alerts)))
+				}
+			} else {
+				logger.GetLogger().Info("no targets found for tenant, no customer alerts", zap.String("tenant", tenantIdStr))
+			}
+		}
+	}
+
+	finalCheckpoint.CheckpointValue.LastObservedAt = latestLastObserveAt
+	err = entities.UpdateAlertNotificationCheckpoint(db, finalCheckpoint)
+	if err != nil {
+		logger.GetLogger().Error("error while updating checkpoint", zap.Error(err), zap.String("tenant", tenantIdStr))
+		return err
+	} else {
+		logger.GetLogger().Info("checkpoint updated successfully", zap.String("tenant", tenantIdStr), zap.Int64("lastObservedAt", latestLastObserveAt))
+	}
+	return nil
+}
+
+func processInternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, osClient *opensearch.Client, notificationManager *notification.NotificationManager) error {
+	checkpoint, err := entities.GetAlertNotificationCheckpoint(db, t.Id, alerts_async.Internal)
+	tenantIdStr := t.Id.String()
+	if err != nil {
+		logger.GetLogger().Error("error while getting checkpoint", zap.Error(err), zap.String("tenant", tenantIdStr))
+		return err
+	}
+	lastObservedAtFrom := time.Now().Add(-30 * time.Minute).UTC().UnixMilli()
+	if checkpoint != nil {
+		lastObservedAtFrom = checkpoint.CheckpointValue.LastObservedAt
+		logger.GetLogger().Info("checkpoint found", zap.String("tenant", tenantIdStr), zap.Int64("lastObservedAtFrom", lastObservedAtFrom))
+	}
+
+	var finalCheckpoint *entities.AlertNotificationCheckpoint
+	if checkpoint == nil {
+		finalCheckpoint = &entities.AlertNotificationCheckpoint{}
+		finalCheckpoint.Id = uuid.New()
+		finalCheckpoint.TenantId = t.Id
+		finalCheckpoint.CheckpointValue = &entities.CheckpointValue{}
+		finalCheckpoint.AlertType = alerts_async.Internal.String()
+	} else {
+		finalCheckpoint = checkpoint
+	}
+
+	alertsByFunctionalityAndFunctionalityType, latestLastObserveAt, err := readAlertsSinceCheckpoint(ctx, common.AlertsIndexInternal, lastObservedAtFrom, tenantIdStr, osClient, finalCheckpoint.CheckpointValue.LastObservedAt)
+	if err != nil {
+		return err
+	}
+	for functionality, alertsByFunctionalityType := range alertsByFunctionalityAndFunctionalityType {
+		// Check if functionality requires aggregation
+		if aggregationRequired(functionality) {
+			aggregatedAlerts := aggregateAlertbyfunctionalityType(alertsByFunctionalityType)
+			// Replace the original alerts with the aggregated alerts
+			alertsByFunctionalityType = aggregatedAlerts
+		}
+		for functionalityType, alerts := range alertsByFunctionalityType {
+			for _, alert := range alerts {
+				err := sendSupportNotification(alert, t, notificationManager, true)
+				if err != nil {
+					logger.GetLogger().Error("failed to send support notification", zap.Error(err), zap.String("tenant", tenantIdStr))
+					return err
+				} else {
+					logger.GetLogger().Info("support notification sent successfully", zap.String("tenant", tenantIdStr), zap.String("functionality", functionality), zap.String("functionalityType", functionalityType), zap.String("title", alert.Title))
+				}
+			}
+		}
+	}
+
+	finalCheckpoint.CheckpointValue.LastObservedAt = latestLastObserveAt
+	err = entities.UpdateAlertNotificationCheckpoint(db, finalCheckpoint)
+	if err != nil {
+		logger.GetLogger().Error("error while updating checkpoint", zap.Error(err), zap.String("tenant", tenantIdStr))
+		return err
+	} else {
+		logger.GetLogger().Info("checkpoint updated successfully", zap.String("tenant", tenantIdStr), zap.Int64("lastObservedAt", latestLastObserveAt))
+	}
+	return nil
+}
+
+func readAlertsSinceCheckpoint(ctx context.Context, indexName string, lastObservedAtFrom int64, tenantIdStr string, osClient *opensearch.Client, latestLastObserveAt int64) (map[string]map[string][]alerts_async.Alert, int64, error) {
+	lastObservedAtTo := time.Now().Add(-2 * time.Minute).UTC().UnixMilli()
+	logger.GetLogger().Info("checking alerts between", zap.Int64("from", lastObservedAtFrom),
+		zap.String("tenant", tenantIdStr), zap.Int64("to", lastObservedAtTo))
+
+	q := "dismissed:false AND lastObservedAt:{" + strconv.FormatInt(lastObservedAtFrom, 10) + " TO " + strconv.FormatInt(lastObservedAtTo, 10) + "] AND tenantId:" + tenantIdStr
+	pageSize := 200
+	var after []any
+	sort := []os.Sort{
+		os.Sort{
+			Field: "lastObservedAt",
+			Order: "asc",
+		},
+		os.Sort{
+			Field: "id",
+			Order: "asc",
+		},
+	}
+
+	alertsByFunctionalityAndFunctionalityType := make(map[string]map[string][]alerts_async.Alert)
+	for {
+		alertMap, newAfter, err := os.SearchPaginated(ctx, osClient, indexName, q, pageSize, after, sort)
+		if err != nil {
+			logger.GetLogger().Error("error while searching alerts", zap.Error(err), zap.String("tenant", tenantIdStr))
+			break
+		}
+		var alerts []alerts_async.Alert
+		decoder, err := util.CreateAlertDecoder(&alerts)
+		if err != nil {
+			logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
+			return nil, 0, err
+		}
+		err = decoder.Decode(alertMap)
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantIdStr))
+			return nil, 0, err
+		}
+
+		for _, alert := range alerts {
+			if alertsByFunctionality, ok := alertsByFunctionalityAndFunctionalityType[alert.Functionality]; ok {
+				if alertsByFunctionalityType, ok := alertsByFunctionality[alert.FunctionalityType]; ok {
+					alertsByFunctionalityType = append(alertsByFunctionalityType, alert)
+					alertsByFunctionality[alert.FunctionalityType] = alertsByFunctionalityType
+				} else {
+					alertsByFunctionality[alert.FunctionalityType] = []alerts_async.Alert{alert}
+				}
+			} else {
+				alertsByFunctionalityAndFunctionalityType[alert.Functionality] = map[string][]alerts_async.Alert{
+					alert.FunctionalityType: {alert},
+				}
+			}
+			if alert.LastObservedAt > latestLastObserveAt {
+				latestLastObserveAt = alert.LastObservedAt
+			}
+		}
+
+		if len(alertMap) < pageSize {
+			logger.GetLogger().Info("no more alerts to process", zap.String("tenant", tenantIdStr))
+			break
+		}
+
+		after = newAfter
+	}
+	return alertsByFunctionalityAndFunctionalityType, latestLastObserveAt, nil
 }
 
 func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, tenantToModuleToConfigMap map[string]map[string]*entities.ModuleTenantConfigData) error {
@@ -266,8 +360,11 @@ func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality 
 	return nil
 }
 
-func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notificationManager *notification.NotificationManager) error {
+func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notificationManager *notification.NotificationManager, isInternal bool) error {
 	emailTitle := fmt.Sprintf("%s:%s:%s", alert.FunctionalityType, t.Name, alert.FunctionalityEntityName)
+	if isInternal {
+		emailTitle += ":internal"
+	}
 	body, err := buildOpsGenieBody(t, alert)
 	if err != nil {
 		logger.GetLogger().Error("error while building opsgenie body", zap.Error(err), zap.String("tenant", t.Id.String()))

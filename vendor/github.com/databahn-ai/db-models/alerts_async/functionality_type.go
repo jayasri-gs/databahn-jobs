@@ -55,4 +55,5 @@ var (
 	DataParsingFailure             = functionalityTypeEnum{value: "data_parsing_failure"}
 	DataProcessingFailure          = functionalityTypeEnum{value: "data_processing_failure"}
 	DataConversionFailure          = functionalityTypeEnum{value: "data_conversion_failure"}
+	DeploymentStatus               = functionalityTypeEnum{value: "deployment_status"}
 )
