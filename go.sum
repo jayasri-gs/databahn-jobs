@@ -171,6 +171,10 @@ github.com/databahn-ai/db-models v0.190.0 h1:s1aTD/Uz/Mowxbdtn/xn+HerzhpqTtzUYQK
 github.com/databahn-ai/db-models v0.190.0/go.mod h1:kqrnfJEKEoDpunj5oqNLy0aGJO3iRbt23u6bTFLJ73g=
 github.com/databahn-ai/db-models v0.196.0 h1:bVHaJegCr9tMqQ2DZGSZ45u0NgWewR3/B44kTEedKJM=
 github.com/databahn-ai/db-models v0.196.0/go.mod h1:kqrnfJEKEoDpunj5oqNLy0aGJO3iRbt23u6bTFLJ73g=
+github.com/databahn-ai/db-models v0.198.0 h1:mpJKnsAv+U/0DmmtK4ZirYQIeNdGGVb3CUilIPaPrFQ=
+github.com/databahn-ai/db-models v0.198.0/go.mod h1:kqrnfJEKEoDpunj5oqNLy0aGJO3iRbt23u6bTFLJ73g=
+github.com/databahn-ai/db-models v0.199.0 h1:65G8J6qhwHt1beQLe0IpboA/8IJ8H7fVmLDKTBvso+0=
+github.com/databahn-ai/db-models v0.199.0/go.mod h1:kqrnfJEKEoDpunj5oqNLy0aGJO3iRbt23u6bTFLJ73g=
 github.com/databahn-ai/go-logging v0.19.0 h1:+Y/I0VEiMeJFH2y+FTmMKsMVEElMaR7la6oQcDKTCbk=
 github.com/databahn-ai/go-logging v0.19.0/go.mod h1:P/NmnvqbBmcjqfQLYEWHFE8HLtOjORwcTrnlEkWM/Eg=
 github.com/databahn-ai/go-logging v0.24.0 h1:hmbJyv1lQPmf8qg2bGOpZtug4i+1CPvYDC2HvPJ0q0U=

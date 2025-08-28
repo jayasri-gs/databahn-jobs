@@ -87,6 +87,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = cp_jobs.SendAlertForVolumeDeviation(ctx)
 	case common.VC_NO_REDUCTION_ALERT:
 		err = cp_jobs.SendAlertForVCNoReduction(ctx)
+	case common.DEPLOYMENT_DELAY_ALERT:
+		err = cp_jobs.SendAlertForDeploymentDelayAlert(ctx)
 	case common.VC_ALERTS:
 		err = cp_jobs.SendAlertsForVCRules(ctx)
 	default:

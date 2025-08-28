@@ -18,8 +18,6 @@ import (
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-
-	"github.com/mitchellh/mapstructure"
 )
 
 const (
@@ -146,13 +144,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 					logger.GetLogger().Error("error while searching for unparsed events alerts", zap.Error(err), zap.String("query", q))
 					return err
 				}
-				var alerts []statistics.AlertDocument
-				decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-				if err != nil {
-					logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
-					return err
-				}
-				err = decoder.Decode(openAlerts)
+				alerts, err := statistics.ParseAlertDocuments(openAlerts)
 				if err != nil {
 					logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
 					return err

@@ -37,6 +37,7 @@ var (
 	GlobalDestination = functionalityEnum{value: "global_destination"}
 	AuditReport       = functionalityEnum{value: "audit_report"}
 	Unknown           = functionalityEnum{value: "unknown"}
+	Job               = functionalityEnum{value: "job"}
 )
 
 func GetAllFunctionalities() []Functionality {
@@ -57,6 +58,7 @@ func GetAllFunctionalities() []Functionality {
 		InsightsRule,
 		GlobalDestination,
 		Unknown,
+		Job,
 	}
 }
 
