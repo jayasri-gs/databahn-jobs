@@ -17,7 +17,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
-	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 )
@@ -225,13 +224,8 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 					logger.GetLogger().Error("error while searching for destination delivered-more alerts to auto-resolve", zap.Error(err), zap.String("query", q))
 					continue
 				}
-				var alerts []statistics.AlertDocument
-				decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+				alerts, err := statistics.ParseAlertDocuments(openAlerts)
 				if err != nil {
-					logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
-					continue
-				}
-				if err := decoder.Decode(openAlerts); err != nil {
 					logger.GetLogger().Error("error while decoding OpenSearch alert response", zap.Error(err), zap.String("tenantId", t.Id.String()))
 					continue
 				}

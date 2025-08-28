@@ -14,7 +14,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/db-models/alerts_common"
 	logging "github.com/databahn-ai/go-logging/logger"
-	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 	"io"
 	"strconv"
@@ -180,9 +179,7 @@ func getExistingAlertsForUnparsedEvents(ctx context.Context, sources map[string]
 		return nil, err
 	}
 
-	var alerts []statistics.AlertDocument
-	decoder, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-	err = decoder.Decode(searchResponse)
+	alerts, err := statistics.ParseAlertDocuments(searchResponse)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err))
 		return nil, err

@@ -18,7 +18,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_common"
-	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
@@ -655,16 +654,6 @@ func getExistingAlerts(ctx context.Context, tenantId string, sourceIds []string,
 		logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q))
 		return nil, err
 	}
-	var alerts []statistics.AlertDocument
-	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-	if err != nil {
-		logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err))
-		return nil, err
-	}
-	err = decoder.Decode(openAlerts)
-	if err != nil {
-		logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
-		return nil, err
-	}
-	return alerts, nil
+	alerts, err := statistics.ParseAlertDocuments(openAlerts)
+	return alerts, err
 }

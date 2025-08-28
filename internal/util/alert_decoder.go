@@ -39,6 +39,10 @@ func CreateAlertDecoder(result interface{}) (*mapstructure.Decoder, error) {
 						if t, err := time.Parse("2006-01-02T15:04:05.999-07:00", str); err == nil {
 							return t.UnixMilli(), nil
 						}
+						// Try to parse as RFC3339 with milliseconds and Z timezone (UTC)
+						if t, err := time.Parse("2006-01-02T15:04:05.999Z", str); err == nil {
+							return t.UnixMilli(), nil
+						}
 						if t, err := time.Parse("2006-01-02T15:04:05.999", str); err == nil {
 							return t.UnixMilli(), nil
 						}

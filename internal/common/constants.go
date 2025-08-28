@@ -27,6 +27,7 @@ const UNPARSED_EVENTS = "unparsed-events"
 const EVENT_SEQUENCING = "event-sequencing"
 const VOLUME_DEVIATION_ALERT = "volume-deviation-alert"
 const VC_NO_REDUCTION_ALERT = "vc-no-reduction-alert"
+const DEPLOYMENT_DELAY_ALERT = "deployment-delay-alert"
 const InfoAlert = "info"
 const WarningAlert = "warning"
 const SevereAlert = "severe"
@@ -44,6 +45,8 @@ const NoisyThreshold = 1.5
 const ControllerBaseUrl = "https://controller.dev.databahn.app"
 
 const AlertsIndex = "db_alerts"
+const AlertsIndexInternal = "db_alerts_internal"
+const DatabahnTenantId = "dbd00000-0000-0000-0000-000000000000"
 
 const FleetNodeHealthCheck = "fleet health check"
 const FleetNodeHealthCheckTitle = "No heartbeat received in the last 30 minutes"
