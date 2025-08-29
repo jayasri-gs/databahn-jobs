@@ -121,7 +121,7 @@ func processExternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, os
 	for functionality, alertsByFunctionalityType := range alertsByFunctionalityAndFunctionalityType {
 		// Check if functionality requires aggregation
 		if aggregationRequired(functionality) {
-			aggregatedAlerts := aggregateAlertbyfunctionalityType(alertsByFunctionalityType)
+			aggregatedAlerts := aggregateAlertbyfunctionalityType(functionality, alertsByFunctionalityType)
 			// Replace the original alerts with the aggregated alerts
 			alertsByFunctionalityType = aggregatedAlerts
 		}
@@ -192,7 +192,7 @@ func processInternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, os
 	for functionality, alertsByFunctionalityType := range alertsByFunctionalityAndFunctionalityType {
 		// Check if functionality requires aggregation
 		if aggregationRequired(functionality) {
-			aggregatedAlerts := aggregateAlertbyfunctionalityType(alertsByFunctionalityType)
+			aggregatedAlerts := aggregateAlertbyfunctionalityType(functionality, alertsByFunctionalityType)
 			// Replace the original alerts with the aggregated alerts
 			alertsByFunctionalityType = aggregatedAlerts
 		}
@@ -434,7 +434,7 @@ func buildEmailBody(emailTitle string, alerts []alerts_async.Alert) (string, err
 		emailTemplateDetails = append(emailTemplateDetails, EmailTemplateDetails{
 			FunctionalityEntityName: alert.FunctionalityEntityName,
 			FunctionalityType:       alert.FunctionalityType,
-			Message:                 alert.Message,
+			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
 			Title:                   alert.Title,
 			FirstObservedAt:         time.UnixMilli(alert.FirstObservedAt).Format(time.RFC3339),
 		})
@@ -498,7 +498,7 @@ func aggregationRequired(functionality string) bool {
 
 // aggregateAlertbyfunctionalityType aggregates alerts by functionalityType for agent functionality
 // Returns a map where each functionalityType contains a single aggregated alert
-func aggregateAlertbyfunctionalityType(alertsByFunctionalityType map[string][]alerts_async.Alert) map[string][]alerts_async.Alert {
+func aggregateAlertbyfunctionalityType(functionality string, alertsByFunctionalityType map[string][]alerts_async.Alert) map[string][]alerts_async.Alert {
 	aggregatedAlerts := make(map[string][]alerts_async.Alert)
 
 	for functionalityType, alerts := range alertsByFunctionalityType {
@@ -510,7 +510,7 @@ func aggregateAlertbyfunctionalityType(alertsByFunctionalityType map[string][]al
 		aggregatedAlert := alerts[0]
 
 		// Aggregate the title to show it's a combined alert
-		aggregatedAlert.Title = fmt.Sprintf("Aggregated %s Alert (%d agents)", functionalityType, len(alerts))
+		aggregatedAlert.Title = fmt.Sprintf("Aggregated %s Alert (%d agents)", functionality, len(alerts))
 
 		// Aggregate messages from all alerts
 		var messages []string
