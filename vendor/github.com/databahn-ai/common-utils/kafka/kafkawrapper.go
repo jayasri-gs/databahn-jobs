@@ -123,6 +123,27 @@ func (c Cluster) NewProducer(ctx context.Context, config ProducerConfig) (*Produ
 		err := errors.New("Producer already exists " + config.Name)
 		return nil, err
 	}
+	if config.ExtraParam == nil {
+		config.ExtraParam = map[string]any{
+			"acks":             1,
+			"linger.ms":        1000,
+			"batch.size":       1000000,
+			"compression.type": "snappy",
+		}
+	} else {
+		if _, ok := config.ExtraParam["acks"]; !ok {
+			config.ExtraParam["acks"] = 1
+		}
+		if _, ok := config.ExtraParam["linger.ms"]; !ok {
+			config.ExtraParam["linger.ms"] = 1000
+		}
+		if _, ok := config.ExtraParam["batch.size"]; !ok {
+			config.ExtraParam["batch.size"] = 1000000
+		}
+		if _, ok := config.ExtraParam["compression.type"]; !ok {
+			config.ExtraParam["compression.type"] = "snappy"
+		}
+	}
 	configMap := &kafka.ConfigMap{
 		"bootstrap.servers": c.Brokers,
 	}
@@ -314,6 +335,19 @@ func NewDetailedConsumer[K any, V any](c Cluster, ctx context.Context, config Co
 
 func (c Cluster) startConsumerThreads(ctx context.Context, config ConsumerConfig, actualProcessor func(message *kafka.Message)) error {
 	quit := make(chan struct{})
+	if config.ExtraParam == nil {
+		config.ExtraParam = map[string]any{
+			"partition.assignment.strategy": "roundrobin",
+			"fetch.max.bytes":               104857600,
+		}
+	} else {
+		if _, ok := config.ExtraParam["partition.assignment.strategy"]; !ok {
+			config.ExtraParam["partition.assignment.strategy"] = "roundrobin"
+		}
+		if _, ok := config.ExtraParam["fetch.max.bytes"]; !ok {
+			config.ExtraParam["fetch.max.bytes"] = 104857600
+		}
+	}
 	c.Consumers[config.Name] = &Consumer{
 		Config: config,
 		quit:   quit,

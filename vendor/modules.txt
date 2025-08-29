@@ -282,7 +282,7 @@ github.com/cespare/xxhash/v2
 ## explicit; go 1.21
 github.com/confluentinc/confluent-kafka-go/v2/kafka
 github.com/confluentinc/confluent-kafka-go/v2/kafka/librdkafka_vendor
-# github.com/databahn-ai/common-utils v0.175.0
+# github.com/databahn-ai/common-utils v0.190.0
 ## explicit; go 1.24.2
 github.com/databahn-ai/common-utils/ack
 github.com/databahn-ai/common-utils/alert

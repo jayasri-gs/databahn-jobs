@@ -3,7 +3,6 @@ package vc
 import (
 	"context"
 	"fmt"
-	stdos "os"
 	"strconv"
 	"sync"
 	"time"
@@ -45,40 +44,6 @@ const (
 type VCRuleQueryResult struct {
 	rule.Rule
 	Status string `gorm:"column:status"` // Override the Status field to be string
-}
-
-// getEnvFloat gets a float value from environment variable with a default value
-func getEnvFloat(key string, defaultValue float64) float64 {
-	envValue := stdos.Getenv(key)
-	if envValue == "" {
-		return defaultValue
-	}
-
-	floatValue, err := strconv.ParseFloat(envValue, 64)
-	if err != nil {
-		logger.GetLogger().Error("Failed to parse float environment variable, using default",
-			zap.String("key", key), zap.String("value", envValue), zap.Float64("default", defaultValue), zap.Error(err))
-		return defaultValue
-	}
-
-	return floatValue
-}
-
-// getEnvBool gets a boolean value from environment variable with a default value
-func getEnvBool(key string, defaultValue bool) bool {
-	envValue := stdos.Getenv(key)
-	if envValue == "" {
-		return defaultValue
-	}
-
-	boolValue, err := strconv.ParseBool(envValue)
-	if err != nil {
-		logger.GetLogger().Error("Failed to parse boolean environment variable, using default",
-			zap.String("key", key), zap.String("value", envValue), zap.Bool("default", defaultValue), zap.Error(err))
-		return defaultValue
-	}
-
-	return boolValue
 }
 
 // getTodayTimeRange returns start and end time for "today" based on useCurrentDay flag
@@ -189,11 +154,11 @@ type VCAlertOrchestrator struct {
 // ================================
 
 func NewVCAlertConfig() *VCAlertConfig {
-	dropRuleIncreaseThreshold := getEnvFloat("VC_DROP_RULE_INCREASE_THRESHOLD", DefaultDropRuleIncreaseThreshold)
-	pipelineDataReductionThreshold := getEnvFloat("VC_PIPELINE_DATA_REDUCTION_THRESHOLD", DefaultPipelineDataReductionThreshold)
-	unmatchedNoRouteProcessorThreshold := getEnvFloat("VC_UNMATCHED_NO_ROUTE_PROCESSOR_THRESHOLD", DefaultUnmatchedNoRouteProcessorThreshold)
+	dropRuleIncreaseThreshold := utils.GetEnvFloat("VC_DROP_RULE_INCREASE_THRESHOLD", DefaultDropRuleIncreaseThreshold)
+	pipelineDataReductionThreshold := utils.GetEnvFloat("VC_PIPELINE_DATA_REDUCTION_THRESHOLD", DefaultPipelineDataReductionThreshold)
+	unmatchedNoRouteProcessorThreshold := utils.GetEnvFloat("VC_UNMATCHED_NO_ROUTE_PROCESSOR_THRESHOLD", DefaultUnmatchedNoRouteProcessorThreshold)
 	minimumEventsThreshold := utils.GetEnvInt("VC_MINIMUM_EVENTS_THRESHOLD", MinimumEventsThreshold)
-	useCurrentDay := getEnvBool("VC_USE_CURRENT_DAY", DefaultUseCurrentDay)
+	useCurrentDay := utils.GetEnvBool("VC_USE_CURRENT_DAY", DefaultUseCurrentDay)
 
 	todayStart, todayEnd := getTodayTimeRange(useCurrentDay)
 	yesterdayStart, yesterdayEnd := getYesterdayTimeRange(useCurrentDay)

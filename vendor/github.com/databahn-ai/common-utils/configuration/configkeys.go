@@ -44,8 +44,9 @@ const (
 	ControlPlaneBaseUrl           = "urls.control_plane_base_url"
 	KsqlDbUrl                     = configs.KSqlDbUrl
 	// DataBahnApiUrl used to get the api url from app config
-	DataBahnApiUrl = "urls.databahn_api"
-	DataBahnAppUrl = "urls.databahn_app"
+	DataBahnApiUrl      = "urls.databahn_api"
+	DataBahnAppUrl      = "urls.databahn_app"
+	DataBahnRegistryUrl = "urls.registry_url"
 
 	// AuthenticationUrl identity urls
 	AuthenticationUrl = configs.AuthenticationUrl
@@ -67,4 +68,7 @@ const (
 	GlobalDestMaxS3Topics        = "globalDestination.max_s3_topics"         // Maximum number of topics for S3 destination
 	GlobalDestMaxAzureBlobTopics = "globalDestination.max_azure_blob_topics" // Maximum number of topics for Azure Blob destination
 	GlobalDestMaxSnowflakeTopics = "globalDestination.max_snowflake_topics"  // Maximum number of topics for Snowflake destination
+	FileServerUserName           = "file_server.username"
+	FileServerPassword           = "file_server.password"
+	FileServerUrl                = "file_server.url"
 )
