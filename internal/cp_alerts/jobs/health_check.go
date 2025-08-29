@@ -34,7 +34,7 @@ const (
 	EnvFleetHealthCheckIgnoreTime = "FLEET_HEALTH_CHECK_IGNORE_TIME"
 )
 
-var AgentHealthCheckTimeNew = utils.GetEnvInt(EnvAgentHealthCheckTime, 10)
+var AgentHealthCheckTimeNew = utils.GetEnvInt(EnvAgentHealthCheckTime, 30)
 var FleetHealthCheckTimeNew = utils.GetEnvInt(EnvFleetHealthCheckTime, 10)
 var FleetHealthCheckIgnoreTimeNew = utils.GetEnvInt(EnvFleetHealthCheckIgnoreTime, 600)
 
