@@ -510,7 +510,7 @@ func aggregateAlertbyfunctionalityType(functionality string, alertsByFunctionali
 		aggregatedAlert := alerts[0]
 
 		// Aggregate the title to show it's a combined alert
-		aggregatedAlert.Title = fmt.Sprintf("Aggregated %s Alert (%d agents)", functionality, len(alerts))
+		aggregatedAlert.Title = fmt.Sprintf("Aggregated %s Alert (%d Entities)", functionality, len(alerts))
 
 		// Aggregate messages from all alerts
 		var messages []string
