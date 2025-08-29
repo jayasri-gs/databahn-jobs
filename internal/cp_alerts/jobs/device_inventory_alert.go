@@ -89,7 +89,7 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 			continue
 		}
 
-		alertConfigs, err := entities.ReadSourceEntityConfigs(db, "LOG_SOURCE_DEVICE_INVENTORY", t.Id, tenantIdToSourceMap[tenantId])
+		alertConfigs, err := entities.ReadEntityConfigs(db, entities.LogSourceEntityType, "LOG_SOURCE_DEVICE_INVENTORY", t.Id, tenantIdToSourceMap[tenantId])
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while reading log source entity configs", zap.Error(err))
 			return err

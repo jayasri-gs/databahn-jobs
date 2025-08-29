@@ -190,7 +190,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 		if len(sourceIds) == 0 {
 			break
 		}
-		alertConfigs, err := entities.ReadSourceEntityConfigs(db, "LOG_SOURCE_INACTIVITY", tenantUuid, sourceIds)
+		alertConfigs, err := entities.ReadEntityConfigs(db, entities.LogSourceEntityType, "LOG_SOURCE_INACTIVITY", tenantUuid, sourceIds)
 		if err != nil {
 			logger.GetLogger().Error("error while reading source entity configs", zap.Error(err))
 			return nil, nil, err
