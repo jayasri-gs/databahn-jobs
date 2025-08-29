@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
 	"os"
 
 	"github.com/databahn-ai/common-utils/configuration"
@@ -90,7 +91,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.DEPLOYMENT_DELAY_ALERT:
 		err = cp_jobs.SendAlertForDeploymentDelayAlert(ctx)
 	case common.VC_ALERTS:
-		err = cp_jobs.SendAlertsForVCRules(ctx)
+		err = vc.SendAlertsForVCRules(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
