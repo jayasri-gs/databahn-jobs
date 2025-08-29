@@ -9,6 +9,8 @@ import (
 type InactiveDestination struct {
 	Destination   *destination.Destination
 	LastEventTime time.Time
+	AlertDuration time.Duration
+	CheckedAt     time.Time
 	alerts_async.NoSecondaryEntityId
 }
 
@@ -17,9 +19,11 @@ func (id InactiveDestination) GetEntityName() string  { return id.Destination.Na
 func (id InactiveDestination) GetTenantId() string    { return id.Destination.TenantID.String() }
 func (id InactiveDestination) GetDataPlaneId() string { return id.Destination.DataPlaneId.String() }
 
-func NewInactiveDestination(dest *destination.Destination, lastEventTime time.Time) *InactiveDestination {
+func NewInactiveDestination(dest *destination.Destination, lastEventTime time.Time, alertDuration time.Duration, checkedAt time.Time) *InactiveDestination {
 	return &InactiveDestination{
 		Destination:   dest,
 		LastEventTime: lastEventTime,
+		AlertDuration: alertDuration,
+		CheckedAt:     checkedAt,
 	}
 }

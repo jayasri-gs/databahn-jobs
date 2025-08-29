@@ -308,6 +308,11 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 
 }
 
+func isValidJSON(data []byte) bool {
+	var js interface{}
+	return json.Unmarshal(data, &js) == nil
+}
+
 func upsertSightsDocs(ctx context.Context, cli *opensearch.Client, tenantId, app string, documents []Doc) error {
 	if len(documents) == 0 {
 		return nil
@@ -323,6 +328,10 @@ func upsertSightsDocs(ctx context.Context, cli *opensearch.Client, tenantId, app
 		j, err := getUpdateRequestBody(&s)
 		if err != nil {
 			return err
+		}
+		if !isValidJSON(j) {
+			logger.GetLogger().Error("invalid json for sight doc", zap.String("docId", doc.Id), zap.String("index", index), zap.String("json", string(j)))
+			return errors.New("invalid json for sight doc: " + doc.Id + " index: " + index)
 		}
 		buff.Write(j)
 		buff.Write([]byte("\n"))

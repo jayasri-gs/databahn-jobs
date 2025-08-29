@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"strings"
 	"time"
 
@@ -154,6 +155,20 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 		if len(destinations) == 0 {
 			break
 		}
+		var destinationIds []uuid.UUID
+		for _, s := range destinations {
+			destinationIds = append(destinationIds, s.ID)
+		}
+
+		alertConfigs, err := entities.ReadEntityConfigs(db, entities.DestinationEntityType, "DESTINATION_INACTIVITY", tenantUuid, destinationIds)
+		if err != nil {
+			logger.GetLogger().Error("error while reading destination entity configs", zap.Error(err))
+			return nil, nil, err
+		}
+		alertConfigsByDestinationId := make(map[uuid.UUID]entities.EntityAlertsConfig)
+		for _, alertConfig := range alertConfigs {
+			alertConfigsByDestinationId[alertConfig.EntityID] = alertConfig
+		}
 		for _, d := range destinations {
 			destinationId := d.ID.String()
 
@@ -167,13 +182,30 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 				logger.GetLogger().Warn("no last event time found for destination", zap.String("destination_id", destinationId))
 				continue
 			}
+			alertConfig, ok := alertConfigsByDestinationId[d.ID]
+			var alertDuration time.Duration
+			if ok {
+				configuredDuration, errr, skip := getAlertDurationForDestination(alertConfig, destinationId, tenantUuid.String())
+				if errr != nil {
+					logger.GetLogger().Error("error while getting alert duration, ignoring", zap.Error(errr), zap.String("destinationId", destinationId), zap.String("tenantId", tenantUuid.String()))
+					continue
+				}
+				if skip {
+					logger.GetLogger().Warn("alert config is disabled, skipping", zap.String("destinationId", destinationId), zap.String("tenantId", tenantUuid.String()))
+					continue
+				}
+				alertDuration = configuredDuration
+			} else {
+				logger.GetLogger().Warn("no alert config found for source, defaulting", zap.String("destinationId", destinationId), zap.String("tenantId", tenantUuid.String()))
+				alertDuration = defaultAlertDuration30Min
+			}
 			now := time.Now().UTC()
-			if now.Sub(lastEventTime) > defaultAlertDuration30Min {
+			if now.Sub(lastEventTime) > alertDuration {
 				if lastEventTime.Before(now.Add(-defaultRequiredEventsInLastSevenDays)) {
 					logger.GetLogger().Info("destination received data older than 7 days, not eligible for alert", zap.String("destinationId", destinationId), zap.String("tenantId", tenantUuid.String()), zap.Duration("alertDuration", defaultAlertDuration30Min), zap.Time("lastEventTime", lastEventTime))
 					continue
 				}
-				iad := model.NewInactiveDestination(&d, lastEventTime)
+				iad := model.NewInactiveDestination(&d, lastEventTime, alertDuration, now)
 				destinationsToAlert = append(destinationsToAlert, iad)
 				logger.GetLogger().Info("Alerting destinations", zap.Any("alert_destinations", destinationsToAlert))
 			} else {
@@ -184,6 +216,30 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 		destinationDbPage += 1
 	}
 	return destinationsToAlert, activeDestinations, nil
+}
+
+func getAlertDurationForDestination(alertConfig entities.EntityAlertsConfig, destinationId, tenantId string) (time.Duration, error, bool) {
+	dbConfig := alertConfig.Config
+	if dbConfig == nil {
+		logger.GetLogger().Warn("no alert config found for destination, defaulting", zap.String("destinationId", destinationId), zap.String("tenantId", tenantId))
+		return defaultAlertDuration30Min, nil, false
+	}
+	if !dbConfig.Enabled {
+		logger.GetLogger().Warn("alert config is disabled for destination, not notifying", zap.String("destinationId", destinationId), zap.String("tenantId", tenantId))
+		return defaultAlertDuration30Min, nil, true
+	}
+	inactivityAlertConfig := dbConfig.DestinationInactivityAlertConfig
+	if inactivityAlertConfig == nil {
+		logger.GetLogger().Warn("no alert config DestinationInactivityAlertConfig found for destination, defaulting", zap.String("destinationId", destinationId), zap.String("tenantId", tenantId))
+		return defaultAlertDuration30Min, nil, false
+	}
+	duration := inactivityAlertConfig.InactivityDuration
+	if duration == nil {
+		logger.GetLogger().Warn("no alert config DestinationInactivityAlertConfig InactivityDuration found for destination, defaulting", zap.String("destinationId", destinationId), zap.String("tenantId", tenantId))
+		return defaultAlertDuration30Min, nil, false
+	}
+	dur, err := duration.GetDuration()
+	return dur, err, false
 }
 
 func getDestinationIdToLastEventTime(ctx context.Context, osClient *opensearch.Client, tenantId string) (map[string]time.Time, error) {
@@ -225,8 +281,8 @@ func buildDestAlert(iad model.InactiveDestination) (*alerts_async.Alert, error) 
 	now := time.Now().UTC()
 	actualDifference := now.Sub(iad.LastEventTime)
 	title := fmt.Sprintf(constants.DeliveryCheckerFunctionalityTitle, util.HumanReadableDuration(actualDifference))
-	message := fmt.Sprintf(constants.DeliveryCheckerFunctionalityMessage, util.HumanReadableDuration(defaultAlertDuration30Min),
-		util.HumanReadableTimeWithZone(now), util.HumanReadableTimeWithZone(iad.LastEventTime))
+	message := fmt.Sprintf(constants.DeliveryCheckerFunctionalityMessage, util.HumanReadableDuration(iad.AlertDuration),
+		util.HumanReadableTimeWithZone(iad.CheckedAt), util.HumanReadableTimeWithZone(iad.LastEventTime))
 	functionality := alerts_async.Dispenser
 
 	return alerts_async.NewAlert(functionality,
