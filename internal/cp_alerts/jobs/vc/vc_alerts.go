@@ -551,16 +551,6 @@ func (o *VCAlertOrchestrator) autoResolveHealthyRules(tenantId string, healthyRu
 }
 
 // ================================
-// Alert Building - Moved to Individual Processors
-// ================================
-// Each processor now implements its own BuildAlert method for better decoupling:
-// - DropRuleIncreaseProcessor.BuildAlert(): Handles DROP rule increase alerts
-// - PipelineDataReductionProcessor.BuildAlert(): Handles pipeline data reduction alerts
-// - UnmatchedNoRouteProcessor.BuildAlert(): Handles unmatched no route processor alerts
-//
-// This approach makes each processor self-contained and easier to extend or modify independently.
-
-// ================================
 // Entry Point
 // ================================
 

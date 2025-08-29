@@ -145,14 +145,15 @@ func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule rule.R
 
 // BuildAlert builds an alert specifically for DROP rule increase cases
 func (p *DropRuleIncreaseProcessor) BuildAlert(vcAlert *DropRuleIncreaseAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf("DROP rule '%s' match rate increased significantly", vcAlert.RuleName)
-	message := fmt.Sprintf("DROP rule '%s' in pipeline '%s' has increased its match rate by more than %.1f%% compared to yesterday. "+
-		"Today: %s matched out of %s evaluated (%.2f%%), Yesterday: %s matched out of %s evaluated. "+
-		"This indicates the rule is dropping more events than expected.",
+	title := fmt.Sprintf("Volume Controller: DROP rule '%s' match rate increased significantly", vcAlert.RuleName)
+	message := fmt.Sprintf(
+		"DROP rule '%s' in pipeline '%s' has increased its match rate by more than %.1f%% compared to yesterday.\n"+
+			"Today (%s): %s matched out of %s evaluated (%.2f%%), Yesterday (%s): %s matched out of %s evaluated.\n"+
+			"This indicates the rule is dropping more events than expected.",
 		vcAlert.RuleName, vcAlert.Pipeline.Name, config.DropRuleIncreaseThreshold,
-		util.HumanReadableNumber(vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), vcAlert.MatchedPercent,
-		util.HumanReadableNumber(vcAlert.YesterdayMatched), util.HumanReadableNumber(vcAlert.YesterdayEvaluated))
-
+		config.TodayStart.Format("2006-01-02"), util.HumanReadableNumber(vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), vcAlert.MatchedPercent,
+		config.YesterdayStart.Format("2006-01-02"), util.HumanReadableNumber(vcAlert.YesterdayMatched), util.HumanReadableNumber(vcAlert.YesterdayEvaluated),
+	)
 	return alerts_async.NewAlert(
 		alerts_async.VolumeControlRule,
 		alerts_async.WithEntity(vcAlert),

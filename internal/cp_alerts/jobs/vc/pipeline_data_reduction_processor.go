@@ -125,12 +125,14 @@ func (p *PipelineDataReductionProcessor) checkPipelineDataReductionCondition(dat
 
 // BuildAlert builds an alert specifically for pipeline data reduction cases
 func (p *PipelineDataReductionProcessor) BuildAlert(vcAlert *PipelineDataReductionAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf("Pipeline '%s' has excessive data reduction", vcAlert.Pipeline.Name)
-	message := fmt.Sprintf("Pipeline '%s' is reducing data by %.2f%% today (%s delivered out of %s ingested), "+
-		"which is more than %.1f%% higher than yesterday (%s delivered out of %s ingested). "+
-		"This indicates volume control rules are dropping significantly more events than normal.",
-		vcAlert.Pipeline.Name, vcAlert.ReductionPercent, util.HumanReadableNumber(vcAlert.TodayDelivered), util.HumanReadableNumber(vcAlert.TodayIngested),
-		config.PipelineDataReductionThreshold, util.HumanReadableNumber(vcAlert.YesterdayDelivered), util.HumanReadableNumber(vcAlert.YesterdayIngested))
+	title := fmt.Sprintf("Volume Controller: Pipeline '%s' has excessive data reduction", vcAlert.Pipeline.Name)
+	message := fmt.Sprintf(
+		"Pipeline '%s' is reducing data by %.2f%% today (%s, %s delivered out of %s ingested), "+
+			"which is more than %.1f%% higher than yesterday (%s, %s delivered out of %s ingested). "+
+			"This indicates volume control rules are dropping significantly more events than normal.",
+		vcAlert.Pipeline.Name, vcAlert.ReductionPercent, config.TodayStart.Format("2006-01-02"), util.HumanReadableNumber(vcAlert.TodayDelivered), util.HumanReadableNumber(vcAlert.TodayIngested),
+		config.PipelineDataReductionThreshold, config.YesterdayStart.Format("2006-01-02"), util.HumanReadableNumber(vcAlert.YesterdayDelivered), util.HumanReadableNumber(vcAlert.YesterdayIngested),
+	)
 
 	return alerts_async.NewAlert(
 		alerts_async.VolumeControlRule,
