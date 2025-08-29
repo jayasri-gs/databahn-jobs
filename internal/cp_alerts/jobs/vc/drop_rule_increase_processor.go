@@ -2,12 +2,14 @@ package vc
 
 import (
 	"context"
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
+	"fmt"
+	"strings"
+
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/db-models/rule"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"strings"
 )
 
 // DropRuleIncreaseProcessor handles DROP rule increase alerts
@@ -65,12 +67,11 @@ func (p *DropRuleIncreaseProcessor) ProcessAlerts(_ context.Context, data *Proce
 					unmatchedPercent = 100 - matchedPercent
 				}
 
-				vcAlert := model.NewVCAlert(data.Tenant, data.Pipeline, vcRule.ID, vcRule.Name, sourceId,
-					model.VCAlertTypeDropRuleIncrease,
+				vcAlert := NewDropRuleIncreaseAlert(data.Tenant, data.Pipeline, vcRule.ID, vcRule.Name, sourceId,
 					todayStats.Matched, yesterdayStats.Matched, todayStats.Evaluated, yesterdayStats.Evaluated,
 					matchedPercent, unmatchedPercent)
 
-				a, err := buildVCAlert(*vcAlert, data.Config)
+				a, err := p.BuildAlert(vcAlert, data.Config)
 				if err != nil {
 					logger.GetLogger().Error("error building DROP rule increase alert", zap.Error(err),
 						zap.String("tenantId", data.Tenant.Id.String()), zap.String("ruleId", vcRule.ID.String()))
@@ -140,4 +141,25 @@ func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule rule.R
 	}
 
 	return false
+}
+
+// BuildAlert builds an alert specifically for DROP rule increase cases
+func (p *DropRuleIncreaseProcessor) BuildAlert(vcAlert *DropRuleIncreaseAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
+	title := fmt.Sprintf("DROP rule '%s' match rate increased significantly", vcAlert.RuleName)
+	message := fmt.Sprintf("DROP rule '%s' in pipeline '%s' has increased its match rate by more than %.1f%% compared to yesterday. "+
+		"Today: %s matched out of %s evaluated (%.2f%%), Yesterday: %s matched out of %s evaluated. "+
+		"This indicates the rule is dropping more events than expected.",
+		vcAlert.RuleName, vcAlert.Pipeline.Name, config.DropRuleIncreaseThreshold,
+		util.HumanReadableNumber(vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), vcAlert.MatchedPercent,
+		util.HumanReadableNumber(vcAlert.YesterdayMatched), util.HumanReadableNumber(vcAlert.YesterdayEvaluated))
+
+	return alerts_async.NewAlert(
+		alerts_async.VolumeControlRule,
+		alerts_async.WithEntity(vcAlert),
+		alerts_async.WithCriticality(alerts_async.Warning),
+		alerts_async.WithFunctionalityType(alerts_async.VcDropRuleIncrease),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
+		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Volume control rule condition detected"),
+	)
 }

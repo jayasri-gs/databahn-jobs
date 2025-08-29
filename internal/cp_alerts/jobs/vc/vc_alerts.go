@@ -12,12 +12,10 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/db-models/rule"
 	"github.com/databahn-ai/go-logging/logger"
@@ -161,6 +159,7 @@ type PipelineStats struct {
 }
 
 // AlertProcessor interface for different alert types
+// Each processor is responsible for both processing and building its own alerts for better decoupling
 type AlertProcessor interface {
 	ProcessAlerts(ctx context.Context, data *ProcessingData) ([]*alerts_async.Alert, []string, error)
 	GetAlertType() string
@@ -587,54 +586,14 @@ func (o *VCAlertOrchestrator) autoResolveHealthyRules(tenantId string, healthyRu
 }
 
 // ================================
-// Alert Building
+// Alert Building - Moved to Individual Processors
 // ================================
-
-func buildVCAlert(vcAlert model.VCAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
-	var title, message string
-
-	switch vcAlert.AlertType {
-	case model.VCAlertTypeDropRuleIncrease:
-		title = fmt.Sprintf("DROP rule '%s' match rate increased significantly", vcAlert.RuleName)
-		message = fmt.Sprintf("DROP rule '%s' in pipeline '%s' has increased its match rate by more than %.1f%% compared to yesterday. "+
-			"Today: %s matched out of %s evaluated (%.2f%%), Yesterday: %s matched out of %s evaluated. "+
-			"This indicates the rule is dropping more events than expected.",
-			vcAlert.RuleName, vcAlert.Pipeline.Name, config.DropRuleIncreaseThreshold,
-			util.HumanReadableNumber(vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), vcAlert.MatchedPercent,
-			util.HumanReadableNumber(vcAlert.YesterdayMatched), util.HumanReadableNumber(vcAlert.YesterdayEvaluated))
-
-	case model.VCAlertTypePipelineDataReduction:
-		title = fmt.Sprintf("Pipeline '%s' has excessive data reduction", vcAlert.Pipeline.Name)
-		reductionPercent := ((float64(vcAlert.TodayEvaluated) - float64(vcAlert.TodayMatched)) / float64(vcAlert.TodayEvaluated)) * 100
-		message = fmt.Sprintf("Pipeline '%s' is reducing data by %.2f%% today (%s delivered out of %s ingested), "+
-			"which is more than %.1f%% higher than yesterday (%s delivered out of %s ingested). "+
-			"This indicates volume control rules are dropping significantly more events than normal.",
-			vcAlert.Pipeline.Name, reductionPercent, util.HumanReadableNumber(vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated),
-			config.PipelineDataReductionThreshold, util.HumanReadableNumber(vcAlert.YesterdayMatched), util.HumanReadableNumber(vcAlert.YesterdayEvaluated))
-
-	case model.VCAlertTypeUnmatchedNoRouteProcessor:
-		title = fmt.Sprintf("Rule '%s' has high unmatched events with no route processor", vcAlert.RuleName)
-		message = fmt.Sprintf("Rule '%s' in pipeline '%s' has %.2f%% unmatched events (%s unmatched out of %s evaluated), "+
-			"exceeding the %.1f%% threshold. The source is not configured to send unmatched events to primary destination "+
-			"and the pipeline lacks proper route processor configuration for handling unmatched events. "+
-			"These events may be lost or not processed properly.",
-			vcAlert.RuleName, vcAlert.Pipeline.Name, vcAlert.UnmatchedPercent,
-			util.HumanReadableNumber(vcAlert.TodayEvaluated-vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), config.UnmatchedNoRouteProcessorThreshold)
-
-	default:
-		return nil, fmt.Errorf("unknown VC alert type: %s", vcAlert.AlertType)
-	}
-
-	return alerts_async.NewAlert(
-		alerts_async.VolumeControlRule,
-		alerts_async.WithEntity(vcAlert),
-		alerts_async.WithCriticality(alerts_async.Warning),
-		alerts_async.WithFunctionalityType(alerts_async.VolumeDeviationChecker),
-		alerts_async.WithTitle(title),
-		alerts_async.WithMessage(message),
-		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Volume control rule condition detected"),
-	)
-}
+// Each processor now implements its own BuildAlert method for better decoupling:
+// - DropRuleIncreaseProcessor.BuildAlert(): Handles DROP rule increase alerts
+// - PipelineDataReductionProcessor.BuildAlert(): Handles pipeline data reduction alerts
+// - UnmatchedNoRouteProcessor.BuildAlert(): Handles unmatched no route processor alerts
+//
+// This approach makes each processor self-contained and easier to extend or modify independently.
 
 // ================================
 // Entry Point

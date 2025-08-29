@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
+
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/db-models/rule"
 	"github.com/databahn-ai/go-logging/logger"
@@ -44,7 +45,7 @@ func (p *UnmatchedNoRouteProcessor) ProcessAlerts(ctx context.Context, data *Pro
 	}
 
 	for _, vcAlert := range unmatchedAlerts {
-		alert, err := buildVCAlert(*vcAlert, data.Config)
+		alert, err := p.BuildAlert(vcAlert, data.Config)
 		if err != nil {
 			logger.GetLogger().Error("error building unmatched no route processor alert", zap.Error(err),
 				zap.String("tenantId", data.Tenant.Id.String()), zap.String("ruleId", vcAlert.RuleID.String()))
@@ -69,8 +70,8 @@ func (p *UnmatchedNoRouteProcessor) ProcessAlerts(ctx context.Context, data *Pro
 }
 
 // checkUnmatchedNoRouteProcessorConditions implements the complex Alert 3 logic
-func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx context.Context, data *ProcessingData) ([]*model.VCAlert, []uuid.UUID, error) {
-	var vcAlerts []*model.VCAlert
+func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx context.Context, data *ProcessingData) ([]*UnmatchedNoRouteProcessorAlert, []uuid.UUID, error) {
+	var vcAlerts []*UnmatchedNoRouteProcessorAlert
 	var healthyRules []uuid.UUID
 
 	// Track rules we've checked to avoid duplicates in healthy list
@@ -150,10 +151,8 @@ func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx
 				unmatchedPercent = 100 - matchedPercent
 			}
 
-			vcAlert := model.NewVCAlert(data.Tenant, data.Pipeline, lowestPriorityRule.ID, lowestPriorityRule.Name, sourceId,
-				model.VCAlertTypeUnmatchedNoRouteProcessor,
-				todayMatched, 0, todayEvaluated, 0, // No yesterday data needed for this alert
-				matchedPercent, unmatchedPercent)
+			vcAlert := NewUnmatchedNoRouteProcessorAlert(data.Tenant, data.Pipeline, lowestPriorityRule.ID, lowestPriorityRule.Name, sourceId,
+				todayEvaluated, todayMatched, matchedPercent, unmatchedPercent)
 
 			vcAlerts = append(vcAlerts, vcAlert)
 
@@ -299,4 +298,25 @@ func (p *UnmatchedNoRouteProcessor) checkRuleDropPercentage(vcRule *rule.Rule, s
 	}
 
 	return false, ingestedCount, matchedCount, nil
+}
+
+// BuildAlert builds an alert specifically for unmatched no route processor cases
+func (p *UnmatchedNoRouteProcessor) BuildAlert(vcAlert *UnmatchedNoRouteProcessorAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
+	title := fmt.Sprintf("Rule '%s' has high unmatched events with no route processor", vcAlert.RuleName)
+	message := fmt.Sprintf("Rule '%s' in pipeline '%s' has %.2f%% unmatched events (%s unmatched out of %s evaluated), "+
+		"exceeding the %.1f%% threshold. The source is not configured to send unmatched events to primary destination "+
+		"and the pipeline lacks proper route processor configuration for handling unmatched events. "+
+		"These events may be lost or not processed properly.",
+		vcAlert.RuleName, vcAlert.Pipeline.Name, vcAlert.UnmatchedPercent,
+		util.HumanReadableNumber(vcAlert.TodayEvaluated-vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), config.UnmatchedNoRouteProcessorThreshold)
+
+	return alerts_async.NewAlert(
+		alerts_async.VolumeControlRule,
+		alerts_async.WithEntity(vcAlert),
+		alerts_async.WithCriticality(alerts_async.Warning),
+		alerts_async.WithFunctionalityType(alerts_async.VcUnmatchedNoRouteProcessor),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
+		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Volume control rule condition detected"),
+	)
 }

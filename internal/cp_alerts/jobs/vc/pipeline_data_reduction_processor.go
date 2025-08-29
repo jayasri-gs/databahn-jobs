@@ -3,7 +3,8 @@ package vc
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
+
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -39,10 +40,10 @@ func (p *PipelineDataReductionProcessor) ProcessAlerts(_ context.Context, data *
 	}
 
 	if shouldAlert {
-		vcAlert := model.NewPipelineVCAlert(data.Tenant, data.Pipeline, model.VCAlertTypePipelineDataReduction,
+		vcAlert := NewPipelineDataReductionAlert(data.Tenant, data.Pipeline,
 			todayIngested, yesterdayIngested, todayDelivered, yesterdayDelivered)
 
-		alert, err := buildVCAlert(*vcAlert, data.Config)
+		alert, err := p.BuildAlert(vcAlert, data.Config)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error building pipeline data reduction alert: %w", err)
 		}
@@ -120,4 +121,24 @@ func (p *PipelineDataReductionProcessor) checkPipelineDataReductionCondition(dat
 	}
 
 	return false, todayStats.Ingested, todayStats.Delivered, yesterdayStats.Ingested, yesterdayStats.Delivered, nil
+}
+
+// BuildAlert builds an alert specifically for pipeline data reduction cases
+func (p *PipelineDataReductionProcessor) BuildAlert(vcAlert *PipelineDataReductionAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
+	title := fmt.Sprintf("Pipeline '%s' has excessive data reduction", vcAlert.Pipeline.Name)
+	message := fmt.Sprintf("Pipeline '%s' is reducing data by %.2f%% today (%s delivered out of %s ingested), "+
+		"which is more than %.1f%% higher than yesterday (%s delivered out of %s ingested). "+
+		"This indicates volume control rules are dropping significantly more events than normal.",
+		vcAlert.Pipeline.Name, vcAlert.ReductionPercent, util.HumanReadableNumber(vcAlert.TodayDelivered), util.HumanReadableNumber(vcAlert.TodayIngested),
+		config.PipelineDataReductionThreshold, util.HumanReadableNumber(vcAlert.YesterdayDelivered), util.HumanReadableNumber(vcAlert.YesterdayIngested))
+
+	return alerts_async.NewAlert(
+		alerts_async.VolumeControlRule,
+		alerts_async.WithEntity(vcAlert),
+		alerts_async.WithCriticality(alerts_async.Warning),
+		alerts_async.WithFunctionalityType(alerts_async.VcPipelineDataReduction),
+		alerts_async.WithTitle(title),
+		alerts_async.WithMessage(message),
+		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Volume control rule condition detected"),
+	)
 }
