@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -43,11 +44,26 @@ type Source struct {
 	Version                      string                 `gorm:"type:varchar(36)" json:"version"`
 	Config                       map[string]interface{} `gorm:"-" json:"-"`
 	DataPlaneId                  uuid.UUID              `gorm:"type:uuid" json:"data_plane_id"`
-	AdvancedConfiguration        AdvancedConfiguration  `gorm:"column:advanced_configuration" json:"advanced_configuration"`
+	AdvancedConfiguration        datatypes.JSON         `gorm:"type:jsonb;column:advanced_configuration" json:"advanced_configuration"`
 }
 
 func (s *Source) TableName() string {
 	return "log_source"
+}
+
+// GetAdvancedConfiguration parses and returns the advanced configuration from JSON
+func (s *Source) GetAdvancedConfiguration() (*AdvancedConfiguration, error) {
+	if len(s.AdvancedConfiguration) == 0 {
+		return &AdvancedConfiguration{}, nil
+	}
+
+	var config AdvancedConfiguration
+	err := json.Unmarshal([]byte(s.AdvancedConfiguration), &config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
 // GetSourcesByTenantAndStatus gets all log sources for a tenant with the given status
