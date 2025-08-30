@@ -143,12 +143,10 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 					if filter == nil {
 						logger.GetLoggerWithContext(ctx).Warn("Rule filters is nil, proceeding with VC reduction check",
 							zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId), zap.String("rule_id", rule.ID.String()))
-						continue
-					}
-
-					if filter.Schema == "v1" {
+						// Don't continue here - we want to proceed with the VC reduction check
+					} else if filter.Schema == "v1" {
 						// Check if Filter config exists and is valid
-						if strings.TrimSpace(strings.ToLower(filter.Filter.Combinator)) == "and" && filter.Filter.Rules != nil && len(filter.Filter.Rules) >= 1 {
+						if len(filter.Filter.Rules) >= 1 && strings.TrimSpace(strings.ToLower(filter.Filter.Combinator)) == "and" {
 							// Safe to access first rule since we verified length
 							firstRule := filter.Filter.Rules[0]
 							if len(filter.Filter.Rules) == 1 && firstRule.Field == "rawevent" && firstRule.Operator == "notNull" && firstRule.Value == "" {
