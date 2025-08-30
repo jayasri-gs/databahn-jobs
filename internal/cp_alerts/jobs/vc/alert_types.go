@@ -51,39 +51,21 @@ type UnmatchedNoRouteProcessorAlert struct {
 }
 
 // DropRuleIncreaseAlert interface implementations
-func (d *DropRuleIncreaseAlert) GetTenant() *tenant.Tenant       { return d.Tenant }
-func (d *DropRuleIncreaseAlert) GetPipeline() *pipeline.Pipeline { return d.Pipeline }
-func (d *DropRuleIncreaseAlert) GetRuleID() uuid.UUID            { return d.RuleID }
-func (d *DropRuleIncreaseAlert) GetRuleName() string             { return d.RuleName }
-func (d *DropRuleIncreaseAlert) GetSourceID() uuid.UUID          { return d.SourceID }
-func (d *DropRuleIncreaseAlert) GetDetectionTime() time.Time     { return d.DetectionTime }
-func (d *DropRuleIncreaseAlert) GetEntityId() string             { return d.Pipeline.ID.String() }
-func (d *DropRuleIncreaseAlert) GetEntityName() string           { return d.RuleName + " in " + d.Pipeline.Name }
-func (d *DropRuleIncreaseAlert) GetDataPlaneId() string          { return d.Pipeline.DataPlaneID.String() }
-func (d *DropRuleIncreaseAlert) GetTenantId() string             { return d.Tenant.Id.String() }
-func (d *DropRuleIncreaseAlert) GetSecondaryEntityId() string    { return d.RuleID.String() }
+func (d *DropRuleIncreaseAlert) GetEntityId() string          { return d.RuleID.String() }
+func (d *DropRuleIncreaseAlert) GetEntityName() string        { return d.RuleName + " in " + d.Pipeline.Name }
+func (d *DropRuleIncreaseAlert) GetDataPlaneId() string       { return d.Pipeline.DataPlaneID.String() }
+func (d *DropRuleIncreaseAlert) GetTenantId() string          { return d.Tenant.Id.String() }
+func (d *DropRuleIncreaseAlert) GetSecondaryEntityId() string { return d.Pipeline.ID.String() }
 
 // PipelineDataReductionAlert interface implementations
-func (p *PipelineDataReductionAlert) GetTenant() *tenant.Tenant       { return p.Tenant }
-func (p *PipelineDataReductionAlert) GetPipeline() *pipeline.Pipeline { return p.Pipeline }
-func (p *PipelineDataReductionAlert) GetRuleID() uuid.UUID            { return p.Pipeline.ID } // Use pipeline ID as rule ID
-func (p *PipelineDataReductionAlert) GetRuleName() string             { return p.Pipeline.Name }
-func (p *PipelineDataReductionAlert) GetSourceID() uuid.UUID          { return p.Pipeline.ID } // Use pipeline ID as source ID
-func (p *PipelineDataReductionAlert) GetDetectionTime() time.Time     { return p.DetectionTime }
-func (p *PipelineDataReductionAlert) GetEntityId() string             { return p.Pipeline.ID.String() }
-func (p *PipelineDataReductionAlert) GetEntityName() string           { return p.Pipeline.Name }
-func (p *PipelineDataReductionAlert) GetDataPlaneId() string          { return p.Pipeline.DataPlaneID.String() }
-func (p *PipelineDataReductionAlert) GetTenantId() string             { return p.Tenant.Id.String() }
-func (p *PipelineDataReductionAlert) GetSecondaryEntityId() string    { return p.Pipeline.ID.String() }
+func (p *PipelineDataReductionAlert) GetEntityId() string          { return p.Pipeline.ID.String() }
+func (p *PipelineDataReductionAlert) GetEntityName() string        { return p.Pipeline.Name }
+func (p *PipelineDataReductionAlert) GetDataPlaneId() string       { return p.Pipeline.DataPlaneID.String() }
+func (p *PipelineDataReductionAlert) GetTenantId() string          { return p.Tenant.Id.String() }
+func (p *PipelineDataReductionAlert) GetSecondaryEntityId() string { return p.Pipeline.ID.String() }
 
 // UnmatchedNoRouteProcessorAlert interface implementations
-func (u *UnmatchedNoRouteProcessorAlert) GetTenant() *tenant.Tenant       { return u.Tenant }
-func (u *UnmatchedNoRouteProcessorAlert) GetPipeline() *pipeline.Pipeline { return u.Pipeline }
-func (u *UnmatchedNoRouteProcessorAlert) GetRuleID() uuid.UUID            { return u.RuleID }
-func (u *UnmatchedNoRouteProcessorAlert) GetRuleName() string             { return u.RuleName }
-func (u *UnmatchedNoRouteProcessorAlert) GetSourceID() uuid.UUID          { return u.SourceID }
-func (u *UnmatchedNoRouteProcessorAlert) GetDetectionTime() time.Time     { return u.DetectionTime }
-func (u *UnmatchedNoRouteProcessorAlert) GetEntityId() string             { return u.Pipeline.ID.String() }
+func (u *UnmatchedNoRouteProcessorAlert) GetEntityId() string { return u.RuleID.String() }
 func (u *UnmatchedNoRouteProcessorAlert) GetEntityName() string {
 	return u.RuleName + " in " + u.Pipeline.Name
 }
