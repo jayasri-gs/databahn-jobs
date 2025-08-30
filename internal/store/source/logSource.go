@@ -1,14 +1,22 @@
 package source
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 type Configuration struct {
 	Configuration map[string]interface{} `json:"configuration"`
+}
+
+type AdvancedConfiguration struct {
+	SendUnmatchedEventToPrimaryDestination bool `json:"sendUnmatchedEventToPrimaryDestination"`
 }
 
 type Source struct {
@@ -36,8 +44,36 @@ type Source struct {
 	Version                      string                 `gorm:"type:varchar(36)" json:"version"`
 	Config                       map[string]interface{} `gorm:"-" json:"-"`
 	DataPlaneId                  uuid.UUID              `gorm:"type:uuid" json:"data_plane_id"`
+	AdvancedConfiguration        datatypes.JSON         `gorm:"type:jsonb;column:advanced_configuration" json:"advanced_configuration"`
 }
 
 func (s *Source) TableName() string {
 	return "log_source"
+}
+
+// GetAdvancedConfiguration parses and returns the advanced configuration from JSON
+func (s *Source) GetAdvancedConfiguration() (*AdvancedConfiguration, error) {
+	if len(s.AdvancedConfiguration) == 0 {
+		return &AdvancedConfiguration{}, nil
+	}
+
+	var config AdvancedConfiguration
+	err := json.Unmarshal([]byte(s.AdvancedConfiguration), &config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+// GetSourcesByTenantAndStatus gets all log sources for a tenant with the given status
+func GetSourcesByTenantAndStatus(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, status string) ([]Source, error) {
+	var sources []Source
+	err := db.WithContext(ctx).
+		Where("tenant_id = ? AND status = ?", tenantId, status).
+		Find(&sources).Error
+	if err != nil {
+		return nil, fmt.Errorf("error getting sources for tenant %s with status %s: %w", tenantId.String(), status, err)
+	}
+	return sources, nil
 }

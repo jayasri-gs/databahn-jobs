@@ -57,3 +57,37 @@ func GetMaskedString(token string, length int) string {
 	masked := strings.Repeat("*", len(token)-length) + token[len(token)-length:]
 	return masked
 }
+
+// GetEnvFloat gets a float value from environment variable with a default value
+func GetEnvFloat(key string, defaultValue float64) float64 {
+	envValue := os.Getenv(key)
+	if envValue == "" {
+		return defaultValue
+	}
+
+	floatValue, err := strconv.ParseFloat(envValue, 64)
+	if err != nil {
+		logger.GetLogger().Error("Failed to parse float environment variable, using default",
+			zap.String("key", key), zap.String("value", envValue), zap.Float64("default", defaultValue), zap.Error(err))
+		return defaultValue
+	}
+
+	return floatValue
+}
+
+// GetEnvBool gets a boolean value from environment variable with a default value
+func GetEnvBool(key string, defaultValue bool) bool {
+	envValue := os.Getenv(key)
+	if envValue == "" {
+		return defaultValue
+	}
+
+	boolValue, err := strconv.ParseBool(envValue)
+	if err != nil {
+		logger.GetLogger().Error("Failed to parse boolean environment variable, using default",
+			zap.String("key", key), zap.String("value", envValue), zap.Bool("default", defaultValue), zap.Error(err))
+		return defaultValue
+	}
+
+	return boolValue
+}

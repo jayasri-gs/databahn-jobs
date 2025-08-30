@@ -56,4 +56,11 @@ var (
 	DataProcessingFailure          = functionalityTypeEnum{value: "data_processing_failure"}
 	DataConversionFailure          = functionalityTypeEnum{value: "data_conversion_failure"}
 	DeploymentStatus               = functionalityTypeEnum{value: "deployment_status"}
+	LowSuccessRate                 = functionalityTypeEnum{value: "low_success_rate"}
+	AgentRunnerError               = functionalityTypeEnum{value: "agent_runner_error"}
+	AgentRunnerUpgrade             = functionalityTypeEnum{value: "agent_runner_upgrade"}
+	AgentUsageUploadFailure        = functionalityTypeEnum{value: "agent_usage_upload_failure"}
+	VcDropRuleIncrease             = functionalityTypeEnum{value: "vc_drop_rule_increase"}
+	VcPipelineDataReduction        = functionalityTypeEnum{value: "vc_pipeline_data_reduction"}
+	VcUnmatchedNoRouteProcessor    = functionalityTypeEnum{value: "vc_unmatched_no_route_processor"}
 )

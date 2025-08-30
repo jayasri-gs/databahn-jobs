@@ -41,6 +41,7 @@ var (
 	DDTE10002 = errorCodeEnum{value: "DDTE10002", messageTemplate: "Data Parsing Issue. {0}"}
 	DDTE10003 = errorCodeEnum{value: "DDTE10003", messageTemplate: "Data Forwarding Issue. {0}"}
 	DDTE10004 = errorCodeEnum{value: "DDTE10004", messageTemplate: "Data Processing Issue. {0}"}
+	DDTE10005 = errorCodeEnum{value: "DDTE10005", messageTemplate: "Low Success rate. {0}"}
 	DNDW10001 = errorCodeEnum{value: "DNDW10001", messageTemplate: "No Data For Logsource Received. {0}"}
 	DNDW10002 = errorCodeEnum{value: "DNDW10002", messageTemplate: "No Data For Destination Received. {0}"}
 	DNDW10003 = errorCodeEnum{value: "DNDW10003", messageTemplate: "Reputation update for device . {0}"}

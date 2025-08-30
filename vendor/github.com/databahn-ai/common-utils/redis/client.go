@@ -3,19 +3,31 @@ package redis
 import (
 	"context"
 	"errors"
+	"strconv"
+	"time"
+
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
-	"strconv"
-	"time"
 )
+
+// PoolConfig holds Redis connection pool configuration
+type PoolConfig struct {
+	PoolSize     int           // Maximum number of socket connections
+	MinIdleConns int           // Minimum number of idle connections
+	MaxConnAge   time.Duration // Connection age at which client retires the connection
+	PoolTimeout  time.Duration // Time client waits for connection if all are busy
+	IdleTimeout  time.Duration // Time after which idle connections are closed
+}
 
 type Client struct {
 	redisUrl    string
 	serviceName string
 	cli         *redis.Client
+	poolConfig  *PoolConfig
 }
 
+// NewClient creates a Redis client with minimal pooling (backward compatible)
 func NewClient(redisUrl, serviceName string) (*Client, error) {
 	ctx := context.Background()
 	cli := getCli(redisUrl, serviceName)
@@ -26,7 +38,38 @@ func NewClient(redisUrl, serviceName string) (*Client, error) {
 		return nil, err
 	}
 	logger.GetLogger().Info("connected to redis", zap.String("url", redisUrl))
-	client := Client{redisUrl: redisUrl, serviceName: serviceName, cli: cli}
+	client := Client{
+		redisUrl:    redisUrl,
+		serviceName: serviceName,
+		cli:         cli,
+	}
+	return &client, nil
+}
+
+// NewClientWithPool creates a Redis client with explicit pool configuration
+func NewClientWithPool(redisUrl, serviceName string, poolConfig *PoolConfig) (*Client, error) {
+	if poolConfig == nil {
+		return nil, errors.New("poolConfig cannot be nil - use NewClient for basic Redis client without pool configuration")
+	}
+
+	ctx := context.Background()
+	cli := getCliWithPool(redisUrl, serviceName, poolConfig)
+	res := cli.Ping(ctx)
+	err := res.Err()
+	if err != nil {
+		logger.GetLogger().Error("failed to connect to redis", zap.Error(err), zap.String("url", redisUrl))
+		return nil, err
+	}
+	logger.GetLogger().Info("connected to redis with pool",
+		zap.String("url", redisUrl),
+		zap.Int("poolSize", poolConfig.PoolSize),
+		zap.Int("minIdleConns", poolConfig.MinIdleConns))
+	client := Client{
+		redisUrl:    redisUrl,
+		serviceName: serviceName,
+		cli:         cli,
+		poolConfig:  poolConfig,
+	}
 	return &client, nil
 }
 
@@ -34,6 +77,26 @@ func getCli(url, serviceName string) *redis.Client {
 	cli := redis.NewClient(&redis.Options{
 		Addr:       url,
 		ClientName: serviceName,
+	})
+	return cli
+}
+
+// getCliWithPool creates a Redis client with explicit pool configuration
+func getCliWithPool(url, serviceName string, poolConfig *PoolConfig) *redis.Client {
+	if poolConfig == nil {
+		// This should not happen if NewClientWithPool properly validates, but adding for safety
+		logger.GetLogger().Error("poolConfig is nil in getCliWithPool, falling back to basic client")
+		return getCli(url, serviceName)
+	}
+
+	cli := redis.NewClient(&redis.Options{
+		Addr:            url,
+		ClientName:      serviceName,
+		PoolSize:        poolConfig.PoolSize,
+		MinIdleConns:    poolConfig.MinIdleConns,
+		ConnMaxLifetime: poolConfig.MaxConnAge,
+		PoolTimeout:     poolConfig.PoolTimeout,
+		ConnMaxIdleTime: poolConfig.IdleTimeout,
 	})
 	return cli
 }
@@ -47,14 +110,45 @@ func (c *Client) Close() error {
 	return c.cli.Close()
 }
 
+// GetPoolStats returns connection pool statistics
+func (c *Client) GetPoolStats() *redis.PoolStats {
+	return c.cli.PoolStats()
+}
+
+// IsPooled returns whether the client is using explicit pool configuration
+func (c *Client) IsPooled() bool {
+	return c.poolConfig != nil
+}
+
+// GetPoolConfig returns the current pool configuration
+func (c *Client) GetPoolConfig() *PoolConfig {
+	return c.poolConfig
+}
+
 func (c *Client) reload(ctx context.Context) error {
-	cli, err := c.TestConnection(ctx)
-	c.cli = cli
+	var cli *redis.Client
+	var err error
+
+	if c.poolConfig != nil {
+		cli, err = c.TestConnectionWithPool(ctx)
+	} else {
+		cli, err = c.TestConnection(ctx)
+	}
+
+	if err == nil {
+		c.cli = cli
+	}
 	return err
 }
 
 func (c *Client) TestConnection(ctx context.Context) (*redis.Client, error) {
 	cli := getCli(c.redisUrl, c.serviceName)
+	res := cli.Ping(ctx)
+	return cli, res.Err()
+}
+
+func (c *Client) TestConnectionWithPool(ctx context.Context) (*redis.Client, error) {
+	cli := getCliWithPool(c.redisUrl, c.serviceName, c.poolConfig)
 	res := cli.Ping(ctx)
 	return cli, res.Err()
 }
