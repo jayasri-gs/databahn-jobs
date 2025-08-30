@@ -124,7 +124,7 @@ func (p *PipelineDataReductionProcessor) checkPipelineDataReductionCondition(dat
 
 // BuildAlert builds an alert specifically for pipeline data reduction cases
 func (p *PipelineDataReductionProcessor) BuildAlert(vcAlert *PipelineDataReductionAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf("Volume Controller: Pipeline '%s' has excessive data reduction", vcAlert.Pipeline.Name)
+	title := fmt.Sprintf("Pipeline: '%s' has excessive data reduction", vcAlert.Pipeline.Name)
 	message := fmt.Sprintf(
 		"Pipeline '%s' is reducing data by %.2f%% today (%s, %s delivered out of %s ingested), "+
 			"which is more than %.1f%% higher than yesterday (%s, %s delivered out of %s ingested). "+

@@ -272,7 +272,7 @@ func (p *UnmatchedNoRouteProcessor) checkRuleDropPercentage(vcRule *vc_rule.VCRu
 
 // BuildAlert builds an alert specifically for unmatched no route processor cases
 func (p *UnmatchedNoRouteProcessor) BuildAlert(vcAlert *UnmatchedNoRouteProcessorAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf("Rule '%s' has high unmatched events with no route processor", vcAlert.RuleName)
+	title := fmt.Sprintf("Volume Controller: '%s' has high unmatched events with no route processor", vcAlert.RuleName)
 	message := fmt.Sprintf("Rule '%s' in pipeline '%s' has %.2f%% unmatched events (%s unmatched out of %s evaluated), "+
 		"exceeding the %.1f%% threshold. The source is not configured to send unmatched events to primary destination "+
 		"and the pipeline lacks proper route processor configuration for handling unmatched events. "+
