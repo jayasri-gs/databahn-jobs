@@ -13,10 +13,11 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
+	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
+	"github.com/databahn-ai/databahn-jobs/internal/store/vc_rule"
 	"github.com/databahn-ai/db-models/alerts_async"
-	"github.com/databahn-ai/db-models/rule"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -26,10 +27,6 @@ import (
 )
 
 const (
-	// VCRuleStatusActive represents active VC rule status (database stores as string)
-	VCRuleStatusActive = "ACTIVE"
-	// VCRuleActionTypeDrop DROP action type for volume control rules
-	VCRuleActionTypeDrop = "DROP"
 	// DefaultDropRuleIncreaseThreshold Default thresholds (can be overridden by environment variables)
 	DefaultDropRuleIncreaseThreshold          = 50.0
 	DefaultPipelineDataReductionThreshold     = 50.0
@@ -39,12 +36,6 @@ const (
 	// DefaultUseCurrentDay Default behavior: false means production mode (n-1 and n-2), true means testing mode (n and n-1)
 	DefaultUseCurrentDay = false
 )
-
-// VCRuleQueryResult represents a VC rule with status as string (matching database schema)
-type VCRuleQueryResult struct {
-	rule.Rule
-	Status string `gorm:"column:status"` // Override the Status field to be string
-}
 
 // getTodayTimeRange returns start and end time for "today" based on useCurrentDay flag
 // If useCurrentDay=true (testing): today = n (current day)
@@ -132,12 +123,12 @@ type AlertProcessor interface {
 
 // ProcessingData contains all data needed for alert processing
 type ProcessingData struct {
-	Tenant       *tenant.Tenant
-	Pipeline     *pipeline.Pipeline
-	VCRules      []rule.Rule
-	LogSources   []pipeline.PipelineLogSourceMapping
-	StatsService *VCStatisticsService
-	Config       *VCAlertConfig
+	Tenant          *tenant.Tenant
+	PipelineMapping *pipeline.PipelineWithMappings
+	VCRules         []vc_rule.VCRule
+	CachedSources   map[uuid.UUID]source.Source
+	StatsService    *VCStatisticsService
+	Config          *VCAlertConfig
 }
 
 type VCAlertOrchestrator struct {
@@ -393,12 +384,37 @@ func (o *VCAlertOrchestrator) ProcessAlerts() error {
 	return nil
 }
 
+// cacheSourcesForTenant caches all active sources for a tenant
+func (o *VCAlertOrchestrator) cacheSourcesForTenant(tenantId uuid.UUID) (map[uuid.UUID]source.Source, error) {
+	sources, err := source.GetSourcesByTenantAndStatus(o.ctx, o.db, tenantId, "ACTIVE")
+	if err != nil {
+		return nil, fmt.Errorf("error getting active sources for tenant %s: %w", tenantId.String(), err)
+	}
+
+	// Create a map for quick lookups
+	cachedSources := make(map[uuid.UUID]source.Source)
+	for _, src := range sources {
+		cachedSources[src.ID] = src
+	}
+
+	return cachedSources, nil
+}
+
 // processTenantAlerts processes alerts for a single tenant
 func (o *VCAlertOrchestrator) processTenantAlerts(t *tenant.Tenant) error {
 	tenantId := t.Id
 
+	// Cache all active sources for this tenant before processing pipelines
+	cachedSources, err := o.cacheSourcesForTenant(tenantId)
+	if err != nil {
+		logger.GetLogger().Error("error caching sources for tenant", zap.Error(err), zap.String("tenantId", tenantId.String()))
+		return err
+	}
+
+	logger.GetLogger().Info("cached sources for tenant", zap.Int("sourceCount", len(cachedSources)), zap.String("tenantId", tenantId.String()))
+
 	// Get all active pipelines for the tenant
-	pipelines, err := pipeline.GetActivePipelines(o.ctx, o.db, tenantId)
+	pipelines, err := pipeline.GetActivePipelinesWithMappings(o.ctx, o.db, tenantId)
 	if err != nil {
 		logger.GetLogger().Error("error getting active pipelines", zap.Error(err), zap.String("tenantId", tenantId.String()))
 		return err
@@ -407,9 +423,9 @@ func (o *VCAlertOrchestrator) processTenantAlerts(t *tenant.Tenant) error {
 	logger.GetLogger().Info("found active pipelines", zap.Int("count", len(pipelines)), zap.String("tenantId", tenantId.String()))
 
 	for _, pipelineInfo := range pipelines {
-		pipelineId := pipelineInfo.ID
+		pipelineId := pipelineInfo.Pipeline.ID
 
-		err = o.processPipelineAlerts(t, &pipelineInfo)
+		err = o.processPipelineAlerts(t, &pipelineInfo, cachedSources)
 		if err != nil {
 			logger.GetLogger().Error("error processing pipeline alerts", zap.Error(err),
 				zap.String("tenantId", tenantId.String()), zap.String("pipelineId", pipelineId.String()))
@@ -421,22 +437,14 @@ func (o *VCAlertOrchestrator) processTenantAlerts(t *tenant.Tenant) error {
 }
 
 // processPipelineAlerts processes alerts for a single pipeline
-func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineInfo *pipeline.Pipeline) error {
-	pipelineId := pipelineInfo.ID
+func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMapping *pipeline.PipelineWithMappings, cachedSources map[uuid.UUID]source.Source) error {
+	pipelineId := pipelineMapping.Pipeline.ID
 	tenantId := t.Id
 
 	// Get active VC rules for this pipeline
-	vcRules, err := o.getActiveVCRules(pipelineId, tenantId)
+	vcRules, err := vc_rule.GetActiveVCRulesByPipelineAndTenant(pipelineId, tenantId, o.db)
 	if err != nil {
 		logger.GetLogger().Error("error getting active VC rules", zap.Error(err),
-			zap.String("tenantId", tenantId.String()), zap.String("pipelineId", pipelineId.String()))
-		return err
-	}
-
-	// Get log sources for this pipeline
-	logSources, err := pipeline.GetPipelineLogSources(o.ctx, o.db, pipelineId)
-	if err != nil {
-		logger.GetLogger().Error("error getting pipeline log sources", zap.Error(err),
 			zap.String("tenantId", tenantId.String()), zap.String("pipelineId", pipelineId.String()))
 		return err
 	}
@@ -446,12 +454,12 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineIn
 
 	// Prepare processing data
 	processingData := &ProcessingData{
-		Tenant:       t,
-		Pipeline:     pipelineInfo,
-		VCRules:      vcRules,
-		LogSources:   logSources,
-		StatsService: statsService,
-		Config:       o.config,
+		Tenant:          t,
+		PipelineMapping: pipelineMapping,
+		VCRules:         vcRules,
+		CachedSources:   cachedSources,
+		StatsService:    statsService,
+		Config:          o.config,
 	}
 
 	// Process all alert types
@@ -491,27 +499,6 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineIn
 	}
 
 	return nil
-}
-
-// getActiveVCRules gets all active volume control rules for a pipeline
-func (o *VCAlertOrchestrator) getActiveVCRules(pipelineId, tenantId uuid.UUID) ([]rule.Rule, error) {
-	var vcRuleResults []VCRuleQueryResult
-	err := o.db.WithContext(o.ctx).Table("vc_rule").
-		Where("pipeline_id = ? AND tenant_id = ? AND status = ?",
-			pipelineId.String(), tenantId.String(), VCRuleStatusActive).
-		Find(&vcRuleResults).Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to []rule.Rule
-	var vcRules []rule.Rule
-	for _, result := range vcRuleResults {
-		vcRules = append(vcRules, result.Rule)
-	}
-
-	return vcRules, nil
 }
 
 // autoResolveHealthyRules auto-resolves existing VC alerts for healthy rules

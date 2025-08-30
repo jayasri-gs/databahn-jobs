@@ -22,17 +22,16 @@ func (p *PipelineDataReductionProcessor) ProcessAlerts(_ context.Context, data *
 	var healthyRuleIds []string
 
 	// Only process if pipeline has rules and log sources
-	if len(data.VCRules) == 0 || len(data.LogSources) == 0 {
-		logger.GetLogger().Debug("skipping pipeline data reduction check - no rules or log sources",
-			zap.String("pipelineId", data.Pipeline.ID.String()),
-			zap.Int("rules", len(data.VCRules)),
-			zap.Int("logSources", len(data.LogSources)))
+	if len(data.VCRules) == 0 {
+		logger.GetLogger().Debug("skipping pipeline data reduction check - no rules",
+			zap.String("pipelineId", data.PipelineMapping.Pipeline.ID.String()),
+			zap.Int("rules", len(data.VCRules)))
 		return alerts, healthyRuleIds, nil
 	}
 
 	logger.GetLogger().Debug("Processing pipeline data reduction alerts",
 		zap.String("tenantId", data.Tenant.Id.String()),
-		zap.String("pipelineId", data.Pipeline.ID.String()))
+		zap.String("pipelineId", data.PipelineMapping.Pipeline.ID.String()))
 
 	shouldAlert, todayIngested, todayDelivered, yesterdayIngested, yesterdayDelivered, err := p.checkPipelineDataReductionCondition(data)
 	if err != nil {
@@ -40,7 +39,7 @@ func (p *PipelineDataReductionProcessor) ProcessAlerts(_ context.Context, data *
 	}
 
 	if shouldAlert {
-		vcAlert := NewPipelineDataReductionAlert(data.Tenant, data.Pipeline,
+		vcAlert := NewPipelineDataReductionAlert(data.Tenant, &data.PipelineMapping.Pipeline,
 			todayIngested, yesterdayIngested, todayDelivered, yesterdayDelivered)
 
 		alert, err := p.BuildAlert(vcAlert, data.Config)
@@ -52,16 +51,16 @@ func (p *PipelineDataReductionProcessor) ProcessAlerts(_ context.Context, data *
 
 		logger.GetLogger().Info("Pipeline data reduction alert created",
 			zap.String("tenantId", data.Tenant.Id.String()),
-			zap.String("pipelineId", data.Pipeline.ID.String()))
+			zap.String("pipelineId", data.PipelineMapping.Pipeline.ID.String()))
 	} else {
 		// Only auto-resolve if pipeline has sufficient traffic to make a reliable assessment
 		if todayIngested >= data.Config.MinimumEventsThreshold {
 			// For pipeline-level alerts, the "rule ID" is actually the pipeline ID
-			healthyRuleIds = append(healthyRuleIds, data.Pipeline.ID.String())
+			healthyRuleIds = append(healthyRuleIds, data.PipelineMapping.Pipeline.ID.String())
 			logger.GetLogger().Info("Pipeline is healthy with sufficient traffic, adding to auto-resolution list",
 				zap.String("tenantId", data.Tenant.Id.String()),
-				zap.String("pipelineId", data.Pipeline.ID.String()),
-				zap.String("pipelineName", data.Pipeline.Name),
+				zap.String("pipelineId", data.PipelineMapping.Pipeline.ID.String()),
+				zap.String("pipelineName", data.PipelineMapping.Pipeline.Name),
 				zap.Int64("todayIngested", todayIngested),
 				zap.Int64("minimumThreshold", data.Config.MinimumEventsThreshold))
 		}
@@ -72,8 +71,8 @@ func (p *PipelineDataReductionProcessor) ProcessAlerts(_ context.Context, data *
 
 // checkPipelineDataReductionCondition checks if pipeline has excessive data reduction
 func (p *PipelineDataReductionProcessor) checkPipelineDataReductionCondition(data *ProcessingData) (bool, int64, int64, int64, int64, error) {
-	pipelineId := data.Pipeline.ID.String()
-	logSourceId := data.LogSources[0].LogSourceID.String() // Use first log source
+	pipelineId := data.PipelineMapping.Pipeline.ID.String()
+	logSourceId := data.PipelineMapping.LogSourceID.String()
 
 	// Get today's pipeline statistics
 	todayStats, err := data.StatsService.GetPipelineStats(pipelineId, logSourceId, data.Config.TodayStart, data.Config.TodayEnd)

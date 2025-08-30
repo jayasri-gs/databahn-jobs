@@ -3,11 +3,10 @@ package vc
 import (
 	"context"
 	"fmt"
-	"strings"
 
+	"github.com/databahn-ai/databahn-jobs/internal/store/vc_rule"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
-	"github.com/databahn-ai/db-models/rule"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -25,75 +24,81 @@ func (p *DropRuleIncreaseProcessor) ProcessAlerts(_ context.Context, data *Proce
 
 	logger.GetLogger().Debug("Processing DROP rule increase alerts",
 		zap.String("tenantId", data.Tenant.Id.String()),
-		zap.String("pipelineId", data.Pipeline.ID.String()),
+		zap.String("pipelineId", data.PipelineMapping.Pipeline.ID.String()),
 		zap.Int("ruleCount", len(data.VCRules)))
 
 	for _, vcRule := range data.VCRules {
-		for _, logSource := range data.LogSources {
-			sourceId := logSource.LogSourceID
-
-			// Get today's and yesterday's rule statistics
-			todayStats, err := data.StatsService.GetRuleStats(sourceId.String(), vcRule.ID.String(), data.Config.TodayStart, data.Config.TodayEnd)
-			if err != nil {
-				logger.GetLogger().Error("error getting today's rule stats", zap.Error(err),
-					zap.String("tenantId", data.Tenant.Id.String()), zap.String("ruleId", vcRule.ID.String()))
-				continue
-			}
-
-			yesterdayStats, err := data.StatsService.GetRuleStats(sourceId.String(), vcRule.ID.String(), data.Config.YesterdayStart, data.Config.YesterdayEnd)
-			if err != nil {
-				logger.GetLogger().Error("error getting yesterday's rule stats", zap.Error(err),
-					zap.String("tenantId", data.Tenant.Id.String()), zap.String("ruleId", vcRule.ID.String()))
-				continue
-			}
-
-			logger.GetLogger().Debug("rule statistics",
+		logSource, ok := data.CachedSources[vcRule.LogSourceID]
+		if !ok {
+			logger.GetLogger().Warn("log source for rule not found in cache, skipping rule",
+				zap.String("tenantId", data.Tenant.Id.String()),
 				zap.String("ruleId", vcRule.ID.String()),
-				zap.String("ruleName", vcRule.Name),
-				zap.String("actionType", vcRule.ActionType),
-				zap.Int64("todayEvaluated", todayStats.Evaluated),
-				zap.Int64("todayMatched", todayStats.Matched),
-				zap.Int64("yesterdayEvaluated", yesterdayStats.Evaluated),
-				zap.Int64("yesterdayMatched", yesterdayStats.Matched))
+				zap.String("logSourceId", vcRule.LogSourceID.String()))
+			continue
+		}
+		sourceId := logSource.ID
 
-			// Check alert conditions
-			shouldAlert := p.checkDropRuleIncreaseCondition(vcRule, todayStats, yesterdayStats, data.Config)
+		// Get today's and yesterday's rule statistics
+		todayStats, err := data.StatsService.GetRuleStats(sourceId.String(), vcRule.ID.String(), data.Config.TodayStart, data.Config.TodayEnd)
+		if err != nil {
+			logger.GetLogger().Error("error getting today's rule stats", zap.Error(err),
+				zap.String("tenantId", data.Tenant.Id.String()), zap.String("ruleId", vcRule.ID.String()))
+			continue
+		}
 
-			if shouldAlert {
-				// Calculate percentages
-				var matchedPercent, unmatchedPercent float64
-				if todayStats.Evaluated > 0 {
-					matchedPercent = (float64(todayStats.Matched) / float64(todayStats.Evaluated)) * 100
-					unmatchedPercent = 100 - matchedPercent
-				}
+		yesterdayStats, err := data.StatsService.GetRuleStats(sourceId.String(), vcRule.ID.String(), data.Config.YesterdayStart, data.Config.YesterdayEnd)
+		if err != nil {
+			logger.GetLogger().Error("error getting yesterday's rule stats", zap.Error(err),
+				zap.String("tenantId", data.Tenant.Id.String()), zap.String("ruleId", vcRule.ID.String()))
+			continue
+		}
 
-				vcAlert := NewDropRuleIncreaseAlert(data.Tenant, data.Pipeline, vcRule.ID, vcRule.Name, sourceId,
-					todayStats.Matched, yesterdayStats.Matched, todayStats.Evaluated, yesterdayStats.Evaluated,
-					matchedPercent, unmatchedPercent)
+		logger.GetLogger().Debug("rule statistics",
+			zap.String("ruleId", vcRule.ID.String()),
+			zap.String("ruleName", vcRule.Name),
+			zap.String("actionType", string(vcRule.ActionType)),
+			zap.Int64("todayEvaluated", todayStats.Evaluated),
+			zap.Int64("todayMatched", todayStats.Matched),
+			zap.Int64("yesterdayEvaluated", yesterdayStats.Evaluated),
+			zap.Int64("yesterdayMatched", yesterdayStats.Matched))
 
-				a, err := p.BuildAlert(vcAlert, data.Config)
-				if err != nil {
-					logger.GetLogger().Error("error building DROP rule increase alert", zap.Error(err),
-						zap.String("tenantId", data.Tenant.Id.String()), zap.String("ruleId", vcRule.ID.String()))
-					continue
-				}
+		// Check alert conditions
+		shouldAlert := p.checkDropRuleIncreaseCondition(vcRule, todayStats, yesterdayStats, data.Config)
 
-				alerts = append(alerts, a)
+		if shouldAlert {
+			// Calculate percentages
+			var matchedPercent, unmatchedPercent float64
+			if todayStats.Evaluated > 0 {
+				matchedPercent = (float64(todayStats.Matched) / float64(todayStats.Evaluated)) * 100
+				unmatchedPercent = 100 - matchedPercent
+			}
 
-				logger.GetLogger().Info("DROP rule increase alert created",
+			vcAlert := NewDropRuleIncreaseAlert(data.Tenant, &data.PipelineMapping.Pipeline, vcRule.ID, vcRule.Name, sourceId,
+				todayStats.Matched, yesterdayStats.Matched, todayStats.Evaluated, yesterdayStats.Evaluated,
+				matchedPercent, unmatchedPercent)
+
+			a, err := p.BuildAlert(vcAlert, data.Config)
+			if err != nil {
+				logger.GetLogger().Error("error building DROP rule increase alert", zap.Error(err),
+					zap.String("tenantId", data.Tenant.Id.String()), zap.String("ruleId", vcRule.ID.String()))
+				continue
+			}
+
+			alerts = append(alerts, a)
+
+			logger.GetLogger().Info("DROP rule increase alert created",
+				zap.String("tenantId", data.Tenant.Id.String()),
+				zap.String("ruleId", vcRule.ID.String()))
+		} else {
+			// Only auto-resolve if rule has sufficient traffic
+			if todayStats.Evaluated >= data.Config.MinimumEventsThreshold {
+				healthyRuleIds = append(healthyRuleIds, vcRule.ID.String())
+				logger.GetLogger().Info("Rule is healthy with sufficient traffic, adding to auto-resolution list",
 					zap.String("tenantId", data.Tenant.Id.String()),
-					zap.String("ruleId", vcRule.ID.String()))
-			} else {
-				// Only auto-resolve if rule has sufficient traffic
-				if todayStats.Evaluated >= data.Config.MinimumEventsThreshold {
-					healthyRuleIds = append(healthyRuleIds, vcRule.ID.String())
-					logger.GetLogger().Info("Rule is healthy with sufficient traffic, adding to auto-resolution list",
-						zap.String("tenantId", data.Tenant.Id.String()),
-						zap.String("ruleId", vcRule.ID.String()),
-						zap.String("ruleName", vcRule.Name),
-						zap.Int64("todayEvaluated", todayStats.Evaluated),
-						zap.Int64("minimumThreshold", data.Config.MinimumEventsThreshold))
-				}
+					zap.String("ruleId", vcRule.ID.String()),
+					zap.String("ruleName", vcRule.Name),
+					zap.Int64("todayEvaluated", todayStats.Evaluated),
+					zap.Int64("minimumThreshold", data.Config.MinimumEventsThreshold))
 			}
 		}
 	}
@@ -102,7 +107,7 @@ func (p *DropRuleIncreaseProcessor) ProcessAlerts(_ context.Context, data *Proce
 }
 
 // checkDropRuleIncreaseCondition checks if DROP rule increase condition is met
-func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule rule.Rule, todayStats, yesterdayStats *RuleStats, config *VCAlertConfig) bool {
+func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule vc_rule.VCRule, todayStats, yesterdayStats *RuleStats, config *VCAlertConfig) bool {
 	// Only alert if there's significant traffic to avoid noise
 	if todayStats.Evaluated < config.MinimumEventsThreshold {
 		logger.GetLogger().Debug("skipping alert due to low traffic",
@@ -113,7 +118,7 @@ func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule rule.R
 	}
 
 	// Only for DROP rules
-	if strings.ToUpper(vcRule.ActionType) != VCRuleActionTypeDrop {
+	if vcRule.ActionType != vc_rule.ActionTypeDrop {
 		return false
 	}
 
