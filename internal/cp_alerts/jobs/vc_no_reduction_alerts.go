@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/store/vc_rule"
 
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 
@@ -106,7 +109,7 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 				zap.String("destination", destinationName))
 
 			// Check if this pipeline has active volume control rules
-			hasActiveRules, err := pipeline.HasActiveRules(ctx, db, pipelineMapping.Pipeline.ID, t.Id)
+			hasActiveRules, vcRuleCount, err := pipeline.HasActiveRules(ctx, db, pipelineMapping.Pipeline.ID, t.Id)
 			if err != nil {
 				logger.GetLoggerWithContext(ctx).Error("Error checking active rules for pipeline",
 					zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
@@ -117,6 +120,48 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 				logger.GetLoggerWithContext(ctx).Info("No active volume control rules for pipeline, skipping",
 					zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 				continue
+			}
+
+			if vcRuleCount == 1 {
+				rules, err := vc_rule.GetActiveVCRulesByPipelineAndTenant(pipelineMapping.Pipeline.ID, t.Id, db)
+				if err != nil {
+					logger.GetLoggerWithContext(ctx).Error("Error getting active rules for pipeline",
+						zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
+					continue
+				}
+
+				if len(rules) == 1 {
+					rule := rules[0]
+					filter, err := rule.GetRuleFilters()
+					if err != nil {
+						logger.GetLoggerWithContext(ctx).Error("Error parsing rule filters",
+							zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId), zap.String("rule_id", rule.ID.String()))
+						continue
+					}
+
+					// Check if filter is nil (empty JSON or parsing issues)
+					if filter == nil {
+						logger.GetLoggerWithContext(ctx).Warn("Rule filters is nil, proceeding with VC reduction check",
+							zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId), zap.String("rule_id", rule.ID.String()))
+						continue
+					}
+
+					if filter.Schema == "v1" {
+						// Check if Filter config exists and is valid
+						if strings.TrimSpace(strings.ToLower(filter.Filter.Combinator)) == "and" && filter.Filter.Rules != nil && len(filter.Filter.Rules) >= 1 {
+							// Safe to access first rule since we verified length
+							firstRule := filter.Filter.Rules[0]
+							if len(filter.Filter.Rules) == 1 && firstRule.Field == "rawevent" && firstRule.Operator == "notNull" && firstRule.Value == "" {
+								logger.GetLoggerWithContext(ctx).Info("Only a single 'rawevent notNull' rule present, skipping VC reduction check",
+									zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId), zap.String("rule_id", rule.ID.String()))
+								continue
+							}
+						}
+					} else {
+						logger.GetLoggerWithContext(ctx).Debug("Rule filter schema is not v1, proceeding with VC reduction check",
+							zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId), zap.String("rule_id", rule.ID.String()), zap.String("schema", filter.Schema))
+					}
+				}
 			}
 
 			// Get source data plane ID
