@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,13 +116,14 @@ type PipelineStats struct {
 }
 
 // AlertProcessor interface for different alert types
-// Each processor is responsible for both processing and building its own alerts for better decoupling
+// Each processor is responsible for processing, building, and auto-resolving its own alerts for better decoupling
 type AlertProcessor interface {
 	ProcessAlerts(ctx context.Context, data *ProcessingData) ([]*alerts_async.Alert, []string, error)
+	AutoResolveAlerts(ctx context.Context, data *ProcessingData, healthyRuleIds []string) error
 	GetAlertType() string
 }
 
-// ProcessingData contains all data needed for alert processing
+// ProcessingData contains all data needed for alert processing and auto-resolution
 type ProcessingData struct {
 	Tenant          *tenant.Tenant
 	PipelineMapping *pipeline.PipelineWithMappings
@@ -129,6 +131,9 @@ type ProcessingData struct {
 	CachedSources   map[uuid.UUID]source.Source
 	StatsService    *VCStatisticsService
 	Config          *VCAlertConfig
+	// Dependencies for auto-resolution
+	OSClient      *opensearch.Client
+	AlertsManager *alert.AlertsManager
 }
 
 type VCAlertOrchestrator struct {
@@ -309,6 +314,86 @@ func (s *VCStatisticsService) GetPipelineDeliveryStats(pipelineId string, startT
 }
 
 // ================================
+// Shared Auto-Resolution Helper
+// ================================
+
+// autoResolveAlertsHelper is a shared helper function for auto-resolving alerts
+func autoResolveAlertsHelper(ctx context.Context, data *ProcessingData, healthyRuleIds []string, functionalityType alerts_async.FunctionalityType, processorName string) error {
+	if len(healthyRuleIds) == 0 {
+		return nil
+	}
+
+	tenantId := data.Tenant.Id.String()
+
+	// Build rule ID conditions
+	ruleIdConditions := make([]string, len(healthyRuleIds))
+	for i, ruleId := range healthyRuleIds {
+		ruleIdConditions[i] = fmt.Sprintf("secondaryEntityId:%s", ruleId)
+	}
+
+	// Build query to find alerts for this specific functionality type and healthy rule IDs
+	q := fmt.Sprintf("tenantId:%s AND dismissed:false AND functionality:%s AND functionalityType:%s AND (%s)",
+		tenantId,
+		alerts_async.VolumeControlRule.String(),
+		functionalityType.String(),
+		strings.Join(ruleIdConditions, " OR "))
+
+	logger.GetLogger().Debug("searching for alerts to auto-resolve",
+		zap.String("processor", processorName),
+		zap.String("tenantId", tenantId),
+		zap.String("query", q))
+
+	openAlerts, _, err := os.Search(ctx, data.OSClient, common.AlertsIndex, q)
+	if err != nil {
+		logger.GetLogger().Error("error while searching alerts to auto-resolve", zap.Error(err),
+			zap.String("processor", processorName), zap.String("query", q))
+		return err
+	}
+
+	var alerts []statistics.AlertDocument
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
+	if err != nil {
+		logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err),
+			zap.String("processor", processorName))
+		return err
+	}
+
+	if err := decoder.Decode(openAlerts); err != nil {
+		logger.GetLogger().Error("error while decoding OpenSearch alert response", zap.Error(err),
+			zap.String("processor", processorName), zap.String("tenantId", tenantId))
+		return err
+	}
+
+	// Collect alert IDs to dismiss
+	alertsToDismiss := make([]string, 0, len(alerts))
+	for _, alrt := range alerts {
+		alertsToDismiss = append(alertsToDismiss, alrt.Id)
+	}
+
+	if len(alertsToDismiss) > 0 {
+		if err := data.AlertsManager.AutoResolveAlerts(alertsToDismiss); err != nil {
+			logger.GetLogger().Error("error while auto-resolving alerts", zap.Error(err),
+				zap.String("processor", processorName), zap.String("tenantId", tenantId))
+			return err
+		} else {
+			logger.GetLogger().Info("auto-resolved alerts for healthy rules",
+				zap.String("processor", processorName),
+				zap.String("tenantId", tenantId),
+				zap.Strings("alertIds", alertsToDismiss),
+				zap.Int("healthyRules", len(healthyRuleIds)),
+				zap.Int("alertsResolved", len(alertsToDismiss)))
+		}
+	} else {
+		logger.GetLogger().Debug("no alerts found to auto-resolve",
+			zap.String("processor", processorName),
+			zap.String("tenantId", tenantId),
+			zap.Int("healthyRules", len(healthyRuleIds)))
+	}
+
+	return nil
+}
+
+// ================================
 // Main Orchestrator
 // ================================
 
@@ -460,11 +545,13 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 		CachedSources:   cachedSources,
 		StatsService:    statsService,
 		Config:          o.config,
+		// Dependencies for auto-resolution
+		OSClient:      o.osClient,
+		AlertsManager: o.alertsManager,
 	}
 
 	// Process all alert types
 	var allAlerts []*alerts_async.Alert
-	var allHealthyRuleIds []string
 
 	for _, processor := range o.processors {
 		alerts, healthyRuleIds, err := processor.ProcessAlerts(o.ctx, processingData)
@@ -477,7 +564,18 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 		}
 
 		allAlerts = append(allAlerts, alerts...)
-		allHealthyRuleIds = append(allHealthyRuleIds, healthyRuleIds...)
+
+		// Auto-resolve alerts for healthy rules in this processor
+		if len(healthyRuleIds) > 0 {
+			err = processor.AutoResolveAlerts(o.ctx, processingData, healthyRuleIds)
+			if err != nil {
+				logger.GetLogger().Error("error auto-resolving alerts", zap.Error(err),
+					zap.String("processorType", processor.GetAlertType()),
+					zap.String("tenantId", tenantId.String()),
+					zap.String("pipelineId", pipelineId.String()))
+				// Continue processing other processors even if auto-resolve fails
+			}
+		}
 	}
 
 	// Send alerts
@@ -490,50 +588,6 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 		logger.GetLogger().Info("sent VC alerts", zap.Int("count", len(allAlerts)), zap.String("tenantId", tenantId.String()))
 	}
 
-	// Auto-resolve any open VC alerts for healthy rules
-	if len(allHealthyRuleIds) > 0 {
-		err = o.autoResolveHealthyRules(tenantId.String(), allHealthyRuleIds)
-		if err != nil {
-			logger.GetLogger().Error("error auto-resolving VC alerts", zap.Error(err), zap.String("tenantId", tenantId.String()))
-		}
-	}
-
-	return nil
-}
-
-// autoResolveHealthyRules auto-resolves existing VC alerts for healthy rules
-func (o *VCAlertOrchestrator) autoResolveHealthyRules(tenantId string, healthyRuleIds []string) error {
-	var alertsToDismiss []string
-	for _, ruleId := range healthyRuleIds {
-		q := fmt.Sprintf("tenantId:%s AND dismissed:false AND functionality:%s AND functionalityType:%s AND secondaryEntityId:%s",
-			tenantId, alerts_async.VolumeControlRule.String(), alerts_async.VolumeDeviationChecker.String(), ruleId)
-		openAlerts, _, err := os.Search(o.ctx, o.osClient, common.AlertsIndex, q)
-		if err != nil {
-			logger.GetLogger().Error("error while searching VC alerts to auto-resolve", zap.Error(err), zap.String("query", q))
-			continue
-		}
-		var alerts []statistics.AlertDocument
-		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{TagName: "json", Result: &alerts})
-		if err != nil {
-			logger.GetLogger().Error("error while creating decoder for VC alerts", zap.Error(err))
-			continue
-		}
-		if err := decoder.Decode(openAlerts); err != nil {
-			logger.GetLogger().Error("error while decoding OpenSearch VC alert response", zap.Error(err), zap.String("tenantId", tenantId))
-			continue
-		}
-		for _, alrt := range alerts {
-			alertsToDismiss = append(alertsToDismiss, alrt.Id)
-		}
-	}
-	if len(alertsToDismiss) > 0 {
-		if err := o.alertsManager.AutoResolveAlerts(alertsToDismiss); err != nil {
-			logger.GetLogger().Error("error while auto-resolving VC alerts", zap.Error(err), zap.String("tenantId", tenantId))
-			return err
-		} else {
-			logger.GetLogger().Info("auto-resolved VC alerts for healthy rules", zap.String("tenantId", tenantId), zap.Strings("alertIds", alertsToDismiss))
-		}
-	}
 	return nil
 }
 

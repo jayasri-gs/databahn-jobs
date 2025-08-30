@@ -106,6 +106,15 @@ func (p *DropRuleIncreaseProcessor) ProcessAlerts(_ context.Context, data *Proce
 	return alerts, healthyRuleIds, nil
 }
 
+// AutoResolveAlerts auto-resolves DROP rule increase alerts for healthy rules
+func (p *DropRuleIncreaseProcessor) AutoResolveAlerts(ctx context.Context, data *ProcessingData, healthyRuleIds []string) error {
+	if len(healthyRuleIds) == 0 {
+		return nil
+	}
+
+	return autoResolveAlertsHelper(ctx, data, healthyRuleIds, alerts_async.VcDropRuleIncrease, "DropRuleIncrease")
+}
+
 // checkDropRuleIncreaseCondition checks if DROP rule increase condition is met
 func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule vc_rule.VCRule, todayStats, yesterdayStats *RuleStats, config *VCAlertConfig) bool {
 	// Only alert if there's significant traffic to avoid noise

@@ -69,6 +69,15 @@ func (p *UnmatchedNoRouteProcessor) ProcessAlerts(ctx context.Context, data *Pro
 	return alerts, healthyRuleIds, nil
 }
 
+// AutoResolveAlerts auto-resolves unmatched no route processor alerts for healthy rules
+func (p *UnmatchedNoRouteProcessor) AutoResolveAlerts(ctx context.Context, data *ProcessingData, healthyRuleIds []string) error {
+	if len(healthyRuleIds) == 0 {
+		return nil
+	}
+
+	return autoResolveAlertsHelper(ctx, data, healthyRuleIds, alerts_async.VcUnmatchedNoRouteProcessor, "UnmatchedNoRouteProcessor")
+}
+
 // checkUnmatchedNoRouteProcessorConditions implements the complex Alert 3 logic
 func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx context.Context, data *ProcessingData) ([]*UnmatchedNoRouteProcessorAlert, []uuid.UUID, error) {
 	var vcAlerts []*UnmatchedNoRouteProcessorAlert

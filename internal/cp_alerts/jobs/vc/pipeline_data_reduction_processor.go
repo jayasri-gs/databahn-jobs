@@ -69,6 +69,15 @@ func (p *PipelineDataReductionProcessor) ProcessAlerts(_ context.Context, data *
 	return alerts, healthyRuleIds, nil
 }
 
+// AutoResolveAlerts auto-resolves pipeline data reduction alerts for healthy rules
+func (p *PipelineDataReductionProcessor) AutoResolveAlerts(ctx context.Context, data *ProcessingData, healthyRuleIds []string) error {
+	if len(healthyRuleIds) == 0 {
+		return nil
+	}
+
+	return autoResolveAlertsHelper(ctx, data, healthyRuleIds, alerts_async.VcPipelineDataReduction, "PipelineDataReduction")
+}
+
 // checkPipelineDataReductionCondition checks if pipeline has excessive data reduction
 func (p *PipelineDataReductionProcessor) checkPipelineDataReductionCondition(data *ProcessingData) (bool, int64, int64, int64, int64, error) {
 	pipelineId := data.PipelineMapping.Pipeline.ID.String()
