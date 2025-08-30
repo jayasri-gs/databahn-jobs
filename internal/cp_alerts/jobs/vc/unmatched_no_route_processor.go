@@ -2,10 +2,10 @@ package vc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
+	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/vc_rule"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
@@ -176,38 +176,21 @@ func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx
 
 // Helper methods for UnmatchedNoRouteProcessor
 func (p *UnmatchedNoRouteProcessor) getSourceConfiguration(ctx context.Context, sourceId uuid.UUID) (sendUnmatchedToPrimary bool, err error) {
-	// Define a struct to hold only the advanced_configuration field
-	var source struct {
-		AdvancedConfiguration json.RawMessage `gorm:"column:advanced_configuration"`
-	}
-
-	err = p.db.WithContext(ctx).Table("log_source").
-		Select("advanced_configuration").
-		Where("id = ?", sourceId).
-		Take(&source).Error
-
+	// Get the source from cached sources if available, otherwise query database
+	// For now, query the database directly
+	var source source.Source
+	err = p.db.WithContext(ctx).Where("id = ?", sourceId).First(&source).Error
 	if err != nil {
-		return false, fmt.Errorf("error getting source advanced_configuration: %w", err)
+		return false, fmt.Errorf("error getting source: %w", err)
 	}
 
-	// Parse the advanced_configuration JSON to check sendUnmatchedEventToPrimaryDestination
-	if len(source.AdvancedConfiguration) > 0 {
-		var advancedConfig map[string]interface{}
-		err = json.Unmarshal(source.AdvancedConfiguration, &advancedConfig)
-		if err != nil {
-			return false, fmt.Errorf("error parsing source advanced_configuration: %w", err)
-		}
-
-		// Check for sendUnmatchedEventToPrimaryDestination
-		if sendUnmatched, exists := advancedConfig["sendUnmatchedEventToPrimaryDestination"]; exists {
-			if sendUnmatchedBool, ok := sendUnmatched.(bool); ok {
-				return sendUnmatchedBool, nil
-			}
-		}
+	// Parse the advanced configuration
+	advancedConfig, err := source.GetAdvancedConfiguration()
+	if err != nil {
+		return false, fmt.Errorf("error parsing source advanced_configuration: %w", err)
 	}
 
-	// Default to false if not specified
-	return false, nil
+	return advancedConfig.SendUnmatchedEventToPrimaryDestination, nil
 }
 
 func (p *UnmatchedNoRouteProcessor) checkRouteProcessorConfiguration(ctx context.Context, pipelineId, sourceId uuid.UUID) (hasValidRouteProcessor bool, err error) {
