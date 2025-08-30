@@ -22,6 +22,9 @@ type IncludeExclude string
 const Include IncludeExclude = "INCLUDE"
 const Exclude IncludeExclude = "EXCLUDE"
 
+const LogSourceEntityType = "LOG_SOURCE"
+const DestinationEntityType = "DESTINATION"
+
 type Reputation string
 
 const (
@@ -34,6 +37,7 @@ const (
 type AlertConfig struct {
 	Enabled                             bool                                 `json:"enabled"`
 	LogSourceInactivityAlertConfig      *LogSourceInactivityAlertConfig      `json:"logSourceInactivityAlertConfig"`
+	DestinationInactivityAlertConfig    *DestinationInactivityAlertConfig    `json:"destinationInactivityAlertConfig"`
 	LogSourceDeviceInventoryAlertConfig *LogSourceDeviceInventoryAlertConfig `json:"logSourceDeviceInventoryAlertConfig"`
 }
 
@@ -50,6 +54,10 @@ func (a *AlertConfig) Value() (driver.Value, error) {
 }
 
 type LogSourceInactivityAlertConfig struct {
+	InactivityDuration *Duration `json:"inactivityDuration"`
+}
+
+type DestinationInactivityAlertConfig struct {
 	InactivityDuration *Duration `json:"inactivityDuration"`
 }
 
@@ -95,9 +103,9 @@ type EntityAlertsConfig struct {
 	Config      *AlertConfig `gorm:"type:json"`
 }
 
-func ReadSourceEntityConfigs(db *gorm.DB, alertType string, tenantId uuid.UUID, sourceIds []uuid.UUID) ([]EntityAlertsConfig, error) {
+func ReadEntityConfigs(db *gorm.DB, entityType, alertType string, tenantId uuid.UUID, sourceIds []uuid.UUID) ([]EntityAlertsConfig, error) {
 	var sourceEntityConfigs []EntityAlertsConfig
-	err := db.Where("tenant_id = ? AND entity_type = 'LOG_SOURCE' AND alert_type = ? AND entity_id IN ?", tenantId, alertType, sourceIds).
+	err := db.Where("tenant_id = ? AND entity_type = ? AND alert_type = ? AND entity_id IN ?", tenantId, entityType, alertType, sourceIds).
 		Find(&sourceEntityConfigs).Error
 	return sourceEntityConfigs, err
 }
