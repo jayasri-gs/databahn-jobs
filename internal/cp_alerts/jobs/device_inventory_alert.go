@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"strconv"
 	"strings"
 	"time"
@@ -95,12 +96,36 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 			return err
 		}
 
+		// get active log sources for the tenant
+		activeSources, err := source.GetSourcesByTenantAndStatus(ctx, db, t.Id, "ACTIVE")
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while fetching active log sources", zap.Error(err), zap.String("tenantId", tenantId))
+			return err
+		}
+
+		if len(activeSources) == 0 {
+			logging.GetLoggerWithContext(ctx).Info("no active log sources found for tenant", zap.String("tenantId", tenantId))
+			continue
+		}
+
+		var activeSourceIds = make(map[uuid.UUID]bool)
+		for _, src := range activeSources {
+			activeSourceIds[src.ID] = true
+		}
+
 		// Process each source separately with its own configuration
 		var consolidatedAlerts []*model.SourceDeviceInventoryAlert
 		for _, entityAlertConfig := range alertConfigs {
 			if entityAlertConfig.Config == nil || !entityAlertConfig.Config.Enabled {
 				logging.GetLoggerWithContext(ctx).Info("alert configuration is nil or disabled for source",
 					zap.String("sourceID", entityAlertConfig.EntityID.String()))
+				continue
+			}
+
+			// Skip if the source is not active
+			if _, isActive := activeSourceIds[entityAlertConfig.EntityID]; !isActive {
+				logging.GetLoggerWithContext(ctx).Info("skipping inactive source",
+					zap.String("tenantId", tenantId), zap.String("sourceID", entityAlertConfig.EntityID.String()))
 				continue
 			}
 
