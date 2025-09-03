@@ -77,3 +77,13 @@ func GetSourcesByTenantAndStatus(ctx context.Context, db *gorm.DB, tenantId uuid
 	}
 	return sources, nil
 }
+
+// GetSourceByID gets a log source by its ID
+func GetSourceByID(ctx context.Context, db *gorm.DB, sourceID uuid.UUID) (*Source, error) {
+	var source Source
+	err := db.WithContext(ctx).Where("id = ?", sourceID).First(&source).Error
+	if err != nil {
+		return nil, fmt.Errorf("error getting source with ID %s: %w", sourceID.String(), err)
+	}
+	return &source, nil
+}
