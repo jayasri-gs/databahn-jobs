@@ -16,14 +16,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// ComparisonReport represents a single field comparison between data model and rename config
-type ComparisonReport struct {
-	DatabahnAttribute     string `json:"databahn_attribute"`
-	DataModelName         string `json:"data_model_name"`
-	DataModelLogAttribute string `json:"data_model_log_attribute"`
-	RenameConfigLogAttr   string `json:"rename_config_log_attribute"`
-}
-
 func ValidateTransformations(ctx context.Context) error {
 
 	tenantId := utils.GetEnvOrDefault("TRANSFORMATION_CHECKER_TENANT_ID", "")
@@ -36,13 +28,9 @@ func ValidateTransformations(ctx context.Context) error {
 		return err
 	}
 
-	var allComparisonReports []ComparisonReport
-	var allTransformations []string
+	var builder strings.Builder
 
 	for _, tr := range transformations {
-
-		allTransformations = append(allTransformations, tr.Name)
-
 		// Get source ID from transformation
 		pipelineID := tr.PipelineID
 		if pipelineID == nil {
@@ -104,7 +92,11 @@ func ValidateTransformations(ctx context.Context) error {
 				continue
 			}
 
-			// Compare data model fields with rename config to find extra fields
+			// Count extra fields directly
+			var extraInDataModel []string
+			var extraInRenameConfig []string
+
+			// Check for extra fields in data model
 			for _, dataModel := range dataModels {
 
 				// Check if this data model field exists in rename config
@@ -116,19 +108,12 @@ func ValidateTransformations(ctx context.Context) error {
 					}
 				}
 
-				// If not found in rename config, it's extra in data model
 				if !foundInRenameConfig {
-					report := ComparisonReport{
-						DatabahnAttribute:     dataModel.Name,
-						DataModelName:         tr.Name,
-						DataModelLogAttribute: dataModel.LogAttribute,
-						RenameConfigLogAttr:   "MISSING",
-					}
-					allComparisonReports = append(allComparisonReports, report)
+					extraInDataModel = append(extraInDataModel, dataModel.Name)
 				}
 			}
 
-			// Check for extra fields in rename config that don't exist in data model
+			// Check for extra fields in rename config
 			for _, renameField := range renameConfig.RenameFields {
 				foundInDataModel := false
 				for _, dataModel := range dataModels {
@@ -138,76 +123,36 @@ func ValidateTransformations(ctx context.Context) error {
 					}
 				}
 
-				// If not found in data model, it's extra in rename config
 				if !foundInDataModel {
-					report := ComparisonReport{
-						DatabahnAttribute:     renameField.DatabahnAttribute,
-						DataModelName:         tr.Name,
-						DataModelLogAttribute: "MISSING",
-						RenameConfigLogAttr:   renameField.LogAttribute,
-					}
-					allComparisonReports = append(allComparisonReports, report)
+					extraInRenameConfig = append(extraInRenameConfig, renameField.DatabahnAttribute)
 				}
 			}
+
+			// Generate report directly
+			builder.WriteString(strings.Repeat("-", 80) + "\n")
+			builder.WriteString(fmt.Sprintf("transformation name - %s\n", tr.Name))
+
+			if len(extraInDataModel) > 0 {
+				builder.WriteString(fmt.Sprintf("extra fields in data model - %s\n", strings.Join(extraInDataModel, ", ")))
+			} else {
+				builder.WriteString("extra fields in data model - none\n")
+			}
+
+			if len(extraInRenameConfig) > 0 {
+				builder.WriteString(fmt.Sprintf("extra fields in transformation object - %s\n", strings.Join(extraInRenameConfig, ", ")))
+			} else {
+				builder.WriteString("extra fields in transformation object - none\n")
+			}
+
+			builder.WriteString(strings.Repeat("-", 80) + "\n\n")
 		}
 	}
-
-	// Generate simple tabular report
-	tabularReport := generateSimpleTabularReport(allComparisonReports)
 
 	// Print the report to console
-	fmt.Println(tabularReport)
+	fmt.Println(builder.String())
 
 	logger.GetLogger().Info("Transformation validation completed and report printed to console",
-		zap.Int("total_transformations", len(transformations)),
-		zap.Int("total_comparisons", len(allComparisonReports)))
+		zap.Int("total_transformations", len(transformations)))
 
 	return nil
-}
-
-// generateSimpleTabularReport creates a simple, easy-to-understand report showing extra fields
-func generateSimpleTabularReport(reports []ComparisonReport) string {
-	var builder strings.Builder
-
-	// Group reports by transformation
-	transformationGroups := make(map[string][]ComparisonReport)
-	for _, r := range reports {
-		transformationGroups[r.DataModelName] = append(transformationGroups[r.DataModelName], r)
-	}
-
-	// Generate report for each transformation separately
-	for transformationName, transformationReports := range transformationGroups {
-		builder.WriteString(strings.Repeat("-", 80) + "\n")
-		builder.WriteString(fmt.Sprintf("transformation name - %s\n", transformationName))
-
-		// Collect extra fields in data model
-		var extraInDataModel []string
-		var extraInRenameConfig []string
-
-		for _, r := range transformationReports {
-			if r.RenameConfigLogAttr == "MISSING" {
-				extraInDataModel = append(extraInDataModel, r.DatabahnAttribute)
-			} else if r.DataModelLogAttribute == "MISSING" {
-				extraInRenameConfig = append(extraInRenameConfig, r.DatabahnAttribute)
-			}
-		}
-
-		// Output extra fields in data model
-		if len(extraInDataModel) > 0 {
-			builder.WriteString(fmt.Sprintf("extra fields in data model - %s\n", strings.Join(extraInDataModel, ", ")))
-		} else {
-			builder.WriteString("extra fields in data model - none\n")
-		}
-
-		// Output extra fields in rename config
-		if len(extraInRenameConfig) > 0 {
-			builder.WriteString(fmt.Sprintf("extra fields in transformation object - %s\n", strings.Join(extraInRenameConfig, ", ")))
-		} else {
-			builder.WriteString("extra fields in transformation object - none\n")
-		}
-
-		builder.WriteString(strings.Repeat("-", 80) + "\n\n")
-	}
-
-	return builder.String()
 }
