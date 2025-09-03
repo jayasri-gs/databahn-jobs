@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
+	"github.com/databahn-ai/databahn-jobs/internal/transformationCheckerUtility"
 	"os"
 
 	"github.com/databahn-ai/common-utils/configuration"
@@ -92,6 +93,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = cp_jobs.SendAlertForDeploymentDelayAlert(ctx)
 	case common.VC_ALERTS:
 		err = vc.SendAlertsForVCRules(ctx)
+	case common.TRANSFORMATION_VALIDATOR:
+		err = transformationCheckerUtility.ValidateTransformations(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}

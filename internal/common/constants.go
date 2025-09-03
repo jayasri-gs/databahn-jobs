@@ -10,6 +10,7 @@ const VC_ALERTS = "vc-alerts"
 
 const FLEET_HEALTH_CHECKER = "fleet-health-checker"
 const LOG_SOURCE_ACTIVITY_CHECKER = "log-source-activity-checker"
+const TRANSFORMATION_VALIDATOR = "transformation-validator"
 
 // TO BE deleted post agent fix
 const FHL_WINDOWS_ACTIVITY_CHECKER = "fhl-windows-activity-checker"
