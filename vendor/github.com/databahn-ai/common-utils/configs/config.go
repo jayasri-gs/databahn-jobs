@@ -33,6 +33,7 @@ type Urls struct {
 	GatewayUrl        string `json:"gateway_url"`
 	ServerlessApiUrl  string `json:"serverless_api_url"`
 	SchemaRegistryUrl string `json:"schema_registry_url"`
+	RegistryUrl       string `json:"registry_url"`
 	OptlCollectorUrl  string `json:"optl_collector_url"`
 	RedisUrl          string `json:"redis_url"`
 	KSqlDbUrl         string `json:"ksql_db_url"`

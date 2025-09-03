@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
-	"github.com/opensearch-project/opensearch-go/v2"
-	"gorm.io/gorm"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/opensearch-project/opensearch-go/v2"
+	"gorm.io/gorm"
 
 	notification_common "github.com/databahn-ai/common-utils/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
@@ -28,6 +29,11 @@ import (
 const EmailTemplatesBasePath = "/home/databahn/templates/"
 
 // const EmailTemplatesBasePath = "templates/"
+
+// FunctionalitiesRequiringAggregation defines the list of functionalities that require alert aggregation
+var FunctionalitiesRequiringAggregation = []string{
+	"agent",
+}
 
 func SendNotificationsForAlerts(ctx context.Context) error {
 	db := config.GetDB()
@@ -113,6 +119,12 @@ func processExternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, os
 		return err
 	}
 	for functionality, alertsByFunctionalityType := range alertsByFunctionalityAndFunctionalityType {
+		// Check if functionality requires aggregation
+		if aggregationRequired(functionality) {
+			aggregatedAlerts := aggregateAlertbyfunctionalityType(functionality, alertsByFunctionalityType)
+			// Replace the original alerts with the aggregated alerts
+			alertsByFunctionalityType = aggregatedAlerts
+		}
 		for functionalityType, alerts := range alertsByFunctionalityType {
 			for _, alert := range alerts {
 				err := sendSupportNotification(alert, t, notificationManager, false)
@@ -178,6 +190,12 @@ func processInternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, os
 		return err
 	}
 	for functionality, alertsByFunctionalityType := range alertsByFunctionalityAndFunctionalityType {
+		// Check if functionality requires aggregation
+		if aggregationRequired(functionality) {
+			aggregatedAlerts := aggregateAlertbyfunctionalityType(functionality, alertsByFunctionalityType)
+			// Replace the original alerts with the aggregated alerts
+			alertsByFunctionalityType = aggregatedAlerts
+		}
 		for functionalityType, alerts := range alertsByFunctionalityType {
 			for _, alert := range alerts {
 				err := sendSupportNotification(alert, t, notificationManager, true)
@@ -416,7 +434,7 @@ func buildEmailBody(emailTitle string, alerts []alerts_async.Alert) (string, err
 		emailTemplateDetails = append(emailTemplateDetails, EmailTemplateDetails{
 			FunctionalityEntityName: alert.FunctionalityEntityName,
 			FunctionalityType:       alert.FunctionalityType,
-			Message:                 alert.Message,
+			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
 			Title:                   alert.Title,
 			FirstObservedAt:         time.UnixMilli(alert.FirstObservedAt).Format(time.RFC3339),
 		})
@@ -466,4 +484,61 @@ type EmailTemplateDetails struct {
 type OpsGenieDetails struct {
 	TenantName string
 	Alert      alerts_async.Alert
+}
+
+// aggregationRequired checks if the given functionality requires alert aggregation
+func aggregationRequired(functionality string) bool {
+	for _, f := range FunctionalitiesRequiringAggregation {
+		if f == functionality {
+			return true
+		}
+	}
+	return false
+}
+
+// aggregateAlertbyfunctionalityType aggregates alerts by functionalityType for agent functionality
+// Returns a map where each functionalityType contains a single aggregated alert
+func aggregateAlertbyfunctionalityType(functionality string, alertsByFunctionalityType map[string][]alerts_async.Alert) map[string][]alerts_async.Alert {
+	aggregatedAlerts := make(map[string][]alerts_async.Alert)
+
+	for functionalityType, alerts := range alertsByFunctionalityType {
+		if len(alerts) == 0 {
+			continue
+		}
+
+		// Use the first alert as a base for the aggregated alert
+		aggregatedAlert := alerts[0]
+
+		// Aggregate the title to show it's a combined alert
+		aggregatedAlert.Title = fmt.Sprintf("Aggregated %s Alert (%d Entities)", functionality, len(alerts))
+
+		// Aggregate messages from all alerts
+		var messages []string
+		var entityNames []string
+
+		for _, alert := range alerts {
+			messages = append(messages, fmt.Sprintf("%s: %s", alert.FunctionalityEntityName, alert.Message))
+			entityNames = append(entityNames, alert.FunctionalityEntityName)
+		}
+
+		// Combine all messages
+		aggregatedAlert.Message = strings.Join(messages, "\n")
+
+		// Update the functionality entity name to show multiple entities
+		if len(entityNames) > 1 {
+			aggregatedAlert.FunctionalityEntityName = fmt.Sprintf("Multiple Entities (%d)", len(entityNames))
+		}
+
+		// Use the latest LastObservedAt from all alerts
+		for _, alert := range alerts {
+			if alert.LastObservedAt > aggregatedAlert.LastObservedAt {
+				aggregatedAlert.LastObservedAt = alert.LastObservedAt
+			}
+		}
+
+		// Store the single aggregated alert
+		aggregatedAlerts[functionalityType] = []alerts_async.Alert{aggregatedAlert}
+	}
+
+	return aggregatedAlerts
 }

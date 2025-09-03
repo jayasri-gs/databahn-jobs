@@ -132,12 +132,12 @@ func GetPipelineDestinations(ctx context.Context, db *gorm.DB, pipelineID uuid.U
 }
 
 // HasActiveRules checks if a pipeline has any active volume control rules
-func HasActiveRules(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID, tenantID uuid.UUID) (bool, error) {
+func HasActiveRules(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID, tenantID uuid.UUID) (bool, int64, error) {
 	var count int64
 	err := db.WithContext(ctx).Table("vc_rule").
 		Where("pipeline_id = ? AND tenant_id = ? AND status = ?",
 			pipelineID.String(), tenantID.String(), "ACTIVE").
 		Count(&count).Error
 
-	return count > 0, err
+	return count > 0, count, err
 }

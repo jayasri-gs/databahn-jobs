@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -27,16 +28,18 @@ return tonumber(redis.call("GET", key))
 const suppressionScript = `
 local rule = KEYS[1]
 local key = KEYS[2]
+
 local ttl = tonumber(ARGV[1])
 local maxKeys = tonumber(ARGV[2])
 local ttlMin = tonumber(ARGV[3])
 local ttlMax = tonumber(ARGV[4])
+
 local inc = redis.call("INCR", key)
-if inc == 1 then 
+if inc == 1 then
     if ttl > 0 then
         redis.call("EXPIRE", key, ttl)
     end
-    local window = redis.call("ZCOUNT", rule, ttlMin, ttlMax)
+	local window = redis.call("ZCOUNT", rule, ttlMin, ttlMax)
     if window and tonumber(window) >= maxKeys then
         redis.call("DEL", key)
         return -1
