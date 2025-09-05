@@ -506,7 +506,7 @@ func buildConsolidatedDeviceAlert(sdia model.SourceDeviceInventoryAlert) (*alert
 	if len(sdia.TopDevices) > 0 && sdia.TopDevices[0].Reputation != "" {
 		deviceDetails.WriteString(fmt.Sprintf("• Device reputation: %s\n", sdia.TopDevices[0].Reputation))
 	}
-	deviceDetails.WriteString("• Additional custom filters may apply based on alert configuration\n\n")
+	deviceDetails.WriteString("• Alert is generated based on additional configuration \n\n")
 
 	deviceDetails.WriteString("Sample devices (showing up to 5):\n")
 	for i, device := range sdia.TopDevices {
