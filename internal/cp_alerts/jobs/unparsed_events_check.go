@@ -52,13 +52,13 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 		endTime := time.Now().UTC()
 		startTime := endTime.Add(-UnparsedEventsCheckDuration * time.Hour)
 		statsAlias := os.StatisticsIndexAlias(tenantId)
-		unparsedAgg, err := getUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
+		unparsedAgg, err := GetUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
 			logger.GetLogger().Error("error getting unparsed events", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
 
-		totalEventsAgg, err := getTotalEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
+		totalEventsAgg, err := GetTotalEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
 			logger.GetLogger().Error("error getting total events", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
@@ -165,7 +165,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 	return nil
 }
 
-func getUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
+func GetUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
 
 	q := `tags.component_name: "parser" AND name: "total_events_delivered" AND namespace:"parsing-service-unparsed"`
 	query := statistics.AddDateRange(q, startTime, endTime)
@@ -204,7 +204,7 @@ func getUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAl
 	return statistics.AggregateResponse{Agg: aggMap}, nil
 }
 
-func getTotalEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
+func GetTotalEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
 
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)
