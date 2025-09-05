@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
 	"github.com/databahn-ai/databahn-jobs/internal/transformationCheckerUtility"
+	"github.com/databahn-ai/databahn-jobs/internal/unparsedReport"
 	"os"
 
 	"github.com/databahn-ai/common-utils/configuration"
@@ -95,6 +96,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = vc.SendAlertsForVCRules(ctx)
 	case common.TRANSFORMATION_VALIDATOR:
 		err = transformationCheckerUtility.ValidateTransformations(ctx)
+	case common.UNPARSED_EVENTS_REPORT:
+		err = unparsedReport.SendUnparsedEventsReport(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
