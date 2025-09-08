@@ -68,8 +68,8 @@ type HardwareStats struct {
 	MemoryUsed         int64     `gorm:"type:bigint" json:"memory_used"`
 	MemoryUsedPercent  float64   `gorm:"type:float8" json:"memory_used_percent"`
 	TenantId           uuid.UUID `gorm:"type:uuid" json:"tenant_id"`
-	FleetId            uuid.UUID `gorm:"type:uuid;not null" gorm:"foreignkey:FleetId" json:"fleet_id"`
-	NodeId             uuid.UUID `gorm:"type:uuid;not null" gorm:"foreignkey:NodeId" json:"node_id"`
+	FleetId            uuid.UUID `gorm:"type:uuid;not null;foreignkey:FleetId" json:"fleet_id"`
+	NodeId             uuid.UUID `gorm:"type:uuid;not null;foreignkey:NodeId" json:"node_id"`
 }
 
 func (s *HardwareStats) TableName() string {

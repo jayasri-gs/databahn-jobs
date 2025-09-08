@@ -502,8 +502,8 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 		Select("fleet_components.*, fleet_node.name as fleet_node_name, fleet.name as fleet_name").
 		Joins("JOIN fleet_node ON fleet_components.fleet_node_id = fleet_node.id").
 		Joins("JOIN fleet ON fleet_node.fleet_id = fleet.id").
-		Where("fleet_components.tenant_id = ? AND (fleet_components.heartbeat_at < ? AND fleet_components.heartbeat_at > ?) AND fleet_components.status NOT IN ?",
-			tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+		Where("fleet_components.tenant_id = ? AND (fleet_components.heartbeat_at < ? AND fleet_components.heartbeat_at > ?) AND fleet_components.status NOT IN ? AND fleet_components.type != ?",
+			tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus, fleet.ComponentsTypeConnector).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&inactiveResults).Error
