@@ -2,9 +2,13 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os"
+
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
 	"github.com/databahn-ai/databahn-jobs/internal/transformationCheckerUtility"
-	"os"
+	"github.com/databahn-ai/db-models/alerts_async"
 
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
@@ -99,6 +103,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
 	if err != nil {
+		sendJobFailureAlert(ctx, jobName, input, err)
 		logger.GetLogger().Error("failed to process job", zap.Error(err), zap.String("jobName", jobName))
 		logger.GetLogger().Sync()
 		os.Exit(1)
@@ -107,4 +112,60 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		logger.GetLogger().Sync()
 		os.Exit(0)
 	}
+}
+
+// sendJobFailureAlert sends an engineering alert when a job fails
+func sendJobFailureAlert(ctx context.Context, jobName string, input model.Message, err error) {
+	// Initialize alerts manager
+	alertsManager, alertErr := alert.NewAlertsManager(ctx)
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to create alerts manager for job failure alert", zap.Error(alertErr))
+		return
+	}
+	defer alertsManager.Close(ctx)
+
+	alert, alertErr := alerts_async.NewAlert(
+		alerts_async.Job,
+		alerts_async.WithTitle(fmt.Sprintf("Databahn Job Failure Alert (%v)", jobName)),
+		alerts_async.WithMessage(formatJobFailureMessage(jobName, err, input)),
+		alerts_async.WithCriticality(alerts_async.Critical),
+		alerts_async.WithFunctionalityType(alerts_async.JobFailure),
+		alerts_async.WithEntityDetails("job", jobName, "default-dataplane", input.TenantId),
+		alerts_async.WithErrorCode(alerts_async.DJFE10001, err.Error()),
+	)
+
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to create job failure alert", zap.Error(alertErr), zap.String("jobName", jobName))
+		return
+	}
+
+	// Send the alert
+	alertErr = alertsManager.SendAlerts([]*alerts_async.Alert{alert})
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to send job failure alert", zap.Error(alertErr), zap.String("jobName", jobName))
+		return
+	}
+
+	logger.GetLogger().Info("job failure alert sent successfully",
+		zap.String("jobName", jobName),
+		zap.String("severity", alerts_async.Critical.String()),
+		zap.String("error", err.Error()))
+}
+
+// formatJobFailureMessage creates a detailed error message for the alert
+func formatJobFailureMessage(jobName string, err error, input model.Message) string {
+	message := "Job '" + jobName + "' failed with error: " + err.Error()
+
+	// Add job parameters if available
+	if input.RequestId != "" {
+		message += ". Request ID: " + input.RequestId
+	}
+	if input.TenantId != "" {
+		message += ". Tenant ID: " + input.TenantId
+	}
+	if input.Source != "" {
+		message += ". Source: " + input.Source
+	}
+
+	return message
 }
