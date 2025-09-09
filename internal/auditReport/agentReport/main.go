@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
+	"os"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
 )
 
 func WriteAgentReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
@@ -41,7 +43,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 	writeHeader := true
 	for {
 		writeHeader = writeHeader && offset == 0
-		rows, columns, err := common.GetRowsAndColumnsByQueryFromTable("agent_node", query, pageSize, offset)
+		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "a.updated_at")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from agent table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
@@ -75,19 +77,55 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 		return "", "", "", err
 	}
 	filterToDbColumnMap := map[string]string{
-		"os":            "os",
-		"status":        "status",
-		"cpuArch":       "cpu_arch",
-		"platform":      "platform",
-		"kernelArch":    "kernel_arch",
-		"kernelVersion": "kernel_version",
+		"os":            "a.os",
+		"status":        "a.status",
+		"cpuArch":       "a.cpu_arch",
+		"platform":      "a.platform",
+		"kernelArch":    "a.kernel_arch",
+		"kernelVersion": "a.kernel_version",
+		"tenant_id":     "a.tenant_id",
 	}
 
-	query, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while getting query from config", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-		return "", "", "", err
-	}
+	whereClause, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+
+	// Build the complete JOIN query
+	query := fmt.Sprintf(`
+		SELECT 
+			a.id,
+			a.name,
+			a.description,
+			a.hostname,
+			a.os,
+			a.platform,
+			a.cpu_arch,
+			a.cpu_count,
+			a.kernel_arch,
+			a.kernel_version,
+			a.version,
+			a.private_ip,
+			a.public_ip,
+			a.port,
+			a.status,
+			a.boot_time,
+			a.uptime,
+			a.is_upgrade_available,
+			a.created_at,
+			a.updated_at,
+			a.heartbeat_at,
+			a.fleet_id as fleet_name,
+			a.runners,
+			a.runners_log_level,
+			a.diagnostic_location,
+			dp.name as dataplane_name,
+			uc.email as created_by,
+			uu.email as updated_by
+		FROM agent_node a
+		    LEFT JOIN fleet f on a.fleet_id = f.id
+		LEFT JOIN data_planes dp ON a.data_plane_id = dp.id
+		LEFT JOIN users uc ON a.created_by = uc.id
+		LEFT JOIN users uu ON a.updated_by = uu.id
+		WHERE %s`, whereClause)
+
 	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }
