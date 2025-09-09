@@ -3,6 +3,8 @@ package common
 import (
 	"context"
 	"database/sql"
+	"fmt"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -21,6 +23,24 @@ func GetRowsAndColumnsByQueryFromTable(tableName, query string, page int, offset
 	if err != nil {
 		return nil, nil, err
 	}
+	return rows, columns, nil
+}
+
+func GetRowsAndColumnsByQueryWithJoins(query string, page int, offset int) (*sql.Rows, []string, error) {
+	// Add pagination to the query - assumes query already has WHERE clause
+	paginatedQuery := fmt.Sprintf("%s ORDER BY vc.updated_at LIMIT %d OFFSET %d", query, page, offset)
+
+	rows, err := config.GetDB().Raw(paginatedQuery).Rows()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to execute paginated query: %w", err)
+	}
+
+	columns, err := rows.Columns()
+	if err != nil {
+		rows.Close() // Clean up on error
+		return nil, nil, fmt.Errorf("failed to get column names: %w", err)
+	}
+
 	return rows, columns, nil
 }
 

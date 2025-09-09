@@ -3,9 +3,10 @@ package common
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	logging "github.com/databahn-ai/go-logging/logger"
-	"strings"
 )
 
 func GetDbQueryWithoutTimeFilters(req models.AuditReport, filterToDbColumnMap map[string]string) (string, error) {
@@ -114,7 +115,12 @@ func BuildQuery(configData map[string]interface{}, filterMappings map[string]str
 // filterToDbColumnMap maps filter keys to DB column names
 // Returns: query string (without time filter), startTime, endTime
 func BuildQueryFromFilters(filters map[string]interface{}, tenantId string, filterToDbColumnMap map[string]string) (string, string, string) {
-	queryParts := []string{fmt.Sprintf("tenant_id = '%s'", tenantId)}
+	// Use the mapped column name for tenant_id, fallback to "tenant_id" if not mapped
+	tenantColumn := "tenant_id"
+	if mappedColumn, ok := filterToDbColumnMap["tenant_id"]; ok {
+		tenantColumn = mappedColumn
+	}
+	queryParts := []string{fmt.Sprintf("%s = '%s'", tenantColumn, tenantId)}
 	var startTime, endTime string
 
 	// Handle time_filters (optional)
