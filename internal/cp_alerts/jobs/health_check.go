@@ -512,7 +512,7 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 		return nil, nil, err
 	}
 
-	err = db.Where("tenant_id = ? AND (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+	err = db.Where("tenant_id = ? AND (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ? AND type != ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus, fleet.ComponentsTypeConnector).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&activeFleetComponents).Error
