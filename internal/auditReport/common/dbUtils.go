@@ -26,9 +26,9 @@ func GetRowsAndColumnsByQueryFromTable(tableName, query string, page int, offset
 	return rows, columns, nil
 }
 
-func GetRowsAndColumnsByQueryWithJoins(query string, page int, offset int) (*sql.Rows, []string, error) {
+func GetRowsAndColumnsByQueryWithJoins(query string, page int, offset int, orderBy string) (*sql.Rows, []string, error) {
 	// Add pagination to the query - assumes query already has WHERE clause
-	paginatedQuery := fmt.Sprintf("%s ORDER BY vc.updated_at LIMIT %d OFFSET %d", query, page, offset)
+	paginatedQuery := fmt.Sprintf("%s ORDER BY %s LIMIT %d OFFSET %d", query, orderBy, page, offset)
 
 	rows, err := config.GetDB().Raw(paginatedQuery).Rows()
 	if err != nil {

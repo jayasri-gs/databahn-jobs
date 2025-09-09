@@ -43,7 +43,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 	writeHeader := true
 	for {
 		writeHeader = writeHeader && offset == 0
-		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset)
+		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "vc.updated_at")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from volume controller table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
@@ -104,18 +104,17 @@ func getQueryForVcReportData(ctx context.Context, req models.AuditReport) (strin
 			vc.sampling_rate,
 			vc.created_at,
 			vc.updated_at,
-			vc.created_by,
-			vc.updated_by,
-			vc.tenant_id,
-			vc.customer_id,
-			vc.pipeline_id,
 			ls.name as source_name,
 			d.name as destination_name,
-			dp.name as dataplane_name
+			dp.name as dataplane_name,
+			uc.email as created_by,
+			uu.email as updated_by
 		FROM vc_rule vc
 		LEFT JOIN log_source ls ON vc.log_source_id = ls.id
 		LEFT JOIN destination d ON vc.destination_id = d.id
 		LEFT JOIN data_planes dp ON vc.data_plane_id = dp.id
+		LEFT JOIN users uc ON vc.created_by::uuid = uc.id
+		LEFT JOIN users uu ON vc.updated_by::uuid = uu.id
 		WHERE %s`, whereClause)
 
 	logging.GetLoggerWithContext(ctx).Info("query for volume controller report data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))

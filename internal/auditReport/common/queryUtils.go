@@ -120,7 +120,8 @@ func BuildQueryFromFilters(filters map[string]interface{}, tenantId string, filt
 	if mappedColumn, ok := filterToDbColumnMap["tenant_id"]; ok {
 		tenantColumn = mappedColumn
 	}
-	queryParts := []string{fmt.Sprintf("%s = '%s'", tenantColumn, tenantId)}
+	// Handle UUID columns properly - tenant_id is typically a UUID column
+	queryParts := []string{fmt.Sprintf("%s = '%s'::uuid", tenantColumn, tenantId)}
 	var startTime, endTime string
 
 	// Handle time_filters (optional)
