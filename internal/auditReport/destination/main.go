@@ -40,7 +40,6 @@ func getQueryForDestinationReportData(ctx context.Context, req models.AuditRepor
 	filterToDbColumnMap := map[string]string{
 		"scope":           "d.scope",
 		"status":          "d.status",
-		"sources":         "pls.log_source_id",
 		"destinationType": "d.destination_type",
 		"forwardDataType": "d.forward_data_type",
 		"dataplaneId":     "d.data_plane_id",
