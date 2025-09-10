@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
+	"os"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
 )
 
 func WriteVcReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
@@ -41,7 +43,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 	writeHeader := true
 	for {
 		writeHeader = writeHeader && offset == 0
-		rows, columns, err := common.GetRowsAndColumnsByQueryFromTable("vc_rule", query, pageSize, offset)
+		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "vc.updated_at")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from volume controller table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
@@ -77,19 +79,47 @@ func getQueryForVcReportData(ctx context.Context, req models.AuditReport) (strin
 	}
 
 	filterToDbColumnMap := map[string]string{
-		"scope":        "scope",
-		"status":       "status",
-		"sources":      "log_source_id",
-		"types":        "type",
-		"destinations": "destination_id",
-		"dataplaneId":  "data_plane_id",
+		"scope":        "vc.scope",
+		"status":       "vc.status",
+		"sources":      "vc.log_source_id",
+		"types":        "vc.type",
+		"destinations": "vc.destination_id",
+		"dataplaneId":  "vc.data_plane_id",
+		"tenant_id":    "vc.tenant_id",
 	}
 
-	query, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+	whereClause, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+
+	// Build the complete JOIN query
+	query := fmt.Sprintf(`
+		SELECT 
+			vc.id,
+			vc.name,
+			vc.description,
+			vc.action_type,
+			vc.type,
+			vc.status,
+			vc.scope,
+			vc.priority,
+			vc.sampling_rate,
+			vc.created_at,
+			vc.updated_at,
+			ls.name as source_name,
+			d.name as destination_name,
+			dp.name as dataplane_name,
+			uc.email as created_by,
+			uu.email as updated_by
+		FROM vc_rule vc
+		LEFT JOIN log_source ls ON vc.log_source_id = ls.id
+		LEFT JOIN destination d ON vc.destination_id = d.id
+		LEFT JOIN data_planes dp ON vc.data_plane_id = dp.id
+		LEFT JOIN users uc ON vc.created_by::uuid = uc.id
+		LEFT JOIN users uu ON vc.updated_by::uuid = uu.id
+		WHERE %s`, whereClause)
+
 	logging.GetLoggerWithContext(ctx).Info("query for volume controller report data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }
-
 func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query string, startTime string, endTime string, file *os.File) error {
 	err := getReportAndWriteToFile(ctx, req, query, file)
 	if err != nil {
