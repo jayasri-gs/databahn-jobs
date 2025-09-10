@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/store/source"
+
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
@@ -95,12 +97,36 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 			return err
 		}
 
+		// get active log sources for the tenant
+		activeSources, err := source.GetSourcesByTenantAndStatus(ctx, db, t.Id, "ACTIVE")
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while fetching active log sources", zap.Error(err), zap.String("tenantId", tenantId))
+			return err
+		}
+
+		if len(activeSources) == 0 {
+			logging.GetLoggerWithContext(ctx).Info("no active log sources found for tenant", zap.String("tenantId", tenantId))
+			continue
+		}
+
+		var activeSourceIds = make(map[uuid.UUID]bool)
+		for _, src := range activeSources {
+			activeSourceIds[src.ID] = true
+		}
+
 		// Process each source separately with its own configuration
 		var consolidatedAlerts []*model.SourceDeviceInventoryAlert
 		for _, entityAlertConfig := range alertConfigs {
 			if entityAlertConfig.Config == nil || !entityAlertConfig.Config.Enabled {
 				logging.GetLoggerWithContext(ctx).Info("alert configuration is nil or disabled for source",
 					zap.String("sourceID", entityAlertConfig.EntityID.String()))
+				continue
+			}
+
+			// Skip if the source is not active
+			if _, isActive := activeSourceIds[entityAlertConfig.EntityID]; !isActive {
+				logging.GetLoggerWithContext(ctx).Info("skipping inactive source",
+					zap.String("tenantId", tenantId), zap.String("sourceID", entityAlertConfig.EntityID.String()))
 				continue
 			}
 
@@ -474,6 +500,14 @@ func buildConsolidatedDeviceAlert(sdia model.SourceDeviceInventoryAlert) (*alert
 	deviceDetails.WriteString(fmt.Sprintf("Source: %s\n", sdia.SourceName))
 	deviceDetails.WriteString(fmt.Sprintf("Total devices matching alert criteria: %d\n\n", sdia.TotalCount))
 
+	// Add alert criteria details
+	deviceDetails.WriteString("Alert Criteria:\n")
+	deviceDetails.WriteString("• Devices that have been silent for more than 4 hours (no activity)\n")
+	if len(sdia.TopDevices) > 0 && sdia.TopDevices[0].Reputation != "" {
+		deviceDetails.WriteString(fmt.Sprintf("• Device reputation: %s\n", sdia.TopDevices[0].Reputation))
+	}
+	deviceDetails.WriteString("• Alert is generated based on additional configuration \n\n")
+
 	deviceDetails.WriteString("Sample devices (showing up to 5):\n")
 	for i, device := range sdia.TopDevices {
 		deviceDetails.WriteString(fmt.Sprintf("%d. %s (Reputation: %s)\n", i+1, device.Hostname, device.Reputation))
@@ -483,7 +517,7 @@ func buildConsolidatedDeviceAlert(sdia model.SourceDeviceInventoryAlert) (*alert
 		deviceDetails.WriteString(fmt.Sprintf("\n... and %d more devices matching the criteria", sdia.RemainingCount))
 	}
 
-	title := fmt.Sprintf("Device Inventory Alert - Source %s has %d devices matching alert criteria", sdia.SourceName, sdia.TotalCount)
+	title := fmt.Sprintf("Device Inventory Alert - Source %s has %d silent devices matching alert criteria", sdia.SourceName, sdia.TotalCount)
 	message := deviceDetails.String()
 
 	functionality := alerts_async.LogSource
