@@ -64,7 +64,7 @@ func AlertForNoEventsToDestination(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error getting destination event times for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error getting destination event times", zap.Error(err), zap.String("tenantId", tenantId))
-			continue
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 		destinationsToAlert, activeDestinations, err := findInactiveAndActiveDestinations(db, tenantUuid, destinationsIdToLastEventTime)
 
@@ -72,7 +72,7 @@ func AlertForNoEventsToDestination(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error finding inactive destinations for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error finding inactive destinations", zap.Error(err), zap.String("tenantId", tenantId))
-			continue
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		if len(destinationsToAlert) == 0 {
@@ -84,6 +84,7 @@ func AlertForNoEventsToDestination(ctx context.Context) common.JobResult {
 				errorMsg := fmt.Sprintf("error sending in-app alerts for destinations for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("error sending in-app alerts for destinations", zap.Error(err), zap.String("tenantId", tenantId))
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 		}
 

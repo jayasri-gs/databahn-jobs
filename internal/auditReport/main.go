@@ -100,12 +100,14 @@ func GenerateAuditReport(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while handling error requests: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while handling error requests", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	err = handleAlerts(alertsManager, successAlerts, errorAlerts)
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while handling alerts: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while handling alerts", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	if len(jobErrors) == 0 {
