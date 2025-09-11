@@ -75,10 +75,7 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.ACK_PROCESSOR:
 		result = ack.ProcessAck()
 	case common.EVENT_SEQUENCING:
-		evntjobCmd.ExecuteS3DataSequencing(input)
-		logger.GetLogger().Info("successfully processed job", zap.String("jobName", jobName))
-		logger.GetLogger().Sync()
-		os.Exit(0)
+		result = evntjobCmd.ExecuteS3DataSequencing(input)
 	case common.ALERT_REPORT_PROCESSOR:
 		result = auditReport.GenerateAuditReport(ctx)
 	case common.DATA_HEALTH_SCORE_JOB:
