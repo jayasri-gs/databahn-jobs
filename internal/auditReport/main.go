@@ -308,8 +308,8 @@ func handleErrorRequests(requests []models.FailedRequests) ([]*alerts_async.Aler
 				alerts_async.WithEntity(alert),
 				alerts_async.WithCriticality(alerts_async.Info),
 				alerts_async.WithFunctionalityType(alerts_async.AuditReportGeneration),
-				alerts_async.WithTitle(consts.SuccessTitle),
-				alerts_async.WithMessage(consts.SuccessTitle),
+				alerts_async.WithTitle(consts.FailureTitle),
+				alerts_async.WithMessage(consts.FailureTitle),
 				alerts_async.WithErrorCode(alerts_async.DIIS20001, ""),
 			)
 			if err != nil {

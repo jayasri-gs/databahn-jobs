@@ -94,6 +94,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		err = cp_jobs.SendAlertForDeploymentDelayAlert(ctx)
 	case common.VC_ALERTS:
 		err = vc.SendAlertsForVCRules(ctx)
+	case common.EVENT_FLOW_MONITORING:
+		err = cp_jobs.SendAlertForPipelineFlowDeviation(ctx)
 	case common.TRANSFORMATION_VALIDATOR:
 		err = transformationCheckerUtility.ValidateTransformations(ctx)
 	case common.UNPARSED_EVENTS_REPORT:
