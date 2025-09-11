@@ -105,7 +105,7 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error while reading log source entity configs for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logging.GetLoggerWithContext(ctx).Error("error while reading log source entity configs", zap.Error(err), zap.String("tenantId", tenantId))
-			continue
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		// get active log sources for the tenant

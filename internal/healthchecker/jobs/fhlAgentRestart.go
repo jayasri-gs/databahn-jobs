@@ -139,7 +139,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error getting sourceIdToLastEventTime for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logging.GetLoggerWithContext(ctx).Error("error getting sourceIdToLastEventTime", zap.Error(err), zap.String("tenantId", tenantId))
-			continue
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		// Check if any source haven't sent data for more than 20 minutes

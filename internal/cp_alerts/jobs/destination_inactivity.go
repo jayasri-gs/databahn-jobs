@@ -105,14 +105,14 @@ func AlertForNoEventsToDestination(ctx context.Context) common.JobResult {
 				errorMsg := fmt.Sprintf("error while searching for alerts for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q), zap.String("tenantId", tenantId))
-				continue
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			alerts, err := statistics.ParseAlertDocuments(openAlerts)
 			if err != nil {
 				errorMsg := fmt.Sprintf("error while decoding openSearch response for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
-				continue
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			if len(alerts) == 0 {
 				logger.GetLoggerWithContext(ctx).Info("no open alerts for active destinations", zap.String("tenant_id", tenantId), zap.Strings("destination_ids", destinationIds))

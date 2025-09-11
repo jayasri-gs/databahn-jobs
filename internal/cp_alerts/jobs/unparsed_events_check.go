@@ -155,14 +155,14 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 					errorMsg := fmt.Sprintf("error while searching for unparsed events alerts for tenant %s: %v", tenantId, err)
 					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 					logger.GetLogger().Error("error while searching for unparsed events alerts", zap.Error(err), zap.String("query", q), zap.String("tenantId", tenantId))
-					continue
+					return common.NewJobResultFromErrors(jobErrors)
 				}
 				alerts, err := statistics.ParseAlertDocuments(openAlerts)
 				if err != nil {
 					errorMsg := fmt.Sprintf("error while decoding openSearch response for tenant %s: %v", tenantId, err)
 					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 					logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
-					continue
+					return common.NewJobResultFromErrors(jobErrors)
 				}
 				for _, alrt := range alerts {
 					alertsToDismiss = append(alertsToDismiss, alrt.Id)
