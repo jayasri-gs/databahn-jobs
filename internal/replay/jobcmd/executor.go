@@ -3,6 +3,7 @@ package jobcmd
 import (
 	"context"
 	"fmt"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"os"
 	"os/signal"
 	"sync"
@@ -24,18 +25,19 @@ import (
 	"go.uber.org/zap"
 )
 
-func ExecuteReplayJob(input model.Message) {
+func ExecuteReplayJob(input model.Message) common.JobResult {
+	var jobErrors []common.JobError
 
 	ctx := context.Background()
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
 	input.DestinationTopic = commConst.DataReplayTopicPrefix
-	_, exit, code := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
-	if exit {
-		logger.GetLogger().Info("shutdown started  with error code", zap.Int("code", code))
-		_ = logger.GetLogger().Sync()
-		os.Exit(code)
+	err, _, _ := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
+
+	if err != nil {
+		jobErrors = append(jobErrors, common.JobError{Message: fmt.Sprintf("failed to pre process metadata: %v", err)})
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	processor.InitProducer(input.RequestId, input.DestinationTopic)
@@ -44,6 +46,7 @@ func ExecuteReplayJob(input model.Message) {
 	Process(input, mst)
 	elapsed := time.Since(start)
 	logger.GetLogger().Info("Execution Time Taken ", zap.Duration("time", elapsed))
+	return common.NewJobResult(jobErrors, true)
 }
 
 func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {

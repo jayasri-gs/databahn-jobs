@@ -595,12 +595,30 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 // Entry Point
 // ================================
 
-func SendAlertsForVCRules(ctx context.Context) error {
+func SendAlertsForVCRules(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	orchestrator, err := NewVCAlertOrchestrator(ctx)
 	if err != nil {
-		return err
+		errorMsg := fmt.Sprintf("error creating VC alert orchestrator: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLoggerWithContext(ctx).Error("error creating VC alert orchestrator", zap.Error(err))
+		return common.NewJobResult(jobErrors, false)
 	}
 	defer orchestrator.Close()
 
-	return orchestrator.ProcessAlerts()
+	err = orchestrator.ProcessAlerts()
+	if err != nil {
+		errorMsg := fmt.Sprintf("error processing VC alerts: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLoggerWithContext(ctx).Error("error processing VC alerts", zap.Error(err))
+		return common.NewJobResult(jobErrors, false)
+	}
+
+	if len(jobErrors) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("successfully completed VC alerts processing")
+		return common.NewJobResult([]common.JobError{}, true)
+	} else {
+		logger.GetLoggerWithContext(ctx).Info("VC alerts processing completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResult(jobErrors, false)
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
@@ -58,25 +59,33 @@ type VcRuleFilter struct {
 	Combinator string         `json:"combinator"`
 }
 
-func SendAlertForDeviceLevelAlert(ctx context.Context) error {
+func SendAlertForDeviceLevelAlert(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	db := config.GetDB()
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
-		return err
+		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logging.GetLoggerWithContext(ctx).Error("error while getting tenants", zap.Error(err))
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	alertConfig, _, tenantIdToSourceMap, err := getLogSourceIdsFromEntityAlertConfig(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while fetching entity alert config: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while fetching entity alert config", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	// Create alerts manager
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while creating alerts manager", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 	defer alertsManager.Close(ctx)
 
@@ -91,8 +100,10 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 
 		alertConfigs, err := entities.ReadEntityConfigs(db, entities.LogSourceEntityType, "LOG_SOURCE_DEVICE_INVENTORY", t.Id, tenantIdToSourceMap[tenantId])
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while reading log source entity configs", zap.Error(err))
-			return err
+			errorMsg := fmt.Sprintf("error while reading log source entity configs for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logging.GetLoggerWithContext(ctx).Error("error while reading log source entity configs", zap.Error(err), zap.String("tenantId", tenantId))
+			continue
 		}
 
 		// Process each source separately with its own configuration
@@ -108,6 +119,8 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 			sourceSlice := []uuid.UUID{entityAlertConfig.EntityID}
 			devices, totalDevices, err := fetchDevicesWithConfig(ctx, tenantId, t.Name, sourceSlice, entityAlertConfig.Config.LogSourceDeviceInventoryAlertConfig)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error while fetching devices with config for tenant %s, source %s: %v", tenantId, entityAlertConfig.EntityID.String(), err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logging.GetLoggerWithContext(ctx).Error("error while fetching devices with config",
 					zap.Error(err), zap.String("tenantId", tenantId), zap.String("sourceID", entityAlertConfig.EntityID.String()))
 				continue
@@ -158,13 +171,20 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) error {
 		if len(consolidatedAlerts) > 0 {
 			err = sendInAppAlertsForDeviceInventoryConsolidated(consolidatedAlerts, alertsManager)
 			if err != nil {
-				logging.GetLoggerWithContext(ctx).Error("error while sending consolidated alerts", zap.Error(err))
-				continue
+				errorMsg := fmt.Sprintf("error while sending consolidated alerts for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+				logging.GetLoggerWithContext(ctx).Error("error while sending consolidated alerts", zap.Error(err), zap.String("tenantId", tenantId))
 			}
 		}
 	}
 
-	return nil
+	if len(jobErrors) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("successfully completed device level alert processing")
+		return common.NewJobResult([]common.JobError{}, true)
+	} else {
+		logging.GetLoggerWithContext(ctx).Info("device level alert processing completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResult(jobErrors, false)
+	}
 }
 
 func getDevices(ctx context.Context, client *opensearch.Client, index string, query string, tenantName string) ([]model.DeviceClass, int, error) {

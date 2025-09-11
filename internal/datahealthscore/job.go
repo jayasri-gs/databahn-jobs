@@ -3,6 +3,10 @@ package datahealthscore
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore/models"
@@ -13,13 +17,12 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"strconv"
-	"time"
 )
 
 const batchSize = 1000
 
-func CalculateDataHealthScore(ctx context.Context) error {
+func CalculateDataHealthScore(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 
 	logging.GetLogger().Info("calculating data health scores")
 
@@ -27,25 +30,31 @@ func CalculateDataHealthScore(ctx context.Context) error {
 
 	var logSources []source.Source
 	if err := config.GetDB().Model(&source.Source{}).Where("replay_source != ?", true).Scan(&logSources).Error; err != nil {
+		errorMsg := fmt.Sprintf("error while getting log sources: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	alerts, err := utils.GetAllAlertsFromOpenSearch(ctx, functionalitiesToConsider)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while getting alerts from OpenSearch: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while getting alerts from OpenSearch", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	sourceToAlertsMap := getSourceToAlertMap(alerts)
 	dbDataHealthScores, dbDataHealthScoreRecords := calculateScores(ctx, logSources, sourceToAlertsMap, violations)
 
 	if err := saveDataHealthScores(ctx, dbDataHealthScores, dbDataHealthScoreRecords); err != nil {
+		errorMsg := fmt.Sprintf("transaction failed: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("transaction failed", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 	logging.GetLogger().Info("data health scores calculation completed", zap.Time("time", time.Now()), zap.Int("count", len(dbDataHealthScores)), zap.Int("records", len(dbDataHealthScoreRecords)))
-	return nil
+	return common.NewJobResult([]common.JobError{}, true)
 }
 
 func getSourceToAlertMap(alerts []statistics.AlertDocument) map[string][]statistics.AlertDocument {

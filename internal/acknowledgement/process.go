@@ -2,6 +2,7 @@ package acknowledgement
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
 	ackConst "github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/db"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -30,14 +32,17 @@ Flow:
 
 */
 
-func ProcessAck() error {
+func ProcessAck() common.JobResult {
+	var jobErrors []common.JobError
 	olderThan := utils.GetEnvInt("ACK_PROCESSOR_ACK_READ_OLDER_THAN_SECONDS", 60)
 	t := time.Now().Add(time.Duration(-1*olderThan) * time.Second)
 	// get all records from acknowledgement to be processed
 	acks, err := db.GetAllChangeFlagsToBeProcessed(t)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while getting change flags to be processed: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting change flags to be processed", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 	logger.GetLogger().Debug("acknowledgements to be processed", zap.Int("count", len(acks)))
 
@@ -48,8 +53,10 @@ func ProcessAck() error {
 	// get all change flags for entities
 	entityIdToChangeFlags, err := getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while getting change flags: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting change flags", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	// get latest cf request for each entity and collect suppressed request ids
@@ -62,7 +69,20 @@ func ProcessAck() error {
 	markAllAcks(mapOfEntityIdToRequestIdToAck, successfulReqIds, failedReqIds, suppressedReqIds)
 
 	// delete processed records older than certain time (an hour )
-	return db.DeleteRecords(t.Add(-1 * time.Hour))
+	err = db.DeleteRecords(t.Add(-1 * time.Hour))
+	if err != nil {
+		errorMsg := fmt.Sprintf("error while deleting old records: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLogger().Error("error while deleting old records", zap.Error(err))
+	}
+
+	if len(jobErrors) == 0 {
+		logger.GetLogger().Info("successfully completed acknowledgement processing")
+		return common.NewJobResult([]common.JobError{}, true)
+	} else {
+		logger.GetLogger().Info("acknowledgement processing completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResult(jobErrors, false)
+	}
 }
 
 func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck,

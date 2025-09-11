@@ -49,6 +49,7 @@ const ControllerBaseUrl = "https://controller.dev.databahn.app"
 const AlertsIndex = "db_alerts"
 const AlertsIndexInternal = "db_alerts_internal"
 const DatabahnTenantId = "dbd00000-0000-0000-0000-000000000000"
+const DatabahnDataPlaneId = "dbd00000-0000-0000-0000-000000000000"
 
 const FleetNodeHealthCheck = "fleet health check"
 const FleetNodeHealthCheckTitle = "No heartbeat received in the last 30 minutes"

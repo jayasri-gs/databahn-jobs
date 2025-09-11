@@ -36,7 +36,8 @@ const (
 )
 
 // SendAlertForVCNoReduction generates alerts when volume controller doesn't perform any reduction
-func SendAlertForVCNoReduction(ctx context.Context) error {
+func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	// Load configuration from environment variables
 	minReductionThreshold := utils.GetEnvInt("VC_MIN_REDUCTION_THRESHOLD", int(DefaultMinReductionThreshold))
 	offsetHours := utils.GetEnvInt("VC_WINDOW_OFFSET_HOURS", DefaultWindowOffsetHours)
@@ -52,14 +53,18 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error getting all tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting all tenants", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error getting alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting alerts manager", zap.Error(err))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	defer func() {
@@ -83,6 +88,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 		// Get all active pipelines with their source and destination mappings for this tenant
 		pipelines, err := pipeline.GetActivePipelinesWithMappings(ctx, db, t.Id)
 		if err != nil {
+			errorMsg := fmt.Sprintf("error getting active pipelines for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLoggerWithContext(ctx).Error("Error getting active pipelines for tenant",
 				zap.Error(err), zap.String("tenant_id", tenantId))
 			continue
@@ -111,6 +118,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 			// Check if this pipeline has active volume control rules
 			hasActiveRules, vcRuleCount, err := pipeline.HasActiveRules(ctx, db, pipelineMapping.Pipeline.ID, t.Id)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error checking active rules for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error checking active rules for pipeline",
 					zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 				continue
@@ -125,6 +134,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 			if vcRuleCount == 1 {
 				rules, err := vc_rule.GetActiveVCRulesByPipelineAndTenant(pipelineMapping.Pipeline.ID, t.Id, db)
 				if err != nil {
+					errorMsg := fmt.Sprintf("error getting active rules for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 					logger.GetLoggerWithContext(ctx).Error("Error getting active rules for pipeline",
 						zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 					continue
@@ -134,6 +145,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 					rule := rules[0]
 					filter, err := rule.GetRuleFilters()
 					if err != nil {
+						errorMsg := fmt.Sprintf("error parsing rule filters for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+						jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 						logger.GetLoggerWithContext(ctx).Error("Error parsing rule filters",
 							zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId), zap.String("rule_id", rule.ID.String()))
 						continue
@@ -165,6 +178,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 			// Get source data plane ID
 			sourceDataPlaneID, err := getSourceDataPlaneID(ctx, db, pipelineMapping.LogSourceID)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error getting source data plane ID for source %s in tenant %s: %v", pipelineMapping.LogSourceID.String(), tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error getting source data plane ID",
 					zap.Error(err), zap.String("tenant_id", tenantId), zap.String("source_id", pipelineMapping.LogSourceID.String()))
 				continue
@@ -174,6 +189,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 			totalIngested, totalDelivered, reductionPercent, err := getPipelineVolumeControllerStats(
 				ctx, t.Id, pipelineMapping.LogSourceID, pipelineMapping.DestinationID, startTime, endTime)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error getting pipeline volume controller stats for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error getting pipeline volume controller stats",
 					zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 				continue
@@ -204,6 +221,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 
 				alert, err := buildVCNoReductionAlert(*vcAlert, float64(minReductionThreshold))
 				if err != nil {
+					errorMsg := fmt.Sprintf("error building VC no reduction alert for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 					logger.GetLoggerWithContext(ctx).Error("Error building VC no reduction alert",
 						zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 					continue
@@ -211,6 +230,8 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 
 				err = alertsManager.SendAlerts([]*alerts_async.Alert{alert})
 				if err != nil {
+					errorMsg := fmt.Sprintf("error sending VC no reduction alert for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 					logger.GetLoggerWithContext(ctx).Error("Error sending VC no reduction alert",
 						zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 					continue
@@ -261,7 +282,13 @@ func SendAlertForVCNoReduction(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	if len(jobErrors) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("successfully completed VC no reduction alert processing")
+		return common.NewJobResult([]common.JobError{}, true)
+	} else {
+		logger.GetLoggerWithContext(ctx).Info("VC no reduction alert processing completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResult(jobErrors, false)
+	}
 }
 
 // getPipelineVolumeControllerStats gets ingestion and delivery stats for a specific pipeline (source to destination)

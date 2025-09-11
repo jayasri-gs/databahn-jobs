@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/data_model"
 	"github.com/databahn-ai/databahn-jobs/internal/store/data_transformation"
@@ -16,7 +17,8 @@ import (
 	"go.uber.org/zap"
 )
 
-func ValidateTransformations(ctx context.Context) error {
+func ValidateTransformations(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 
 	tenantId := utils.GetEnvOrDefault("TRANSFORMATION_CHECKER_TENANT_ID", "")
 	tenantUUID := utils.UUIDFromStringOrNil(tenantId)
@@ -24,8 +26,10 @@ func ValidateTransformations(ctx context.Context) error {
 
 	transformations, err := data_transformation.GetDataTransformationsByTypeAndFunctionTypeByTenant(ctx, config.GetDB(), tenantUUID)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error fetching transformations for tenant %s: %v", tenantUUID, err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("Error fetching transformations", zap.Error(err), zap.Any("tenant_id", tenantUUID))
-		return err
+		return common.NewJobResult(jobErrors, false)
 	}
 
 	var builder strings.Builder
@@ -41,6 +45,8 @@ func ValidateTransformations(ctx context.Context) error {
 		// Get pipeline log source mappings to find sources
 		pipelineLogSources, err := pipeline.GetPipelineLogSources(ctx, config.GetDB(), *pipelineID)
 		if err != nil {
+			errorMsg := fmt.Sprintf("error fetching pipeline log sources for pipeline %s: %v", pipelineID.String(), err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("Error fetching pipeline log sources", zap.Error(err), zap.String("pipeline_id", pipelineID.String()))
 			continue
 		}
@@ -50,6 +56,8 @@ func ValidateTransformations(ctx context.Context) error {
 			// Get source details by ID
 			sourceDetails, err := source.GetSourceByID(ctx, config.GetDB(), pls.LogSourceID)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error fetching source details for source %s: %v", pls.LogSourceID.String(), err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("Error fetching source details", zap.Error(err), zap.String("source_id", pls.LogSourceID.String()))
 				continue
 			}
@@ -62,6 +70,8 @@ func ValidateTransformations(ctx context.Context) error {
 			// Fetch the correct data model based on device, vendor, log type
 			dataModels, err := data_model.GetDataModelByDeviceVendorLogType(ctx, config.GetDB(), device, vendor, logType)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error fetching data model for device %s, vendor %s, log_type %s: %v", device, vendor, logType, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("Error fetching data model", zap.Error(err),
 					zap.String("device", device),
 					zap.String("vendor", vendor),
@@ -154,5 +164,11 @@ func ValidateTransformations(ctx context.Context) error {
 	logger.GetLogger().Info("Transformation validation completed and report printed to console",
 		zap.Int("total_transformations", len(transformations)))
 
-	return nil
+	if len(jobErrors) == 0 {
+		logger.GetLogger().Info("successfully completed transformation validation")
+		return common.NewJobResult([]common.JobError{}, true)
+	} else {
+		logger.GetLogger().Info("transformation validation completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResult(jobErrors, false)
+	}
 }

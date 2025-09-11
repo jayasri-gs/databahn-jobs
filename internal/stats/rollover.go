@@ -7,13 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/databahn-ai/common-utils/utils"
-	dbos "github.com/databahn-ai/databahn-jobs/internal/store/os"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
-	"github.com/databahn-ai/go-logging/logger"
-	"github.com/opensearch-project/opensearch-go/v2"
-	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
-	"go.uber.org/zap"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,13 +16,26 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
+	dbos "github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/go-logging/logger"
+	"github.com/opensearch-project/opensearch-go/v2"
+	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
+	"go.uber.org/zap"
 )
 
-func RolloverOlderStats(ctx context.Context) error {
+func RolloverOlderStats(ctx context.Context) common.JobResult {
+	var errors []common.JobError
+
 	config, err := parseConfig()
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while parsing config: %v", err)
+		errors = append(errors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while parsing config", zap.Error(err))
-		return err
+		return common.NewJobResult(errors, false)
 	}
 
 	logger.GetLogger().Info("starting stats rollover", zap.Int("weeks_older_than", config.olderRolloverConfig.weeksOlderThan),
@@ -43,8 +49,10 @@ func RolloverOlderStats(ctx context.Context) error {
 	if config.olderRolloverConfig.specificIndex == "" {
 		indexNames, err = dbos.CatIndices(ctx, dbos.GetClient())
 		if err != nil {
+			errorMsg := fmt.Sprintf("error while fetching indices: %v", err)
+			errors = append(errors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error while fetching indices", zap.Error(err))
-			return err
+			return common.NewJobResult(errors, false)
 		}
 	} else {
 		indices := strings.Split(config.olderRolloverConfig.specificIndex, ",")
@@ -54,11 +62,21 @@ func RolloverOlderStats(ctx context.Context) error {
 	indicesToRollover := filterStatsValidIndices(indexNames, config.olderRolloverConfig.weeksOlderThan, config.limit, config.olderRolloverConfig.skipIndices)
 	logger.GetLogger().Info("indices to rollover", zap.Any("indices", indicesToRollover))
 
-	return runRolloverIndexToIndex(ctx, config, indicesToRollover, dbos.GetClient())
+	rolloverErrors, successCount := runRolloverIndexToIndex(ctx, config, indicesToRollover, dbos.GetClient())
+	errors = append(errors, rolloverErrors...)
+
+	if len(errors) == 0 {
+		logger.GetLogger().Info("successfully completed stats rollover", zap.Int("success_count", successCount))
+		return common.NewJobResult([]common.JobError{}, true)
+	} else {
+		logger.GetLogger().Info("stats rollover completed with errors", zap.Int("success_count", successCount), zap.Int("error_count", len(errors)))
+		return common.NewJobResult(errors, false)
+	}
 }
 
-func runRolloverIndexToIndex(ctx context.Context, config *RolloverConfig, indicesToRollover []Index, osClient *opensearch.Client) error {
-	errrCount := 0
+func runRolloverIndexToIndex(ctx context.Context, config *RolloverConfig, indicesToRollover []Index, osClient *opensearch.Client) ([]common.JobError, int) {
+	var errors []common.JobError
+	var errorsMutex sync.Mutex
 	successCount := 0
 	wg := sync.WaitGroup{}
 	parallelismCntrl := make(chan struct{}, config.parallelism)
@@ -73,7 +91,10 @@ func runRolloverIndexToIndex(ctx context.Context, config *RolloverConfig, indice
 			}()
 			err := rollover(ctx, anIndex, osClient, config)
 			if err != nil {
-				errrCount++
+				errorMsg := fmt.Sprintf("error while rolling over index %s: %v", anIndex.Index, err)
+				errorsMutex.Lock()
+				errors = append(errors, common.JobError{Message: errorMsg})
+				errorsMutex.Unlock()
 				logger.GetLogger().Error("error while rolling over index "+anIndex.Index, zap.Error(err), zap.Int("index_number", j))
 			} else {
 				successCount++
@@ -81,12 +102,8 @@ func runRolloverIndexToIndex(ctx context.Context, config *RolloverConfig, indice
 		}(i, indexCopy)
 	}
 	wg.Wait()
-	logger.GetLogger().Info("rolled over stats indices", zap.Int("success_count", successCount), zap.Int("error_count", errrCount))
-	if errrCount == 0 {
-		return nil
-	} else {
-		return fmt.Errorf("%d errors while rolling over indices", errrCount)
-	}
+	logger.GetLogger().Info("rolled over stats indices", zap.Int("success_count", successCount), zap.Int("error_count", len(errors)))
+	return errors, successCount
 }
 
 func parseConfig() (*RolloverConfig, error) {
