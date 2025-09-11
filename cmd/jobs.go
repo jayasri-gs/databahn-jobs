@@ -132,7 +132,6 @@ func sendJobFailureAlert(ctx context.Context, jobName string, input model.Messag
 		errorMessages = append(errorMessages, jobError.Message)
 	}
 	combinedMessage := strings.Join(errorMessages, "; ")
-	fmt.Printf("Combined Error Message: %s\n", combinedMessage)
 
 	alert, alertErr := alerts_async.NewAlert(
 		alerts_async.Job,
