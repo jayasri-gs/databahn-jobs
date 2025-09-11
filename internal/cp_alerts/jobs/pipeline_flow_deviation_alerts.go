@@ -96,9 +96,6 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) common.JobResult {
 
 	for _, t := range tenants {
 		tenantId := t.Id.String()
-		if tenantId != "1be4494f-0251-4bf1-ad18-e09adc141aea" {
-			continue
-		}
 		logger.GetLoggerWithContext(ctx).Info("checking pipelines for tenant", zap.String("tenant_id", tenantId))
 
 		// Cache active sources for this tenant
@@ -142,9 +139,6 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) common.JobResult {
 		var healthyStages []pipelineStageKey
 
 		for _, pipelineMapping := range pipelines {
-			if pipelineMapping.LogSourceID.String() != "fc76bd37-1919-44ec-bb3e-b44bb8fa41db" {
-				continue
-			}
 			pipelineId := pipelineMapping.Pipeline.ID.String()
 			sourceName := pipelineMapping.SourceName
 			destinationName := pipelineMapping.DestinationName
