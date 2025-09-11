@@ -38,42 +38,42 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		parallelism := utils.GetEnvInt("INSIGHTS_PROCESSING_PARALLELISM", 4)
 		result = insights.AggregateInsightsAndStore(ctx, parallelism)
 	case common.ROLLOVER_OLDER_STATS:
-		result = stats.RolloverOlderStats(ctx) // done
+		result = stats.RolloverOlderStats(ctx)
 	case common.STATS_LIFECYCLE:
-		result = stats.RolloverLifecycle(ctx) // done
+		result = stats.RolloverLifecycle(ctx)
 	case common.DEVICE_INVENTORY_HEALTH:
 		runFor := utils.GetEnvOrDefault("DEVICE_INVENTORY_HEALTH_RUN_FOR", insights.HEALTH_CALCULATION_YESTERDAY)
-		result = insights.CalculateDeviceInventoryHealth(ctx, runFor) //done
+		result = insights.CalculateDeviceInventoryHealth(ctx, runFor)
 	case common.DATA_REPLAY:
 		logger.GetLogger().Info("Data Replay Job Triggered")
 		result = jobcmd.ExecuteReplayJob(input)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER_NEW:
-		result = cp_jobs.AlertForNoEventsFromSources(ctx) //done
+		result = cp_jobs.AlertForNoEventsFromSources(ctx)
 	case common.DESTINATION_ACTIVITY_CHECKER:
-		result = cp_jobs.AlertForNoEventsToDestination(ctx) //done
+		result = cp_jobs.AlertForNoEventsToDestination(ctx)
 	case common.DESTINATION_MORE_THAN_INJECTED:
-		result = cp_jobs.AlertDestinationsWithMoreDataDeliveredThanInjection(ctx) //done
+		result = cp_jobs.AlertDestinationsWithMoreDataDeliveredThanInjection(ctx)
 	case common.NOTIFICATIONS_FOR_ALERTS:
-		result = cp_jobs.SendNotificationsForAlerts(ctx) //done
+		result = cp_jobs.SendNotificationsForAlerts(ctx)
 	case common.HEALTH_CHECKER:
-		result = cp_jobs.HealthCheckJob(ctx) //done
+		result = cp_jobs.HealthCheckJob(ctx)
 	case common.TENANT_DAILY_DIGEST:
-		result = cp_jobs.SendTenantDailyDigest(ctx) //done
+		result = cp_jobs.SendTenantDailyDigest(ctx)
 	case common.UNPARSED_EVENTS:
-		result = cp_jobs.SendAlertsForUnparsedEvents(ctx) //done
+		result = cp_jobs.SendAlertsForUnparsedEvents(ctx)
 	case common.KAFKA_QUERY:
 		threadCount := utils.GetEnvInt("KAFKA_QUERY_THREAD_COUNT", 4)
 		waitMinutes := utils.GetEnvInt("KAFKA_QUERY_WAIT_MINUTES", 5)
 		brokers := config.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 		query := utils.GetEnvOrDefault("KAFKA_QUERY_QUERY", "{}")
-		err := kafkaquery.Start(ctx, brokers, query, threadCount, waitMinutes) // implemented
+		err := kafkaquery.Start(ctx, brokers, query, threadCount, waitMinutes)
 		if err != nil {
 			result = common.NewJobResultFromError(err)
 		} else {
 			result = common.NewJobResult([]common.JobError{}, true)
 		}
 	case common.ACK_PROCESSOR:
-		result = ack.ProcessAck() //done
+		result = ack.ProcessAck()
 	case common.EVENT_SEQUENCING:
 		evntjobCmd.ExecuteS3DataSequencing(input)
 		logger.GetLogger().Info("successfully processed job", zap.String("jobName", jobName))
