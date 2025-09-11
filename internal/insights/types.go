@@ -16,12 +16,17 @@ func NewErrorCollector() ErrorCollector {
 	return common.NewErrorCollector()
 }
 
-// NewJobResult creates a new JobResult with the given errors and success status
-func NewJobResult(errors []JobError, success bool) JobResult {
-	return common.NewJobResult(errors, success)
+// NewJobResultSuccess creates a successful JobResult with no errors
+func NewJobResultSuccess() JobResult {
+	return common.NewJobResultSuccess()
 }
 
-// NewJobResultFromError creates a JobResult from a single error
+// NewJobResultFromErrors creates a JobResult with the given errors (failure case)
+func NewJobResultFromErrors(errors []JobError) JobResult {
+	return common.NewJobResultFromErrors(errors)
+}
+
+// NewJobResultFromError creates a JobResult from a single error (failure case)
 func NewJobResultFromError(err error) JobResult {
 	return common.NewJobResultFromError(err)
 }

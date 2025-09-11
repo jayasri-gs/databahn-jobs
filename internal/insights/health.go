@@ -51,7 +51,7 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) comm
 		errorMsg := fmt.Sprintf("error fetching indices: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error fetching indices", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	var sightsIndices []string
 	var frequencyIndices []string
@@ -121,10 +121,10 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) comm
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed device inventory health calculation", zap.Int("status_count", len(statuses)))
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("device inventory health calculation completed with errors", zap.Int("error_count", len(jobErrors)), zap.Int("status_count", len(statuses)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 

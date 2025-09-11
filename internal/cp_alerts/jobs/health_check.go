@@ -49,7 +49,7 @@ func HealthCheckJob(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error creating alerts manager: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error creating alerts manager", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	defer alertsManager.Close(ctx)
 
@@ -58,7 +58,7 @@ func HealthCheckJob(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while fetching tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while fetching tenants", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy agents")
@@ -101,10 +101,10 @@ func HealthCheckJob(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed health check job")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("health check job completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 
@@ -519,8 +519,8 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 		Select("fleet_components.*, fleet_node.name as fleet_node_name, fleet.name as fleet_name").
 		Joins("JOIN fleet_node ON fleet_components.fleet_node_id = fleet_node.id").
 		Joins("JOIN fleet ON fleet_node.fleet_id = fleet.id").
-		Where("fleet_components.tenant_id = ? AND (fleet_components.heartbeat_at < ? AND fleet_components.heartbeat_at > ?) AND fleet_components.status NOT IN ?",
-			tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+		Where("fleet_components.tenant_id = ? AND (fleet_components.heartbeat_at < ? AND fleet_components.heartbeat_at > ?) AND fleet_components.status NOT IN ? AND fleet_components.type != ?",
+			tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus, fleet.ComponentsTypeConnector).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&inactiveResults).Error
@@ -529,7 +529,7 @@ func findInactiveAndActiveFleetComponents(db *gorm.DB, tenantId string, healthCh
 		return nil, nil, err
 	}
 
-	err = db.Where("tenant_id = ? AND (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus).
+	err = db.Where("tenant_id = ? AND (heartbeat_at >= ? AND heartbeat_at > ?) AND status not in ? AND type != ?", tenantId, healthCheckTime, healthCheckIgnoreTime, checkStatus, fleet.ComponentsTypeConnector).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&activeFleetComponents).Error

@@ -35,7 +35,7 @@ func RolloverOlderStats(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while parsing config: %v", err)
 		errors = append(errors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while parsing config", zap.Error(err))
-		return common.NewJobResult(errors, false)
+		return common.NewJobResultFromErrors(errors)
 	}
 
 	logger.GetLogger().Info("starting stats rollover", zap.Int("weeks_older_than", config.olderRolloverConfig.weeksOlderThan),
@@ -52,7 +52,7 @@ func RolloverOlderStats(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error while fetching indices: %v", err)
 			errors = append(errors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error while fetching indices", zap.Error(err))
-			return common.NewJobResult(errors, false)
+			return common.NewJobResultFromErrors(errors)
 		}
 	} else {
 		indices := strings.Split(config.olderRolloverConfig.specificIndex, ",")
@@ -67,10 +67,10 @@ func RolloverOlderStats(ctx context.Context) common.JobResult {
 
 	if len(errors) == 0 {
 		logger.GetLogger().Info("successfully completed stats rollover", zap.Int("success_count", successCount))
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("stats rollover completed with errors", zap.Int("success_count", successCount), zap.Int("error_count", len(errors)))
-		return common.NewJobResult(errors, false)
+		return common.NewJobResultFromErrors(errors)
 	}
 }
 

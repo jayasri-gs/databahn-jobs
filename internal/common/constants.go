@@ -78,3 +78,4 @@ const FleetComponentHealthCheckTitle = "Fleet component %s is not reporting heal
 const ALERT_REPORT_PROCESSOR = "alert_report_processor"
 
 const DATA_HEALTH_SCORE_JOB = "data_health_score_job"
+const UNPARSED_EVENTS_REPORT = "unparsed-events-report"

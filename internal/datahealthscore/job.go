@@ -33,7 +33,7 @@ func CalculateDataHealthScore(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting log sources: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while getting log sources", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	alerts, err := utils.GetAllAlertsFromOpenSearch(ctx, functionalitiesToConsider)
@@ -41,7 +41,7 @@ func CalculateDataHealthScore(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting alerts from OpenSearch: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while getting alerts from OpenSearch", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	sourceToAlertsMap := getSourceToAlertMap(alerts)
@@ -51,10 +51,10 @@ func CalculateDataHealthScore(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("transaction failed: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("transaction failed", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	logging.GetLogger().Info("data health scores calculation completed", zap.Time("time", time.Now()), zap.Int("count", len(dbDataHealthScores)), zap.Int("records", len(dbDataHealthScoreRecords)))
-	return common.NewJobResult([]common.JobError{}, true)
+	return common.NewJobResultSuccess()
 }
 
 func getSourceToAlertMap(alerts []statistics.AlertDocument) map[string][]statistics.AlertDocument {

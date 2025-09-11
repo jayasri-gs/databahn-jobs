@@ -3,6 +3,9 @@ package jobcmd
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/constants"
@@ -13,8 +16,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"sync"
-	"time"
 )
 
 func ExecuteS3DataSequencing(input model.Message) common.JobResult {
@@ -27,7 +28,7 @@ func ExecuteS3DataSequencing(input model.Message) common.JobResult {
 	err, _, _ := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 	if err != nil {
 		jobErrors = append(jobErrors, common.JobError{Message: fmt.Sprintf("failed to pre process metadata: %v", err)})
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	processor.InitProducer(input.RequestId)
@@ -37,7 +38,7 @@ func ExecuteS3DataSequencing(input model.Message) common.JobResult {
 	elapsed := time.Since(start)
 	logger.GetLogger().Info("Execution Time Taken ", zap.Duration("time", elapsed))
 	closeResources(ctx, mst, input.RequestId, input.DestinationTopic)
-	return common.NewJobResult(jobErrors, true)
+	return common.NewJobResultSuccess()
 }
 
 func Process(inputReq model.Message, mst *replaymanager.MetaDataStore, sst *replaymanager.SortStore) {

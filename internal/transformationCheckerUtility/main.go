@@ -29,7 +29,7 @@ func ValidateTransformations(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error fetching transformations for tenant %s: %v", tenantUUID, err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("Error fetching transformations", zap.Error(err), zap.Any("tenant_id", tenantUUID))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	var builder strings.Builder
@@ -166,9 +166,9 @@ func ValidateTransformations(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed transformation validation")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("transformation validation completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }

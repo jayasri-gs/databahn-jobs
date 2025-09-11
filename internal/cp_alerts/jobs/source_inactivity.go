@@ -56,7 +56,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	osClient := os.GetClient()
 
@@ -65,7 +65,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -81,7 +81,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error while getting all log sources of tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error while getting all log sources of tenant", zap.Error(err), zap.String("tenantId", tenantId))
-			return common.NewJobResult(jobErrors, false)
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		if len(sources) == 0 {
@@ -95,7 +95,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error getting source event times for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error getting source event times", zap.Error(err), zap.String("tenantId", tenantId))
-			return common.NewJobResult(jobErrors, false)
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime)
@@ -103,7 +103,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error finding inactive sources for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error finding inactive sources", zap.Error(err), zap.String("tenantId", tenantId))
-			return common.NewJobResult(jobErrors, false)
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		if len(sourcesToAlert) == 0 {
@@ -115,7 +115,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 				errorMsg := fmt.Sprintf("error sending in-app alerts for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("error sending in-app alerts", zap.Error(err), zap.String("tenantId", tenantId))
-				return common.NewJobResult(jobErrors, false)
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 		}
 
@@ -137,7 +137,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 				errorMsg := fmt.Sprintf("error searching for alerts for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q), zap.String("tenantId", tenantId))
-				return common.NewJobResult(jobErrors, false)
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			var alerts []statistics.AlertDocument
 			decoder, err := util.CreateAlertDecoder(&alerts)
@@ -145,14 +145,14 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 				errorMsg := fmt.Sprintf("error creating decoder for alerts for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("error while creating decoder for alerts", zap.Error(err), zap.String("tenantId", tenantId))
-				return common.NewJobResult(jobErrors, false)
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			err = decoder.Decode(openAlerts)
 			if err != nil {
 				errorMsg := fmt.Sprintf("error decoding openSearch response for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
-				return common.NewJobResult(jobErrors, false)
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			if len(alerts) == 0 {
 				logger.GetLogger().Info("no inactivity alerts found for tenant for active source", zap.String("tenantId", tenantId), zap.Any("sources", sourceIds))
@@ -170,17 +170,17 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 				errorMsg := fmt.Sprintf("error while dismissing alerts for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("error while dismissing alerts", zap.Error(err), zap.String("tenantId", tenantId))
-				return common.NewJobResult(jobErrors, false)
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 		}
 	}
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed source inactivity check")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("source inactivity check completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 

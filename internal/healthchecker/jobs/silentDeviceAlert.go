@@ -121,7 +121,7 @@ func ProcessSilentDevices(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while getting tenants", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	logSourceIds, err := GetLogSourceIdsFromSilentDeviceConfig(ctx)
@@ -129,7 +129,7 @@ func ProcessSilentDevices(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error fetching log source IDs: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error fetching log source IDs", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	for _, t := range tenants {
@@ -164,10 +164,10 @@ func ProcessSilentDevices(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logging.GetLoggerWithContext(ctx).Info("successfully completed silent device processing")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logging.GetLoggerWithContext(ctx).Info("silent device processing completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string, sources []string) ([]Device, error) {

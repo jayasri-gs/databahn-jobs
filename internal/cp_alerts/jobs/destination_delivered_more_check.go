@@ -67,7 +67,7 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
 		jobErrors = append(jobErrors, cpcommon.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
-		return cpcommon.NewJobResult(jobErrors, false)
+		return cpcommon.NewJobResultFromErrors(jobErrors)
 	}
 
 	osClient := os.GetClient()
@@ -77,7 +77,7 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
 		jobErrors = append(jobErrors, cpcommon.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return cpcommon.NewJobResult(jobErrors, false)
+		return cpcommon.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -257,10 +257,10 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed destination delivered more check")
-		return cpcommon.NewJobResult([]cpcommon.JobError{}, true)
+		return cpcommon.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("destination delivered more check completed with errors", zap.Int("error_count", len(jobErrors)))
-		return cpcommon.NewJobResult(jobErrors, false)
+		return cpcommon.NewJobResultFromErrors(jobErrors)
 	}
 }
 

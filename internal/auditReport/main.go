@@ -49,7 +49,7 @@ func GenerateAuditReport(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while creating alerts manager", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func(logger *zap.Logger) {
@@ -71,12 +71,12 @@ func GenerateAuditReport(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting requests: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while getting requests", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	logging.GetLoggerWithContext(ctx).Info("fetched audit report requests from db", zap.Int("count", len(auditReportRequests)))
 	if len(auditReportRequests) == 0 {
 		logging.GetLoggerWithContext(ctx).Info("no audit report requests found")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	}
 
 	var successAlerts []*alerts_async.Alert
@@ -110,10 +110,10 @@ func GenerateAuditReport(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logging.GetLoggerWithContext(ctx).Info("successfully completed audit report generation")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logging.GetLoggerWithContext(ctx).Info("audit report generation completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 func handleErrorRequestChannel(reportProcessor ReportProcessor, errorAlerts *[]models.FailedRequests) {

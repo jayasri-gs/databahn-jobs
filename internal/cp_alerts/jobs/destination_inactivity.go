@@ -35,7 +35,7 @@ func AlertForNoEventsToDestination(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	osClient := os.GetClient()
@@ -45,7 +45,7 @@ func AlertForNoEventsToDestination(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -136,10 +136,10 @@ func AlertForNoEventsToDestination(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed destination inactivity check")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("destination inactivity check completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 

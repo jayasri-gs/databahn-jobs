@@ -35,7 +35,7 @@ func SendTenantDailyDigest(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error getting tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error getting tenants", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	logger.GetLogger().Info("daily digest for tenants", zap.String("startTime", startTime), zap.String("endTime", endTime), zap.Int("tenantCount", len(tenants)))
@@ -45,7 +45,7 @@ func SendTenantDailyDigest(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting alerts from OpenSearch: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting alerts from OpenSearch", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	notificationManager, err := notification.NewNotificationManager(ctx)
@@ -53,7 +53,7 @@ func SendTenantDailyDigest(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while creating notification manager: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating notification manager", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	for _, t := range tenants {
@@ -89,10 +89,10 @@ func SendTenantDailyDigest(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed tenant daily digest")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("tenant daily digest completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 

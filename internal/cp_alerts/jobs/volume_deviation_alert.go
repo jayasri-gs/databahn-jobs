@@ -27,7 +27,7 @@ func SendAlertForVolumeDeviation(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error getting all tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting all tenants", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
@@ -35,7 +35,7 @@ func SendAlertForVolumeDeviation(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error getting alerts manager: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting alerts manager", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -215,10 +215,10 @@ func SendAlertForVolumeDeviation(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logger.GetLoggerWithContext(ctx).Info("successfully completed volume deviation alert processing")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLoggerWithContext(ctx).Info("volume deviation alert processing completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 

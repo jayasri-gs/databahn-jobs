@@ -26,7 +26,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	indexNames, err := os.CatIndices(ctx, os.GetClient())
 	if err != nil {
 		errors = append(errors, JobError{Message: fmt.Sprintf("failed to get indices: %v", err)})
-		return NewJobResult(errors, false)
+		return NewJobResultFromErrors(errors)
 	}
 	var allInsightsIndices []string
 	for _, index := range indexNames {
@@ -57,7 +57,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	err = config.GetDB().Model(&source.Source{}).Scan(&logSources).Error
 	if err != nil {
 		errors = append(errors, JobError{Message: fmt.Sprintf("failed to get log sources: %v", err)})
-		return NewJobResult(errors, false)
+		return NewJobResultFromErrors(errors)
 	}
 	sourceIdToNameMap := make(map[string]string)
 	for _, logSource := range logSources {
@@ -105,11 +105,11 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	wg.Wait()
 	if len(errors) > 0 {
 		logger.GetLogger().Info("aggregation of insights done", zap.Int("index_count", len(indicesToProcess)), zap.Int("success_count", successCount), zap.Int("error_count", len(errors)))
-		return NewJobResult(errors, false)
+		return NewJobResultFromErrors(errors)
 	} else {
 		logger.GetLogger().Info("successful aggregation of insights is done", zap.Int("index_count", len(indicesToProcess)), zap.Int("tenant_count", len(indicesByTenant)))
 	}
-	return NewJobResult([]JobError{}, true)
+	return NewJobResultSuccess()
 }
 
 func skipIndexTimeCheck() bool {

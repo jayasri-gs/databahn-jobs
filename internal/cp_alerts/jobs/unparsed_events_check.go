@@ -33,7 +33,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	osClient := os.GetClient()
 
@@ -42,7 +42,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	defer func() {
 		alertsManager.Close(ctx)
@@ -57,7 +57,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 		endTime := time.Now().UTC()
 		startTime := endTime.Add(-UnparsedEventsCheckDuration * time.Hour)
 		statsAlias := os.StatisticsIndexAlias(tenantId)
-		unparsedAgg, err := getUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
+		unparsedAgg, err := GetUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error getting unparsed events for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -65,7 +65,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 			continue
 		}
 
-		totalEventsAgg, err := getTotalEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
+		totalEventsAgg, err := GetTotalEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error getting total events for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -181,14 +181,14 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed unparsed events check")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("unparsed events check completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 
-func getUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
+func GetUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
 
 	q := `tags.component_name: "parser" AND name: "total_events_delivered" AND namespace:"parsing-service-unparsed"`
 	query := statistics.AddDateRange(q, startTime, endTime)
@@ -227,7 +227,7 @@ func getUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAl
 	return statistics.AggregateResponse{Agg: aggMap}, nil
 }
 
-func getTotalEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
+func GetTotalEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {
 
 	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
 	query := statistics.AddDateRange(q, startTime, endTime)

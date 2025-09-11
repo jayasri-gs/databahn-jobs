@@ -33,3 +33,4 @@ func (ec *errorCollector) GetErrors() []JobError {
 func (ec *errorCollector) HasErrors() bool {
 	return len(ec.errors) > 0
 }
+

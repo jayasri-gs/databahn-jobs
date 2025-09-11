@@ -3,12 +3,13 @@ package jobcmd
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 
 	commConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/kafka"
@@ -37,7 +38,7 @@ func ExecuteReplayJob(input model.Message) common.JobResult {
 
 	if err != nil {
 		jobErrors = append(jobErrors, common.JobError{Message: fmt.Sprintf("failed to pre process metadata: %v", err)})
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	processor.InitProducer(input.RequestId, input.DestinationTopic)
@@ -46,7 +47,7 @@ func ExecuteReplayJob(input model.Message) common.JobResult {
 	Process(input, mst)
 	elapsed := time.Since(start)
 	logger.GetLogger().Info("Execution Time Taken ", zap.Duration("time", elapsed))
-	return common.NewJobResult(jobErrors, true)
+	return common.NewJobResultSuccess()
 }
 
 func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {

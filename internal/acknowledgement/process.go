@@ -42,7 +42,7 @@ func ProcessAck() common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting change flags to be processed: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting change flags to be processed", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	logger.GetLogger().Debug("acknowledgements to be processed", zap.Int("count", len(acks)))
 
@@ -56,7 +56,7 @@ func ProcessAck() common.JobResult {
 		errorMsg := fmt.Sprintf("error while getting change flags: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting change flags", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	// get latest cf request for each entity and collect suppressed request ids
@@ -78,10 +78,10 @@ func ProcessAck() common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed acknowledgement processing")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("acknowledgement processing completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 

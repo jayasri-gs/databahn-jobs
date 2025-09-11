@@ -221,10 +221,10 @@ func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logging.GetLoggerWithContext(ctx).Info("successfully completed FHL agent check and restart")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logging.GetLoggerWithContext(ctx).Info("FHL agent check and restart completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 

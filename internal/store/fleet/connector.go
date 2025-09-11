@@ -1,8 +1,9 @@
 package fleet
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Connector struct {
@@ -35,6 +36,8 @@ type Components struct {
 	TenantId    uuid.UUID `json:"tenant_id"`
 	StartedAt   time.Time `json:"started_at"`
 }
+
+const ComponentsTypeConnector = "CONNECTOR"
 
 func (c *Connector) TableName() string {
 	return "connector"

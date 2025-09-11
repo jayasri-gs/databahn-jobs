@@ -56,7 +56,7 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error getting all tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting all tenants", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
@@ -64,7 +64,7 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error getting alerts manager: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting alerts manager", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -284,10 +284,10 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 
 	if len(jobErrors) == 0 {
 		logger.GetLoggerWithContext(ctx).Info("successfully completed VC no reduction alert processing")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLoggerWithContext(ctx).Info("VC no reduction alert processing completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 

@@ -30,14 +30,14 @@ func RolloverLifecycle(ctx context.Context) common.JobResult {
 		logger.GetLogger().Error("invalid lifecycle migration", zap.String("migration", lifeCycleMigration))
 		errorMsg := fmt.Sprintf("invalid lifecycle migration: %s", lifeCycleMigration)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	config, err := parseConfig()
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while parsing config: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while parsing config", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	logger.GetLogger().Info("starting stats lifecycle rollover:"+lifeCycleMigration, zap.Int("weeks_older_than", config.olderRolloverConfig.weeksOlderThan),
@@ -51,14 +51,14 @@ func RolloverLifecycle(ctx context.Context) common.JobResult {
 		errorMsg := fmt.Sprintf("error while fetching indices: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while fetching indices", zap.Error(err))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	if indexLifeCycleMigration == Migrate_P1_P2 {
 		indicesToRollover := filterStatsIndicesForP1Migration(indexNames)
 		if len(indicesToRollover) == 0 {
 			logger.GetLogger().Info("no indices to rollover for p1_p2")
-			return common.NewJobResult([]common.JobError{}, true)
+			return common.NewJobResultSuccess()
 		}
 		logger.GetLogger().Info("indices to rollover for p1_p2", zap.Any("indices", indicesToRollover))
 		config.aggWindow = 1 * time.Hour
@@ -66,10 +66,10 @@ func RolloverLifecycle(ctx context.Context) common.JobResult {
 		config.validationRange = 1 * time.Hour
 		rolloverErrors, successCount := runRolloverIndexToIndex(ctx, config, indicesToRollover, os.GetClient())
 		if len(rolloverErrors) > 0 {
-			return common.NewJobResult(rolloverErrors, false)
+			return common.NewJobResultFromErrors(rolloverErrors)
 		}
 		logger.GetLogger().Info("successfully completed p1_p2 migration", zap.Int("success_count", successCount))
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else if indexLifeCycleMigration == Migrate_P2_P3 {
 		logger.GetLogger().Info("performing p2 to p3 migration")
 		config.aggWindow = 24 * time.Hour
@@ -80,7 +80,7 @@ func RolloverLifecycle(ctx context.Context) common.JobResult {
 			return result
 		}
 		logger.GetLogger().Info("successfully completed p2_p3 migration")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else if indexLifeCycleMigration == Migrate_P3_P4 {
 		logger.GetLogger().Info("performing p3 to p4 migration")
 		config.aggWindow = 24 * time.Hour
@@ -91,11 +91,11 @@ func RolloverLifecycle(ctx context.Context) common.JobResult {
 			return result
 		}
 		logger.GetLogger().Info("successfully completed p3_p4 migration")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	}
 	errorMsg := "invalid lifecycle migration, only p1_p2 and p2_p3 supported"
 	jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-	return common.NewJobResult(jobErrors, false)
+	return common.NewJobResultFromErrors(jobErrors)
 }
 
 func filterStatsIndicesForP1Migration(indexNames []string) []Index {
@@ -152,7 +152,7 @@ func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfi
 	}
 	if len(validRolledOverIndices) == 0 {
 		logger.GetLogger().Info("no valid rolled over indices found for p3_p4 migration")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	}
 	if config.specificTenants != "" {
 		specificTenants := strings.Split(config.specificTenants, ",")
@@ -168,7 +168,7 @@ func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfi
 		validRolledOverIndices = filteredRolledOverIndices
 		if len(validRolledOverIndices) == 0 {
 			logger.GetLogger().Info("no valid rolled over indices found for p3_p4 migration for specific tenants", zap.String("tenants", config.specificTenants))
-			return common.NewJobResult([]common.JobError{}, true)
+			return common.NewJobResultSuccess()
 		}
 	}
 	sort.Slice(validRolledOverIndices, func(i, j int) bool {
@@ -226,7 +226,7 @@ func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfi
 					errorMsg := fmt.Sprintf("error updating aliases for tenant %s, year %d: %v", tenant, year, err)
 					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 					logger.GetLogger().Error("error updating aliases", zap.Error(err), zap.String("tenant", tenant), zap.Int("year", year))
-					return common.NewJobResult(jobErrors, false)
+					return common.NewJobResultFromErrors(jobErrors)
 				}
 				logger.GetLogger().Info("rolled over and alias updated", zap.Any("older indices", successIndices), zap.String("rolled_over_index", targetIndexName))
 				for _, index := range successIndices {
@@ -235,7 +235,7 @@ func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfi
 						errorMsg := fmt.Sprintf("error deleting index %s for tenant %s, year %d: %v", index.Index, tenant, year, err)
 						jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 						logger.GetLogger().Error("error deleting index", zap.Error(err), zap.String("index", index.Index), zap.String("tenant", tenant), zap.Int("year", year))
-						return common.NewJobResult(jobErrors, false)
+						return common.NewJobResultFromErrors(jobErrors)
 					}
 					logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
 				}
@@ -251,10 +251,10 @@ func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfi
 
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed stats lifecycle")
-		return common.NewJobResult([]common.JobError{}, true)
+		return common.NewJobResultSuccess()
 	} else {
 		logger.GetLogger().Info("stats lifecycle completed with jobErrors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResult(jobErrors, false)
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 }
 
@@ -331,7 +331,10 @@ func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []st
 			}
 		}
 	}
-	return common.NewJobResult(jobErrors, len(jobErrors) == 0)
+	if len(jobErrors) == 0 {
+		return common.NewJobResultSuccess()
+	}
+	return common.NewJobResultFromErrors(jobErrors)
 }
 
 func mergeP2IndicesIntoP3(ctx context.Context, config *RolloverConfig, tenantId string, indicesToRollOver []Index, year, week int, client *opensearch.Client) common.JobResult {
@@ -361,7 +364,7 @@ func mergeP2IndicesIntoP3(ctx context.Context, config *RolloverConfig, tenantId 
 			errorMsg := fmt.Sprintf("error updating aliases: %v", err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error updating aliases", zap.Error(err))
-			return common.NewJobResult(jobErrors, false)
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 		logger.GetLogger().Info("rolled over and alias updated", zap.Any("older indices", doneIndices), zap.String("rolled_over_index", newIndexToMergeInto))
 		for _, index := range successIndices {
@@ -370,7 +373,7 @@ func mergeP2IndicesIntoP3(ctx context.Context, config *RolloverConfig, tenantId 
 				errorMsg := fmt.Sprintf("error deleting index %s: %v", index.Index, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("error deleting index", zap.Error(err), zap.String("index", index.Index))
-				return common.NewJobResult(jobErrors, false)
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			logger.GetLogger().Info("deleted older index", zap.String("index", index.Index))
 		}
@@ -382,5 +385,8 @@ func mergeP2IndicesIntoP3(ctx context.Context, config *RolloverConfig, tenantId 
 	}
 
 	logger.GetLogger().Info("completed roll over index for indices", zap.Any("indices", successIndices), zap.String("new_index", newIndexToMergeInto))
-	return common.NewJobResult(jobErrors, len(jobErrors) == 0)
+	if len(jobErrors) == 0 {
+		return common.NewJobResultSuccess()
+	}
+	return common.NewJobResultFromErrors(jobErrors)
 }
