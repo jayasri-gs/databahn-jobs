@@ -3,12 +3,13 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/store/data_transformation"
-	"github.com/databahn-ai/databahn-jobs/internal/store/enrichment"
 	"math"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/store/data_transformation"
+	"github.com/databahn-ai/databahn-jobs/internal/store/enrichment"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/vc_rule"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
@@ -49,7 +50,8 @@ const (
 )
 
 // SendAlertForPipelineFlowDeviation generates alerts when there are significant deviations in pipeline event flow
-func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
+func SendAlertForPipelineFlowDeviation(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	// Load configuration from environment variables
 	deviationThreshold := utils.GetEnvFloat("PIPELINE_DEVIATION_THRESHOLD", DefaultDeviationThreshold)
 	offsetHours := utils.GetEnvInt("PIPELINE_WINDOW_OFFSET_HOURS", DefaultPipelineWindowOffsetHours)
@@ -67,14 +69,18 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error getting all tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting all tenants", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error getting alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting alerts manager", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -98,6 +104,8 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 		// Cache active sources for this tenant
 		activeSources, err := source.GetSourcesByTenantAndStatus(ctx, db, t.Id, "ACTIVE")
 		if err != nil {
+			errorMsg := fmt.Sprintf("error getting active sources for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLoggerWithContext(ctx).Error("Error getting active sources for tenant",
 				zap.Error(err), zap.String("tenant_id", tenantId))
 			continue
@@ -117,6 +125,8 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 		// Get all active pipelines with their source and destination mappings for this tenant
 		pipelines, err := pipeline.GetActivePipelinesWithMappings(ctx, db, t.Id)
 		if err != nil {
+			errorMsg := fmt.Sprintf("error getting active pipelines for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLoggerWithContext(ctx).Error("Error getting active pipelines for tenant",
 				zap.Error(err), zap.String("tenant_id", tenantId))
 			continue
@@ -158,6 +168,8 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 			// Build pipeline stages based on source and pipeline configuration
 			stages, err := buildStageFlow(ctx, db, pipelineMapping)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error building stage flow for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error building stage flow",
 					zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 				continue
@@ -176,6 +188,8 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 					// For first processing stage, get ingestion events
 					inputEvents, err = getStageEventCount(ctx, t.Id, pipelineMapping, ComponentIngestion, "total_events_delivered", startTime, endTime)
 					if err != nil {
+						errorMsg := fmt.Sprintf("error getting ingestion events for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+						jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 						logger.GetLoggerWithContext(ctx).Error("Error getting ingestion events",
 							zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 						continue
@@ -188,6 +202,8 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 				// Get output events for current stage
 				outputEvents, err := getStageEventCount(ctx, t.Id, pipelineMapping, stage.ComponentName, "total_events_delivered", startTime, endTime)
 				if err != nil {
+					errorMsg := fmt.Sprintf("error getting stage output events for pipeline %s stage %s in tenant %s: %v", pipelineId, stage.StageID, tenantId, err)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 					logger.GetLoggerWithContext(ctx).Error("Error getting stage output events",
 						zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId), zap.String("stage", stage.StageID))
 					continue
@@ -234,6 +250,8 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 					// Get source data plane ID
 					sourceDataPlaneID, err := getPipelineSourceDataPlaneID(ctx, db, pipelineMapping.LogSourceID)
 					if err != nil {
+						errorMsg := fmt.Sprintf("error getting source data plane ID for source %s in tenant %s: %v", pipelineMapping.LogSourceID.String(), tenantId, err)
+						jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 						logger.GetLoggerWithContext(ctx).Error("Error getting source data plane ID",
 							zap.Error(err), zap.String("tenant_id", tenantId), zap.String("source_id", pipelineMapping.LogSourceID.String()))
 						continue
@@ -244,6 +262,8 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 
 					alert, err := buildPipelineFlowDeviationAlert(*flowAlert, deviationThreshold)
 					if err != nil {
+						errorMsg := fmt.Sprintf("error building pipeline flow deviation alert for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+						jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 						logger.GetLoggerWithContext(ctx).Error("Error building pipeline flow deviation alert",
 							zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 						continue
@@ -251,6 +271,8 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 
 					err = alertsManager.SendAlerts([]*alerts_async.Alert{alert})
 					if err != nil {
+						errorMsg := fmt.Sprintf("error sending pipeline flow deviation alert for pipeline %s in tenant %s: %v", pipelineId, tenantId, err)
+						jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 						logger.GetLoggerWithContext(ctx).Error("Error sending pipeline flow deviation alert",
 							zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
 						continue
@@ -299,7 +321,13 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	if len(jobErrors) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("successfully completed pipeline flow deviation alert processing")
+		return common.NewJobResultSuccess()
+	} else {
+		logger.GetLoggerWithContext(ctx).Info("pipeline flow deviation alert processing completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 // buildStageFlow builds the pipeline stages based on source and pipeline configuration
