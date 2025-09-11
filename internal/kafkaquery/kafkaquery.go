@@ -3,6 +3,7 @@ package kafkaquery
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
@@ -84,22 +85,26 @@ func (c *CountConsumer) ValueDeserialize(b []byte) ([]byte, error) {
 	return b, nil
 }
 
-func Start(ctx context.Context, brokers, query string, threadCount, waitMinutes int) {
+func Start(ctx context.Context, brokers, query string, threadCount, waitMinutes int) error {
 	cluster := kafka.NewKafkaCluster("test", brokers)
 	logger.GetLogger().Info("starting stats validator", zap.String("brokers", brokers), zap.Int("wait_minutes", waitMinutes), zap.Int("thread_count", threadCount), zap.String("query", query))
 	q := Query{}
 	err := json.Unmarshal([]byte(query), &q)
 	if err != nil {
-		logger.GetLogger().Panic("failed to unmarshal query", zap.Error(err))
+		logger.GetLogger().Error("failed to unmarshal query", zap.Error(err))
+		return err
 	}
 	if q.Id == "" {
-		logger.GetLogger().Panic("id is required")
+		logger.GetLogger().Error("id is required")
+		return fmt.Errorf("id is required")
 	}
 	if q.Criteria == nil {
-		logger.GetLogger().Panic("criteria is required")
+		logger.GetLogger().Error("criteria is required")
+		return fmt.Errorf("criteria is required")
 	}
 	if len(q.Topics) == 0 {
-		logger.GetLogger().Panic("topics are required")
+		logger.GetLogger().Error("topics are required")
+		return fmt.Errorf("topics are required")
 	}
 
 	logger.GetLogger().Info("running query", zap.Any("query", q))
@@ -115,7 +120,8 @@ func Start(ctx context.Context, brokers, query string, threadCount, waitMinutes 
 	var cc kafka.DetailedKafkaConsumer[string, []byte] = consumer
 	err = kafka.NewDetailedConsumer(*cluster, ctx, consumerConf, cc)
 	if err != nil {
-		logger.GetLogger().Panic("failed to create consumer", zap.Error(err))
+		logger.GetLogger().Error("failed to create consumer", zap.Error(err))
+		return err
 	} else {
 		logger.GetLogger().Info("consumer created")
 	}
@@ -123,6 +129,7 @@ func Start(ctx context.Context, brokers, query string, threadCount, waitMinutes 
 	logger.GetLogger().Info("quitting", zap.Duration("wait_duration", consumer.WaitDuration), zap.Int64("last seen", consumer.LastDetectedAt.Load()),
 		zap.Int64("last read", consumer.LastRead.Load()))
 	logger.GetLogger().Info("final count", zap.Int64("count", consumer.Count.Load()))
+	return nil
 }
 
 type Query struct {

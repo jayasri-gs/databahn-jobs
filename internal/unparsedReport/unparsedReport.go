@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	cp_jobs "github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs"
-
 	osstore "github.com/databahn-ai/databahn-jobs/internal/store/os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -56,7 +56,8 @@ func NewReportStreamer(ctx context.Context, db *gorm.DB, startTime, endTime time
 	}
 }
 
-func SendUnparsedEventsReport(ctx context.Context) error {
+func SendUnparsedEventsReport(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	startTime := time.Now()
 	db := config.GetDB()
 
@@ -65,7 +66,8 @@ func SendUnparsedEventsReport(ctx context.Context) error {
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Failed to get tenants from database", zap.Error(err))
-		return err
+		jobErrors = append(jobErrors, common.JobError{Message: fmt.Sprintf("failed to get tenants: %v", err)})
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	logging.GetLoggerWithContext(ctx).Info("Found tenants", zap.Int("count", len(tenants)))
@@ -113,10 +115,11 @@ func SendUnparsedEventsReport(ctx context.Context) error {
 	err = sendUnparsedEventsReportEmail(ctx, completeHTML)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Failed to send email report", zap.Error(err))
-		return err
+		jobErrors = append(jobErrors, common.JobError{Message: fmt.Sprintf("failed to send email report: %v", err)})
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
-	return nil
+	return common.NewJobResultSuccess()
 }
 
 func (rs *ReportStreamer) processTenantBatch(tenants []tenant.Tenant) error {
@@ -344,7 +347,7 @@ func getSourceNames(sourceIdToName map[string]string) []string {
 // parseEmailRecipients parses comma-separated email addresses
 func parseEmailRecipients(emailConfig string) []string {
 	if emailConfig == "" {
-		return nil
+		return []string{}
 	}
 
 	// Split by comma and clean up whitespace

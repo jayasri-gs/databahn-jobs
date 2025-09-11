@@ -35,19 +35,24 @@ var FunctionalitiesRequiringAggregation = []string{
 	"agent",
 }
 
-func SendNotificationsForAlerts(ctx context.Context) error {
+func SendNotificationsForAlerts(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	db := config.GetDB()
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	osClient := os.GetClient()
 
 	notificationManager, err := notification.NewNotificationManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while creating notification manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating notification manager", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -57,15 +62,19 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	// Load module tenant configs once for all tenants
 	tenantToModuleToConfigMap, err := entities.LoadTenantToModuleToConfigs(db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while loading module tenant configs: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while loading module tenant configs", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	for _, t := range tenants {
+		tenantId := t.Id.String()
 		err := processExternalAlerts(ctx, db, t, osClient, notificationManager, tenantToModuleToConfigMap)
 		if err != nil {
-			logger.GetLogger().Error("failed process external alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
-			continue
+			errorMsg := fmt.Sprintf("failed process external alerts for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("failed process external alerts", zap.Error(err), zap.String("tenant", tenantId))
 		}
 	}
 	t := tenant.Tenant{
@@ -74,14 +83,22 @@ func SendNotificationsForAlerts(ctx context.Context) error {
 	}
 	tenants = append(tenants, t)
 	for _, t := range tenants {
+		tenantId := t.Id.String()
 		err := processInternalAlerts(ctx, db, t, osClient, notificationManager)
 		if err != nil {
-			logger.GetLogger().Error("failed process internal alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
-			continue
+			errorMsg := fmt.Sprintf("failed process internal alerts for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("failed process internal alerts", zap.Error(err), zap.String("tenant", tenantId))
 		}
 	}
 
-	return nil
+	if len(jobErrors) == 0 {
+		logger.GetLogger().Info("successfully completed notifications for alerts")
+		return common.NewJobResultSuccess()
+	} else {
+		logger.GetLogger().Info("notifications for alerts completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 func processExternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, osClient *opensearch.Client, notificationManager *notification.NotificationManager, tenantToModuleToConfigMap map[string]map[string]*entities.ModuleTenantConfigData) error {

@@ -63,4 +63,5 @@ var (
 	VcDropRuleIncrease             = functionalityTypeEnum{value: "vc_drop_rule_increase"}
 	VcPipelineDataReduction        = functionalityTypeEnum{value: "vc_pipeline_data_reduction"}
 	VcUnmatchedNoRouteProcessor    = functionalityTypeEnum{value: "vc_unmatched_no_route_processor"}
+	JobFailure                     = functionalityTypeEnum{value: "job_failure"}
 )

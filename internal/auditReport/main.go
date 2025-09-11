@@ -3,11 +3,17 @@ package auditReport
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/agentReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/alertReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/audit"
-	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
+	auditCommon "github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/dataTransformation"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/destination"
@@ -19,16 +25,13 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/roiReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/volumeController"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
 	"github.com/databahn-ai/db-models/alerts_async"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
-	"strconv"
-	"sync"
-	"time"
 )
 
 type ReportProcessor struct {
@@ -36,14 +39,17 @@ type ReportProcessor struct {
 	failedRequestChannel chan models.FailedRequests
 }
 
-func GenerateAuditReport(ctx context.Context) error {
+func GenerateAuditReport(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	parallelism := utils.GetEnvInt("AUDIT_REPORT_PARALLELISM_CONTROL", 4)
 	channelBufferSize := utils.GetEnvInt("AUDIT_REPORT_CHANNEL_BUFFER_SIZE", 4)
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while creating alerts manager", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func(logger *zap.Logger) {
@@ -62,13 +68,15 @@ func GenerateAuditReport(ctx context.Context) error {
 	logging.GetLoggerWithContext(ctx).Info("fetching all audit report requests from db")
 	auditReportRequests, err := models.GetAllReportRequests(config.GetDB())
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while getting requests: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while getting requests", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	logging.GetLoggerWithContext(ctx).Info("fetched audit report requests from db", zap.Int("count", len(auditReportRequests)))
 	if len(auditReportRequests) == 0 {
 		logging.GetLoggerWithContext(ctx).Info("no audit report requests found")
-		return nil
+		return common.NewJobResultSuccess()
 	}
 
 	var successAlerts []*alerts_async.Alert
@@ -89,15 +97,26 @@ func GenerateAuditReport(ctx context.Context) error {
 
 	errorAlerts, err := handleErrorRequests(errorRequests)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while handling error requests: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while handling error requests", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	err = handleAlerts(alertsManager, successAlerts, errorAlerts)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while handling alerts: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error while handling alerts", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
-	return nil
+
+	if len(jobErrors) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("successfully completed audit report generation")
+		return common.NewJobResultSuccess()
+	} else {
+		logging.GetLoggerWithContext(ctx).Info("audit report generation completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 func handleErrorRequestChannel(reportProcessor ReportProcessor, errorAlerts *[]models.FailedRequests) {
 	for failedRequest := range reportProcessor.failedRequestChannel {
@@ -145,7 +164,7 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 		return
 	}
 
-	file, err = common.CreateTempFile(req.Name)
+	file, err = auditCommon.CreateTempFile(req.Name)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while creating temp file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId), zap.String("report_type", req.ReportType))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
@@ -256,8 +275,8 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 	}
 
 	// upload file
-	bucketName, objectKey := common.GetBucketNameAndObjectKey(req.Name + "_" + strconv.Itoa(int(time.Now().Unix())))
-	err = common.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
+	bucketName, objectKey := auditCommon.GetBucketNameAndObjectKey(req.Name + "_" + strconv.Itoa(int(time.Now().Unix())))
+	err = auditCommon.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())

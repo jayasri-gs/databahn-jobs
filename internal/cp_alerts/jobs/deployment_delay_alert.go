@@ -28,7 +28,8 @@ const (
 	DefaultDataPlaneId              = "dbd00000-0000-0000-0000-000000000000" // Default value for data plane ID if not set
 )
 
-func SendAlertForDeploymentDelayAlert(ctx context.Context) error {
+func SendAlertForDeploymentDelayAlert(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	// Load configuration from environment variables
 	timeoutMinutes := utils.GetEnvInt("DEPLOYMENT_TIMEOUT_MINUTES", DefaultDeploymentTimeoutMinutes)
 
@@ -40,14 +41,18 @@ func SendAlertForDeploymentDelayAlert(ctx context.Context) error {
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error getting all tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting all tenants", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error getting alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting alerts manager", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -67,13 +72,21 @@ func SendAlertForDeploymentDelayAlert(ctx context.Context) error {
 		// Check each entity type for deploying state
 		err := checker.CheckAndAlertDeployingEntities()
 		if err != nil {
+			errorMsg := fmt.Sprintf("error checking deploying entities for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLoggerWithContext(ctx).Error("Error checking deploying entities for tenant",
 				zap.Error(err), zap.String("tenant_id", tenantId))
 			continue
 		}
 	}
 
-	return nil
+	if len(jobErrors) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("successfully completed deployment delay alert processing")
+		return common.NewJobResultSuccess()
+	} else {
+		logger.GetLoggerWithContext(ctx).Info("deployment delay alert processing completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 // DataPlaneCache caches data plane IDs to avoid repeated queries

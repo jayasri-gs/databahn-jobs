@@ -38,57 +38,78 @@ var AgentHealthCheckTimeNew = utils.GetEnvInt(EnvAgentHealthCheckTime, 30)
 var FleetHealthCheckTimeNew = utils.GetEnvInt(EnvFleetHealthCheckTime, 10)
 var FleetHealthCheckIgnoreTimeNew = utils.GetEnvInt(EnvFleetHealthCheckIgnoreTime, 600)
 
-func HealthCheckJob(ctx context.Context) error {
+func HealthCheckJob(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 
 	logger.GetLoggerWithContext(ctx).Info("starting health check job")
 
 	db := config.GetDB()
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
-		return err
+		errorMsg := fmt.Sprintf("error creating alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLogger().Error("error creating alerts manager", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	defer alertsManager.Close(ctx)
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while fetching tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while fetching tenants", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy agents")
 
 	for _, t := range tenants {
+		tenantId := t.Id.String()
 
-		err = alertForUnhealthyAgents(ctx, alertsManager, t.Id.String())
+		err = alertForUnhealthyAgents(ctx, alertsManager, tenantId)
 		if err != nil {
-			logger.GetLogger().Error("error while handling alerts for unhealthy agents", zap.Error(err))
-			return err
+			errorMsg := fmt.Sprintf("error handling alerts for unhealthy agents for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error while handling alerts for unhealthy agents", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
-		err = alertForFleetComponentsHealthCheck(ctx, alertsManager, t.Id.String())
+		err = alertForFleetComponentsHealthCheck(ctx, alertsManager, tenantId)
 		if err != nil {
-			logger.GetLogger().Error("error while handling alerts for unhealthy fleet components", zap.Error(err))
-			return err
+			errorMsg := fmt.Sprintf("error handling alerts for unhealthy fleet components for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error while handling alerts for unhealthy fleet components", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet nodes")
-		err = alertForFleetHealthCheck(ctx, alertsManager, t.Id.String())
+		err = alertForFleetHealthCheck(ctx, alertsManager, tenantId)
 		if err != nil {
-			logger.GetLogger().Error("error while handling alerts for unhealthy fleet nodes", zap.Error(err))
-			return err
+			errorMsg := fmt.Sprintf("error handling alerts for unhealthy fleet nodes for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error while handling alerts for unhealthy fleet nodes", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet connectors")
-		err = alertForFleetConnectorsHealthCheck(ctx, alertsManager, t.Id.String())
+		err = alertForFleetConnectorsHealthCheck(ctx, alertsManager, tenantId)
 		if err != nil {
-			logger.GetLogger().Error("error while handling alerts for unhealthy fleet connectors", zap.Error(err))
-			return err
+			errorMsg := fmt.Sprintf("error handling alerts for unhealthy fleet connectors for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error while handling alerts for unhealthy fleet connectors", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet components")
 
-	return nil
+	if len(jobErrors) == 0 {
+		logger.GetLogger().Info("successfully completed health check job")
+		return common.NewJobResultSuccess()
+	} else {
+		logger.GetLogger().Info("health check job completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsManager, tenantId string) error {

@@ -2,14 +2,17 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/agent"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
+	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
 )
 
@@ -116,7 +119,8 @@ var agentData = []AgentData{
 	},
 }
 
-func CheckAndRestartFHLAgent(ctx context.Context) error {
+func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	osClient := os.GetClient()
 	db := config.GetDB()
 
@@ -130,10 +134,12 @@ func CheckAndRestartFHLAgent(ctx context.Context) error {
 		interval := 20
 		oneInactiveSource := false
 		// Get last event times for all specified sources
-		sourceIdToLastEventTime, err := getSourceIdToLastEventTimeNew(ctx, osClient, tenantId, interval, sourceIds)
+		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(tenantId, ctx, osClient, sourceIds)
 		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error getting sourceIdToLastEventTime", zap.Error(err))
-			return err
+			errorMsg := fmt.Sprintf("error getting sourceIdToLastEventTime for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logging.GetLoggerWithContext(ctx).Error("error getting sourceIdToLastEventTime", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		// Check if any source haven't sent data for more than 20 minutes
@@ -194,11 +200,12 @@ func CheckAndRestartFHLAgent(ctx context.Context) error {
 				Update("is_upgrade_available", true)
 
 			if result.Error != nil {
+				errorMsg := fmt.Sprintf("error updating agents is_upgrade_available for tenant %s: %v", tenantId, result.Error)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logging.GetLoggerWithContext(ctx).Error("error updating agents is_upgrade_available",
 					zap.Error(result.Error),
 					zap.Any("agentIds", agentIds),
 					zap.String("tenantName", tenantName))
-				return result.Error
 			}
 
 			logging.GetLoggerWithContext(ctx).Info("Successfully updated agents is_upgrade_available to true",
@@ -211,5 +218,42 @@ func CheckAndRestartFHLAgent(ctx context.Context) error {
 				zap.String("tenantName", tenantName))
 		}
 	}
-	return nil
+
+	if len(jobErrors) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("successfully completed FHL agent check and restart")
+		return common.NewJobResultSuccess()
+	} else {
+		logging.GetLoggerWithContext(ctx).Info("FHL agent check and restart completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
+}
+
+func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *opensearch.Client, sourceIds []string) (map[string]time.Time, error) {
+	statsAlias := os.StatisticsIndexAlias(tenantId)
+	aggFunc := os.AggregationFunction{
+		Function: "max",
+		Field:    "tags.db_ts_win",
+		Name:     "last_event_time",
+	}
+	sourceIdToLastEventTime := make(map[string]time.Time)
+	var after map[string]any = nil
+	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
+	for {
+		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, osClient, 100, statsAlias, q, []string{"tags.db_event_source_id.keyword"}, []os.AggregationFunction{aggFunc}, after)
+		if err != nil {
+			return nil, err
+		}
+		if len(responses) == 0 {
+			break
+		}
+		for _, response := range responses {
+			if sourceId, ok := response.Key["tags.db_event_source_id.keyword"].(string); ok {
+				if lastEventTime, ok := response.Values["last_event_time"].(float64); ok {
+					sourceIdToLastEventTime[sourceId] = time.Unix(int64(lastEventTime)/1000, 0).UTC()
+				}
+			}
+		}
+		after = newAfter
+	}
+	return sourceIdToLastEventTime, nil
 }

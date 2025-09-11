@@ -6,6 +6,8 @@ const (
 	Replace                           TransformationOpType = "REPLACE"
 	ConstantReplace                   TransformationOpType = "CONSTANT_REPLACE"
 	SubstringExtraction               TransformationOpType = "SUBSTRING_EXTRACTION"
+	JsonExtraction                    TransformationOpType = "JSON_EXTRACT"
+	XmlExtraction                     TransformationOpType = "XML_EXTRACT"
 	Split                             TransformationOpType = "SPLIT"
 	Trim                              TransformationOpType = "TRIM"
 	Numerify                          TransformationOpType = "NUMERIFY"
@@ -98,6 +100,8 @@ type TransformationOperator struct {
 	TrimConfig                   *TrimConfig                   `json:"trimConfig,omitempty"`
 	MaskConfig                   *MaskConfig                   `json:"maskConfig,omitempty"`
 	SubstringExtractionConfig    *SubstringExtractionConfig    `json:"substringExtractionConfig,omitempty"`
+	JsonExtractionConfig         *JsonExtractionConfig         `json:"jsonExtractionConfig,omitempty"`
+	XmlExtractionConfig          *XmlExtractionConfig          `json:"xmlExtractionConfig,omitempty"`
 	ConstantReplaceConfig        *ConstantReplaceConfig        `json:"constantReplaceConfig,omitempty"`
 	SplitOperatorConfig          *SplitOperatorConfig          `json:"splitOperatorConfig,omitempty"`
 	StringRedactOperatorConfig   *StringRedactOperatorConfig   `json:"stringRedactOperatorConfig,omitempty"`
@@ -105,34 +109,31 @@ type TransformationOperator struct {
 	CaseOperatorConfig           *CaseOperatorConfig           `json:"caseOperatorConfig,omitempty"`
 }
 
-type JsonExtractionConfig struct {
-	IsString bool   `json:"isString"`
-	JsonKey  string `json:"jsonKey"`
-}
-
-type XmlExtractionConfig struct {
-	XmlKey string `json:"xmlKey"`
-}
-
 type RenameFields struct {
-	LogAttribute                       string                    `json:"logAttribute"`
-	DatabahnAttribute                  string                    `json:"databahnAttribute"`
-	RenameAttribute                    string                    `json:"renameAttribute"`
-	Include                            bool                      `json:"include"`
-	ReplaceOperatorEnabled             bool                      `json:"replaceOperatorEnabled"`
-	ReplaceConfig                      ReplaceConfig             `json:"replaceConfig"`
-	TrimOperatorEnabled                bool                      `json:"trimOperatorEnabled"`
-	NumerifyOperatorEnabled            bool                      `json:"numerifyOperatorEnabled"`
-	MaskOperatorEnabled                bool                      `json:"maskOperatorEnabled"`
-	MaskConfig                         MaskConfig                `json:"maskConfig"`
+	LogAttribute            string        `json:"logAttribute"`
+	DatabahnAttribute       string        `json:"databahnAttribute"`
+	RenameAttribute         string        `json:"renameAttribute"`
+	Include                 bool          `json:"include"`
+	ReplaceOperatorEnabled  bool          `json:"replaceOperatorEnabled"`
+	ReplaceConfig           ReplaceConfig `json:"replaceConfig"`
+	TrimOperatorEnabled     bool          `json:"trimOperatorEnabled"`
+	NumerifyOperatorEnabled bool          `json:"numerifyOperatorEnabled"`
+	MaskOperatorEnabled     bool          `json:"maskOperatorEnabled"`
+	MaskConfig              MaskConfig    `json:"maskConfig"`
+
 	SubstringExtractionOperatorEnabled bool                      `json:"substringExtractionOperatorEnabled"`
 	SubstringExtractionConfig          SubstringExtractionConfig `json:"substringExtractionConfig"`
-	ConstantReplaceOperatorEnabled     bool                      `json:"constantReplaceOperatorEnabled"`
-	ConstantReplaceConfig              ConstantReplaceConfig     `json:"constantConfig"`
-	LowercaseOperatorEnabled           bool                      `json:"lowercaseOperatorEnabled"`
-	UppercaseOperatorEnabled           bool                      `json:"uppercaseOperatorEnabled"`
-	SplitOperatorEnabled               bool                      `json:"splitOperatorEnabled"`
-	SplitOperatorConfig                SplitOperatorConfig       `json:"splitOperatorConfig"`
+	JsonExtractionOperatorEnabled      bool                      `json:"jsonExtractionOperatorEnabled"`
+	JsonExtractionConfig               JsonExtractionConfig      `json:"jsonExtractionConfig"`
+	XmlExtractionOperatorEnabled       bool                      `json:"xmlExtractionOperatorEnabled"`
+	XmlExtractionConfig                XmlExtractionConfig       `json:"xmlExtractionConfig"`
+
+	ConstantReplaceOperatorEnabled bool                  `json:"constantReplaceOperatorEnabled"`
+	ConstantReplaceConfig          ConstantReplaceConfig `json:"constantConfig"`
+	LowercaseOperatorEnabled       bool                  `json:"lowercaseOperatorEnabled"`
+	UppercaseOperatorEnabled       bool                  `json:"uppercaseOperatorEnabled"`
+	SplitOperatorEnabled           bool                  `json:"splitOperatorEnabled"`
+	SplitOperatorConfig            SplitOperatorConfig   `json:"splitOperatorConfig"`
 	// ✅ NEW: Math Function Operators
 	MathAbsOperatorEnabled         bool                  `json:"mathAbsOperatorEnabled"`
 	MathFloorOperatorEnabled       bool                  `json:"mathFloorOperatorEnabled"`
@@ -162,8 +163,6 @@ type RenameFields struct {
 	StringEncodeASCIIOnlyOperatorEnabled   bool                         `json:"stringEncodeASCIIOnlyOperatorEnabled"`
 	StringDecodeASCIIOnlyOperatorEnabled   bool                         `json:"stringDecodeASCIIOnlyOperatorEnabled"`
 	StringReplaceWithLengthOperatorEnabled bool                         `json:"stringReplaceWithLengthOperatorEnabled"`
-	JsonExtractionConfig                   JsonExtractionConfig         `json:"jsonExtractionConfig"`
-	XmlExtractionConfig                    XmlExtractionConfig          `json:"xmlExtractionConfig"`
 	// ✅ NEW: New Time Operators
 	TimeFromUnixTimestampSecondsOperatorEnabled      bool `json:"timeFromUnixTimestampSecondsOperatorEnabled"`
 	TimeFromUnixTimestampMillisecondsOperatorEnabled bool `json:"timeFromUnixTimestampMillisecondsOperatorEnabled"`
@@ -235,6 +234,16 @@ type MaskConfig struct {
 type SubstringExtractionConfig struct {
 	ExtractionPattern string `json:"extractionPattern"`
 }
+
+type ExtractionConfig struct {
+	DefaultValue  string `json:"defaultValue"`
+	ExtractionKey string `json:"extractionKey"`
+}
+
+type JsonExtractionConfig ExtractionConfig
+
+type XmlExtractionConfig ExtractionConfig
+
 type OcsfTransformationBlock struct {
 	OcsfFilterCriteria OcsfFilterCriteria          `json:"ocsfFilterCriteria"`
 	Name               string                      `json:"name"`
