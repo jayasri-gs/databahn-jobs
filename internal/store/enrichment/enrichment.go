@@ -12,7 +12,7 @@ func HasActiveEnrichment(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID,
 	var count int64
 	err := db.WithContext(ctx).Table("enrichment").
 		Where("pipeline_id = ? AND tenant_id = ? AND status = ?",
-			pipelineID.String(), tenantID.String(), "ACTIVE").
+			pipelineID, tenantID, "ACTIVE").
 		Count(&count).Error
 
 	return count > 0, count, err
