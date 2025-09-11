@@ -234,6 +234,9 @@ func ParseFlagSensitiveData(data []byte) (*FlagSensitiveDataConfig, error) {
 
 func ParseFlagSource(data []byte) (*FlagSource, error) {
 	source, err := parseSource(data)
+	if err != nil {
+		return nil, err
+	}
 	err = validateSource(source)
 	if err != nil {
 		return nil, err
@@ -561,7 +564,7 @@ func validateSensitiveData(sensitiveData FlagSensitiveDataConfig) error {
 	if sensitiveData.Function == "" {
 		return errors.New("sensitive data is invalid, missing function")
 	}
-	if sensitiveData.Patterns == nil || len(sensitiveData.Patterns) == 0 {
+	if len(sensitiveData.Patterns) == 0 {
 		return errors.New("sensitive data is invalid, missing patterns")
 	}
 	return nil

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
@@ -17,19 +18,24 @@ import (
 	"go.uber.org/zap"
 )
 
-func SendAlertForVolumeDeviation(ctx context.Context) error {
+func SendAlertForVolumeDeviation(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	db := config.GetDB()
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error getting all tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting all tenants", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error getting alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLoggerWithContext(ctx).Error("Error getting alerts manager", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -52,6 +58,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) error {
 		// Get today's stats
 		todayIngestion, todayDelivery, err := getTenantStats(ctx, tenantIdUuid, todayStart, todayEnd)
 		if err != nil {
+			errorMsg := fmt.Sprintf("error getting today's stats for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLoggerWithContext(ctx).Error("Error getting today's stats", zap.Error(err), zap.String("tenant_id", tenantId))
 			continue
 		}
@@ -59,6 +67,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) error {
 		// Get yesterday's stats
 		yesterdayIngestion, yesterdayDelivery, err := getTenantStats(ctx, tenantIdUuid, yesterdayStart, yesterdayEnd)
 		if err != nil {
+			errorMsg := fmt.Sprintf("error getting yesterday's stats for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLoggerWithContext(ctx).Error("Error getting yesterday's stats", zap.Error(err), zap.String("tenant_id", tenantId))
 			continue
 		}
@@ -95,6 +105,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) error {
 
 			alert, err := buildVolumeDeviationAlert(*ingestionDropAlert)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error building ingestion drop alert for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error building ingestion drop alert", zap.Error(err), zap.String("tenant_id", tenantId))
 			} else {
 				alertsToSend = append(alertsToSend, alert)
@@ -118,6 +130,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) error {
 
 			alert, err := buildVolumeDeviationAlert(*ingestionSpikeAlert)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error building ingestion spike alert for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error building ingestion spike alert", zap.Error(err), zap.String("tenant_id", tenantId))
 			} else {
 				alertsToSend = append(alertsToSend, alert)
@@ -141,6 +155,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) error {
 
 			alert, err := buildVolumeDeviationAlert(*deliveryDropAlert)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error building delivery drop alert for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error building delivery drop alert", zap.Error(err), zap.String("tenant_id", tenantId))
 			} else {
 				alertsToSend = append(alertsToSend, alert)
@@ -164,6 +180,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) error {
 
 			alert, err := buildVolumeDeviationAlert(*deliverySpikeAlert)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error building delivery spike alert for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error building delivery spike alert", zap.Error(err), zap.String("tenant_id", tenantId))
 			} else {
 				alertsToSend = append(alertsToSend, alert)
@@ -174,6 +192,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) error {
 		if len(alertsToSend) > 0 {
 			err = alertsManager.SendAlerts(alertsToSend)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error sending volume deviation alerts for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error sending volume deviation alerts", zap.Error(err), zap.String("tenant_id", tenantId))
 			} else {
 				logger.GetLoggerWithContext(ctx).Info("Successfully sent volume deviation alerts",
@@ -193,7 +213,13 @@ func SendAlertForVolumeDeviation(ctx context.Context) error {
 			zap.Int("total_alerts_generated", len(alertsToSend)))
 	}
 
-	return nil
+	if len(jobErrors) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("successfully completed volume deviation alert processing")
+		return common.NewJobResultSuccess()
+	} else {
+		logger.GetLoggerWithContext(ctx).Info("volume deviation alert processing completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 // getTenantStats gets ingestion and delivery stats for a tenant in the given time range

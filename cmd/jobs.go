@@ -2,10 +2,15 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
 	"github.com/databahn-ai/databahn-jobs/internal/transformationCheckerUtility"
 	"github.com/databahn-ai/databahn-jobs/internal/unparsedReport"
-	"os"
+	"github.com/databahn-ai/db-models/alerts_async"
 
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
@@ -27,84 +32,83 @@ import (
 )
 
 func RunJob(ctx context.Context, jobName string, input model.Message) {
-	var err error
+	var result common.JobResult
+
 	switch jobName {
 	case common.INSIGHTS_AGGREGATION:
 		parallelism := utils.GetEnvInt("INSIGHTS_PROCESSING_PARALLELISM", 4)
-		err = insights.AggregateInsightsAndStore(ctx, parallelism)
+		result = insights.AggregateInsightsAndStore(ctx, parallelism)
 	case common.ROLLOVER_OLDER_STATS:
-		err = stats.RolloverOlderStats(ctx)
+		result = stats.RolloverOlderStats(ctx)
 	case common.STATS_LIFECYCLE:
-		err = stats.RolloverLifecycle(ctx)
+		result = stats.RolloverLifecycle(ctx)
 	case common.DEVICE_INVENTORY_HEALTH:
 		runFor := utils.GetEnvOrDefault("DEVICE_INVENTORY_HEALTH_RUN_FOR", insights.HEALTH_CALCULATION_YESTERDAY)
-		statuses, err2 := insights.CalculateDeviceInventoryHealth(ctx, runFor)
-		err = err2
-		logger.GetLogger().Info("device inventory health calculation completed", zap.String("runFor", runFor), zap.Any("statuses", statuses))
+		result = insights.CalculateDeviceInventoryHealth(ctx, runFor)
 	case common.DATA_REPLAY:
 		logger.GetLogger().Info("Data Replay Job Triggered")
-		jobcmd.ExecuteReplayJob(input)
-		logger.GetLogger().Info("Data Replay Job Completed")
-	case common.FLEET_HEALTH_CHECKER:
-		err = jobs.HealthCheckAlertForFleetNode(ctx)
-	case common.LOG_SOURCE_ACTIVITY_CHECKER:
-		err = jobs.SendAlertsForActivity(ctx)
-		err = jobs.AlertForDestinationInactivity(ctx)
+		result = jobcmd.ExecuteReplayJob(input)
 	case common.LOG_SOURCE_ACTIVITY_CHECKER_NEW:
-		err = cp_jobs.AlertForNoEventsFromSources(ctx)
+		result = cp_jobs.AlertForNoEventsFromSources(ctx)
 	case common.DESTINATION_ACTIVITY_CHECKER:
-		err = cp_jobs.AlertForNoEventsToDestination(ctx)
+		result = cp_jobs.AlertForNoEventsToDestination(ctx)
 	case common.DESTINATION_MORE_THAN_INJECTED:
-		err = cp_jobs.AlertDestinationsWithMoreDataDeliveredThanInjection(ctx)
+		result = cp_jobs.AlertDestinationsWithMoreDataDeliveredThanInjection(ctx)
 	case common.NOTIFICATIONS_FOR_ALERTS:
-		err = cp_jobs.SendNotificationsForAlerts(ctx)
+		result = cp_jobs.SendNotificationsForAlerts(ctx)
 	case common.HEALTH_CHECKER:
-		err = cp_jobs.HealthCheckJob(ctx)
+		result = cp_jobs.HealthCheckJob(ctx)
 	case common.TENANT_DAILY_DIGEST:
-		err = cp_jobs.SendTenantDailyDigest(ctx)
+		result = cp_jobs.SendTenantDailyDigest(ctx)
 	case common.UNPARSED_EVENTS:
-		err = cp_jobs.SendAlertsForUnparsedEvents(ctx)
+		result = cp_jobs.SendAlertsForUnparsedEvents(ctx)
 	case common.KAFKA_QUERY:
 		threadCount := utils.GetEnvInt("KAFKA_QUERY_THREAD_COUNT", 4)
 		waitMinutes := utils.GetEnvInt("KAFKA_QUERY_WAIT_MINUTES", 5)
 		brokers := config.GetAppConfiguration().GetString(configuration.KafkaBootstrapServers)
 		query := utils.GetEnvOrDefault("KAFKA_QUERY_QUERY", "{}")
-		kafkaquery.Start(ctx, brokers, query, threadCount, waitMinutes)
+		err := kafkaquery.Start(ctx, brokers, query, threadCount, waitMinutes)
+		if err != nil {
+			result = common.NewJobResultFromError(err)
+		} else {
+			result = common.NewJobResultSuccess()
+		}
 	case common.ACK_PROCESSOR:
-		err = ack.ProcessAck()
+		result = ack.ProcessAck()
 	case common.EVENT_SEQUENCING:
-		evntjobCmd.ExecuteS3DataSequencing(input)
+		result = evntjobCmd.ExecuteS3DataSequencing(input)
 	case common.ALERT_REPORT_PROCESSOR:
-		err = auditReport.GenerateAuditReport(ctx)
+		result = auditReport.GenerateAuditReport(ctx)
 	case common.DATA_HEALTH_SCORE_JOB:
-		err = datahealthscore.CalculateDataHealthScore(ctx)
-	case common.ENTITY_CHECKER_ALERT_GEN_V2:
-		err = jobs.UpdateLastEventTime(ctx)
+		result = datahealthscore.CalculateDataHealthScore(ctx)
 	case common.SILENT_DEVICE_ALERT:
-		err = jobs.ProcessSilentDevices(ctx)
+		result = jobs.ProcessSilentDevices(ctx)
 	case common.FHL_WINDOWS_ACTIVITY_CHECKER:
-		err = jobs.CheckAndRestartFHLAgent(ctx)
+		result = jobs.CheckAndRestartFHLAgent(ctx)
 	case common.DEVICE_INVENTORY_ALERT:
-		err = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
+		result = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
 	case common.VOLUME_DEVIATION_ALERT:
-		err = cp_jobs.SendAlertForVolumeDeviation(ctx)
+		result = cp_jobs.SendAlertForVolumeDeviation(ctx)
 	case common.VC_NO_REDUCTION_ALERT:
-		err = cp_jobs.SendAlertForVCNoReduction(ctx)
+		result = cp_jobs.SendAlertForVCNoReduction(ctx)
 	case common.DEPLOYMENT_DELAY_ALERT:
-		err = cp_jobs.SendAlertForDeploymentDelayAlert(ctx)
+		result = cp_jobs.SendAlertForDeploymentDelayAlert(ctx)
 	case common.VC_ALERTS:
-		err = vc.SendAlertsForVCRules(ctx)
+		result = vc.SendAlertsForVCRules(ctx)
 	case common.EVENT_FLOW_MONITORING:
-		err = cp_jobs.SendAlertForPipelineFlowDeviation(ctx)
+		result = cp_jobs.SendAlertForPipelineFlowDeviation(ctx)
 	case common.TRANSFORMATION_VALIDATOR:
-		err = transformationCheckerUtility.ValidateTransformations(ctx)
+		result = transformationCheckerUtility.ValidateTransformations(ctx)
 	case common.UNPARSED_EVENTS_REPORT:
-		err = unparsedReport.SendUnparsedEventsReport(ctx)
+		result = unparsedReport.SendUnparsedEventsReport(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
-	if err != nil {
-		logger.GetLogger().Error("failed to process job", zap.Error(err), zap.String("jobName", jobName))
+
+	// Check for errors and handle them once after the switch
+	if len(result.Errors) > 0 {
+		sendJobFailureAlert(ctx, jobName, input, result)
+		logger.GetLogger().Error("failed to process job", zap.String("jobName", jobName))
 		logger.GetLogger().Sync()
 		os.Exit(1)
 	} else {
@@ -112,4 +116,65 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		logger.GetLogger().Sync()
 		os.Exit(0)
 	}
+}
+
+// sendJobFailureAlert sends an engineering alert when a job fails
+func sendJobFailureAlert(ctx context.Context, jobName string, input model.Message, result common.JobResult) {
+	// Initialize alerts manager
+	alertsManager, alertErr := alert.NewAlertsManager(ctx)
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to create alerts manager for job failure alert", zap.Error(alertErr))
+		return
+	}
+	defer alertsManager.Close(ctx)
+
+	// Combine all error messages
+	var errorMessages []string
+	for _, jobError := range result.Errors {
+		errorMessages = append(errorMessages, jobError.Message)
+	}
+	combinedMessage := strings.Join(errorMessages, "; ")
+
+	alert, alertErr := alerts_async.NewAlert(
+		alerts_async.Job,
+		alerts_async.WithTitle(fmt.Sprintf("Databahn Job Failure Alert (%v)", jobName)),
+		alerts_async.WithMessage(formatJobFailureMessage(jobName, combinedMessage, input)),
+		alerts_async.WithCriticality(alerts_async.Critical),
+		alerts_async.WithFunctionalityType(alerts_async.JobFailure),
+		alerts_async.WithEntityDetails("job", jobName, common.DatabahnDataPlaneId, common.DatabahnTenantId),
+		alerts_async.WithErrorCode(alerts_async.DJFE10001, combinedMessage),
+		alerts_async.WithAlertType(alerts_async.Internal),
+	)
+
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to create job failure alert", zap.Error(alertErr), zap.String("jobName", jobName))
+		return
+	}
+
+	// Send the alert
+	alertErr = alertsManager.SendAlerts([]*alerts_async.Alert{alert})
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to send job failure alert", zap.Error(alertErr), zap.String("jobName", jobName))
+		return
+	}
+
+	logger.GetLogger().Info("job failure alert sent successfully",
+		zap.String("jobName", jobName),
+		zap.String("severity", alerts_async.Critical.String()),
+		zap.String("error", combinedMessage))
+}
+
+// formatJobFailureMessage creates a detailed error message for the alert
+func formatJobFailureMessage(jobName string, errorMessage string, input model.Message) string {
+	message := "Job '" + jobName + "' failed with error: " + errorMessage
+
+	// Add job parameters if available
+	if input.RequestId != "" {
+		message += ". Request ID: " + input.RequestId
+	}
+	if input.Source != "" {
+		message += ". Source: " + input.Source
+	}
+
+	return message
 }

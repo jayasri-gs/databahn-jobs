@@ -3,9 +3,10 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"strings"
 	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -25,21 +26,26 @@ import (
 	"gorm.io/gorm"
 )
 
-func AlertForNoEventsToDestination(ctx context.Context) error {
+func AlertForNoEventsToDestination(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	db := config.GetDB()
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	osClient := os.GetClient()
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -55,12 +61,18 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 
 		destinationsIdToLastEventTime, err := getDestinationIdToLastEventTime(ctx, osClient, tenantId)
 		if err != nil {
-			return err
+			errorMsg := fmt.Sprintf("error getting destination event times for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error getting destination event times", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 		destinationsToAlert, activeDestinations, err := findInactiveAndActiveDestinations(db, tenantUuid, destinationsIdToLastEventTime)
 
 		if err != nil {
-			return err
+			errorMsg := fmt.Sprintf("error finding inactive destinations for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error finding inactive destinations", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		if len(destinationsToAlert) == 0 {
@@ -69,7 +81,10 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 			// raise in app alerts
 			err = sendInAppAlertsForDestination(destinationsToAlert, alertsManager)
 			if err != nil {
-				return err
+				errorMsg := fmt.Sprintf("error sending in-app alerts for destinations for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+				logger.GetLogger().Error("error sending in-app alerts for destinations", zap.Error(err), zap.String("tenantId", tenantId))
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 		}
 
@@ -87,14 +102,17 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 			q := "tenantId:" + tenantId + " AND dismissed:false AND functionalityEntityId:" + "(" + strings.Join(destinationIds, " OR ") + ")" + ` AND functionalityType:(` + constants.DeliveryCheckerFunctionalityType + " OR " + alerts_async.DeliveryChecker.String() + ")"
 			openAlerts, _, err := os.Search(ctx, osClient, common.AlertsIndex, q)
 			if err != nil {
-				logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q))
-				return err
-
+				errorMsg := fmt.Sprintf("error while searching for alerts for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+				logger.GetLogger().Error("error while searching for alerts", zap.Error(err), zap.String("query", q), zap.String("tenantId", tenantId))
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			alerts, err := statistics.ParseAlertDocuments(openAlerts)
 			if err != nil {
+				errorMsg := fmt.Sprintf("error while decoding openSearch response for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
-				return err
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			if len(alerts) == 0 {
 				logger.GetLoggerWithContext(ctx).Info("no open alerts for active destinations", zap.String("tenant_id", tenantId), zap.Strings("destination_ids", destinationIds))
@@ -110,11 +128,20 @@ func AlertForNoEventsToDestination(ctx context.Context) error {
 			err = alertsManager.AutoResolveAlerts(alertsToDismiss)
 			logger.GetLogger().Info("alert dismissed for tenant", zap.String("tenant_id", tenantId), zap.Any("alertsToDismiss", alertsToDismiss))
 			if err != nil {
-				logger.GetLogger().Error("error while dismissing alerts", zap.Error(err))
+				errorMsg := fmt.Sprintf("error while dismissing alerts for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+				logger.GetLogger().Error("error while dismissing alerts", zap.Error(err), zap.String("tenantId", tenantId))
 			}
 		}
 	}
-	return nil
+
+	if len(jobErrors) == 0 {
+		logger.GetLogger().Info("successfully completed destination inactivity check")
+		return common.NewJobResultSuccess()
+	} else {
+		logger.GetLogger().Info("destination inactivity check completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 func sendInAppAlertsForDestination(destinationsToAlert []*model.InactiveDestination, alertsManager *alert.AlertsManager) error {

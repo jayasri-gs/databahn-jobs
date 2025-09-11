@@ -3,6 +3,11 @@ package insights
 import (
 	"context"
 	"fmt"
+	"math"
+	"strings"
+	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	os "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
@@ -10,9 +15,6 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
-	"math"
-	"strings"
-	"time"
 )
 
 const updateReputation = `
@@ -41,10 +43,15 @@ type HealthJobStatus struct {
 	Error    error
 }
 
-func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]HealthJobStatus, error) {
+func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) common.JobResult {
+	var jobErrors []common.JobError
+
 	indices, err := os.CatIndices(ctx, os.GetClient())
 	if err != nil {
-		return nil, err
+		errorMsg := fmt.Sprintf("error fetching indices: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLogger().Error("error fetching indices", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	var sightsIndices []string
 	var frequencyIndices []string
@@ -61,7 +68,6 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 	logger.GetLogger().Info("considering sights indices", zap.Int("index_count", len(sightsIndices)))
 	logger.GetLogger().Info("considering frequency indices", zap.Int("index_count", len(frequencyIndices)))
 	var statuses []HealthJobStatus
-	var processingError error
 	for _, index := range sightsIndices {
 		split := strings.Split(index, "_")
 		tenantId := split[len(split)-1]
@@ -76,11 +82,10 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 		}
 		err = calculateDeviceInventoryHealthForTenant(ctx, os.GetClient(), tenantId, index, runningFor)
 		if err != nil {
+			errorMsg := fmt.Sprintf("failed to calculate silent device health for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("failed to calculate silent device health for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
 			statusHealth.Status = STATUS_ERROR
-			if processingError == nil {
-				processingError = err
-			}
 			statusHealth.Error = err
 		} else {
 			statusHealth.Status = STATUS_SUCCESS
@@ -103,6 +108,8 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 		}
 		err = calculateNoiseOfDevices(ctx, os.GetClient(), tenantId, index, runningFor)
 		if err != nil {
+			errorMsg := fmt.Sprintf("failed to calculate noise of device for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("failed to calculate noise of device for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
 			statusNoise.Status = STATUS_ERROR
 			statusNoise.Error = err
@@ -112,7 +119,13 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) ([]H
 		statuses = append(statuses, statusNoise)
 	}
 
-	return statuses, processingError
+	if len(jobErrors) == 0 {
+		logger.GetLogger().Info("successfully completed device inventory health calculation", zap.Int("status_count", len(statuses)))
+		return common.NewJobResultSuccess()
+	} else {
+		logger.GetLogger().Info("device inventory health calculation completed with errors", zap.Int("error_count", len(jobErrors)), zap.Int("status_count", len(statuses)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 func calculateDeviceInventoryHealthForTenant(ctx context.Context, client *opensearch.Client, tenantId string, sightIndexName string, runningFor string) error {
