@@ -71,6 +71,7 @@ func HealthCheckJob(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error handling alerts for unhealthy agents for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error while handling alerts for unhealthy agents", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		err = alertForFleetComponentsHealthCheck(ctx, alertsManager, tenantId)
@@ -78,6 +79,7 @@ func HealthCheckJob(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error handling alerts for unhealthy fleet components for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error while handling alerts for unhealthy fleet components", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet nodes")
@@ -86,6 +88,7 @@ func HealthCheckJob(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error handling alerts for unhealthy fleet nodes for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error while handling alerts for unhealthy fleet nodes", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 
 		logger.GetLoggerWithContext(ctx).Info("Starting health check for unhealthy fleet connectors")
@@ -94,6 +97,7 @@ func HealthCheckJob(ctx context.Context) common.JobResult {
 			errorMsg := fmt.Sprintf("error handling alerts for unhealthy fleet connectors for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error while handling alerts for unhealthy fleet connectors", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
 		}
 	}
 

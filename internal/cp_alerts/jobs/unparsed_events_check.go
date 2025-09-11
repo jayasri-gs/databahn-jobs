@@ -110,7 +110,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 				errorMsg := fmt.Sprintf("error while reading sources for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("error while reading sources", zap.Error(err), zap.String("tenantId", tenantId))
-				continue
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			if len(sources) == 0 {
 				break
