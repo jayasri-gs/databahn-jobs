@@ -233,7 +233,7 @@ func (d *DailyVolumeDeviationIngestionSource) checkVolumeDeviation() (*alerts_as
 				percentageIncrease = ((d.CheckDayVolumeIngestion - d.LastDayToCompareIngestion) / d.LastDayToCompareIngestion) * 100
 			}
 			if percentageIncrease > d.DailyVolumeDeviationDateRange.PercentageIncreaseThreshold {
-				incrAlert, err := d.buildAlert(true, true, percentageIncrease)
+				incrAlert, err := d.buildAlert(true, percentageIncrease)
 				if err != nil {
 					logger.GetLogger().Error("error while building alert for source for last day to compare", zap.Error(err), zap.String("sourceId", d.SourceId), zap.String("tenantId", d.TenantId))
 					return nil, err
@@ -249,7 +249,7 @@ func (d *DailyVolumeDeviationIngestionSource) checkVolumeDeviation() (*alerts_as
 				percentageDecrease = ((d.LastDayToCompareIngestion - d.CheckDayVolumeIngestion) / d.LastDayToCompareIngestion) * 100
 			}
 			if percentageDecrease > d.DailyVolumeDeviationDateRange.PercentageDecreaseThreshold {
-				decAlert, err := d.buildAlert(false, true, percentageDecrease)
+				decAlert, err := d.buildAlert(false, percentageDecrease)
 				if err != nil {
 					logger.GetLogger().Error("error while building alert for source for last day to compare", zap.Error(err), zap.String("sourceId", d.SourceId), zap.String("tenantId", d.TenantId))
 					return nil, err
@@ -309,19 +309,13 @@ func (d *DailyVolumeDeviationIngestionSource) checkVolumeDeviation() (*alerts_as
 	return alert, nil
 }
 
-func (d *DailyVolumeDeviationIngestionSource) buildAlert(volumeIncr bool, forLastDay bool, volumeChangePercent float64) (*alerts_async.Alert, error) {
+func (d *DailyVolumeDeviationIngestionSource) buildAlert(volumeIncr bool, volumeChangePercent float64) (*alerts_async.Alert, error) {
 	title := ""
 	message := ""
 	dayToCheck := d.DailyVolumeDeviationDateRange.DayToCheckStart.Format("2006-01-02")
-	dayToCompare := d.DailyVolumeDeviationDateRange.DayToCheckLastWeekDayStart.Format("2006-01-02")
-	if forLastDay {
-		dayToCompare = d.DailyVolumeDeviationDateRange.LastDayToCompareStart.Format("2006-01-02")
-	}
+	dayToCompare := d.DailyVolumeDeviationDateRange.LastDayToCompareStart.Format("2006-01-02")
 	volumeToCheck := d.CheckDayVolumeIngestion
-	volumeToCompare := d.LastWeekSameDayToCompareIngestion
-	if forLastDay {
-		volumeToCompare = d.LastDayToCompareIngestion
-	}
+	volumeToCompare := d.LastDayToCompareIngestion
 	if volumeIncr {
 		title = fmt.Sprintf("Volume Spike Alert: Ingestion volume increased by %.1f%%", volumeChangePercent)
 		message = fmt.Sprintf("Ingestion volume increased by %.1f%% from %s on %s to %s on %s for source '%s'", volumeChangePercent,
@@ -396,7 +390,7 @@ func (d *DailyVolumeDeviationDeliveryDestination) checkVolumeDeviation() (*alert
 				percentageIncrease = ((d.CheckDayVolumeDelivery - d.LastDayToCompareDelivery) / d.LastDayToCompareDelivery) * 100
 			}
 			if percentageIncrease > d.DailyVolumeDeviationDateRange.PercentageIncreaseThreshold {
-				incrAlert, err := d.buildAlert(true, true, percentageIncrease)
+				incrAlert, err := d.buildAlert(true, percentageIncrease)
 				if err != nil {
 					logger.GetLogger().Error("error while building alert for destination for last day to compare", zap.Error(err), zap.String("destinationId", d.DestinationId), zap.String("tenantId", d.TenantId))
 					return nil, err
@@ -412,7 +406,7 @@ func (d *DailyVolumeDeviationDeliveryDestination) checkVolumeDeviation() (*alert
 				percentageDecrease = ((d.LastDayToCompareDelivery - d.CheckDayVolumeDelivery) / d.LastDayToCompareDelivery) * 100
 			}
 			if percentageDecrease > d.DailyVolumeDeviationDateRange.PercentageDecreaseThreshold {
-				decAlert, err := d.buildAlert(false, true, percentageDecrease)
+				decAlert, err := d.buildAlert(false, percentageDecrease)
 				if err != nil {
 					logger.GetLogger().Error("error while building alert for destination for last day to compare", zap.Error(err), zap.String("destinationId", d.DestinationId), zap.String("tenantId", d.TenantId))
 					return nil, err
@@ -440,7 +434,7 @@ func (d *DailyVolumeDeviationDeliveryDestination) checkVolumeDeviation() (*alert
 		} else {
 			if alertIsForIncrease && d.LastWeekSameDayToCheckDelivery > d.LastWeekSameDayToCompareDelivery {
 				percentageIncrease := 0.0
-				if d.LastWeekSameDayToCheckDelivery == 0 {
+				if d.LastWeekSameDayToCompareDelivery == 0 {
 					percentageIncrease = 100
 				} else {
 					percentageIncrease = ((d.LastWeekSameDayToCheckDelivery - d.LastWeekSameDayToCompareDelivery) / d.LastWeekSameDayToCompareDelivery) * 100
@@ -450,7 +444,7 @@ func (d *DailyVolumeDeviationDeliveryDestination) checkVolumeDeviation() (*alert
 				}
 			} else if !alertIsForIncrease {
 				percentageDecrease := 0.0
-				if d.LastWeekSameDayToCheckDelivery == 0 {
+				if d.LastWeekSameDayToCompareDelivery == 0 {
 					percentageDecrease = 100
 				} else {
 					percentageDecrease = ((d.LastWeekSameDayToCompareDelivery - d.LastWeekSameDayToCheckDelivery) / d.LastWeekSameDayToCompareDelivery) * 100
@@ -472,19 +466,13 @@ func (d *DailyVolumeDeviationDeliveryDestination) checkVolumeDeviation() (*alert
 	return alert, nil
 }
 
-func (d *DailyVolumeDeviationDeliveryDestination) buildAlert(volumeIncr bool, forLastDay bool, volumeChangePercent float64) (*alerts_async.Alert, error) {
+func (d *DailyVolumeDeviationDeliveryDestination) buildAlert(volumeIncr bool, volumeChangePercent float64) (*alerts_async.Alert, error) {
 	title := ""
 	message := ""
 	dayToCheck := d.DailyVolumeDeviationDateRange.DayToCheckStart.Format("2006-01-02")
-	dayToCompare := d.DailyVolumeDeviationDateRange.DayToCheckLastWeekDayStart.Format("2006-01-02")
-	if forLastDay {
-		dayToCompare = d.DailyVolumeDeviationDateRange.LastDayToCompareStart.Format("2006-01-02")
-	}
+	dayToCompare := d.DailyVolumeDeviationDateRange.LastDayToCompareStart.Format("2006-01-02")
 	volumeToCheck := d.CheckDayVolumeDelivery
-	volumeToCompare := d.LastWeekSameDayToCheckDelivery
-	if forLastDay {
-		volumeToCompare = d.LastDayToCompareDelivery
-	}
+	volumeToCompare := d.LastDayToCompareDelivery
 	if volumeIncr {
 		title = fmt.Sprintf("Volume Spike Alert: Delivery volume increased by %.1f%%", volumeChangePercent)
 		message = fmt.Sprintf("Delivery volume increased by %.1f%% from %s on %s to %s on %s for destination '%s'", volumeChangePercent,
