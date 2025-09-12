@@ -3,8 +3,9 @@ package jobs
 import (
 	"context"
 	"fmt"
-	cpcommon "github.com/databahn-ai/databahn-jobs/internal/common"
 	"time"
+
+	cpcommon "github.com/databahn-ai/databahn-jobs/internal/common"
 
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -562,6 +563,9 @@ func getIngestionStats(ctx context.Context, osClient *opensearch.Client, tenantI
 	for sourceId := range logSourceIdToInVolumeForLastWeekSameDayToCheck {
 		uniqueSourceIds[sourceId] = true
 	}
+	for sourceId := range logSourceIdToInVolumeForLastWeekSameDayToCompare {
+		uniqueSourceIds[sourceId] = true
+	}
 
 	var ingestionStatsList []*DailyVolumeDeviationIngestionStats
 	for sourceId := range uniqueSourceIds {
@@ -629,6 +633,9 @@ func getDeliveryStats(ctx context.Context, osClient *opensearch.Client, tenantId
 		uniqueDestinationIds[destinationId] = true
 	}
 	for destinationId := range destinationIdToOutVolumeForLastWeekSameDayToCheck {
+		uniqueDestinationIds[destinationId] = true
+	}
+	for destinationId := range destinationIdToOutVolumeForLastWeekSameDayToCompare {
 		uniqueDestinationIds[destinationId] = true
 	}
 
