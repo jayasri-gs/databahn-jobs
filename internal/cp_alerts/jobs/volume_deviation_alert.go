@@ -273,7 +273,7 @@ func (d *DailyVolumeDeviationIngestionSource) checkVolumeDeviation() (*alerts_as
 		logger.GetLogger().Info("skipping last week comparison for source with volume below minimum threshold", zap.String("sourceId", d.SourceId), zap.String("tenantId", d.TenantId), zap.Float64("lastWeekSameDayToCheckIngestion", d.LastWeekSameDayToCheckIngestion), zap.Float64("lastWeekSameDayToCompareIngestion", d.LastWeekSameDayToCompareIngestion))
 		return alert, nil
 	} else {
-		if d.Source.CreatedAt.After(d.DailyVolumeDeviationDateRange.DayToCheckLastWeekDayStart) {
+		if d.Source.CreatedAt.After(d.DailyVolumeDeviationDateRange.DayToCompareLastWeekDayStart) {
 			logger.GetLogger().Info("ignoring source created after last week same day to compare start", zap.String("sourceId", d.SourceId), zap.String("tenantId", d.TenantId), zap.Time("sourceCreatedAt", d.Source.CreatedAt), zap.Time("lastWeekSameDayToCompareStart", d.DailyVolumeDeviationDateRange.DayToCheckLastWeekDayStart))
 		} else {
 			if alertIsForIncrease && d.LastWeekSameDayToCheckIngestion > d.LastWeekSameDayToCompareIngestion {
@@ -430,7 +430,7 @@ func (d *DailyVolumeDeviationDeliveryDestination) checkVolumeDeviation() (*alert
 		logger.GetLogger().Info("skipping last week comparison for destination with volume below minimum threshold", zap.String("destinationId", d.DestinationId), zap.String("tenantId", d.TenantId), zap.Float64("lastWeekSameDayToCheckDelivery", d.LastWeekSameDayToCheckDelivery), zap.Float64("lastWeekSameDayToCompareDelivery", d.LastWeekSameDayToCompareDelivery))
 		return alert, nil
 	} else {
-		if d.Destination.CreatedAt.After(d.DailyVolumeDeviationDateRange.DayToCheckLastWeekDayStart) {
+		if d.Destination.CreatedAt.After(d.DailyVolumeDeviationDateRange.DayToCompareLastWeekDayStart) {
 			logger.GetLogger().Info("ignoring destination created after last week same day to compare start", zap.String("destinationId", d.DestinationId), zap.String("tenantId", d.TenantId), zap.Time("destinationCreatedAt", d.Destination.CreatedAt), zap.Time("lastWeekSameDayToCompareStart", d.DailyVolumeDeviationDateRange.DayToCheckLastWeekDayStart))
 		} else {
 			if alertIsForIncrease && d.LastWeekSameDayToCheckDelivery > d.LastWeekSameDayToCompareDelivery {
