@@ -63,7 +63,8 @@ func getQueryForTransformationReportData(ctx context.Context, req models.AuditRe
 			d.name as destination_name,
 			dp.name as dataplane_name,
 			uc.email as created_by,
-			uu.email as updated_by
+			uu.email as updated_by,
+			dt.transformation_destination_type
 		FROM data_transformation dt
 		LEFT JOIN pipelines p ON dt.pipeline_id = p.id
 		LEFT JOIN pipeline_log_sources_mapping pls ON p.id = pls.pipeline_id
