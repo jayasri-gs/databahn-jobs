@@ -154,12 +154,7 @@ func splitByTimeRanges(minEpoch, maxEpoch int64, duration time.Duration) []timeR
 	var ranges []timeRange
 	startTime := time.UnixMilli(minEpoch).UTC()
 	endTime := time.UnixMilli(maxEpoch).UTC()
-	if endTime.Sub(startTime) <= duration {
-		ranges = append(ranges, timeRange{start: startTime.UnixMilli(), end: endTime.UnixMilli()})
-		ranges[len(ranges)-1].end = ranges[len(ranges)-1].end + 1
-		return ranges
-	}
-	startOfRange := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, time.UTC)
+	startOfRange := alignToGranularBoundary(startTime, duration)
 	for startOfRange.Before(endTime) {
 		endOfRange := startOfRange.Add(duration)
 		ranges = append(ranges, timeRange{start: startOfRange.UnixMilli(), end: endOfRange.UnixMilli()})
@@ -167,6 +162,14 @@ func splitByTimeRanges(minEpoch, maxEpoch int64, duration time.Duration) []timeR
 	}
 	ranges[len(ranges)-1].end = ranges[len(ranges)-1].end + 1
 	return ranges
+}
+
+// alignToGranularBoundary aligns the given time to the appropriate granular boundary
+func alignToGranularBoundary(t time.Time, duration time.Duration) time.Time {
+	if duration >= 24*time.Hour {
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, time.UTC)
 }
 
 func filterStatsValidIndices(indexNames []string, weeksOlderThan int, limit int, skip []string) []Index {

@@ -3,7 +3,7 @@ name: Release CI Workflow
 on:
   push:
     branches:
-      - release/*
+      - release/**
 
 jobs:
   build-service:
