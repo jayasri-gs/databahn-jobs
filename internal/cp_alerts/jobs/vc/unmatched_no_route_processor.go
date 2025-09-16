@@ -143,7 +143,7 @@ func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx
 	}
 
 	// Check if the rule's drop percentage exceeds threshold
-	exceedsThreshold, todayEvaluated, todayMatched, err := p.checkRuleDropPercentage(lowestPriorityRule, sourceId, data)
+	exceedsThreshold, todayIngested, todayUnMatched, err := p.checkRuleDropPercentage(lowestPriorityRule, sourceId, data)
 	if err != nil {
 		logger.GetLogger().Error("error checking rule drop percentage",
 			zap.Error(err), zap.String("ruleId", lowestPriorityRule.ID.String()))
@@ -152,14 +152,13 @@ func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx
 
 	if exceedsThreshold {
 		// Create alert for this combination
-		var matchedPercent, unmatchedPercent float64
-		if todayEvaluated > 0 {
-			matchedPercent = (float64(todayMatched) / float64(todayEvaluated)) * 100
-			unmatchedPercent = 100 - matchedPercent
+		var unmatchedPercent float64
+		if todayIngested > 0 {
+			unmatchedPercent = (float64(todayUnMatched) / float64(todayIngested)) * 100
 		}
 
 		vcAlert := NewUnmatchedNoRouteProcessorAlert(data.Tenant, &data.PipelineMapping.Pipeline, lowestPriorityRule.ID, lowestPriorityRule.Name, sourceId,
-			todayEvaluated, todayMatched, matchedPercent, unmatchedPercent)
+			todayIngested, todayUnMatched, unmatchedPercent)
 
 		vcAlerts = append(vcAlerts, vcAlert)
 
@@ -170,12 +169,12 @@ func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx
 			zap.Float64("unmatchedPercent", unmatchedPercent))
 	} else {
 		// Rule doesn't exceed threshold and has sufficient traffic, it's healthy
-		if todayEvaluated >= data.Config.MinimumEventsThreshold && !checkedRules[lowestPriorityRule.ID] {
+		if todayIngested >= data.Config.MinimumEventsThreshold && !checkedRules[lowestPriorityRule.ID] {
 			healthyRules = append(healthyRules, lowestPriorityRule.ID)
 			checkedRules[lowestPriorityRule.ID] = true
 			logger.GetLogger().Debug("rule is healthy due to low drop percentage with sufficient traffic",
 				zap.String("ruleId", lowestPriorityRule.ID.String()),
-				zap.Int64("todayEvaluated", todayEvaluated),
+				zap.Int64("todayIngested", todayIngested),
 				zap.Int64("minimumThreshold", data.Config.MinimumEventsThreshold))
 		}
 	}
@@ -247,21 +246,22 @@ func (p *UnmatchedNoRouteProcessor) checkRuleDropPercentage(vcRule *vc_rule.VCRu
 		return false, 0, 0, fmt.Errorf("error getting pipeline ingestion stats: %w", err)
 	}
 
-	matchedCount, err := data.StatsService.GetRuleMatchedStats(sourceId.String(), vcRule.ID.String(), data.Config.TodayStart, data.Config.TodayEnd)
+	ruleStats, err := data.StatsService.GetRuleStats(sourceId.String(), vcRule.ID.String(), data.Config.TodayStart, data.Config.TodayEnd)
 	if err != nil {
 		return false, 0, 0, fmt.Errorf("error getting rule matched stats: %w", err)
 	}
 
+	unmatchedCount := ruleStats.Evaluated - ruleStats.Matched
+
 	// Only check if there's sufficient traffic
 	if ingestedCount < data.Config.MinimumEventsThreshold {
-		return false, ingestedCount, matchedCount, nil
+		return false, ingestedCount, unmatchedCount, nil
 	}
 
 	// Calculate drop percentage (unmatched percentage)
 	var dropPercent float64
 	if ingestedCount > 0 {
-		todayUnmatched := ingestedCount - matchedCount
-		dropPercent = (float64(todayUnmatched) / float64(ingestedCount)) * 100
+		dropPercent = (float64(unmatchedCount) / float64(ingestedCount)) * 100
 	}
 
 	// Check if drop percentage exceeds threshold
@@ -272,22 +272,22 @@ func (p *UnmatchedNoRouteProcessor) checkRuleDropPercentage(vcRule *vc_rule.VCRu
 			zap.Float64("dropPercent", dropPercent),
 			zap.Float64("threshold", data.Config.UnmatchedNoRouteProcessorThreshold),
 			zap.Int64("todayIngested", ingestedCount),
-			zap.Int64("todayMatched", matchedCount))
-		return true, ingestedCount, matchedCount, nil
+			zap.Int64("todayUnMatched", unmatchedCount))
+		return true, ingestedCount, unmatchedCount, nil
 	}
 
-	return false, ingestedCount, matchedCount, nil
+	return false, ingestedCount, unmatchedCount, nil
 }
 
 // BuildAlert builds an alert specifically for unmatched no route processor cases
 func (p *UnmatchedNoRouteProcessor) BuildAlert(vcAlert *UnmatchedNoRouteProcessorAlert, config *VCAlertConfig) (*alerts_async.Alert, error) {
 	title := fmt.Sprintf("Volume Controller: '%s' has high unmatched events with no route processor", vcAlert.RuleName)
-	message := fmt.Sprintf("Rule '%s' in pipeline '%s' has %.2f%% unmatched events (%s unmatched out of %s evaluated), "+
+	message := fmt.Sprintf("Rule '%s' in pipeline '%s' has %.2f%% unmatched events (%s unmatched out of %s ingested), "+
 		"exceeding the %.1f%% threshold. The source is not configured to send unmatched events to primary destination "+
 		"and the pipeline lacks proper route processor configuration for handling unmatched events. "+
 		"These events may be lost or not processed properly.",
 		vcAlert.RuleName, vcAlert.Pipeline.Name, vcAlert.UnmatchedPercent,
-		util.HumanReadableNumber(vcAlert.TodayEvaluated-vcAlert.TodayMatched), util.HumanReadableNumber(vcAlert.TodayEvaluated), config.UnmatchedNoRouteProcessorThreshold)
+		util.HumanReadableNumber(vcAlert.TodayUnMatched), util.HumanReadableNumber(vcAlert.TodayIngested), config.UnmatchedNoRouteProcessorThreshold)
 
 	return alerts_async.NewAlert(
 		alerts_async.VolumeControlRule,
