@@ -62,10 +62,12 @@ func getQueryForDestinationReportData(ctx context.Context, req models.AuditRepor
 			d.created_at,
 			d.updated_at,
 			dp.name as dataplane_name,
+			f.name as fleet_name,
 			uc.email as created_by,
 			uu.email as updated_by
 		FROM destination d
 		LEFT JOIN data_planes dp ON d.data_plane_id = dp.id
+		    LEFT JOIN fleet f on d.fleet_id = f.id
 		LEFT JOIN users uc ON d.created_by::uuid = uc.id
 		LEFT JOIN users uu ON d.updated_by::uuid = uu.id
 		WHERE %s`, whereClause)

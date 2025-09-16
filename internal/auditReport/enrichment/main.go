@@ -59,6 +59,7 @@ func getQueryForEnrichmentReportData(ctx context.Context, req models.AuditReport
 			ls.name as source_name,
 			d.name as destination_name,
 			l.name as lookup_name,
+			e.config as config,
 			uc.email as created_by,
 			uu.email as updated_by
 		FROM enrichment e
