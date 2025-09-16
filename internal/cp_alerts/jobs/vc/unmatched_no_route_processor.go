@@ -143,14 +143,14 @@ func (p *UnmatchedNoRouteProcessor) checkUnmatchedNoRouteProcessorConditions(ctx
 	}
 
 	// Check if the rule's drop percentage exceeds threshold
-	exceedsThreshold, todayIngested, todayUnMatched, err := p.checkRuleDropPercentage(lowestPriorityRule, sourceId, data)
+	shouldAlert, todayIngested, todayUnMatched, err := p.checkRuleDropPercentage(lowestPriorityRule, sourceId, data)
 	if err != nil {
 		logger.GetLogger().Error("error checking rule drop percentage",
 			zap.Error(err), zap.String("ruleId", lowestPriorityRule.ID.String()))
 		return nil, nil, fmt.Errorf("error checking rule drop percentage: %w", err)
 	}
 
-	if exceedsThreshold {
+	if shouldAlert {
 		// Create alert for this combination
 		var unmatchedPercent float64
 		if todayIngested > 0 {
