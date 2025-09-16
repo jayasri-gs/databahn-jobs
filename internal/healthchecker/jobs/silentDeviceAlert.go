@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/databahn-ai/common-utils/aws"
+	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	awsemail "github.com/databahn-ai/databahn-jobs/internal/healthchecker/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
@@ -113,16 +114,22 @@ func getSilentDevices(ctx context.Context, client *opensearch.Client, index stri
 	return silentDevices, newSearchAfter, nil
 }
 
-func ProcessSilentDevices(ctx context.Context) error {
+func ProcessSilentDevices(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	tenants, err := tenant.GetTenants(ctx, config.GetDB())
 	if err != nil {
-		return err
+		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logging.GetLoggerWithContext(ctx).Error("error while getting tenants", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	logSourceIds, err := GetLogSourceIdsFromSilentDeviceConfig(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error fetching log source IDs: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logging.GetLoggerWithContext(ctx).Error("error fetching log source IDs", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 
 	for _, t := range tenants {
@@ -132,25 +139,36 @@ func ProcessSilentDevices(ctx context.Context) error {
 			logging.GetLoggerWithContext(ctx).Info("no log source IDs found for tenant", zap.String("tenantId", t.Id.String()))
 			continue
 		}
-		silentDevices, err := FetchSilentDevices(ctx, t.Id.String(), t.Name, logSourceIds[t.Id.String()])
+		tenantId := t.Id.String()
+		silentDevices, err := FetchSilentDevices(ctx, tenantId, t.Name, logSourceIds[tenantId])
 		if err != nil {
-			return fmt.Errorf("failed to fetch silent devices: %w", err)
-		}
-
-		if len(silentDevices) > 0 {
-			logging.GetLoggerWithContext(ctx).Info("silent devices found", zap.String("tenantId", t.Id.String()), zap.Int("count", len(silentDevices)))
-		} else {
-			logging.GetLogger().Info("no silent devices found", zap.String("tenantId", t.Id.String()))
+			errorMsg := fmt.Sprintf("failed to fetch silent devices for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logging.GetLoggerWithContext(ctx).Error("failed to fetch silent devices", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
 
-		if err := sendAlertsForSilentDevices(ctx, silentDevices, logSourceIds, t.Id.String()); err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error sending alerts for silent devices", zap.String("tenantId", t.Id.String()), zap.Error(err))
-			return fmt.Errorf("failed to send alerts for silent devices: %w", err)
+		if len(silentDevices) > 0 {
+			logging.GetLoggerWithContext(ctx).Info("silent devices found", zap.String("tenantId", tenantId), zap.Int("count", len(silentDevices)))
+		} else {
+			logging.GetLogger().Info("no silent devices found", zap.String("tenantId", tenantId))
+			continue
+		}
+
+		if err := sendAlertsForSilentDevices(ctx, silentDevices, logSourceIds, tenantId); err != nil {
+			errorMsg := fmt.Sprintf("failed to send alerts for silent devices for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logging.GetLoggerWithContext(ctx).Error("error sending alerts for silent devices", zap.Error(err), zap.String("tenantId", tenantId))
 		}
 	}
 
-	return nil
+	if len(jobErrors) == 0 {
+		logging.GetLoggerWithContext(ctx).Info("successfully completed silent device processing")
+		return common.NewJobResultSuccess()
+	} else {
+		logging.GetLoggerWithContext(ctx).Info("silent device processing completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string, sources []string) ([]Device, error) {
 

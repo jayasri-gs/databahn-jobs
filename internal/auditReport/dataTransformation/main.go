@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
+	"os"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
 )
 
 func WriteTransformationReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
@@ -35,14 +37,45 @@ func getQueryForTransformationReportData(ctx context.Context, req models.AuditRe
 	}
 
 	filterToDbColumnMap := map[string]string{
-		"status":       "status",
-		"sources":      "log_source_id",
-		"types":        "type",
-		"destinations": "destination_id",
-		"dataplaneId":  "data_plane_id",
+		"status":       "dt.status",
+		"sources":      "pls.log_source_id",
+		"types":        "dt.type",
+		"destinations": "pd.destination_id",
+		"dataplaneId":  "dt.data_plane_id",
+		"tenant_id":    "dt.tenant_id",
 	}
 
-	query, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+	whereClause, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+
+	// Build the complete JOIN query
+	query := fmt.Sprintf(`
+		SELECT 
+			dt.id,
+			dt.name,
+			dt.description,
+			dt.status,
+			dt.type,
+			dt.output_format,
+			dt.include_raw_event,
+			dt.created_at,
+			dt.updated_at,
+			ls.name as source_name,
+			d.name as destination_name,
+			dp.name as dataplane_name,
+			uc.email as created_by,
+			uu.email as updated_by,
+			dt.transformation_destination_type
+		FROM data_transformation dt
+		LEFT JOIN pipelines p ON dt.pipeline_id = p.id
+		LEFT JOIN pipeline_log_sources_mapping pls ON p.id = pls.pipeline_id
+		LEFT JOIN log_source ls ON pls.log_source_id = ls.id
+		LEFT JOIN pipeline_destinations_mapping pd ON p.id = pd.pipeline_id
+		LEFT JOIN destination d ON pd.destination_id = d.id
+		LEFT JOIN data_planes dp ON dt.data_plane_id = dp.id
+		LEFT JOIN users uc ON dt.created_by::uuid = uc.id
+		LEFT JOIN users uu ON dt.updated_by::uuid = uu.id
+		WHERE %s`, whereClause)
+
 	logging.GetLoggerWithContext(ctx).Info("query for transformation report data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }
@@ -64,7 +97,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 	writeHeader := true
 	for {
 		writeHeader = writeHeader && offset == 0
-		rows, columns, err := common.GetRowsAndColumnsByQueryFromTable("data_transformation", query, pageSize, offset)
+		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "dt.updated_at")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from data transformation table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err

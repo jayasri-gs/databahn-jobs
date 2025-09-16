@@ -6,13 +6,14 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
-	"strings"
 )
 
 func WriteDestinationReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
@@ -37,15 +38,40 @@ func getQueryForDestinationReportData(ctx context.Context, req models.AuditRepor
 	}
 
 	filterToDbColumnMap := map[string]string{
-		"scope":           "scope",
-		"status":          "status",
-		"sources":         "log_source_id",
-		"destinationType": "destination_type",
-		"forwardDataType": "forward_data_type",
-		"dataplaneId":     "data_plane_id",
+		"scope":           "d.scope",
+		"status":          "d.status",
+		"destinationType": "d.destination_type",
+		"forwardDataType": "d.forward_data_type",
+		"dataplaneId":     "d.data_plane_id",
+		"tenant_id":       "d.tenant_id",
 	}
 
-	query, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+	whereClause, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+
+	// Build the complete JOIN query
+	query := fmt.Sprintf(`
+		SELECT 
+			d.id,
+			d.name,
+			d.description,
+			d.destination_type,
+			d.forward_data_type,
+			d.configuration,
+			d.status,
+			d.scope,
+			d.created_at,
+			d.updated_at,
+			dp.name as dataplane_name,
+			f.name as fleet_name,
+			uc.email as created_by,
+			uu.email as updated_by
+		FROM destination d
+		LEFT JOIN data_planes dp ON d.data_plane_id = dp.id
+		    LEFT JOIN fleet f on d.fleet_id = f.id
+		LEFT JOIN users uc ON d.created_by::uuid = uc.id
+		LEFT JOIN users uu ON d.updated_by::uuid = uu.id
+		WHERE %s`, whereClause)
+
 	logging.GetLoggerWithContext(ctx).Info("query for destination report data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }
@@ -77,7 +103,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query,
 	}
 	for {
 		writeHeader = writeHeader && offset == 0
-		rows, columns, err := common.GetRowsAndColumnsByQueryFromTable("destination", query, pageSize, offset)
+		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "d.updated_at")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from destination table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err

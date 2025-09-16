@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
+	"os"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
 )
 
 func WriteEnrichmentReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
@@ -35,14 +37,39 @@ func getQueryForEnrichmentReportData(ctx context.Context, req models.AuditReport
 	}
 
 	filterToDbColumnMap := map[string]string{
-		"status":       "status",
-		"sources":      "source_id",
-		"destinations": "destination_id",
-		"dataplaneId":  "data_plane_id",
-		"lookups":      "lookup_id",
+		"status":       "e.status",
+		"sources":      "e.source_id",
+		"destinations": "e.destination_id",
+		"dataplaneId":  "e.data_plane_id",
+		"lookups":      "e.lookup_id",
+		"tenant_id":    "e.tenant_id",
 	}
 
-	query, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+	whereClause, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+
+	// Build the complete JOIN query
+	query := fmt.Sprintf(`
+		SELECT 
+			e.id,
+			e.name,
+			e.description,
+			e.status,
+			e.created_at,
+			e.updated_at,
+			ls.name as source_name,
+			d.name as destination_name,
+			l.name as lookup_name,
+			e.config as config,
+			uc.email as created_by,
+			uu.email as updated_by
+		FROM enrichment e
+		LEFT JOIN log_source ls ON e.source_id = ls.id
+		LEFT JOIN destination d ON e.destination_id = d.id
+		LEFT JOIN lookup l ON e.lookup_id = l.id
+		LEFT JOIN users uc ON e.created_by = uc.id
+		LEFT JOIN users uu ON e.updated_by = uu.id
+		WHERE %s`, whereClause)
+
 	logging.GetLoggerWithContext(ctx).Info("query for enrichment report data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }
@@ -64,7 +91,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 	writeHeader := true
 	for {
 		writeHeader = writeHeader && offset == 0
-		rows, columns, err := common.GetRowsAndColumnsByQueryFromTable("enrichment", query, pageSize, offset)
+		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "e.updated_at")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from enrichment table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err

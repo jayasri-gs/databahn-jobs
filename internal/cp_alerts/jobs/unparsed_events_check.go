@@ -25,19 +25,24 @@ const (
 	UnparsedEventsCheckDuration = 24
 )
 
-func SendAlertsForUnparsedEvents(ctx context.Context) error {
+func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
+	var jobErrors []common.JobError
 	db := config.GetDB()
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	osClient := os.GetClient()
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return err
+		return common.NewJobResultFromErrors(jobErrors)
 	}
 	defer func() {
 		alertsManager.Close(ctx)
@@ -54,12 +59,16 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 		statsAlias := os.StatisticsIndexAlias(tenantId)
 		unparsedAgg, err := GetUnparsedEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
+			errorMsg := fmt.Sprintf("error getting unparsed events for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error getting unparsed events", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
 
 		totalEventsAgg, err := GetTotalEventsForTenant(ctx, strconv.Itoa(int(startTime.UnixMilli())), strconv.Itoa(int(endTime.UnixMilli())), statsAlias)
 		if err != nil {
+			errorMsg := fmt.Sprintf("error getting total events for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logger.GetLogger().Error("error getting total events", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
@@ -98,8 +107,10 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 		for {
 			sources, err := readSourcesPaginated(db, t.Id, sourceDbPage, sourceDbPageSize)
 			if err != nil {
-				logger.GetLogger().Error("error while reading sources", zap.Error(err))
-				return err
+				errorMsg := fmt.Sprintf("error while reading sources for tenant %s: %v", tenantId, err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+				logger.GetLogger().Error("error while reading sources", zap.Error(err), zap.String("tenantId", tenantId))
+				return common.NewJobResultFromErrors(jobErrors)
 			}
 			if len(sources) == 0 {
 				break
@@ -141,13 +152,17 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 				q := "tenantId:" + tenantId + " AND dismissed:false AND functionalityEntityId:" + src.ID.String() + " AND functionalityType:UNPARSED_EVENTS"
 				openAlerts, _, err := os.Search(ctx, osClient, common.AlertsIndex, q)
 				if err != nil {
-					logger.GetLogger().Error("error while searching for unparsed events alerts", zap.Error(err), zap.String("query", q))
-					return err
+					errorMsg := fmt.Sprintf("error while searching for unparsed events alerts for tenant %s: %v", tenantId, err)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+					logger.GetLogger().Error("error while searching for unparsed events alerts", zap.Error(err), zap.String("query", q), zap.String("tenantId", tenantId))
+					return common.NewJobResultFromErrors(jobErrors)
 				}
 				alerts, err := statistics.ParseAlertDocuments(openAlerts)
 				if err != nil {
+					errorMsg := fmt.Sprintf("error while decoding openSearch response for tenant %s: %v", tenantId, err)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 					logger.GetLoggerWithContext(ctx).Error("error while decoding openSearch response", zap.Error(err), zap.String("tenantId", tenantId))
-					return err
+					return common.NewJobResultFromErrors(jobErrors)
 				}
 				for _, alrt := range alerts {
 					alertsToDismiss = append(alertsToDismiss, alrt.Id)
@@ -156,13 +171,21 @@ func SendAlertsForUnparsedEvents(ctx context.Context) error {
 			if len(alertsToDismiss) > 0 {
 				err = alertsManager.AutoResolveAlerts(alertsToDismiss)
 				if err != nil {
-					logger.GetLogger().Error("error while dismissing unparsed events alerts", zap.Error(err))
-					return err
+					errorMsg := fmt.Sprintf("error while dismissing unparsed events alerts for tenant %s: %v", tenantId, err)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+					logger.GetLogger().Error("error while dismissing unparsed events alerts", zap.Error(err), zap.String("tenantId", tenantId))
 				}
 			}
 		}
 	}
-	return nil
+
+	if len(jobErrors) == 0 {
+		logger.GetLogger().Info("successfully completed unparsed events check")
+		return common.NewJobResultSuccess()
+	} else {
+		logger.GetLogger().Info("unparsed events check completed with errors", zap.Int("error_count", len(jobErrors)))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 func GetUnparsedEventsForTenant(ctx context.Context, startTime, endTime, statsAlias string) (statistics.AggregateResponse, error) {

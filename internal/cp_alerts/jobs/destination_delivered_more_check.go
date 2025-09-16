@@ -56,23 +56,28 @@ func (d DestinationToAlert) GetSecondaryEntityId() string {
 	return d.SourceId
 }
 
-func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) error {
+func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cpcommon.JobResult {
+	var jobErrors []cpcommon.JobError
 	db := config.GetDB()
 	percentageThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_PERCENTAGE_THRESHOLD", 5))
 	fromHourMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_FROM_HOURS_MINUS", 4)
 	toHoursMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_TO_HOURS_MINUS", 1)
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
+		jobErrors = append(jobErrors, cpcommon.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while getting tenants", zap.Error(err))
-		return err
+		return cpcommon.NewJobResultFromErrors(jobErrors)
 	}
 
 	osClient := os.GetClient()
 
 	alertsManager, err := alert.NewAlertsManager(ctx)
 	if err != nil {
+		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
+		jobErrors = append(jobErrors, cpcommon.JobError{Message: errorMsg})
 		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
-		return err
+		return cpcommon.NewJobResultFromErrors(jobErrors)
 	}
 
 	defer func() {
@@ -81,21 +86,28 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 
 	fromTime, toTime := getTimeRange(fromHourMinus, toHoursMinus)
 	for _, t := range tenants {
-		sourceIdToSourceNameMap, err := common.GetLogSourceIdToNamesMap(ctx, t.Id.String())
+		tenantId := t.Id.String()
+		sourceIdToSourceNameMap, err := common.GetLogSourceIdToNamesMap(ctx, tenantId)
 		if err != nil {
-			logger.GetLogger().Error("error while getting log source id to names map", zap.Error(err), zap.String("tenantId", t.Id.String()))
+			errorMsg := fmt.Sprintf("error while getting log source id to names map for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, cpcommon.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error while getting log source id to names map", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
 
 		destinations, err := destination.GetDestinationByTenantId(t.Id, db)
 		if err != nil {
-			logger.GetLogger().Error("error while getting destinations for tenant", zap.Error(err), zap.String("tenantId", t.Id.String()))
+			errorMsg := fmt.Sprintf("error while getting destinations for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, cpcommon.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error while getting destinations for tenant", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
 
-		logSourceIdToInVolume, err := findIngestedVolumesForSources(ctx, t.Id.String(), osClient, fromTime, toTime)
+		logSourceIdToInVolume, err := findIngestedVolumesForSources(ctx, tenantId, osClient, fromTime, toTime)
 		if err != nil {
-			logger.GetLogger().Error("error while finding ingested volumes per source", zap.Error(err), zap.String("tenantId", t.Id.String()))
+			errorMsg := fmt.Sprintf("error while finding ingested volumes per source for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, cpcommon.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error while finding ingested volumes per source", zap.Error(err), zap.String("tenantId", tenantId))
 			continue
 		}
 
@@ -243,7 +255,13 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) er
 		}
 	}
 
-	return nil
+	if len(jobErrors) == 0 {
+		logger.GetLogger().Info("successfully completed destination delivered more check")
+		return cpcommon.NewJobResultSuccess()
+	} else {
+		logger.GetLogger().Info("destination delivered more check completed with errors", zap.Int("error_count", len(jobErrors)))
+		return cpcommon.NewJobResultFromErrors(jobErrors)
+	}
 }
 
 func getDeliveredVolumeByDestinationAndSourceId(ctx context.Context, err error, t tenant.Tenant, osClient *opensearch.Client, fromTime int64, toTime int64) (map[string]map[string]int64, error) {
