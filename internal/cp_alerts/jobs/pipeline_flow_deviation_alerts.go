@@ -471,6 +471,9 @@ func getStageEventCount(ctx context.Context, tenantId uuid.UUID, pipelineMapping
 	// Build query based on component type
 	var query string
 	switch componentName {
+	case ComponentIngestion:
+		query = fmt.Sprintf("tags.component_name: \"%s\" AND name: \"%s\" AND tags.db_event_source_id: \"%s\"",
+			componentName, metricName, pipelineMapping.LogSourceID.String())
 	case ComponentDispenser:
 		// For dispenser, we need to include destination_id
 		query = fmt.Sprintf("tags.component_name: \"%s\" AND name: \"%s\" AND tags.db_event_source_id: \"%s\" AND tags.destination_id: \"%s\"",
@@ -478,7 +481,6 @@ func getStageEventCount(ctx context.Context, tenantId uuid.UUID, pipelineMapping
 	case ComponentParsing, ComponentEnrichment, ComponentRuleEngine:
 		query = fmt.Sprintf("tags.component_name: \"%s\" AND name: \"%s\" AND tags.db_event_source_id: \"%s\" AND tags.db_pipeline_id: \"%s\"",
 			componentName, metricName, pipelineMapping.LogSourceID.String(), pipelineMapping.Pipeline.ID.String())
-
 	default:
 		// return error
 		return 0, fmt.Errorf("unsupported component name for event count: %s", componentName)
