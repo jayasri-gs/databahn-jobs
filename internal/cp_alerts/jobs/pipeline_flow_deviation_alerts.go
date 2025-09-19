@@ -480,9 +480,8 @@ func getStageEventCount(ctx context.Context, tenantId uuid.UUID, pipelineMapping
 			componentName, metricName, pipelineMapping.LogSourceID.String(), pipelineMapping.Pipeline.ID.String())
 
 	default:
-		// For other components, just use source_id
-		query = fmt.Sprintf("tags.component_name: \"%s\" AND name: \"%s\" AND tags.db_event_source_id: \"%s\"",
-			componentName, metricName, pipelineMapping.LogSourceID.String())
+		// return error
+		return 0, fmt.Errorf("unsupported component name for event count: %s", componentName)
 	}
 
 	response, err := statistics.GetStatsSum(ctx, query, tenantId, startTimeStr, endTimeStr)
