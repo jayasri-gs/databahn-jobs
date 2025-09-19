@@ -313,7 +313,7 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) common.JobResult {
 			var alertsToDismiss []string
 			for _, stageKey := range healthyStages {
 				q := fmt.Sprintf("tenantId:%s AND dismissed:false AND functionalityType:%s AND functionalityEntityId:%s AND secondaryEntityId:%s",
-					tenantId, alerts_async.IngestionChecker.String(), stageKey.sourceId, stageKey.stageId)
+					tenantId, alerts_async.VolumeDeviationChecker.String(), stageKey.sourceId, stageKey.stageId)
 				openAlerts, _, err := os.Search(ctx, osClient, common.AlertsIndex, q)
 				if err != nil {
 					logger.GetLoggerWithContext(ctx).Error("error while searching pipeline flow alerts to auto-resolve", zap.Error(err), zap.String("query", q))
