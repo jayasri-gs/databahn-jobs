@@ -142,6 +142,13 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) common.JobResult {
 			pipelineId := pipelineMapping.Pipeline.ID.String()
 			sourceName := pipelineMapping.SourceName
 			destinationName := pipelineMapping.DestinationName
+			if pipelineMapping.Pipeline.Status != "ACTIVE" {
+				logger.GetLoggerWithContext(ctx).Debug("Skipping inactive pipeline",
+					zap.String("tenant_id", tenantId),
+					zap.String("pipeline_id", pipelineId),
+					zap.String("status", pipelineMapping.Pipeline.Status))
+				continue
+			}
 
 			// Check if this source is in active sources cache
 			_, isSourceActive := activeSourcesMap[pipelineMapping.LogSourceID]
@@ -166,6 +173,22 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) common.JobResult {
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLoggerWithContext(ctx).Error("Error building stage flow",
 					zap.Error(err), zap.String("tenant_id", tenantId), zap.String("pipeline_id", pipelineId))
+				continue
+			}
+
+			logger.GetLogger().Info("stages for pipeline " + pipelineMapping.Pipeline.Name + ": " + strings.Join(func() []string {
+				var s []string
+				for _, stage := range stages {
+					s = append(s, stage.StageID)
+				}
+				return s
+			}(), " -> "))
+
+			if len(stages) == 2 {
+				// Pipeline has only ingestion and dispenser, skip as no processing stages to monitor
+				logger.GetLoggerWithContext(ctx).Info("Skipping pipeline with only ingestion and dispenser stages, passthrough pipelines are not monitored",
+					zap.String("tenant_id", tenantId),
+					zap.String("pipeline_id", pipelineId))
 				continue
 			}
 
@@ -333,11 +356,6 @@ func buildStageFlow(ctx context.Context, db *gorm.DB, pipelineMapping pipeline.P
 		ComponentName: "ingestion",
 	})
 
-	stages = append(stages, model.PipelineStage{
-		StageID:       "NORMALIZATION",
-		ComponentName: ComponentParsing,
-	})
-
 	// 3. VC and Enrichment Stage Logic
 	hasVC, _, err := pipeline.HasActiveRules(ctx, db, pipelineMapping.Pipeline.ID, pipelineMapping.Pipeline.TenantID)
 	if err != nil {
@@ -354,6 +372,15 @@ func buildStageFlow(ctx context.Context, db *gorm.DB, pipelineMapping pipeline.P
 	hasTransformation, _, err := data_transformation.HasActiveTransformation(ctx, db, pipelineMapping.Pipeline.ID, pipelineMapping.Pipeline.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("error checking active transformation: %w", err)
+	}
+
+	// only add normalization stage if VC, enrichment, or transformation is present
+	if hasVC || hasEnrichment || hasTransformation {
+		stages = append(stages, model.PipelineStage{
+			StageID:       "NORMALIZATION",
+			ComponentName: ComponentParsing,
+		})
+
 	}
 
 	if hasVC && hasEnrichment {
@@ -418,11 +445,6 @@ func isEnrichmentBeforeVC(ctx context.Context, db *gorm.DB, pipelineID, tenantID
 	}
 
 	for _, rule := range rules {
-		// Check if rule is of type AGGREGATION
-		if rule.Type == vc_rule.TypeAggregation {
-			return true, nil
-		}
-
 		// Check if rule references attributes starting with "db_enriched_"
 		referencedAttrs, err := rule.GetReferencedAttributes()
 		if err != nil {
@@ -542,7 +564,7 @@ func buildPipelineFlowDeviationAlert(flowAlert model.PipelineFlowDeviationAlert,
 		alerts_async.LogSource,
 		alerts_async.WithEntity(flowAlert),
 		alerts_async.WithCriticality(alerts_async.Warning),
-		alerts_async.WithFunctionalityType(alerts_async.IngestionChecker),
+		alerts_async.WithFunctionalityType(alerts_async.VolumeDeviationChecker),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithAlertType(alerts_async.Internal),
