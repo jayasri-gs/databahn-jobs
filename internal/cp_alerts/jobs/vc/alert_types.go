@@ -43,9 +43,8 @@ type UnmatchedNoRouteProcessorAlert struct {
 	RuleID           uuid.UUID          `json:"rule_id"`
 	RuleName         string             `json:"rule_name"`
 	SourceID         uuid.UUID          `json:"source_id"`
-	TodayEvaluated   int64              `json:"today_evaluated"`
-	TodayMatched     int64              `json:"today_matched"`
-	MatchedPercent   float64            `json:"matched_percent"`
+	TodayIngested    int64              `json:"today_ingested"`
+	TodayUnMatched   int64              `json:"today_unmatched"`
 	UnmatchedPercent float64            `json:"unmatched_percent"`
 	DetectionTime    time.Time          `json:"detection_time"`
 }
@@ -129,8 +128,8 @@ func NewUnmatchedNoRouteProcessorAlert(
 	ruleID uuid.UUID,
 	ruleName string,
 	sourceID uuid.UUID,
-	todayEvaluated, todayMatched int64,
-	matchedPercent, unmatchedPercent float64,
+	todayIngested, todayUnMatched int64,
+	unmatchedPercent float64,
 ) *UnmatchedNoRouteProcessorAlert {
 	return &UnmatchedNoRouteProcessorAlert{
 		Tenant:           tenant,
@@ -138,9 +137,8 @@ func NewUnmatchedNoRouteProcessorAlert(
 		RuleID:           ruleID,
 		RuleName:         ruleName,
 		SourceID:         sourceID,
-		TodayEvaluated:   todayEvaluated,
-		TodayMatched:     todayMatched,
-		MatchedPercent:   matchedPercent,
+		TodayIngested:    todayIngested,
+		TodayUnMatched:   todayUnMatched,
 		UnmatchedPercent: unmatchedPercent,
 		DetectionTime:    time.Now().UTC(),
 	}

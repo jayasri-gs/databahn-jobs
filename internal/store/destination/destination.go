@@ -4,6 +4,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"time"
 )
 
 type Configuration struct {
@@ -20,6 +21,7 @@ type Destination struct {
 	Stats            float64   `json:"-" gorm:"-"`
 	Status           string    `gorm:"type:string" json:"status"`
 	DataPlaneId      uuid.UUID `gorm:"type:uuid" json:"data_plane_id"`
+	CreatedAt        time.Time `gorm:"type:timestamp" json:"created_at"`
 }
 
 func (s *Destination) TableName() string {
