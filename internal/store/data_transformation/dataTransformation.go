@@ -101,3 +101,14 @@ func GetDataTransformationsByTypeAndFunctionTypeByTenant(ctx context.Context, db
 
 	return transformations, nil
 }
+
+// HasActiveTransformation checks if a pipeline has any active transformation configurations
+func HasActiveTransformation(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID, tenantID uuid.UUID) (bool, int64, error) {
+	var count int64
+	err := db.WithContext(ctx).Table("data_transformation").
+		Where("pipeline_id = ? AND tenant_id = ? AND status = ?",
+			pipelineID, tenantID, "ACTIVE").
+		Count(&count).Error
+
+	return count > 0, count, err
+}
