@@ -15,6 +15,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // FetchAgentDiscoveredChannelSubscriptions fetches and processes agent discovered channel subscriptions
@@ -223,7 +224,7 @@ func updateSubscription(ctx context.Context, dataMap map[string]map[string]map[s
 			Where("tenant_id = ? AND node_name = ?", tenantID, computerName).
 			Updates(map[string]interface{}{
 				"channel_subscriptions": channelSubscriptionsJSON,
-				"updated_at":            "NOW()",
+				"updated_at":            gorm.Expr("NOW()"),
 			})
 
 		if result.Error != nil {
