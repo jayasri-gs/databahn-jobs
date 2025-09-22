@@ -15,6 +15,7 @@ import (
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
 	ack "github.com/databahn-ai/databahn-jobs/internal/acknowledgement"
+	"github.com/databahn-ai/databahn-jobs/internal/agent"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -99,6 +100,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = transformationCheckerUtility.ValidateTransformations(ctx)
 	case common.UNPARSED_EVENTS_REPORT:
 		result = unparsedReport.SendUnparsedEventsReport(ctx)
+	case common.FETCH_AGENT_DISCOVERED_CHANNEL_SUBSRIPTIONS:
+		result = agent.FetchAgentDiscoveredChannelSubscriptions(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
