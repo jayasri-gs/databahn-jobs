@@ -55,6 +55,7 @@ func ReadInputData() model.Message {
 
 	flag.StringVar(&sampleMessage.DataStore, "dataStore", "", "data store type")
 	flag.StringVar(&sampleMessage.SourceName, "sourceName", "", "source name")
+	flag.StringVar(&sampleMessage.ReplayType, "replayType", "", "data replay type")
 
 	additionalConfigString := flag.String("additionalConfig", "", "additional config")
 	additionalHeadersString := flag.String("additionalHeaders", "", "additional config")
