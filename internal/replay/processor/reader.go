@@ -59,7 +59,12 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	mst.UpdateMetaData(fileName, constants.StatusProcessing, 0, 0, stats.Size(), 0, "")
 	logger.GetLogger().Info("getting producer", zap.String("traceId", reqId), zap.Int("thread ", threadId))
 	var producer = GetProducer(reqId, topic)
-
+	logger.GetLogger().Info("getting producer for topic", zap.String("topic", topic), zap.String("fileName", fileName),
+		zap.String("replayType", req.ReplayType))
+	if req.ReplayType == "UNDELIVERED" {
+		logger.GetLogger().Info("pipeline done and next", zap.String("pipeline_done", req.AdditionalHeaders[commConst.PipelineDone]),
+			zap.String("pipeline_next", req.AdditionalHeaders[commConst.PipelineNext]))
+	}
 	var scanner Scanner
 
 	switch strings.ToLower(req.DataStore) {
