@@ -213,7 +213,7 @@ func GetHeader(request model.Message) []kafka.Header {
 		pipelineDone = request.AdditionalHeaders[commConst.PipelineDone]
 		pipelineNext = request.AdditionalHeaders[commConst.PipelineNext]
 	}
-	headers := make([]kafka.Header, 13)
+	headers := make([]kafka.Header, 14)
 	headers[0] = kafka.Header{Key: commConst.DeviceType, Value: []byte(request.DeviceType)}
 	headers[1] = kafka.Header{Key: commConst.DeviceVendor, Value: []byte(request.DeviceVendor)}
 	headers[2] = kafka.Header{Key: commConst.LogType, Value: []byte(request.LogType)}
