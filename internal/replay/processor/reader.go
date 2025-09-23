@@ -207,7 +207,13 @@ func PrepareAck(status []ack.Status, inputReq model.Message) ack.Ack {
 
 func GetHeader(request model.Message) []kafka.Header {
 
-	headers := make([]kafka.Header, 13)
+	pipelineDone := commConst.DataReplayStage
+	pipelineNext := ""
+	if request.ReplayType == "UNDELIVERED" {
+		pipelineDone = request.AdditionalHeaders[commConst.PipelineDone]
+		pipelineNext = request.AdditionalHeaders[commConst.PipelineNext]
+	}
+	headers := make([]kafka.Header, 14)
 	headers[0] = kafka.Header{Key: commConst.DeviceType, Value: []byte(request.DeviceType)}
 	headers[1] = kafka.Header{Key: commConst.DeviceVendor, Value: []byte(request.DeviceVendor)}
 	headers[2] = kafka.Header{Key: commConst.LogType, Value: []byte(request.LogType)}
@@ -219,8 +225,9 @@ func GetHeader(request model.Message) []kafka.Header {
 	headers[8] = kafka.Header{Key: commConst.EventId, Value: []byte(uuid.NewString())}
 	headers[9] = kafka.Header{Key: commConst.EdgeTimestamp, Value: []byte(strconv.FormatInt(time.Now().UnixMilli(), 10))}
 	headers[10] = kafka.Header{Key: "db_component_name", Value: []byte("replay_data")}
-	headers[11] = kafka.Header{Key: commConst.PipelineDone, Value: []byte(commConst.DataReplayStage)}
-	headers[12] = kafka.Header{Key: commConst.SourceName, Value: []byte(request.SourceName)}
+	headers[11] = kafka.Header{Key: commConst.PipelineDone, Value: []byte(pipelineDone)}
+	headers[12] = kafka.Header{Key: commConst.PipelineNext, Value: []byte(pipelineNext)}
+	headers[13] = kafka.Header{Key: commConst.SourceName, Value: []byte(request.SourceName)}
 
 	return headers
 }

@@ -3,6 +3,7 @@ package jobcmd
 import (
 	"context"
 	"fmt"
+	commConst "github.com/databahn-ai/common-utils/constants"
 	"os"
 	"os/signal"
 	"sync"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 
-	commConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
@@ -33,7 +33,9 @@ func ExecuteReplayJob(input model.Message) common.JobResult {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
-	input.DestinationTopic = commConst.DataReplayTopicPrefix
+	if input.DestinationTopic == "" {
+		input.DestinationTopic = commConst.DataReplayTopicPrefix
+	}
 	err, _, _ := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 
 	if err != nil {
