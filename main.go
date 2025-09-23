@@ -57,12 +57,20 @@ func ReadInputData() model.Message {
 	flag.StringVar(&sampleMessage.SourceName, "sourceName", "", "source name")
 
 	additionalConfigString := flag.String("additionalConfig", "", "additional config")
+	additionalHeadersString := flag.String("additionalHeaders", "", "additional config")
 
 	flag.Parse()
 	sampleMessage.FileName = strings.Split(fileName, ",")
 	sampleMessage.AdditionalConfig = make(map[string]string)
 	if *additionalConfigString != "" {
 		err := json.Unmarshal([]byte(*additionalConfigString), &sampleMessage.AdditionalConfig)
+		if err != nil {
+			panic(err)
+		}
+	}
+	sampleMessage.AdditionalHeaders = make(map[string]string)
+	if *additionalHeadersString != "" {
+		err := json.Unmarshal([]byte(*additionalHeadersString), &sampleMessage.AdditionalHeaders)
 		if err != nil {
 			panic(err)
 		}
