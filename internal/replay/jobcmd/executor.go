@@ -3,6 +3,7 @@ package jobcmd
 import (
 	"context"
 	"fmt"
+	commConst "github.com/databahn-ai/common-utils/constants"
 	"os"
 	"os/signal"
 	"sync"
@@ -32,6 +33,9 @@ func ExecuteReplayJob(input model.Message) common.JobResult {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
+	if input.DestinationTopic == "" {
+		input.DestinationTopic = commConst.DataReplayTopicPrefix
+	}
 	err, _, _ := replaymanager.PreProcessMetaData(input, "TEST_JOB", mst)
 
 	if err != nil {
