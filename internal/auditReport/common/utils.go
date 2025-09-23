@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 func ConvertToStrings(input []interface{}) ([]string, error) {
@@ -58,6 +59,52 @@ func WriteRowsToFileForDbReportTypeWithoutTimeFilters(columns []string, rows *sq
 			columnValue := string(*col.(*sql.RawBytes))
 			row = append(row, columnValue)
 		}
+		err := writer.Write(row)
+		if err != nil {
+			return 0, err
+		}
+		fetchedRowsCount++
+	}
+	writer.Flush()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return fetchedRowsCount, nil
+}
+
+func WriteRowsToFileForDbReportTypeWithoutTimeFiltersWithStatusFilter(columns []string, rows *sql.Rows, writer *csv.Writer, statusColumnIndex int, statusFilterValues []string) (int, error) {
+	fetchedRowsCount := 0
+	values := make([]interface{}, len(columns))
+	for i := range values {
+		values[i] = new(sql.RawBytes)
+	}
+	for rows.Next() {
+		if err := rows.Scan(values...); err != nil {
+			return 0, err
+		}
+
+		var row []string
+		for _, col := range values {
+			// Convert column value to string
+			columnValue := string(*col.(*sql.RawBytes))
+			row = append(row, columnValue)
+		}
+
+		// Apply status filter if status column exists and filter values are provided
+		if statusColumnIndex >= 0 && len(statusFilterValues) > 0 {
+			statusValue := strings.TrimSpace(row[statusColumnIndex])
+			shouldInclude := false
+			for _, filterValue := range statusFilterValues {
+				if strings.EqualFold(statusValue, filterValue) {
+					shouldInclude = true
+					break
+				}
+			}
+			if !shouldInclude {
+				continue // Skip this row
+			}
+		}
+
 		err := writer.Write(row)
 		if err != nil {
 			return 0, err
