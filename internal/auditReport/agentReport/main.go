@@ -105,7 +105,11 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 			a.private_ip,
 			a.public_ip,
 			a.port,
-			a.status,
+			CASE 
+				WHEN a.status = 'DELETED' THEN 'DELETED'
+				WHEN now() - a.heartbeat_at > interval '30 minutes' THEN 'WARNING'
+				ELSE a.status
+			END as status,
 			a.boot_time,
 			a.uptime,
 			a.is_upgrade_available,
