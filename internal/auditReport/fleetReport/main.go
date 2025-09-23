@@ -48,24 +48,40 @@ func getQueryForFleetReportData(ctx context.Context, req models.AuditReport) (st
 
 	whereClause, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
 
-	// Build the complete JOIN query
+	// Build the complete JOIN query with smart status logic
 	query := fmt.Sprintf(`
 		SELECT 
 			f.id,
 			f.name,
 			f.description,
-			f.status,
 			f.topology,
 			f.created_at,
 			f.updated_at,
 			f.advance_config,
 			dp.name as dataplane_name,
 			uc.email as created_by,
-			uu.email as updated_by
+			uu.email as updated_by,
+			COALESCE(unhealthy_count.unhealthy_nodes, 0) as unhealthy_nodes_count,
+			CASE
+				WHEN f.status = 'ACTIVE' AND COALESCE(unhealthy_count.unhealthy_nodes, 0) >= 1 THEN 'WARNING'
+				ELSE f.status
+			END as status
 		FROM fleet f
 		LEFT JOIN data_planes dp ON f.data_plane_id = dp.id
 		LEFT JOIN users uc ON f.created_by = uc.id
 		LEFT JOIN users uu ON f.updated_by = uu.id
+		LEFT JOIN (
+			SELECT 
+				fn.fleet_id,
+				COUNT(*) as unhealthy_nodes
+			FROM fleet_node fn
+			WHERE fn.status != 'DELETED' 
+				AND (
+					fn.heartbeat_at < NOW() - INTERVAL '30 minutes'
+					OR fn.heartbeat_at IS NULL
+				)
+			GROUP BY fn.fleet_id
+		) unhealthy_count ON f.id = unhealthy_count.fleet_id
 		WHERE %s`, whereClause)
 
 	logging.GetLoggerWithContext(ctx).Info("query for fleet report data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
