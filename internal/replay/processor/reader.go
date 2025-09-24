@@ -59,7 +59,12 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	mst.UpdateMetaData(fileName, constants.StatusProcessing, 0, 0, stats.Size(), 0, "")
 	logger.GetLogger().Info("getting producer", zap.String("traceId", reqId), zap.Int("thread ", threadId))
 	var producer = GetProducer(reqId, topic)
-
+	logger.GetLogger().Info("getting producer for topic", zap.String("topic", topic), zap.String("fileName", fileName),
+		zap.String("replayType", req.ReplayType))
+	if req.ReplayType == "UNDELIVERED" {
+		logger.GetLogger().Info("pipeline done and next", zap.String("pipeline_done", req.AdditionalHeaders[commConst.PipelineDone]),
+			zap.String("pipeline_next", req.AdditionalHeaders[commConst.PipelineNext]))
+	}
 	var scanner Scanner
 
 	switch strings.ToLower(req.DataStore) {
@@ -207,7 +212,17 @@ func PrepareAck(status []ack.Status, inputReq model.Message) ack.Ack {
 
 func GetHeader(request model.Message) []kafka.Header {
 
-	headers := make([]kafka.Header, 13)
+	pipelineDone := commConst.DataReplayStage
+	pipelineNext := ""
+	destinationId := ""
+	pipelineId := ""
+	if request.ReplayType == "UNDELIVERED" {
+		pipelineDone = request.AdditionalHeaders[commConst.PipelineDone]
+		pipelineNext = request.AdditionalHeaders[commConst.PipelineNext]
+		destinationId = request.AdditionalHeaders[commConst.DestinationId]
+		pipelineId = request.AdditionalHeaders[commConst.PipelineId]
+	}
+	headers := make([]kafka.Header, 16)
 	headers[0] = kafka.Header{Key: commConst.DeviceType, Value: []byte(request.DeviceType)}
 	headers[1] = kafka.Header{Key: commConst.DeviceVendor, Value: []byte(request.DeviceVendor)}
 	headers[2] = kafka.Header{Key: commConst.LogType, Value: []byte(request.LogType)}
@@ -215,12 +230,15 @@ func GetHeader(request model.Message) []kafka.Header {
 	headers[4] = kafka.Header{Key: commConst.EventSourceId, Value: []byte(request.Source)}
 	headers[5] = kafka.Header{Key: commConst.EdgeId, Value: []byte(uuid.Nil.String())}
 	headers[6] = kafka.Header{Key: commConst.FleetId, Value: []byte(request.FleetId)}
-	headers[7] = kafka.Header{Key: commConst.ConnectorId, Value: []byte(request.Source)}
+	headers[7] = kafka.Header{Key: commConst.ConnectorId, Value: []byte(request.ConnectId)}
 	headers[8] = kafka.Header{Key: commConst.EventId, Value: []byte(uuid.NewString())}
 	headers[9] = kafka.Header{Key: commConst.EdgeTimestamp, Value: []byte(strconv.FormatInt(time.Now().UnixMilli(), 10))}
 	headers[10] = kafka.Header{Key: "db_component_name", Value: []byte("replay_data")}
-	headers[11] = kafka.Header{Key: commConst.PipelineDone, Value: []byte(commConst.DataReplayStage)}
-	headers[12] = kafka.Header{Key: commConst.SourceName, Value: []byte(request.SourceName)}
+	headers[11] = kafka.Header{Key: commConst.PipelineDone, Value: []byte(pipelineDone)}
+	headers[12] = kafka.Header{Key: commConst.PipelineNext, Value: []byte(pipelineNext)}
+	headers[13] = kafka.Header{Key: commConst.SourceName, Value: []byte(request.SourceName)}
+	headers[14] = kafka.Header{Key: commConst.DestinationId, Value: []byte(destinationId)}
+	headers[15] = kafka.Header{Key: commConst.PipelineId, Value: []byte(pipelineId)}
 
 	return headers
 }

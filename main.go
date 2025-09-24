@@ -36,7 +36,7 @@ func ReadInputData() model.Message {
 	var fileName string
 
 	flag.StringVar(&sampleMessage.RequestId, "reqId", "", "request id ")
-	flag.StringVar(&sampleMessage.NewSource, "destination", "", "destination-topic")
+	flag.StringVar(&sampleMessage.DestinationTopic, "destination", "", "destination-topic")
 	flag.StringVar(&sampleMessage.BucketName, "bucketName", "", "bucket name")
 	flag.StringVar(&sampleMessage.BucketPrefix, "bucketPrefix", "", "bucket Prefix")
 	flag.StringVar(&sampleMessage.AccessKeyID, "accessId", "", "bucket name")
@@ -55,14 +55,23 @@ func ReadInputData() model.Message {
 
 	flag.StringVar(&sampleMessage.DataStore, "dataStore", "", "data store type")
 	flag.StringVar(&sampleMessage.SourceName, "sourceName", "", "source name")
+	flag.StringVar(&sampleMessage.ReplayType, "replayType", "", "data replay type")
 
 	additionalConfigString := flag.String("additionalConfig", "", "additional config")
+	additionalHeadersString := flag.String("additionalHeaders", "", "additional config")
 
 	flag.Parse()
 	sampleMessage.FileName = strings.Split(fileName, ",")
 	sampleMessage.AdditionalConfig = make(map[string]string)
 	if *additionalConfigString != "" {
 		err := json.Unmarshal([]byte(*additionalConfigString), &sampleMessage.AdditionalConfig)
+		if err != nil {
+			panic(err)
+		}
+	}
+	sampleMessage.AdditionalHeaders = make(map[string]string)
+	if *additionalHeadersString != "" {
+		err := json.Unmarshal([]byte(*additionalHeadersString), &sampleMessage.AdditionalHeaders)
 		if err != nil {
 			panic(err)
 		}
