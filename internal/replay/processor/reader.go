@@ -214,11 +214,15 @@ func GetHeader(request model.Message) []kafka.Header {
 
 	pipelineDone := commConst.DataReplayStage
 	pipelineNext := ""
+	destinationId := ""
+	pipelineId := ""
 	if request.ReplayType == "UNDELIVERED" {
 		pipelineDone = request.AdditionalHeaders[commConst.PipelineDone]
 		pipelineNext = request.AdditionalHeaders[commConst.PipelineNext]
+		destinationId = request.AdditionalHeaders[commConst.DestinationId]
+		pipelineId = request.AdditionalHeaders[commConst.PipelineId]
 	}
-	headers := make([]kafka.Header, 14)
+	headers := make([]kafka.Header, 16)
 	headers[0] = kafka.Header{Key: commConst.DeviceType, Value: []byte(request.DeviceType)}
 	headers[1] = kafka.Header{Key: commConst.DeviceVendor, Value: []byte(request.DeviceVendor)}
 	headers[2] = kafka.Header{Key: commConst.LogType, Value: []byte(request.LogType)}
@@ -233,6 +237,8 @@ func GetHeader(request model.Message) []kafka.Header {
 	headers[11] = kafka.Header{Key: commConst.PipelineDone, Value: []byte(pipelineDone)}
 	headers[12] = kafka.Header{Key: commConst.PipelineNext, Value: []byte(pipelineNext)}
 	headers[13] = kafka.Header{Key: commConst.SourceName, Value: []byte(request.SourceName)}
+	headers[14] = kafka.Header{Key: commConst.DestinationId, Value: []byte(destinationId)}
+	headers[15] = kafka.Header{Key: commConst.PipelineId, Value: []byte(pipelineId)}
 
 	return headers
 }
