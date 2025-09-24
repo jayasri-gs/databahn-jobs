@@ -131,7 +131,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		}
 
 		// while reading from parquet file itself we consider forwardDataType
-		if !isParquetFile && strings.EqualFold(forwardDataType, "parsed") {
+		if (!isParquetFile && strings.EqualFold(forwardDataType, "parsed")) || (req.ReplayType != "CUSTOM") {
 			line, err = getRawDataFromDataBahnParsedObject(line)
 			if err != nil {
 				return err, constants.StatusFailed
