@@ -226,7 +226,7 @@ func GetHeader(request model.Message) []kafka.Header {
 	headers[4] = kafka.Header{Key: commConst.EventSourceId, Value: []byte(request.Source)}
 	headers[5] = kafka.Header{Key: commConst.EdgeId, Value: []byte(uuid.Nil.String())}
 	headers[6] = kafka.Header{Key: commConst.FleetId, Value: []byte(request.FleetId)}
-	headers[7] = kafka.Header{Key: commConst.ConnectorId, Value: []byte(request.Source)}
+	headers[7] = kafka.Header{Key: commConst.ConnectorId, Value: []byte(request.ConnectId)}
 	headers[8] = kafka.Header{Key: commConst.EventId, Value: []byte(uuid.NewString())}
 	headers[9] = kafka.Header{Key: commConst.EdgeTimestamp, Value: []byte(strconv.FormatInt(time.Now().UnixMilli(), 10))}
 	headers[10] = kafka.Header{Key: "db_component_name", Value: []byte("replay_data")}
