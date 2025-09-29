@@ -43,6 +43,12 @@ func FetchAgentDiscoveredChannelSubscriptions(ctx context.Context) common.JobRes
 
 	logger.GetLoggerWithContext(ctx).Info("fetched tenant certificates", zap.Int("count", len(tenantCerts)))
 
+	// Check if no tenants are configured
+	if len(tenantCerts) == 0 {
+		logger.GetLoggerWithContext(ctx).Warn("no tenant WEC certificates found in database - no processing will occur")
+		return common.NewJobResultSuccess() // Still success, but with clear logging
+	}
+
 	// Process each tenant
 	for _, cert := range tenantCerts {
 		if cert.SubscriptionStatusS3Path == "" {
