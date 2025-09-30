@@ -101,7 +101,14 @@ func processSubscriptionStatusForTenant(ctx context.Context, tenantID, s3Path st
 		return fmt.Errorf("failed to parse CSV from S3: %w", err)
 	}
 
-	// Update subscription data (placeholder for now)
+	// Handle case where no files were found (customer not onboarded)
+	if dataMap == nil {
+		logger.GetLoggerWithContext(ctx).Info("no CSV data to process - skipping subscription update",
+			zap.String("tenant_id", tenantID))
+		return nil // Success - no processing needed
+	}
+
+	// Update subscription data
 	return updateSubscription(ctx, dataMap, tenantID)
 }
 
@@ -129,7 +136,10 @@ func parseCSVFromS3(ctx context.Context, s3Client *s3.Client, bucket, s3Path str
 	}
 
 	if len(listObjectsOutput.Contents) == 0 {
-		return nil, fmt.Errorf("no objects found in bucket %q with prefix %q", bucket, s3Path)
+		logger.GetLoggerWithContext(ctx).Info("no CSV files found - customer may not be onboarded yet",
+			zap.String("bucket", bucket),
+			zap.String("prefix", s3Path))
+		return nil, nil // Return nil instead of error - this is a valid scenario
 	}
 
 	// Sort objects by last modified date (most recent first)
