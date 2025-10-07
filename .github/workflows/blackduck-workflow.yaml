@@ -1,9 +1,9 @@
-name: Go Build and Scan
+name: Black-Duck Scan
 
 on:
   push:
     branches:
-      - develop
+      - master
   workflow_dispatch:
 
 jobs:
