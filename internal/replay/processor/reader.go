@@ -70,7 +70,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	switch strings.ToLower(req.DataStore) {
 	case constants.S3_STORAGE_TYPE, "":
 		compression := req.AdditionalConfig["compression"]
-		if strings.ToLower(compression) == "gzip" || compression == "" {
+		if strings.ToLower(compression) == "gzip" {
 			// Try gzip decompression first
 			gzipReader, err := gzip.NewReader(file)
 			if err != nil {
