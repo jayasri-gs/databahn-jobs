@@ -69,24 +69,30 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 
 	switch strings.ToLower(req.DataStore) {
 	case constants.S3_STORAGE_TYPE, "":
-		gzipReader, err := gzip.NewReader(file)
-		if err != nil {
-			if err.Error() == "gzip: invalid header" {
-				newErr := fmt.Errorf(fileName + " :- file is not gZip ")
-				logger.GetLogger().Error("failed to create gzip reader, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
-				return newErr, constants.StatusFailed
-			}
-
-			logger.GetLogger().Error("failed to create gzip reader, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
-		}
-		defer func(gzipReader *gzip.Reader) {
-			err := gzipReader.Close()
+		compression := req.AdditionalConfig["compression"]
+		if strings.ToLower(compression) == "gzip" || compression == "" {
+			// Try gzip decompression first
+			gzipReader, err := gzip.NewReader(file)
 			if err != nil {
-				logger.GetLogger().Error("Error while closing gzip reader", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+				if err.Error() == "gzip: invalid header" {
+					newErr := fmt.Errorf(fileName + " :- file is not gZip ")
+					logger.GetLogger().Error("failed to create gzip reader, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+					return newErr, constants.StatusFailed
+				}
+				logger.GetLogger().Error("failed to create gzip reader, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+				return err, constants.StatusFailed
 			}
-		}(gzipReader)
-
-		scanner = bufio.NewScanner(gzipReader)
+			defer func(gzipReader *gzip.Reader) {
+				err := gzipReader.Close()
+				if err != nil {
+					logger.GetLogger().Error("Error while closing gzip reader", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+				}
+			}(gzipReader)
+			scanner = bufio.NewScanner(gzipReader)
+		} else {
+			// No compression, read file directly
+			scanner = bufio.NewScanner(file)
+		}
 		if err = scanner.Err(); err != nil {
 			logger.GetLogger().Error("error reading file", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 			return err, constants.StatusFailed
