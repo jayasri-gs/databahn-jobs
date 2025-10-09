@@ -34,12 +34,13 @@ func createAwsConnection(input model.Message) (*s3.Client, error) {
 	var err error
 	if authType == "role_based" {
 		roleArn := input.AdditionalConfig["role_arn"]
-		cfg, err = config.LoadDefaultConfig(context.TODO())
+		// Create a base config with region first
+		baseCfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(input.Region))
 		if err != nil {
 			return nil, err
 		}
 		cfg, err = config.LoadDefaultConfig(context.TODO(),
-			config.WithCredentialsProvider(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), roleArn, func(o *stscreds.AssumeRoleOptions) {
+			config.WithCredentialsProvider(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(baseCfg), roleArn, func(o *stscreds.AssumeRoleOptions) {
 				if input.AdditionalConfig["external_id"] != "" {
 					o.ExternalID = aws.String(input.AdditionalConfig["external_id"])
 				}
