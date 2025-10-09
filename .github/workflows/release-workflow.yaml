@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - release/*
-      - bug/**
 
 jobs:
   build-service:
