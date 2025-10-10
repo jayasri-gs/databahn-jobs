@@ -167,6 +167,12 @@ func WithAlertType(alertType AlertType) AlertOption {
 	}
 }
 
+func WithAction(action string) AlertOption {
+	return func(alert *Alert) {
+		alert.Action = action
+	}
+}
+
 func WithTitle(title string) AlertOption {
 	return func(alert *Alert) {
 		alert.Title = title

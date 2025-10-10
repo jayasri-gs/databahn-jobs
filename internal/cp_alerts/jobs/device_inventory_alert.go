@@ -551,5 +551,6 @@ func buildConsolidatedDeviceAlert(sdia model.SourceDeviceInventoryAlert) (*alert
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10003, ""),
+		alerts_async.WithAction("Please check source configuration or actual device configuration for any reasons that the device can stop reporting."),
 	)
 }

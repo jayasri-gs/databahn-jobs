@@ -167,8 +167,8 @@ github.com/cpuguy83/dockercfg v0.3.2 h1:DlJTyZGBDlXqUZ2Dk2Q3xHs/FtnooJJVaad2S9GK
 github.com/cpuguy83/dockercfg v0.3.2/go.mod h1:sugsbF4//dDlL/i+S+rtpIWp+5h0BHJHfjj5/jFyUJc=
 github.com/databahn-ai/common-utils v0.190.0 h1:nn28HQzeiO2C6Lbn3kl7KlwmrvPF02OfryCoHlj95Vw=
 github.com/databahn-ai/common-utils v0.190.0/go.mod h1:xY4oM89BQ/+gu7gr39WugfHmR6iS6iEQbOPmkZg6nBQ=
-github.com/databahn-ai/db-models v0.204.0 h1:DVNtt2OgIRRfxV9Efl81/HW51E5syWWfU923VwbSkrA=
-github.com/databahn-ai/db-models v0.204.0/go.mod h1:kqrnfJEKEoDpunj5oqNLy0aGJO3iRbt23u6bTFLJ73g=
+github.com/databahn-ai/db-models v0.212.0 h1:EcFFu2SCvMNn8jXlyVC5ZKMoK/Wv14fQ2udTTIHCzgE=
+github.com/databahn-ai/db-models v0.212.0/go.mod h1:kqrnfJEKEoDpunj5oqNLy0aGJO3iRbt23u6bTFLJ73g=
 github.com/databahn-ai/go-logging v0.24.0 h1:hmbJyv1lQPmf8qg2bGOpZtug4i+1CPvYDC2HvPJ0q0U=
 github.com/databahn-ai/go-logging v0.24.0/go.mod h1:P/NmnvqbBmcjqfQLYEWHFE8HLtOjORwcTrnlEkWM/Eg=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

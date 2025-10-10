@@ -245,7 +245,7 @@ func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfi
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 				logger.GetLogger().Error("rollover error", zap.Error(rolloverError), zap.String("tenant", tenant), zap.Int("year", year))
 			}
-			logger.GetLogger().Info("completed roll over index for indices", zap.String("tenantId", tenant), zap.Int("year", year), zap.Any("indices", successIndices), zap.String("new_index", targetIndexName))
+			logger.GetLogger().Info("completed roll over index for indices", zap.String("tenantId", tenant), zap.Int("year", indexYear), zap.Any("indices", successIndices), zap.String("new_index", targetIndexName))
 		}
 	}
 

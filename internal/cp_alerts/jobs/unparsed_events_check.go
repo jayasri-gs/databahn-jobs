@@ -300,5 +300,6 @@ func buildUnparsedEventAlert(ias model.UnparsedEventSource) (*alerts_async.Alert
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DBPW10001, ""),
+		alerts_async.WithAction("If the log source is custom, please check the parsers, otherwise please contact Databahn Team. You may also want to check the type of data being received for the log source."),
 	)
 }

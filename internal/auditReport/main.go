@@ -134,6 +134,7 @@ func handleSuccessRequestChannel(ctx context.Context, reportProcessor ReportProc
 			alerts_async.WithTitle(consts.SuccessTitle),
 			alerts_async.WithMessage(consts.SuccessTitle),
 			alerts_async.WithErrorCode(alerts_async.DIIS10001, ""),
+			alerts_async.WithAction("Your audit report is ready for download."),
 		)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while creating success alert", zap.Error(err))
@@ -330,6 +331,7 @@ func handleErrorRequests(requests []models.FailedRequests) ([]*alerts_async.Aler
 				alerts_async.WithTitle(consts.FailureTitle),
 				alerts_async.WithMessage(consts.FailureTitle),
 				alerts_async.WithErrorCode(alerts_async.DIIS20001, ""),
+				alerts_async.WithAction("Please contact Databahn Support team for further assistance."),
 			)
 			if err != nil {
 				logging.GetLogger().Error("error while creating error alert", zap.Error(err), zap.String("request_id", req.RequestId), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId))
