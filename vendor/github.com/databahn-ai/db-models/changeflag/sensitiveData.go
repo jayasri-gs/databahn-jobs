@@ -6,6 +6,7 @@ type FlagSensitiveDataConfig struct {
 	SourceId string                 `json:"source_id"`
 	Function string                 `json:"function"`
 	Patterns []SensitiveDataPattern `json:"patterns"`
+	Tag      string                 `json:"tag"`
 }
 
 type SensitiveDataPattern struct {

@@ -364,6 +364,7 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
+		alerts_async.WithAction("Please check log source, fleet, connector etc of the source and devices sending data to the source."),
 	)
 }
 

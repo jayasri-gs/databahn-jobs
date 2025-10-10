@@ -623,6 +623,7 @@ func buildAgentAlert(ia model.UnhealthyAgent) (*alerts_async.Alert, error) {
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10001, ""),
+		alerts_async.WithAction("Please check agent configuration, connectivity or other details."),
 	)
 }
 
@@ -637,6 +638,7 @@ func buildFleetAlert(uf model.UnhealthyFleet) (*alerts_async.Alert, error) {
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10002, ""),
+		alerts_async.WithAction("Please check fleet node configuration, connectivity or reported details from fleet page."),
 	)
 }
 
@@ -651,6 +653,7 @@ func buildFleetConnectorAlert(uf model.UnhealthyFleetConnector) (*alerts_async.A
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10004, ""),
+		alerts_async.WithAction("Please check fleet connector configuration, connectivity or other details."),
 	)
 }
 
@@ -665,6 +668,7 @@ func buildFleetComponentAlert(uf model.UnhealthyFleetComponents) (*alerts_async.
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DHRW10003, ""),
+		alerts_async.WithAction("Please check fleet component configuration, connectivity or other details."),
 	)
 }
 

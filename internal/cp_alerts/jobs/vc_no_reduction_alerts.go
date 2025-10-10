@@ -393,5 +393,6 @@ func buildVCNoReductionAlert(vcAlert model.VCNoReductionAlert, minReductionThres
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10005, "Volume controller not performing reduction"),
+		alerts_async.WithAction("Please revisit the volume control rules and incoming data."),
 	)
 }

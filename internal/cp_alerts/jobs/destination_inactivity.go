@@ -319,6 +319,7 @@ func buildDestAlert(iad model.InactiveDestination) (*alerts_async.Alert, error) 
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10002, ""),
+		alerts_async.WithAction("Please check destination configuration, connection details etc if those are right. You can also check if sources are getting data. If sources and destinations are all ok, please check volume controller rules if any."),
 	)
 }
 

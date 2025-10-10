@@ -8,6 +8,8 @@ const (
 	SubstringExtraction               TransformationOpType = "SUBSTRING_EXTRACTION"
 	JsonExtraction                    TransformationOpType = "JSON_EXTRACT"
 	XmlExtraction                     TransformationOpType = "XML_EXTRACT"
+	KeyValueExtraction                TransformationOpType = "PARSE_KEY_VALUE"
+	CsvExtraction                     TransformationOpType = "PARSE_CSV"
 	Split                             TransformationOpType = "SPLIT"
 	Trim                              TransformationOpType = "TRIM"
 	Numerify                          TransformationOpType = "NUMERIFY"
@@ -22,9 +24,15 @@ const (
 	TimeUnixTsSec                     TransformationOpType = "TIME_UNIX_TS_SEC"
 	TimeUnixTsMs                      TransformationOpType = "TIME_UNIX_TS_MS"
 	Case                              TransformationOpType = "CASE"
+	NullIf                            TransformationOpType = "NULL_IF"
 	Integerify                        TransformationOpType = "INTEGERIFY"
 	Stringify                         TransformationOpType = "STRINGIFY"
 	Booleanify                        TransformationOpType = "BOOLEANIFY"
+	TimeNow                           TransformationOpType = "TIME_NOW"
+	StringLength                      TransformationOpType = "STRING_LENGTH"
+	StringConcat                      TransformationOpType = "STRING_CONCAT"
+	StartsWith                        TransformationOpType = "STARTS_WITH"
+	ArrayLength                       TransformationOpType = "ARRAY_LENGTH"
 )
 
 type FlagTransform struct {
@@ -102,11 +110,17 @@ type TransformationOperator struct {
 	SubstringExtractionConfig    *SubstringExtractionConfig    `json:"substringExtractionConfig,omitempty"`
 	JsonExtractionConfig         *JsonExtractionConfig         `json:"jsonExtractionConfig,omitempty"`
 	XmlExtractionConfig          *XmlExtractionConfig          `json:"xmlExtractionConfig,omitempty"`
+	ParseKeyValueConfig          *ParseKeyValueConfig          `json:"parseKeyValueConfig,omitempty"`
+	ParseCsvConfig               *ParseCsvConfig               `json:"parseCsvConfig,omitempty"`
 	ConstantReplaceConfig        *ConstantReplaceConfig        `json:"constantReplaceConfig,omitempty"`
 	SplitOperatorConfig          *SplitOperatorConfig          `json:"splitOperatorConfig,omitempty"`
 	StringRedactOperatorConfig   *StringRedactOperatorConfig   `json:"stringRedactOperatorConfig,omitempty"`
 	StringTruncateOperatorConfig *StringTruncateOperatorConfig `json:"stringTruncateOperatorConfig,omitempty"`
 	CaseOperatorConfig           *CaseOperatorConfig           `json:"caseOperatorConfig,omitempty"`
+	TimeNowConfig                *TimeNowConfig                `json:"timeNowConfig,omitempty"`
+	StringConcatConfig           *StringConcatConfig           `json:"stringConcatConfig,omitempty"`
+	StartsWithConfig             *StartsWithConfig             `json:"startsWithConfig,omitempty"`
+	NullIfOperatorConfig         *NullIfOperatorConfig         `json:"nullIfOperatorConfig,omitempty"`
 }
 
 type RenameFields struct {
@@ -127,6 +141,10 @@ type RenameFields struct {
 	JsonExtractionConfig               JsonExtractionConfig      `json:"jsonExtractionConfig"`
 	XmlExtractionOperatorEnabled       bool                      `json:"xmlExtractionOperatorEnabled"`
 	XmlExtractionConfig                XmlExtractionConfig       `json:"xmlExtractionConfig"`
+	KeyValueExtractionOperatorEnabled  bool                      `json:"keyValueExtractionOperatorEnabled"`
+	KeyValueExtractionConfig           ParseKeyValueConfig       `json:"keyValueExtractionConfig"`
+	CsvExtractionOperatorEnabled       bool                      `json:"csvExtractionOperatorEnabled"`
+	CsvExtractionConfig                ParseCsvConfig            `json:"csvExtractionConfig"`
 
 	ConstantReplaceOperatorEnabled bool                  `json:"constantReplaceOperatorEnabled"`
 	ConstantReplaceConfig          ConstantReplaceConfig `json:"constantConfig"`
@@ -170,8 +188,10 @@ type RenameFields struct {
 	TimeUnixTsMs                                     bool `json:"timeUnixTsMs"`
 
 	//  ✅ NEW: Case Operators
-	CaseOperatorEnabled bool               `json:"caseOperatorEnabled"`
-	CaseOperatorConfig  CaseOperatorConfig `json:"caseOperatorConfig"`
+	CaseOperatorEnabled   bool                 `json:"caseOperatorEnabled"`
+	CaseOperatorConfig    CaseOperatorConfig   `json:"caseOperatorConfig"`
+	NullIfOperatorEnabled bool                 `json:"nullIfOperatorEnabled"`
+	NullIfOperatorConfig  NullIfOperatorConfig `json:"nullIfOperatorConfig"`
 
 	//  ✅ NEW: to_string & to_int
 	IntegerifyOperatorEnabled bool `json:"integerifyOperatorEnabled"`
@@ -191,6 +211,12 @@ type CaseOperatorConfig struct {
 	Conditions     []Condition `json:"conditions"`
 	ElseValue      string      `json:"elseValue"`
 }
+
+type NullIfOperatorConfig struct {
+	IfConditionKey string      `json:"ifConditionKey"`
+	Conditions     []Condition `json:"conditions"`
+}
+
 type Condition struct {
 	When     string `json:"when"`
 	Then     string `json:"then"`
@@ -240,9 +266,56 @@ type ExtractionConfig struct {
 	ExtractionKey string `json:"extractionKey"`
 }
 
+type ParseKeyValueConfig struct {
+	Key               string `json:"key"`
+	KeyValueDelimiter string `json:"keyValueDelimiter"`
+	FieldDelimiter    string `json:"fieldDelimiter"`
+}
+
+type ParseCsvConfig struct {
+	Index int `json:"index"`
+}
+
 type JsonExtractionConfig ExtractionConfig
 
 type XmlExtractionConfig ExtractionConfig
+
+type TimeNowConfig struct {
+	Format       TimeFormats `json:"format"`
+	CustomFormat string      `json:"customFormat,omitempty"`
+}
+
+type TimeFormats string
+
+const (
+	EpochMilliseconds TimeFormats = "EPOCH_MILLISECONDS"
+	EpochSeconds      TimeFormats = "EPOCH_SECONDS"
+	ISO8601           TimeFormats = "ISO8601"
+	RFC3339           TimeFormats = "RFC3339"
+	Custom            TimeFormats = "CUSTOM"
+)
+
+type StringConcatConfig struct {
+	Values    []ConcatValues `json:"values"`
+	Delimiter string         `json:"delimiter,omitempty"`
+}
+
+type ConcatValues struct {
+	FieldName string    `json:"fieldName"`
+	FieldType FieldType `json:"fieldType"`
+}
+
+type FieldType string
+
+const (
+	Constant FieldType = "CONSTANT"
+	Schema   FieldType = "SCHEMA"
+)
+
+type StartsWithConfig struct {
+	Prefix        string `json:"prefix"`
+	CaseSensitive bool   `json:"caseSensitive"`
+}
 
 type OcsfTransformationBlock struct {
 	OcsfFilterCriteria OcsfFilterCriteria          `json:"ocsfFilterCriteria"`
