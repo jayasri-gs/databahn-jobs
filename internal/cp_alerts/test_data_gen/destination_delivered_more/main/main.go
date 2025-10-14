@@ -44,8 +44,8 @@ var sourceIdsToCountsForInput = map[string]int{
 	"b89e7d5f-abeb-4d17-9b3f-c0c7a25aaa55": 100,
 }
 var sourceIdsToCountsForOutput = map[string]int{
-	"2e730869-b988-436a-a123-48bcf4b3c90f": 110,
-	"b89e7d5f-abeb-4d17-9b3f-c0c7a25aaa55": 111,
+	"2e730869-b988-436a-a123-48bcf4b3c90f": 150,
+	"b89e7d5f-abeb-4d17-9b3f-c0c7a25aaa55": 181,
 }
 var destinationId = "444d43f6-7378-46b1-96d0-0ba4e63ecf81"
 

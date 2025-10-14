@@ -912,5 +912,6 @@ func buildDeployingAlert(entity model.DeployingEntity) (*alerts_async.Alert, err
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DIOE30001, fmt.Sprintf("%s stuck in deploying state", entityTypeName)),
+		alerts_async.WithAction("Please contact Databahn Team for the help."),
 	)
 }

@@ -150,5 +150,6 @@ func (p *PipelineDataReductionProcessor) BuildAlert(vcAlert *PipelineDataReducti
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Volume control rule condition detected"),
+		alerts_async.WithAction("Please check for volume controller rule changes or incoming data pattern change."),
 	)
 }

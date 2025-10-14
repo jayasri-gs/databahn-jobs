@@ -306,6 +306,7 @@ func buildMoreDeliveredAlert(toAlert DestinationToAlert, sourceIdToSourceNameMap
 		alerts_async.WithMessage(message),
 		alerts_async.WithCriticality(alerts_async.Warning),
 		alerts_async.WithErrorCode(alerts_async.DNDW10005, "More data delivered than injected for destination."),
+		alerts_async.WithAction("Please check destination's forward data type. If it is Databahn Object, what we send out is usually more than injected. You also can check transformation, if any, for that pipeline for what fields are selected like raw event or the derived fields."),
 	)
 	if err != nil {
 		logger.GetLogger().Error("error while creating alert", zap.Error(err), zap.String("destinationId", toAlert.DestinationId), zap.String("tenantId", toAlert.TenantId))

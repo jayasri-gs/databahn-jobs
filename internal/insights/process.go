@@ -653,6 +653,7 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10005, ""),
+		alerts_async.WithAction("Please check hostname mapping for the normalization, or incoming data patterns for device inventory alert. For insight rules, please check attributes selected in configuration, those should not have too many unique combinations."),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create index cardinality alert: %w", err)

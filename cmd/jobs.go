@@ -3,14 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
-
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
 	"github.com/databahn-ai/databahn-jobs/internal/transformationCheckerUtility"
 	"github.com/databahn-ai/databahn-jobs/internal/unparsedReport"
 	"github.com/databahn-ai/db-models/alerts_async"
+	"os"
 
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
@@ -136,7 +134,17 @@ func sendJobFailureAlert(ctx context.Context, jobName string, input model.Messag
 	for _, jobError := range result.Errors {
 		errorMessages = append(errorMessages, jobError.Message)
 	}
-	combinedMessage := strings.Join(errorMessages, "; ")
+	combinedMessage := ""
+	for i, msg := range errorMessages {
+		if len(combinedMessage)+len(msg) > 500 {
+			combinedMessage += fmt.Sprintf("... and %d more errors", len(errorMessages)-i+1)
+			break
+		}
+		if i > 0 {
+			combinedMessage += "; "
+		}
+		combinedMessage += msg
+	}
 
 	alert, alertErr := alerts_async.NewAlert(
 		alerts_async.Job,
@@ -147,6 +155,7 @@ func sendJobFailureAlert(ctx context.Context, jobName string, input model.Messag
 		alerts_async.WithEntityDetails("job", jobName, common.DatabahnDataPlaneId, common.DatabahnTenantId),
 		alerts_async.WithErrorCode(alerts_async.DJFE10001, combinedMessage),
 		alerts_async.WithAlertType(alerts_async.Internal),
+		alerts_async.WithAction("Please investigate the job failure and contact Databahn Engineering if necessary."),
 	)
 
 	if alertErr != nil {

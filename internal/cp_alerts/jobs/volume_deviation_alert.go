@@ -334,6 +334,7 @@ func (d *DailyVolumeDeviationIngestionSource) buildAlert(volumeIncr bool, volume
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10005, "Unusual ingestion volume deviation detected."),
+		alerts_async.WithAction("Please check source configuration or original source of the data for any reasons to send more or less than usual data."),
 	)
 }
 
@@ -491,6 +492,7 @@ func (d *DailyVolumeDeviationDeliveryDestination) buildAlert(volumeIncr bool, vo
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10005, "Unusual delivery volume deviation detected."),
+		alerts_async.WithAction("Please check any volume control rule changes, any source ingestion volume changes, transformation changes or destination configuration changes which can cause such unusual drop or spike in destination volume."),
 	)
 }
 

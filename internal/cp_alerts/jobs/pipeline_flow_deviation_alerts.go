@@ -570,5 +570,6 @@ func buildPipelineFlowDeviationAlert(flowAlert model.PipelineFlowDeviationAlert,
 		alerts_async.WithMessage(message),
 		alerts_async.WithAlertType(alerts_async.Internal),
 		alerts_async.WithErrorCode(alerts_async.DNDW10001, "Pipeline stage event flow deviation"),
+		alerts_async.WithAction("Please review pipeline stages configuration and statistics from graph view at source page."),
 	)
 }
