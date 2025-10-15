@@ -7,13 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/databahn-ai/common-utils/utils"
-	dbos "github.com/databahn-ai/databahn-jobs/internal/store/os"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
-	"github.com/databahn-ai/go-logging/logger"
-	"github.com/opensearch-project/opensearch-go/v2"
-	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
-	"go.uber.org/zap"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,6 +16,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/databahn-ai/common-utils/utils"
+	dbos "github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/go-logging/logger"
+	"github.com/opensearch-project/opensearch-go/v2"
+	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
+	"go.uber.org/zap"
 )
 
 func RolloverOlderStats(ctx context.Context) error {
@@ -155,6 +156,12 @@ func splitByTimeRanges(minEpoch, maxEpoch int64, duration time.Duration) []timeR
 	startTime := time.UnixMilli(minEpoch).UTC()
 	endTime := time.UnixMilli(maxEpoch).UTC()
 	startOfRange := alignToGranularBoundary(startTime, duration)
+	if endTime.Sub(startOfRange) <= duration {
+		endOfRange := startOfRange.Add(duration)
+		ranges = append(ranges, timeRange{start: startOfRange.UnixMilli(), end: endOfRange.UnixMilli()})
+		ranges[len(ranges)-1].end = ranges[len(ranges)-1].end + 1
+		return ranges
+	}
 	for startOfRange.Before(endTime) {
 		endOfRange := startOfRange.Add(duration)
 		ranges = append(ranges, timeRange{start: startOfRange.UnixMilli(), end: endOfRange.UnixMilli()})
@@ -641,4 +648,22 @@ func insertIntoNewIndex(ctx context.Context, documents []EsSource, client *opens
 	}
 	logger.GetLogger().Debug("indexed documents to rolled over index:"+newIndexName, zap.Int("count", len(documents)))
 	return nil
+}
+
+func __yearWeekNumber(year, week int) int {
+	return year*52 + week
+}
+
+// isWeekDifferenceMoreThan checks if "that" is older than "this" by more than x weeks.
+// Returns true if (yearThis, weekThis) - (yearThat, weekThat) > x
+func isWeekDifferenceMoreThan(x, yearThis, weekThis, yearThat, weekThat int) bool {
+	diff := __yearWeekNumber(yearThis, weekThis) - __yearWeekNumber(yearThat, weekThat)
+	return diff > x
+}
+
+// isDayDifferenceMoreThan checks if "that" is older than "this" by more than x days.
+// Returns true if (yearThis, dayThis) - (yearThat, dayThat) > x
+func isDayDifferenceMoreThan(x int, yearThis, dayThis, yearThat, dayThat int) bool {
+	diff := yearThis*365 + dayThis - (yearThat*365 + dayThat)
+	return diff > x
 }
