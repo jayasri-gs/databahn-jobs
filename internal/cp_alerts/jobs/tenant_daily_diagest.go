@@ -47,7 +47,6 @@ func SendTenantDailyDigest(ctx context.Context) common.JobResult {
 		logger.GetLogger().Error("error while getting alerts from OpenSearch", zap.Error(err))
 		return common.NewJobResultFromErrors(jobErrors)
 	}
-	fmt.Printf("alertsByTenant: %+v\n", alertsByTenant)
 	notificationManager, err := notification.NewNotificationManager(ctx)
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while creating notification manager: %v", err)
