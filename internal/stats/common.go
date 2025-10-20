@@ -316,7 +316,7 @@ func parseRolledOverP3OrOlderIndexName(index string) (*Index, bool) {
 			}
 		}
 	}
-	logger.GetLogger().Error("v2 or older stats index name parsing: unexpected index name format", zap.String("index", index))
+	logger.GetLogger().Debug("v2 or older stats index name parsing: unexpected index name format", zap.String("index", index))
 	return nil, false
 }
 

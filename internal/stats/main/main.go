@@ -55,7 +55,7 @@ func main() {
 	osClient := dbos.GetClient()
 	thisYear, thisDay := getYearAndDay()
 	updateOlderDays := 60
-	olderDays := 15
+	olderDays := 1
 	for i := olderDays; i < updateOlderDays; i++ {
 		year, day := thisYear, thisDay-i
 		if day <= 0 {

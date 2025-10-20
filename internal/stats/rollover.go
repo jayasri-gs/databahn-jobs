@@ -171,12 +171,13 @@ func splitByTimeRanges(minEpoch, maxEpoch int64, duration time.Duration) []timeR
 	var ranges []timeRange
 	startTime := time.UnixMilli(minEpoch).UTC()
 	endTime := time.UnixMilli(maxEpoch).UTC()
-	if endTime.Sub(startTime) <= duration {
-		ranges = append(ranges, timeRange{start: startTime.UnixMilli(), end: endTime.UnixMilli()})
+	startOfRange := alignToGranularBoundary(startTime, duration)
+	if endTime.Sub(startOfRange) <= duration {
+		endOfRange := startOfRange.Add(duration)
+		ranges = append(ranges, timeRange{start: startOfRange.UnixMilli(), end: endOfRange.UnixMilli()})
 		ranges[len(ranges)-1].end = ranges[len(ranges)-1].end + 1
 		return ranges
 	}
-	startOfRange := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, time.UTC)
 	for startOfRange.Before(endTime) {
 		endOfRange := startOfRange.Add(duration)
 		ranges = append(ranges, timeRange{start: startOfRange.UnixMilli(), end: endOfRange.UnixMilli()})
@@ -184,6 +185,14 @@ func splitByTimeRanges(minEpoch, maxEpoch int64, duration time.Duration) []timeR
 	}
 	ranges[len(ranges)-1].end = ranges[len(ranges)-1].end + 1
 	return ranges
+}
+
+// alignToGranularBoundary aligns the given time to the appropriate granular boundary
+func alignToGranularBoundary(t time.Time, duration time.Duration) time.Time {
+	if duration >= 24*time.Hour {
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, time.UTC)
 }
 
 func filterStatsValidIndices(indexNames []string, weeksOlderThan int, limit int, skip []string) []Index {
@@ -655,4 +664,22 @@ func insertIntoNewIndex(ctx context.Context, documents []EsSource, client *opens
 	}
 	logger.GetLogger().Debug("indexed documents to rolled over index:"+newIndexName, zap.Int("count", len(documents)))
 	return nil
+}
+
+func __yearWeekNumber(year, week int) int {
+	return year*52 + week
+}
+
+// isWeekDifferenceMoreThan checks if "that" is older than "this" by more than x weeks.
+// Returns true if (yearThis, weekThis) - (yearThat, weekThat) > x
+func isWeekDifferenceMoreThan(x, yearThis, weekThis, yearThat, weekThat int) bool {
+	diff := __yearWeekNumber(yearThis, weekThis) - __yearWeekNumber(yearThat, weekThat)
+	return diff > x
+}
+
+// isDayDifferenceMoreThan checks if "that" is older than "this" by more than x days.
+// Returns true if (yearThis, dayThis) - (yearThat, dayThat) > x
+func isDayDifferenceMoreThan(x int, yearThis, dayThis, yearThat, dayThat int) bool {
+	diff := yearThis*365 + dayThis - (yearThat*365 + dayThat)
+	return diff > x
 }
