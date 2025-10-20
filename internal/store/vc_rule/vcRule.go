@@ -76,9 +76,9 @@ type FilterConfig struct {
 }
 
 type FilterRule struct {
-	Field    string `json:"field"`
-	Value    string `json:"value"`
-	Operator string `json:"operator"`
+	Field    string      `json:"field"`
+	Value    interface{} `json:"value"`
+	Operator string      `json:"operator"`
 }
 
 // VCRule represents a Volume Control rule in the database
