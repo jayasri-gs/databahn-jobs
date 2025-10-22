@@ -245,13 +245,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc.Key3 = bucket.Key.Key3
 			doc.Key4 = bucket.Key.Key4
 			doc.Key5 = bucket.Key.Key5
-			if doc.Type == "sourcehostname" {
-				// need to use key 3 (FQDN) instead of small otherwise duplicate documents will be created
-				// keeping key generation logic same as before for backward compatibility
-				doc.Id = InsightId(bucket.Key.Key3, "", "", bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
-			} else {
-				doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.Key3, bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
-			}
+			doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.Key3, bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
 			doc.SourceId = bucket.Key.SourceId
 			doc.DataPlaneId = bucket.Key.DataPlaneId
 			doc.TenantId = index.TenantId
@@ -717,51 +711,37 @@ type ReputationUpdateRequest struct {
 	UpdatedAt      int64  `json:"updated_at"`
 }
 
-// ReputationMetadata stores statistical information about why a device reputation was assigned
-type ReputationMetadata struct {
-	Mean            float64            `json:"mean"`               // Mean event count over the analysis period
-	StandardDev     float64            `json:"standard_dev"`       // Standard deviation of event counts
-	ZScore          float64            `json:"z_score"`            // Z-score for the current observation
-	SampleSize      int                `json:"sample_size"`        // Number of days considered in calculation
-	LastDayCount    float64            `json:"last_day_count"`     // Event count for the day being evaluated
-	Threshold       float64            `json:"threshold"`          // Z-score threshold used for classification
-	HistoricData    map[string]float64 `json:"historic_data"`      // Date (YYYY-MM-DD) to event count mapping used for mean calculation
-	LastEventSeenMs int64              `json:"last_event_seen_ms"` // Last event timestamp (used for SILENT devices)
-	Reason          string             `json:"reason"`             // Human-readable explanation
-	CalculatedAt    int64              `json:"calculated_at"`      // When this calculation was performed
-}
-
-func (s Sight) History(time int64, reputation string, metadata *ReputationMetadata) SilentDeviceHistory {
+func (s Sight) History(time int64, reputation string) SilentDeviceHistory {
 	id := fmt.Sprintf("%s:%s:%s:%d", s.Key1, s.Key2, s.SourceId, time)
 	return SilentDeviceHistory{
-		Id:                 id,
-		Key1:               s.Key1,
-		Key2:               s.Key2,
-		Key3:               s.Key3,
-		Key4:               s.Key4,
-		Key5:               s.Key5,
-		Type:               s.Type,
-		SourceId:           s.SourceId,
-		TenantId:           s.TenantId,
-		DataPlaneId:        s.DataPlaneId,
-		Reputation:         reputation,
-		ReputationMetadata: metadata,
+		Id:              id,
+		Key1:            s.Key1,
+		Key2:            s.Key2,
+		Key3:            s.Key3,
+		Key4:            s.Key4,
+		Key5:            s.Key5,
+		Type:            s.Type,
+		SourceId:        s.SourceId,
+		TenantId:        s.TenantId,
+		DataPlaneId:     s.DataPlaneId,
+		Reputation:      reputation,
+		DayEndTimestamp: time,
 	}
 }
 
 type SilentDeviceHistory struct {
-	Id                 string              `json:"id"`
-	Key1               string              `json:"key1"`
-	Key2               string              `json:"key2,omitempty"`
-	Key3               string              `json:"key3,omitempty"`
-	Key4               string              `json:"key4,omitempty"`
-	Key5               string              `json:"key5,omitempty"`
-	Type               string              `json:"type"`
-	SourceId           string              `json:"source_id"`
-	TenantId           string              `json:"tenant_id"`
-	DataPlaneId        string              `json:"data_plane_id"`
-	Reputation         string              `json:"reputation"`
-	ReputationMetadata *ReputationMetadata `json:"reputation_metadata,omitempty"`
+	Id              string `json:"id"`
+	Key1            string `json:"key1"`
+	Key2            string `json:"key2,omitempty"`
+	Key3            string `json:"key3,omitempty"`
+	Key4            string `json:"key4,omitempty"`
+	Key5            string `json:"key5,omitempty"`
+	Type            string `json:"type"`
+	SourceId        string `json:"source_id"`
+	TenantId        string `json:"tenant_id"`
+	DataPlaneId     string `json:"data_plane_id"`
+	DayEndTimestamp int64  `json:"day_end_timestamp"`
+	Reputation      string `json:"reputation"`
 }
 
 type Frequency struct {
