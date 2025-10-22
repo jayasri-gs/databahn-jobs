@@ -245,7 +245,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc.Key3 = bucket.Key.Key3
 			doc.Key4 = bucket.Key.Key4
 			doc.Key5 = bucket.Key.Key5
-			if doc.Type == "sourcehostname" {
+			if index.Type == "sourcehostname" {
 				// need to use key 3 (FQDN) instead of small otherwise duplicate documents will be created
 				// keeping key generation logic same as before for backward compatibility
 				doc.Id = InsightId(bucket.Key.Key3, "", "", bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
