@@ -119,23 +119,19 @@ func filterStatsIndicesForP1Migration(indexNames []string) []Index {
 
 func shouldMigrateP1ToP2(index Index, dayDiffToConsiderForRollback int) bool {
 	thisYear, thisDay := getYearAndDay()
-	thisDayNumber := yearDayNumber(thisYear, thisDay)
 	if index.Phase != Phase_P1 {
 		return false
 	}
 	if index.Schema != Schema_V2 && index.Schema != Schema_V3_temp {
 		return false
 	}
-	indexDayNumber := yearDayNumber(index.Year, index.Day)
-	dayDifference := thisDayNumber - indexDayNumber
-	return dayDifference > dayDiffToConsiderForRollback
+	return isDayDifferenceMoreThan(dayDiffToConsiderForRollback, thisYear, thisDay, index.Year, index.Day)
 }
 
 func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfig, allIndices []string, client *opensearch.Client) common.JobResult {
 	var jobErrors []common.JobError
 	weekDiff := utils.GetEnvInt("ROLLOVER_P3_P4_WEEK_DIFFERENCE", 15)
 	year, week := getWeekOfYear()
-	thisWeek := yearWeekNumber(year, week)
 	var validRolledOverIndices []Index
 	for _, indexName := range allIndices {
 		if strings.HasPrefix(indexName, "rolled_over") {
@@ -143,8 +139,7 @@ func mergeP3AndOlderRolledOverIndices(ctx context.Context, config *RolloverConfi
 			if ok {
 				y := index.Year
 				w := index.Week
-				indexWeek := yearWeekNumber(y, w)
-				if thisWeek-indexWeek > weekDiff {
+				if isWeekDifferenceMoreThan(weekDiff, year, week, y, w) {
 					validRolledOverIndices = append(validRolledOverIndices, *index)
 				}
 			}
@@ -309,7 +304,8 @@ func mergeP2Indices(ctx context.Context, config *RolloverConfig, allIndices []st
 
 	for tenant, theRolledOverIndicesByWeek := range rolledOverIndicesByTenantAndWeek {
 		for weekId, theRolledOverIndices := range theRolledOverIndicesByWeek {
-			if thisWeekId-weekId > weekDiff {
+			indexYear, indexWeek := splitYearWeekNumber(weekId)
+			if isWeekDifferenceMoreThan(weekDiff, thisYear, thisWeek, indexYear, indexWeek) {
 				nonRolledIndicesByWeek, ok := nonRolledOverIndicesByTenantAndWeek[tenant]
 				if ok {
 					nonRolledIndices, ok := nonRolledIndicesByWeek[weekId]
