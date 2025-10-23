@@ -105,6 +105,7 @@ const sightsScript = `
     "params": {
       "key1": {{.Key1 | printf "%q"}},
       "key2": {{.Key2 | printf "%q"}},
+      "key3": {{.Key3 | printf "%q"}},
       "source_id": "{{.SourceId}}",
       "tenant_id": "{{.TenantId}}",
       "data_plane_id": "{{.DataPlaneId}}",
@@ -118,6 +119,7 @@ const sightsScript = `
       "id": {{.Id | printf "%q"}},
       "key1": {{.Key1 | printf "%q"}},
       "key2": {{.Key2 | printf "%q"}},
+      "key3": {{.Key3 | printf "%q"}},
       "tenant_id": "{{.TenantId}}",
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
