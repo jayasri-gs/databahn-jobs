@@ -59,28 +59,6 @@ func formatNumber(num float64) string {
 	}
 }
 
-func formatVolume(bytes int64) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-		TB = GB * 1024
-	)
-
-	switch {
-	case bytes >= TB:
-		return fmt.Sprintf("%.1fTB", float64(bytes)/TB)
-	case bytes >= GB:
-		return fmt.Sprintf("%.1fGB", float64(bytes)/GB)
-	case bytes >= MB:
-		return fmt.Sprintf("%.1fMB", float64(bytes)/MB)
-	case bytes >= KB:
-		return fmt.Sprintf("%.1fKB", float64(bytes)/KB)
-	default:
-		return fmt.Sprintf("%dB", bytes)
-	}
-}
-
 func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string, alerts []statistics.AlertDocument) *Digest {
 	return &Digest{
 		TenantId:  tenantId,
@@ -324,7 +302,7 @@ func (d *Digest) GetEventDeliveryVolumeBreakdown() error {
 
 			volumeData := DestinationVolumeData{
 				Name:                 dest.Name,
-				VolumeDelivered:      formatVolume(volumeBytes),
+				VolumeDelivered:      util.HumanReadableBytes(volumeBytes),
 				VolumeDeliveredBytes: volumeBytes,
 				ReductionPercentage:  0, // Will be calculated later
 			}
