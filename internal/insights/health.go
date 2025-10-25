@@ -75,26 +75,22 @@ func CalculateDeviceInventoryHealth(ctx context.Context, runningFor string) comm
 			continue
 		}
 
-		if tenantId != "1be4494f-0251-4bf1-ad18-e09adc141aea" {
-			continue
-		}
-
 		// Silent marking based on last seen time
-		//statusHealth := HealthJobStatus{
-		//	TenantId: tenantId,
-		//	Action:   "SILENT_MARKING",
-		//}
-		//err = calculateDeviceInventoryHealthForTenant(ctx, os.GetClient(), tenantId, index, runningFor)
-		//if err != nil {
-		//	errorMsg := fmt.Sprintf("failed to calculate silent device health for tenant %s: %v", tenantId, err)
-		//	jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-		//	logger.GetLogger().Error("failed to calculate silent device health for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
-		//	statusHealth.Status = STATUS_ERROR
-		//	statusHealth.Error = err
-		//} else {
-		//	statusHealth.Status = STATUS_SUCCESS
-		//}
-		//statuses = append(statuses, statusHealth)
+		statusHealth := HealthJobStatus{
+			TenantId: tenantId,
+			Action:   "SILENT_MARKING",
+		}
+		err = calculateDeviceInventoryHealthForTenant(ctx, os.GetClient(), tenantId, index, runningFor)
+		if err != nil {
+			errorMsg := fmt.Sprintf("failed to calculate silent device health for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("failed to calculate silent device health for tenant", zap.String("tenant_id", tenantId), zap.Error(err))
+			statusHealth.Status = STATUS_ERROR
+			statusHealth.Error = err
+		} else {
+			statusHealth.Status = STATUS_SUCCESS
+		}
+		statuses = append(statuses, statusHealth)
 
 		// Noise marking based on frequency data from S3/Athena
 		statusNoise := HealthJobStatus{
@@ -172,6 +168,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 	var counts []float64
 	var days []float64
 	var requests []ReputationUpdateRequest
+	var history []SilentDeviceHistory
 
 	for _, agg := range aggregates {
 		// Check if we've moved to a new device
@@ -185,7 +182,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 				zap.Float64s("day_timestamps", days),
 				zap.Float64s("day_counts", counts))
 
-			reputation, change, zScore := decideNoiseLevel(days, counts)
+			reputation, change, zScore, metadata := decideNoiseLevel(days, counts)
 			logger.GetLogger().Info("decided noise level",
 				zap.String("key1", key1),
 				zap.String("key2", key2),
@@ -198,11 +195,31 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 			if change {
 				request := ReputationUpdateRequest{
 					Id:             InsightId(key1, key2, "", "", "", sourceId),
+					Key1:           key1,
+					Key2:           key2,
+					SourceId:       sourceId,
+					TenantId:       tenantId,
+					Type:           APP_TYPE_SOURCEHOSTNAME,
 					Reputation:     reputation,
 					SkipReputation: REPUTATION_SILENT,
 					UpdatedAt:      time.Now().UnixMilli(),
 				}
 				requests = append(requests, request)
+
+				// Create history record
+				if len(days) > 0 {
+					lastDay := int64(days[len(days)-1])
+					sight := Sight{
+						Id:          InsightId(key1, key2, "", "", "", sourceId),
+						Key1:        key1,
+						Key2:        key2,
+						Type:        APP_TYPE_SOURCEHOSTNAME,
+						SourceId:    sourceId,
+						TenantId:    tenantId,
+						DataPlaneId: "", // Not available in Athena query results
+					}
+					history = append(history, sight.History(lastDay, reputation, metadata))
+				}
 			}
 
 			// Reset for new device
@@ -220,7 +237,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 
 	// Process last device if any
 	if sourceId != "" && key1 != "" {
-		reputation, change, zScore := decideNoiseLevel(days, counts)
+		reputation, change, zScore, metadata := decideNoiseLevel(days, counts)
 		logger.GetLogger().Info("decided noise level (last)",
 			zap.String("key1", key1),
 			zap.String("key2", key2),
@@ -233,36 +250,80 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 		if change {
 			request := ReputationUpdateRequest{
 				Id:             InsightId(key1, key2, "", "", "", sourceId),
+				Key1:           key1,
+				Key2:           key2,
+				SourceId:       sourceId,
+				TenantId:       tenantId,
+				Type:           APP_TYPE_SOURCEHOSTNAME,
 				Reputation:     reputation,
 				SkipReputation: REPUTATION_SILENT,
 				UpdatedAt:      time.Now().UnixMilli(),
 			}
 			requests = append(requests, request)
+
+			// Create history record
+			if len(days) > 0 {
+				lastDay := int64(days[len(days)-1])
+				sight := Sight{
+					Id:          InsightId(key1, key2, "", "", "", sourceId),
+					Key1:        key1,
+					Key2:        key2,
+					Type:        APP_TYPE_SOURCEHOSTNAME,
+					SourceId:    sourceId,
+					TenantId:    tenantId,
+					DataPlaneId: "", // Not available in Athena query results
+				}
+				history = append(history, sight.History(lastDay, reputation, metadata))
+			}
 		}
 	}
 
-	// Update reputations in OpenSearch sights index
+	// Update/Insert (upsert) reputations in OpenSearch sights index
 	if len(requests) > 0 {
 		sightIndexName := SightIndexName(tenantId)
-		logger.GetLogger().Info("updating device reputations in OpenSearch",
+		logger.GetLogger().Info("upserting device reputations in OpenSearch",
 			zap.String("tenant_id", tenantId),
 			zap.String("index", sightIndexName),
-			zap.Int("update_count", len(requests)))
+			zap.Int("upsert_count", len(requests)))
 
-		//err := os.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, requests, func(s ReputationUpdateRequest) string {
-		//	return s.Id
-		//})
-		//if err != nil {
-		//	logger.GetLogger().Error("failed to mark devices by noise level",
-		//		zap.String("index", sightIndexName),
-		//		zap.String("tenant", tenantId),
-		//		zap.Error(err))
-		//	return err
-		//}
+		err := os.BulkUpsertWithScript(ctx, client, sightIndexName, updateReputation, requests, func(s ReputationUpdateRequest) string {
+			return s.Id
+		})
+		if err != nil {
+			logger.GetLogger().Error("failed to upsert devices by noise level",
+				zap.String("index", sightIndexName),
+				zap.String("tenant", tenantId),
+				zap.Error(err))
+			return err
+		}
 
-		logger.GetLogger().Info("successfully updated device reputations",
+		logger.GetLogger().Info("successfully upserted device reputations",
 			zap.String("tenant_id", tenantId),
-			zap.Int("updated_count", len(requests)))
+			zap.Int("upserted_count", len(requests)))
+
+		// Save history records with reputation metadata
+		if len(history) > 0 {
+			historyIndexName := SilentDeviceInventoryHistoryIndex(tenantId)
+			logger.GetLogger().Info("saving reputation history records",
+				zap.String("tenant_id", tenantId),
+				zap.String("index", historyIndexName),
+				zap.Int("history_count", len(history)))
+
+			err := os.BulkUpsert(ctx, client, historyIndexName, history, func(h SilentDeviceHistory) string {
+				return h.Id
+			})
+			if err != nil {
+				logger.GetLogger().Error("failed to save reputation history",
+					zap.String("index", historyIndexName),
+					zap.String("tenant", tenantId),
+					zap.Error(err))
+				return err
+			}
+
+			logger.GetLogger().Info("successfully saved reputation history",
+				zap.String("tenant_id", tenantId),
+				zap.Int("history_count", len(history)))
+		}
 	} else {
 		logger.GetLogger().Info("no reputation changes needed",
 			zap.String("tenant_id", tenantId))
@@ -271,7 +332,7 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 	return nil
 }
 
-func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64) {
+func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64, *ReputationMetadata) {
 	logger.GetLogger().Debug("decideNoiseLevel called",
 		zap.Int("days_count", len(days)),
 		zap.Int("counts_count", len(counts)),
@@ -282,7 +343,7 @@ func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64) 
 		logger.GetLogger().Debug("insufficient data for noise calculation",
 			zap.Int("count", len(counts)),
 			zap.Int("required", 3))
-		return "", false, 0
+		return "", false, 0, nil
 	}
 
 	newDays, newCounts := sortTwoSlices(days, counts)
@@ -299,16 +360,14 @@ func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64) 
 		zap.Float64s("sample_counts", sampleCounts))
 
 	isYesterday := checkIfEodEpochIsYesterday(lastDay)
-	skipCheck := true
 
 	logger.GetLogger().Info("checking if last day is yesterday",
 		zap.Float64("last_day_timestamp", lastDay),
 		zap.String("last_day_date", time.UnixMilli(int64(lastDay)).Format("2006-01-02")),
 		zap.String("yesterday_date", time.Now().Add(-24*time.Hour).Format("2006-01-02")),
-		zap.Bool("is_yesterday", isYesterday),
-		zap.Bool("skip_check", skipCheck))
+		zap.Bool("is_yesterday", isYesterday))
 
-	if isYesterday || skipCheck {
+	if isYesterday || true {
 		mean := util.CalculateMean(sampleCounts)
 		deviation := util.CalculateStandardDeviation(sampleCounts, mean)
 
@@ -321,7 +380,7 @@ func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64) 
 		if deviation == 0 || math.IsNaN(deviation) {
 			logger.GetLogger().Debug("zero or NaN deviation, skipping",
 				zap.Float64("deviation", deviation))
-			return "", false, 0
+			return "", false, 0, nil
 		}
 
 		zScore := util.CalculateZScore(lastCount, mean, deviation)
@@ -331,20 +390,56 @@ func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64) 
 			zap.Float64("z_score", zScore),
 			zap.Float64("threshold", threshold))
 
-		if zScore > threshold {
-			return REPUTATION_NOISY, true, zScore
-		} else if zScore < (-1 * threshold) {
-			return REPUTATION_WHISPERING, true, zScore
-		} else {
-			return "", false, zScore
+		// Create historic data map
+		historicData := make(map[string]float64)
+		for i := 0; i < len(sampleCounts); i++ {
+			dateStr := time.UnixMilli(int64(newDays[i])).Format("2006-01-02")
+			historicData[dateStr] = newCounts[i]
 		}
+
+		// Calculate expected range based on threshold
+		expectedMin := mean - (threshold * deviation)
+		expectedMax := mean + (threshold * deviation)
+		if expectedMin < 0 {
+			expectedMin = 0 // Event counts can't be negative
+		}
+
+		var reputation string
+		var reason string
+		if zScore > threshold {
+			reputation = REPUTATION_NOISY
+			reason = fmt.Sprintf("Device sent %.0f events, which is significantly above the expected range of %.0f-%.0f events (based on historical average of %.0f events)",
+				lastCount, expectedMin, expectedMax, mean)
+		} else if zScore < (-1 * threshold) {
+			reputation = REPUTATION_WHISPERING
+			reason = fmt.Sprintf("Device sent %.0f events, which is significantly below the expected range of %.0f-%.0f events (based on historical average of %.0f events)",
+				lastCount, expectedMin, expectedMax, mean)
+		}
+
+		if reputation != "" {
+			metadata := &ReputationMetadata{
+				Mean:             mean,
+				StandardDev:      deviation,
+				ZScore:           zScore,
+				SampleSize:       len(sampleCounts),
+				Threshold:        threshold,
+				ActualCount:      lastCount,
+				ExpectedRangeMin: expectedMin,
+				ExpectedRangeMax: expectedMax,
+				HistoricData:     historicData,
+				Reason:           reason,
+				CalculatedAt:     time.Now().UnixMilli(),
+			}
+			return reputation, true, zScore, metadata
+		}
+		return "", false, zScore, nil
 	} else {
 		logger.GetLogger().Debug("last day is not yesterday, skipping",
 			zap.Float64("last_day", lastDay),
 			zap.String("last_day_date", time.UnixMilli(int64(lastDay)).Format("2006-01-02")),
 			zap.String("yesterday", time.Now().Add(-24*time.Hour).Format("2006-01-02")))
 	}
-	return "", false, 0
+	return "", false, 0, nil
 }
 
 func dynamicThreshold(sampleSize int) float64 {
@@ -404,9 +499,20 @@ func markDevicesSilent(ctx context.Context, client *opensearch.Client, tenantId 
 		var history []SilentDeviceHistory
 		var silentRequests []ReputationUpdateRequest
 		for _, sight := range sights {
-			history = append(history, sight.History(before, REPUTATION_SILENT))
+			// Create metadata for SILENT reputation
+			metadata := &ReputationMetadata{
+				LastEventSeenMs: sight.MaxTime,
+				Reason:          fmt.Sprintf("Device has not sent any events since %s (threshold: %d days)", time.UnixMilli(sight.MaxTime).Format("2006-01-02 15:04:05"), SilentDaysBefore),
+				CalculatedAt:    time.Now().UnixMilli(),
+			}
+			history = append(history, sight.History(before, REPUTATION_SILENT, metadata))
 			request := ReputationUpdateRequest{
 				Id:             sight.Id,
+				Key1:           sight.Key1,
+				Key2:           sight.Key2,
+				SourceId:       sight.SourceId,
+				TenantId:       sight.TenantId,
+				Type:           sight.Type,
 				Reputation:     REPUTATION_SILENT,
 				SkipReputation: REPUTATION_SILENT,
 				UpdatedAt:      time.Now().UnixMilli(),
@@ -472,6 +578,11 @@ func markDevicesUnSilent(ctx context.Context, client *opensearch.Client, tenantI
 		for _, sight := range sights {
 			request := ReputationUpdateRequest{
 				Id:             sight.Id,
+				Key1:           sight.Key1,
+				Key2:           sight.Key2,
+				SourceId:       sight.SourceId,
+				TenantId:       sight.TenantId,
+				Type:           sight.Type,
 				Reputation:     REPUTATION_NORMAL,
 				SkipReputation: REPUTATION_NORMAL,
 				UpdatedAt:      time.Now().UnixMilli(),
