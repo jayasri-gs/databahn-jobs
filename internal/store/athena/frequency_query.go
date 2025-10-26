@@ -3,9 +3,11 @@ package athena
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/aws/aws-sdk-go-v2/service/athena/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	commonAws "github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/configuration"
 	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
@@ -25,6 +28,70 @@ type FrequencyAggregation struct {
 	SourceId        string
 	DayEndTimestamp int64
 	Count           float64
+}
+
+type AwsSearchSecret struct {
+	Bucket string `json:"search.bucket"`
+}
+
+var (
+	searchSecretOnce sync.Once
+	searchSecret     *AwsSearchSecret
+	searchSecretErr  error
+)
+
+// loadSearchSecret loads search bucket configuration from AWS Secrets Manager
+func loadSearchSecret() error {
+	searchSecretOnce.Do(func() {
+		secretName := appConfig.GetAppConfiguration().GetString("search.secret_name")
+		region := appConfig.GetAppConfiguration().GetString("region")
+
+		logger.GetLogger().Info("attempting to load search secret from AWS Secrets Manager",
+			zap.String("secret_name", secretName),
+			zap.String("region", region))
+
+		if secretName == "" {
+			searchSecretErr = fmt.Errorf("search.secret_name not configured")
+			logger.GetLogger().Error("search.secret_name not configured")
+			return
+		}
+
+		data, err := commonAws.ReadSecretByName(secretName, region)
+		if err != nil {
+			searchSecretErr = fmt.Errorf("failed to read search secret from AWS Secrets Manager: %w", err)
+			logger.GetLogger().Error("failed to read search secret",
+				zap.String("secret_name", secretName),
+				zap.String("region", region),
+				zap.Error(err))
+			return
+		}
+
+		searchSecret = &AwsSearchSecret{}
+		err = json.Unmarshal([]byte(*data.SecretString), searchSecret)
+		if err != nil {
+			searchSecretErr = fmt.Errorf("failed to unmarshal search secret: %w", err)
+			logger.GetLogger().Error("failed to unmarshal search secret", zap.Error(err))
+			return
+		}
+
+		logger.GetLogger().Info("successfully loaded search bucket from AWS Secrets Manager",
+			zap.String("bucket", searchSecret.Bucket))
+	})
+
+	return searchSecretErr
+}
+
+// getSearchBucket returns the search bucket from AWS Secrets Manager
+func getSearchBucket() (string, error) {
+	if err := loadSearchSecret(); err != nil {
+		return "", err
+	}
+
+	if searchSecret.Bucket == "" {
+		return "", fmt.Errorf("search.bucket not found in AWS Secrets Manager")
+	}
+
+	return searchSecret.Bucket, nil
 }
 
 // QueryFrequencyData queries frequency data from S3 via Athena
@@ -109,9 +176,9 @@ func buildFrequencyQuery(tenantId string, startDate, endDate time.Time) string {
 }
 
 func executeQuery(ctx context.Context, client *athena.Client, query string) (string, error) {
-	outputBucket := "athena-queries-console-out"
-	if outputBucket == "" {
-		return "", fmt.Errorf("ATHENA_OUTPUT_BUCKET not configured")
+	outputBucket, err := getSearchBucket()
+	if err != nil {
+		return "", fmt.Errorf("failed to get search bucket from AWS Secrets Manager: %w", err)
 	}
 
 	outputLocation := fmt.Sprintf("s3://%s/athena-results/", outputBucket)
