@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"strconv"
+	"strings"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	"go.uber.org/zap"
-	"io"
-	"strconv"
-	"strings"
 )
 
 func CatIndices(ctx context.Context, client *opensearch.Client) ([]string, error) {
@@ -315,11 +316,20 @@ func BulkUpsertWithScript[T any](ctx context.Context, cli *opensearch.Client, in
 		Index: indexName,
 		Body:  buff,
 	}
-	err := PerformBulkRequest(ctx, cli, &request)
+	successCount, missingDocs, err := PerformBulkRequestWithRetry(ctx, cli, &request)
 	if err != nil {
 		return err
 	}
-	logger.GetLogger().Debug("upserted documented with script", zap.Int("count", len(documents)), zap.String("index", indexName))
+
+	if len(missingDocs) > 0 {
+		logger.GetLogger().Warn("some documents were not found during bulk update",
+			zap.Int("missing_count", len(missingDocs)),
+			zap.Int("success_count", successCount),
+			zap.String("index", indexName),
+			zap.Strings("missing_ids", missingDocs))
+	}
+
+	logger.GetLogger().Debug("upserted documented with script", zap.Int("count", successCount), zap.String("index", indexName))
 	return nil
 }
 
@@ -351,6 +361,67 @@ func PerformBulkRequest(ctx context.Context, cli *opensearch.Client, request *op
 		}
 	}
 	return nil
+}
+
+// PerformBulkRequestWithRetry performs a bulk request and handles partial failures gracefully.
+// It returns the count of successful operations, IDs of missing documents, and any error.
+func PerformBulkRequestWithRetry(ctx context.Context, cli *opensearch.Client, request *opensearchapi.BulkRequest) (int, []string, error) {
+	resp, err := request.Do(ctx, cli)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if resp.IsError() {
+		return 0, nil, errors.New(resp.String())
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	bulkResp := BulkResponse{}
+	err = json.Unmarshal(bodyBytes, &bulkResp)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// If no errors, all succeeded
+	if !bulkResp.Errors {
+		return len(bulkResp.Items), nil, nil
+	}
+
+	// Parse the response to identify successful vs failed items
+	successCount := 0
+	var missingDocs []string
+	var otherErrors []string
+
+	for _, item := range bulkResp.Items {
+		// Each item is a map with one key (the operation type: index, update, delete, etc.)
+		for opType, result := range item {
+			if result.Status >= 200 && result.Status < 300 {
+				successCount++
+			} else if result.Error.Type == "document_missing_exception" {
+				missingDocs = append(missingDocs, result.Id)
+				logger.GetLogger().Debug("document not found during bulk update",
+					zap.String("id", result.Id),
+					zap.String("operation", opType),
+					zap.Int("status", result.Status))
+			} else {
+				// Other types of errors
+				otherErrors = append(otherErrors, fmt.Sprintf("ID: %s, Status: %d, Error: %s - %s",
+					result.Id, result.Status, result.Error.Type, result.Error.Reason))
+			}
+		}
+	}
+
+	// If there are errors other than missing documents, return an error
+	if len(otherErrors) > 0 {
+		errMsg := fmt.Sprintf("bulk operation had %d errors (non-missing): %v", len(otherErrors), strings.Join(otherErrors, "; "))
+		return successCount, missingDocs, errors.New(errMsg)
+	}
+
+	return successCount, missingDocs, nil
 }
 
 type Sort struct {
@@ -429,6 +500,33 @@ type AggregationFunction struct {
 
 type BaseEsResponse struct {
 	Errors bool `json:"errors"`
+}
+
+type BulkResponse struct {
+	Took   int                           `json:"took"`
+	Errors bool                          `json:"errors"`
+	Items  []map[string]BulkResponseItem `json:"items"`
+}
+
+type BulkResponseItem struct {
+	Index       string `json:"_index"`
+	Id          string `json:"_id"`
+	Version     int    `json:"_version,omitempty"`
+	Result      string `json:"result,omitempty"`
+	Status      int    `json:"status"`
+	SeqNo       int64  `json:"_seq_no,omitempty"`
+	PrimaryTerm int    `json:"_primary_term,omitempty"`
+	Shards      struct {
+		Total      int `json:"total"`
+		Successful int `json:"successful"`
+		Failed     int `json:"failed"`
+	} `json:"_shards,omitempty"`
+	Error struct {
+		Type   string `json:"type"`
+		Reason string `json:"reason"`
+		Index  string `json:"index,omitempty"`
+		Shard  string `json:"shard,omitempty"`
+	} `json:"error,omitempty"`
 }
 
 type SearchRequestPaginated struct {

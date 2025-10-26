@@ -516,6 +516,7 @@ func (d Doc) Sight() Sight {
 		Id:          d.Id,
 		Key1:        d.Key1,
 		Key2:        d.Key2,
+		Key3:        d.Key3,
 		Type:        d.Type,
 		SourceId:    d.SourceId,
 		TenantId:    d.TenantId,
@@ -714,42 +715,49 @@ func generateIndexCardinalityAlert(ctx context.Context, indexMetadata IndexMetad
 
 type ReputationUpdateRequest struct {
 	Id             string `json:"id"`
+	Key1           string `json:"key1"`
+	Key2           string `json:"key2"`
+	SourceId       string `json:"source_id"`
+	TenantId       string `json:"tenant_id"`
+	Type           string `json:"type"`
 	Reputation     string `json:"reputation"`
 	SkipReputation string `json:"skip_reputation"`
 	UpdatedAt      int64  `json:"updated_at"`
 }
 
-func (s Sight) History(time int64, reputation string) SilentDeviceHistory {
-	id := fmt.Sprintf("%s:%s:%s:%d", s.Key1, s.Key2, s.SourceId, time)
+func (s Sight) History(time int64, reputation string, metadata *ReputationMetadata) SilentDeviceHistory {
+	id := fmt.Sprintf("%s:%s:%s:%d", s.Key1, "", s.SourceId, time)
 	return SilentDeviceHistory{
-		Id:              id,
-		Key1:            s.Key1,
-		Key2:            s.Key2,
-		Key3:            s.Key3,
-		Key4:            s.Key4,
-		Key5:            s.Key5,
-		Type:            s.Type,
-		SourceId:        s.SourceId,
-		TenantId:        s.TenantId,
-		DataPlaneId:     s.DataPlaneId,
-		Reputation:      reputation,
-		DayEndTimestamp: time,
+		Id:                 id,
+		Key1:               s.Key1,
+		Key2:               s.Key2,
+		Key3:               s.Key3,
+		Key4:               s.Key4,
+		Key5:               s.Key5,
+		Type:               s.Type,
+		SourceId:           s.SourceId,
+		TenantId:           s.TenantId,
+		DataPlaneId:        s.DataPlaneId,
+		Reputation:         reputation,
+		DayEndTimestamp:    time,
+		ReputationMetadata: metadata,
 	}
 }
 
 type SilentDeviceHistory struct {
-	Id              string `json:"id"`
-	Key1            string `json:"key1"`
-	Key2            string `json:"key2,omitempty"`
-	Key3            string `json:"key3,omitempty"`
-	Key4            string `json:"key4,omitempty"`
-	Key5            string `json:"key5,omitempty"`
-	Type            string `json:"type"`
-	SourceId        string `json:"source_id"`
-	TenantId        string `json:"tenant_id"`
-	DataPlaneId     string `json:"data_plane_id"`
-	DayEndTimestamp int64  `json:"day_end_timestamp"`
-	Reputation      string `json:"reputation"`
+	Id                 string              `json:"id"`
+	Key1               string              `json:"key1"`
+	Key2               string              `json:"key2,omitempty"`
+	Key3               string              `json:"key3,omitempty"`
+	Key4               string              `json:"key4,omitempty"`
+	Key5               string              `json:"key5,omitempty"`
+	Type               string              `json:"type"`
+	SourceId           string              `json:"source_id"`
+	TenantId           string              `json:"tenant_id"`
+	DataPlaneId        string              `json:"data_plane_id"`
+	DayEndTimestamp    int64               `json:"day_end_timestamp"`
+	Reputation         string              `json:"reputation"`
+	ReputationMetadata *ReputationMetadata `json:"reputation_metadata,omitempty"`
 }
 
 type Frequency struct {
@@ -766,4 +774,20 @@ type Frequency struct {
 	Count           float64 `json:"count"`
 	Timestamp       int64   `json:"timestamp"`
 	DayEndTimestamp int64   `json:"day_end_timestamp"`
+}
+
+// ReputationMetadata stores statistical information about why a device reputation was assigned
+type ReputationMetadata struct {
+	Mean             float64            `json:"mean"`               // Mean event count over the analysis period
+	StandardDev      float64            `json:"standard_dev"`       // Standard deviation of event counts
+	ZScore           float64            `json:"z_score"`            // Z-score for the current observation
+	SampleSize       int                `json:"sample_size"`        // Number of days considered in calculation
+	Threshold        float64            `json:"threshold"`          // Z-score threshold used for classification
+	ActualCount      float64            `json:"actual_count"`       // Actual event count observed on the analyzed day
+	ExpectedRangeMin float64            `json:"expected_range_min"` // Lower bound of expected event count (mean - threshold × std_dev)
+	ExpectedRangeMax float64            `json:"expected_range_max"` // Upper bound of expected event count (mean + threshold × std_dev)
+	HistoricData     map[string]float64 `json:"historic_data"`      // Date (YYYY-MM-DD) to event count mapping used for mean calculation
+	LastEventSeenMs  int64              `json:"last_event_seen_ms"` // Last event timestamp (used for SILENT devices)
+	Reason           string             `json:"reason"`             // Human-readable explanation
+	CalculatedAt     int64              `json:"calculated_at"`      // When this calculation was performed
 }
