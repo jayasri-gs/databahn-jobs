@@ -101,7 +101,8 @@ const sightsScript = `
       ctx._source.timestamp = params.timestamp;
       ctx._source.updated_at = params.updated_at;
       ctx._source.key1 = params.key1;
-      ct
+      ctx._source.key2 = params.key2;
+      ctx._source.key3 = params.key3;
     ",
     "lang": "painless",
     "params": {
