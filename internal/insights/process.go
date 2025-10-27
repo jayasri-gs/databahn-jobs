@@ -100,6 +100,9 @@ const sightsScript = `
       ctx._source.source_id = params.source_id; 
       ctx._source.timestamp = params.timestamp;
       ctx._source.updated_at = params.updated_at;
+      ctx._source.key1 = params.key1;
+      ctx._source.key2 = params.key2;
+      ctx._source.key3 = params.key3;
     ",
     "lang": "painless",
     "params": {
@@ -250,7 +253,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			if index.Type == "sourcehostname" {
 				// need to use key 3 (FQDN) instead of small otherwise duplicate documents will be created
 				// keeping key generation logic same as before for backward compatibility
-				doc.Id = InsightId(bucket.Key.Key3, "", "", bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
+				doc.Id = InsightId(bucket.Key.Key1, "", "", bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
 			} else {
 				doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.Key3, bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
 			}

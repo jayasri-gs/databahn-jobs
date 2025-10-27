@@ -367,7 +367,7 @@ func decideNoiseLevel(days []float64, counts []float64) (string, bool, float64, 
 		zap.String("yesterday_date", time.Now().Add(-24*time.Hour).Format("2006-01-02")),
 		zap.Bool("is_yesterday", isYesterday))
 
-	if isYesterday || true {
+	if isYesterday {
 		mean := util.CalculateMean(sampleCounts)
 		deviation := util.CalculateStandardDeviation(sampleCounts, mean)
 
