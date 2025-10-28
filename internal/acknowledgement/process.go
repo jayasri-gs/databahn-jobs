@@ -288,6 +288,11 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		if err != nil {
 			return err
 		}
+	case utilConst.EntityCustomNormalization:
+		err := handleCustomNormalization(ack)
+		if err != nil {
+			return err
+		}
 	default:
 		return errors.New("Ack does not support entity type:" + ack.EntityType)
 	}
@@ -409,5 +414,17 @@ func handleGlobalDestination(ack db.ChangeFlagAck) error {
 		return err
 	}
 	logger.GetLogger().Debug("global destination status updated", zap.String("entityId", ack.EntityId), zap.String("status", StatusV2))
+	return nil
+}
+
+func handleCustomNormalization(ack db.ChangeFlagAck) error {
+	statusV2 := getStatusString(ack)
+	err := config.GetDB().Table("custom_normalization").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
+		Update("status", statusV2).Error
+	if err != nil {
+		logger.GetLogger().Error("error while updating custom normalization status", zap.Error(err))
+		return err
+	}
+	logger.GetLogger().Debug("custom normalization status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
 	return nil
 }
