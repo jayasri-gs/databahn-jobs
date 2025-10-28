@@ -192,6 +192,11 @@ github.com/aws/aws-sdk-go-v2/internal/ini
 github.com/aws/aws-sdk-go-v2/internal/v4a
 github.com/aws/aws-sdk-go-v2/internal/v4a/internal/crypto
 github.com/aws/aws-sdk-go-v2/internal/v4a/internal/v4
+# github.com/aws/aws-sdk-go-v2/service/athena v1.48.0
+## explicit; go 1.21
+github.com/aws/aws-sdk-go-v2/service/athena
+github.com/aws/aws-sdk-go-v2/service/athena/internal/endpoints
+github.com/aws/aws-sdk-go-v2/service/athena/types
 # github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3
 ## explicit; go 1.22
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding

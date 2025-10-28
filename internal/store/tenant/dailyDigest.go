@@ -3,10 +3,11 @@ package tenant
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"reflect"
 	"strconv"
 	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -19,22 +20,30 @@ import (
 	"go.uber.org/zap"
 )
 
+type DestinationVolumeData struct {
+	Name                 string `json:"name"`
+	VolumeDelivered      string `json:"volume_delivered"`     // "100GB", "500GB", etc.
+	VolumeDeliveredBytes int64  `json:"-"`                    // Raw bytes for calculations
+	ReductionPercentage  int    `json:"reduction_percentage"` // 0%, 14%, 38%, etc.
+}
+
 type Digest struct {
-	TenantId                    uuid.UUID                  `json:"tenant_id"`
-	Name                        string                     `json:"name"`
-	IngestionHealth             string                     `json:"ingestion_health"`
-	DeliveryHealth              string                     `json:"delivery_health"`
-	TotalEventsIngested         string                     `json:"total_events_ingested"`
-	NoOfEventsIngested          float64                    `json:"-"`
-	TotalDataIngested           string                     `json:"total_data_ingested"`
-	AverageEPS                  string                     `json:"average_eps"`
-	EventDeliveryBreakdown      []destination.Destination  `json:"event_delivery_breakdown"`
-	SensitiveDataTracking       map[string]string          `json:"sensitive_data_tracking"`
-	EventsIngestionBreakdown    map[string]float64         `json:"events_ingestion_breakdown"`
-	VolumeReductionAchievements map[string]int             `json:"volume_reduction_achievements"`
-	Alerts                      []statistics.AlertDocument `json:"alerts"`
-	StartTime                   string                     `json:"start_time"`
-	EndTime                     string                     `json:"end_time"`
+	TenantId                     uuid.UUID                  `json:"tenant_id"`
+	Name                         string                     `json:"name"`
+	IngestionHealth              string                     `json:"ingestion_health"`
+	DeliveryHealth               string                     `json:"delivery_health"`
+	TotalEventsIngested          string                     `json:"total_events_ingested"`
+	NoOfEventsIngested           float64                    `json:"-"`
+	TotalDataIngested            string                     `json:"total_data_ingested"`
+	AverageEPS                   string                     `json:"average_eps"`
+	EventDeliveryBreakdown       []destination.Destination  `json:"event_delivery_breakdown"`
+	EventDeliveryVolumeBreakdown []DestinationVolumeData    `json:"event_delivery_volume_breakdown"`
+	SensitiveDataTracking        map[string]string          `json:"sensitive_data_tracking"`
+	EventsIngestionBreakdown     map[string]float64         `json:"events_ingestion_breakdown"`
+	VolumeReductionAchievements  map[string]int             `json:"volume_reduction_achievements"`
+	Alerts                       []statistics.AlertDocument `json:"alerts"`
+	StartTime                    string                     `json:"start_time"`
+	EndTime                      string                     `json:"end_time"`
 }
 
 func formatNumber(num float64) string {
@@ -63,24 +72,55 @@ func GetDailyDigest(tenantId uuid.UUID, tenantName, startTime, endTime string, a
 
 func (d *Digest) CalculateVolumeReductionAchievements() {
 	d.VolumeReductionAchievements = make(map[string]int)
-	for _, dest := range d.EventDeliveryBreakdown {
-		totalEventIngestedForSource := 0.0
-		sources, err := destination.GetSourceByDestinationId(dest.ID, config.GetDB())
+
+	// Use volume-based calculation only
+	for i, destVolume := range d.EventDeliveryVolumeBreakdown {
+		totalVolumeIngestedForSource := int64(0)
+
+		// Get destinations to find the corresponding destination ID
+		destinations, err := destination.GetDestinationByTenantId(d.TenantId, config.GetDB())
 		if err != nil {
-			logger.GetLogger().Error("error while getting sources by destination id", zap.Error(err), zap.String("destinationId", dest.ID.String()))
+			logger.GetLogger().Error("error while getting destinations", zap.Error(err))
 			continue
 		}
-		for _, source := range sources {
-			if d.EventsIngestionBreakdown[source.ID.String()] > 0 {
-				totalEventIngestedForSource += d.EventsIngestionBreakdown[source.ID.String()]
+
+		// Find the destination that matches this volume data
+		var destID uuid.UUID
+		for _, dest := range destinations {
+			if dest.Name == destVolume.Name {
+				destID = dest.ID
+				break
 			}
 		}
-		if totalEventIngestedForSource > 0 {
-			reduction := (1 - (dest.Stats / totalEventIngestedForSource)) * 100
+
+		// Get sources for this destination
+		sources, err := destination.GetSourceByDestinationId(destID, config.GetDB())
+		if err != nil {
+			logger.GetLogger().Error("error while getting sources by destination id", zap.Error(err))
+			continue
+		}
+
+		// Calculate total volume ingested for sources feeding this destination
+		for _, source := range sources {
+			q := fmt.Sprintf(`tags.component_name: "storage" AND name: "total_data_received" AND tags.db_event_source_id: "%s"`, source.ID.String())
+			response, err := statistics.GetStatsSum(context.Background(), q, d.TenantId, d.StartTime, d.EndTime)
+			if err != nil {
+				logger.GetLogger().Error("error while getting volume ingested for source", zap.Error(err))
+				continue
+			}
+			totalVolumeIngestedForSource += int64(response.Sum)
+		}
+
+		// Calculate reduction percentage based on volume
+		if totalVolumeIngestedForSource > 0 {
+			reduction := (1 - (float64(destVolume.VolumeDeliveredBytes) / float64(totalVolumeIngestedForSource))) * 100
 			if reduction > 0 {
-				d.VolumeReductionAchievements[dest.Name] = int(reduction)
+				d.VolumeReductionAchievements[destVolume.Name] = int(reduction)
+				// Update the volume data with reduction percentage
+				d.EventDeliveryVolumeBreakdown[i].ReductionPercentage = int(reduction)
 			} else {
-				d.VolumeReductionAchievements[dest.Name] = 0
+				d.VolumeReductionAchievements[destVolume.Name] = 0
+				d.EventDeliveryVolumeBreakdown[i].ReductionPercentage = 0
 			}
 		}
 	}
@@ -228,4 +268,48 @@ func GetAlertsFromOpenSearch(ctx context.Context) (map[string][]statistics.Alert
 	}
 
 	return alertsByTenant, nil
+}
+
+func (d *Digest) GetEventDeliveryVolumeBreakdown() error {
+	d.DeliveryHealth = "Unhealthy"
+	destinations, err := destination.GetDestinationByTenantId(d.TenantId, config.GetDB())
+	if err != nil {
+		return err
+	}
+
+	// Query for volume data instead of event data
+	q := `tags.component_name: "dispenser" AND name: "total_bytes_delivered"`
+	agg := "tags.destination_id.keyword"
+
+	aggResponse, err := statistics.GetStatsAggregate(context.Background(), q, d.TenantId, agg, d.StartTime, d.EndTime)
+	if err != nil {
+		return err
+	}
+
+	destinationStats := aggResponse.Agg
+	d.EventDeliveryVolumeBreakdown = make([]DestinationVolumeData, 0)
+
+	for _, dest := range destinations {
+		if value, ok := destinationStats[dest.ID.String()]; ok {
+			d.DeliveryHealth = "Healthy"
+
+			var volumeBytes int64
+			if reflect.TypeOf(value).Kind() == reflect.Float64 {
+				volumeBytes = int64(value.(float64))
+			} else {
+				volumeBytes = 0
+			}
+
+			volumeData := DestinationVolumeData{
+				Name:                 dest.Name,
+				VolumeDelivered:      util.HumanReadableBytes(volumeBytes),
+				VolumeDeliveredBytes: volumeBytes,
+				ReductionPercentage:  0, // Will be calculated later
+			}
+
+			d.EventDeliveryVolumeBreakdown = append(d.EventDeliveryVolumeBreakdown, volumeData)
+		}
+	}
+
+	return nil
 }

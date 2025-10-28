@@ -47,7 +47,6 @@ func SendTenantDailyDigest(ctx context.Context) common.JobResult {
 		logger.GetLogger().Error("error while getting alerts from OpenSearch", zap.Error(err))
 		return common.NewJobResultFromErrors(jobErrors)
 	}
-
 	notificationManager, err := notification.NewNotificationManager(ctx)
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while creating notification manager: %v", err)
@@ -98,7 +97,16 @@ func SendTenantDailyDigest(ctx context.Context) common.JobResult {
 
 func sendNotification(digest *tenant.Digest, targets []entities.Targets, t tenant.Tenant, notificationManager *notification.NotificationManager) error {
 	templatePath := EmailTemplatesBasePath + "daily_digest.html"
-	temp, err := template.ParseFiles(templatePath)
+	temp, err := template.New("daily_digest.html").Funcs(template.FuncMap{
+		"formatTime": func(timestamp int64) string {
+			if timestamp == 0 {
+				return "N/A"
+			}
+			// Convert Unix timestamp to readable format
+			t := time.Unix(timestamp/1000, 0) // Assuming timestamp is in milliseconds
+			return t.Format("Jan 2, 15:04")
+		},
+	}).ParseFiles(templatePath)
 	if err != nil {
 		logger.GetLogger().Error("error while parsing template", zap.Error(err))
 		return err
@@ -151,16 +159,20 @@ func buildDigest(ctx context.Context, alertsByTenant map[string][]statistics.Ale
 		logger.GetLogger().Error("error while setting sensitive data tracking stats", zap.Error(err))
 	}
 	digest.CalculateEPS()
-	err = digest.GetEventDeliveryBreakdown()
+	// Call volume-based function (required)
+	err = digest.GetEventDeliveryVolumeBreakdown()
 	if err != nil {
-		logger.GetLogger().Error("error while setting event delivery breakdown", zap.Error(err))
+		logger.GetLogger().Error("error while setting event delivery volume breakdown", zap.Error(err))
 		return nil, err
 	}
+
 	err = digest.GetIngestionBreakdown()
 	if err != nil {
 		logger.GetLogger().Error("error while setting ingestion breakdown", zap.Error(err))
 		return nil, err
 	}
+
+	// Calculate volume-based reductions
 	digest.CalculateVolumeReductionAchievements()
 	return digest, err
 }
