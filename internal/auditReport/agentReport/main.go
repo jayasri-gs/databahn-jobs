@@ -16,29 +16,23 @@ import (
 
 func WriteAgentReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
 	logging.GetLoggerWithContext(ctx).Info("writing agent report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-	query, startTime, endTime, err := getQueryForAgentData(ctx, req)
+	query, err := getQueryForAgentData(ctx, req)
 	if err != nil {
 		return err
 	}
-	err = gatherDataAndWriteToFile(ctx, req, query, startTime, endTime, file)
+	err = gatherDataAndWriteToFile(ctx, req, query, file)
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query string, file *os.File) error {
-	// Parse the report configuration to check for status filters
-	var reportConfiguration map[string]interface{}
-	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while unmarshalling report filter", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-		return err
-	}
 
-	// Extract status filter values
+// extractStatusFilterValues extracts status filter values from report configuration
+func extractStatusFilterValues(reportConfiguration map[string]interface{}) []string {
 	var statusFilterValues []string
-	if andFilters, ok := reportConfiguration["and_filters"].(map[string]interface{}); ok {
-		if statusFilter, exists := andFilters["status"]; exists {
+
+	extractFromFilters := func(filters map[string]interface{}) {
+		if statusFilter, exists := filters["status"]; exists {
 			if statusArray, ok := statusFilter.([]interface{}); ok {
 				for _, v := range statusArray {
 					if s, ok := v.(string); ok {
@@ -47,19 +41,30 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 				}
 			}
 		}
+	}
+
+	if andFilters, ok := reportConfiguration["and_filters"].(map[string]interface{}); ok {
+		extractFromFilters(andFilters)
 	}
 	if orFilters, ok := reportConfiguration["or_filters"].(map[string]interface{}); ok {
-		if statusFilter, exists := orFilters["status"]; exists {
-			if statusArray, ok := statusFilter.([]interface{}); ok {
-				for _, v := range statusArray {
-					if s, ok := v.(string); ok {
-						statusFilterValues = append(statusFilterValues, s)
-					}
-				}
-			}
-		}
+		extractFromFilters(orFilters)
 	}
 
+	return statusFilterValues
+}
+
+// findStatusColumnIndex finds the index of the status column in the columns slice
+func findStatusColumnIndex(columns []string) int {
+	for i, col := range columns {
+		if col == "status" {
+			return i
+		}
+	}
+	return -1
+}
+
+// writePagedDataToFile writes paginated data to CSV file
+func writePagedDataToFile(ctx context.Context, req models.AuditReport, query string, file *os.File, statusFilterValues []string) error {
 	var writer *csv.Writer
 	defer func() {
 		if writer != nil {
@@ -72,51 +77,59 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query 
 
 	pageSize := utils.GetEnvInt("AGENT_REPORT_PAGE_SIZE", 1000)
 	offset := 0
-	writeHeader := true
+
 	for {
-		writeHeader = writeHeader && offset == 0
 		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "a.updated_at")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from agent table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
 		}
 
-		if writeHeader {
+		// Initialize writer and write header on first iteration
+		if offset == 0 {
 			writer = csv.NewWriter(file)
-			err = writer.Write(columns)
-			if err != nil {
+			if err := writer.Write(columns); err != nil {
 				logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 				return err
 			}
 		}
 
-		// Find status column index
-		statusColumnIndex := -1
-		for i, col := range columns {
-			if col == "status" {
-				statusColumnIndex = i
-				break
-			}
-		}
-
+		statusColumnIndex := findStatusColumnIndex(columns)
 		fetchedRowsCount, err := common.WriteRowsToFileForDbReportTypeWithoutTimeFiltersWithStatusFilter(columns, rows, writer, statusColumnIndex, statusFilterValues)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
 		}
+
 		if fetchedRowsCount < pageSize {
 			break
 		}
 		offset += pageSize + 1
 	}
+
 	return nil
 }
-func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, string, string, error) {
+
+func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query string, file *os.File) error {
+	// Parse the report configuration to check for status filters
+	var reportConfiguration map[string]interface{}
+	if err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration); err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while unmarshalling report filter", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+		return err
+	}
+
+	// Extract status filter values
+	statusFilterValues := extractStatusFilterValues(reportConfiguration)
+
+	// Write paginated data to file
+	return writePagedDataToFile(ctx, req, query, file, statusFilterValues)
+}
+func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, error) {
 	var reportConfiguration map[string]interface{}
 	err := json.Unmarshal(req.AuditReportFilter, &reportConfiguration)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while unmarshalling report filter", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-		return "", "", "", err
+		return "", err
 	}
 	filterToDbColumnMap := map[string]string{
 		"os":            "a.os",
@@ -136,7 +149,7 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 		delete(orFilters, "status")
 	}
 
-	whereClause, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
+	whereClause, _, _ := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
 
 	// Build the complete JOIN query
 	query := fmt.Sprintf(`
@@ -183,9 +196,9 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 		WHERE %s`, whereClause)
 
 	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-	return query, startTime, endTime, nil
+	return query, nil
 }
-func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query string, startTime string, endTime string, file *os.File) error {
+func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query string, file *os.File) error {
 	err := getReportAndWriteToFile(ctx, req, query, file)
 	if err != nil {
 		return err
