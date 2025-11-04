@@ -127,6 +127,9 @@ func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInven
 		firstSeen := time.Unix(0, deviceInventory.MinTime*int64(time.Millisecond)).Format(time.RFC3339)
 		lastSeen := time.Unix(0, deviceInventory.MaxTime*int64(time.Millisecond)).Format(time.RFC3339)
 		sourceName := sourceIdsToNames[deviceInventory.SourceId]
+		if deviceInventory.SmallName != "" {
+			deviceInventory.Hostname = deviceInventory.SmallName
+		}
 		row := []string{deviceInventory.Hostname, firstSeen, lastSeen, sourceName, deviceInventory.Reputation}
 		err := writer.Write(row)
 		if err != nil {

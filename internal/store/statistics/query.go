@@ -217,6 +217,7 @@ type DeviceInventoryDocument struct {
 	Id         string `json:"id"`
 	Hostname   string `json:"key1"`
 	Key2       string `json:"key2"`
+	SmallName  string `json:"key3"`
 	TenantId   string `json:"tenant_id"`
 	MinTime    int64  `json:"min_time"`
 	MaxTime    int64  `json:"max_time"`
