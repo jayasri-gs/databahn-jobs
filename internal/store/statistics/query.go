@@ -22,7 +22,7 @@ func AddTenantId(q string, tenantId uuid.UUID) string {
 	}
 }
 
-func AddDateRange(q string, startTime, endTime string) string {
+func AddDateRange(q, startTime, endTime string) string {
 	if startTime == "" || endTime == "" {
 		return q
 	}
