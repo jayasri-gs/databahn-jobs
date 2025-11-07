@@ -14,7 +14,7 @@ func AddTenantId(q string, tenantId uuid.UUID) string {
 	if tenantId == uuid.Nil {
 		return q
 	}
-	tenantIdQuery := fmt.Sprintf("%s: \"%s\"", TAG_TENANT_ID, tenantId.String())
+	tenantIdQuery := fmt.Sprintf("%s: %q", TAG_TENANT_ID, tenantId.String())
 	if q == "" {
 		return tenantIdQuery
 	} else {
@@ -22,7 +22,7 @@ func AddTenantId(q string, tenantId uuid.UUID) string {
 	}
 }
 
-func AddDateRange(q string, startTime string, endTime string) string {
+func AddDateRange(q, startTime, endTime string) string {
 	if startTime == "" || endTime == "" {
 		return q
 	}
@@ -217,6 +217,7 @@ type DeviceInventoryDocument struct {
 	Id         string `json:"id"`
 	Hostname   string `json:"key1"`
 	Key2       string `json:"key2"`
+	SmallName  string `json:"key3"`
 	TenantId   string `json:"tenant_id"`
 	MinTime    int64  `json:"min_time"`
 	MaxTime    int64  `json:"max_time"`
