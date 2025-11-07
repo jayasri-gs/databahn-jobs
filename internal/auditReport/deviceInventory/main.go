@@ -5,6 +5,11 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -14,10 +19,6 @@ import (
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
-	"os"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func WriteDeviceInventoryReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
@@ -152,7 +153,7 @@ func convertInterfaceSliceToStringSlice(interfaceSlice []interface{}) ([]string,
 	}
 	return stringSlice, nil
 }
-func getQueryFromFilters(sources []string, startTime string, endTime string, tenantId string) (string, error) {
+func getQueryFromFilters(sources []string, startTime, endTime, tenantId string) (string, error) {
 	q := "tenant_id: " + tenantId
 	if len(sources) != 0 {
 		q += ` AND source_id: ` + "(" + strings.Join(sources, " OR ") + ")"
