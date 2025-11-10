@@ -168,19 +168,17 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 }
 
 type DailyVolumeDeviationDateRange struct {
-	DayToCheckStart                  time.Time
-	DayToCheckEnd                    time.Time
-	LastDayToCompareStart            time.Time
-	LastDayToCompareEnd              time.Time
-	DayToCheckLastWeekDayStart       time.Time
-	DayToCheckLastWeekDayEnd         time.Time
-	DayToCompareLastWeekDayStart     time.Time
-	DayToCompareLastWeekDayEnd       time.Time
-	PercentageIncreaseThreshold      float64
-	PercentageDecreaseThreshold      float64
-	MinimumVolumeThreshold           float64
-	MinimumIngestionVolumeThreshold  float64
-	MinimumVolumeDifferenceThreshold float64
+	DayToCheckStart              time.Time
+	DayToCheckEnd                time.Time
+	LastDayToCompareStart        time.Time
+	LastDayToCompareEnd          time.Time
+	DayToCheckLastWeekDayStart   time.Time
+	DayToCheckLastWeekDayEnd     time.Time
+	DayToCompareLastWeekDayStart time.Time
+	DayToCompareLastWeekDayEnd   time.Time
+	PercentageIncreaseThreshold  float64
+	PercentageDecreaseThreshold  float64
+	MinimumVolumeThreshold       float64
 }
 
 type DailyVolumeDeviationIngestionStats struct {
@@ -218,22 +216,6 @@ func (d *DailyVolumeDeviationIngestionSource) GetTenantId() string {
 func (d *DailyVolumeDeviationIngestionSource) checkVolumeDeviation() (*alerts_async.Alert, error) {
 	var alert *alerts_async.Alert = nil
 	var alertIsForIncrease bool
-
-	// Don't alert for sources with ingestion under the minimum threshold in the check window
-	if d.CheckDayVolumeIngestion < d.DailyVolumeDeviationDateRange.MinimumIngestionVolumeThreshold {
-		logger.GetLogger().Info("ignoring source with ingestion volume below minimum threshold", zap.String("sourceId", d.SourceId), zap.String("tenantId", d.TenantId), zap.Float64("checkDayVolumeIngestion", d.CheckDayVolumeIngestion), zap.Float64("minimumIngestionVolumeThreshold", d.DailyVolumeDeviationDateRange.MinimumIngestionVolumeThreshold))
-		return nil, nil
-	}
-
-	// Don't alert if the absolute difference is under the minimum threshold
-	absoluteDifference := d.CheckDayVolumeIngestion - d.LastDayToCompareIngestion
-	if absoluteDifference < 0 {
-		absoluteDifference = -absoluteDifference
-	}
-	if absoluteDifference < d.DailyVolumeDeviationDateRange.MinimumVolumeDifferenceThreshold {
-		logger.GetLogger().Info("ignoring source with volume difference below minimum threshold", zap.String("sourceId", d.SourceId), zap.String("tenantId", d.TenantId), zap.Float64("absoluteDifference", absoluteDifference), zap.Float64("minimumVolumeDifferenceThreshold", d.DailyVolumeDeviationDateRange.MinimumVolumeDifferenceThreshold))
-		return nil, nil
-	}
 
 	if d.CheckDayVolumeIngestion < d.DailyVolumeDeviationDateRange.MinimumVolumeThreshold && d.LastDayToCompareIngestion < d.DailyVolumeDeviationDateRange.MinimumVolumeThreshold {
 		logger.GetLogger().Info("ignoring source with volume below minimum threshold", zap.String("sourceId", d.SourceId), zap.String("tenantId", d.TenantId), zap.Float64("checkDayVolumeIngestion", d.CheckDayVolumeIngestion), zap.Float64("lastDayToCompareIngestion", d.LastDayToCompareIngestion))
@@ -535,23 +517,19 @@ func calculateDailyVolumeDeviationDateRange() DailyVolumeDeviationDateRange {
 	percentageIncreaseThreshold := float64(utils.GetEnvInt("VOLUME_DEVIATION_PERCENTAGE_INCREASE_THRESHOLD", 50))
 	percentageDecreaseThreshold := float64(utils.GetEnvInt("VOLUME_DEVIATION_PERCENTAGE_DECREASE_THRESHOLD", 50))
 	minimumVolumeThreshold := float64(utils.GetEnvInt("VOLUME_DEVIATION_MINIMUM_VOLUME_THRESHOLD", 1_000_000))
-	minimumIngestionVolumeThreshold := float64(utils.GetEnvInt("VOLUME_DEVIATION_MINIMUM_INGESTION_VOLUME_THRESHOLD", 500*1024*1024))   // Default: 500 MB
-	minimumVolumeDifferenceThreshold := float64(utils.GetEnvInt("VOLUME_DEVIATION_MINIMUM_VOLUME_DIFFERENCE_THRESHOLD", 100*1024*1024)) // Default: 100 MB
 
 	return DailyVolumeDeviationDateRange{
-		DayToCheckStart:                  dayToCheckStart,
-		DayToCheckEnd:                    dayToCheckEnd,
-		LastDayToCompareStart:            dayToCompareStart,
-		LastDayToCompareEnd:              dayToCompareEnd,
-		DayToCheckLastWeekDayStart:       dateToCheckLastWeekSameDayStart,
-		DayToCheckLastWeekDayEnd:         dateToCheckLastWeekSameDayEnd,
-		DayToCompareLastWeekDayStart:     dateToCompareLastWeekSameDayStart,
-		DayToCompareLastWeekDayEnd:       dateToCompareLastWeekSameDayEnd,
-		PercentageIncreaseThreshold:      percentageIncreaseThreshold,
-		PercentageDecreaseThreshold:      percentageDecreaseThreshold,
-		MinimumVolumeThreshold:           minimumVolumeThreshold,
-		MinimumIngestionVolumeThreshold:  minimumIngestionVolumeThreshold,
-		MinimumVolumeDifferenceThreshold: minimumVolumeDifferenceThreshold,
+		DayToCheckStart:              dayToCheckStart,
+		DayToCheckEnd:                dayToCheckEnd,
+		LastDayToCompareStart:        dayToCompareStart,
+		LastDayToCompareEnd:          dayToCompareEnd,
+		DayToCheckLastWeekDayStart:   dateToCheckLastWeekSameDayStart,
+		DayToCheckLastWeekDayEnd:     dateToCheckLastWeekSameDayEnd,
+		DayToCompareLastWeekDayStart: dateToCompareLastWeekSameDayStart,
+		DayToCompareLastWeekDayEnd:   dateToCompareLastWeekSameDayEnd,
+		PercentageIncreaseThreshold:  percentageIncreaseThreshold,
+		PercentageDecreaseThreshold:  percentageDecreaseThreshold,
+		MinimumVolumeThreshold:       minimumVolumeThreshold,
 	}
 }
 
