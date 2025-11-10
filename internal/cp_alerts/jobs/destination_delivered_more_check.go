@@ -62,6 +62,8 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 	percentageThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_PERCENTAGE_THRESHOLD", 5))
 	fromHourMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_FROM_HOURS_MINUS", 4)
 	toHoursMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_TO_HOURS_MINUS", 1)
+	minimumIngestionVolumeThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MORE_MINIMUM_INGESTION_VOLUME_THRESHOLD", 500*1024*1024))   // Default: 500 MB
+	minimumVolumeDifferenceThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MORE_MINIMUM_VOLUME_DIFFERENCE_THRESHOLD", 100*1024*1024)) // Default: 100 MB
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
@@ -111,7 +113,7 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 			continue
 		}
 
-		deliveredVolumeByDestIdSourceId, err := getDeliveredVolumeByDestinationAndSourceId(ctx, err, t, osClient, fromTime, toTime)
+		deliveredVolumeByDestIdSourceId, err := getDeliveredVolumeByDestinationAndSourceId(ctx, t, osClient, fromTime, toTime)
 		if err != nil {
 			logger.GetLogger().Error("error while getting delivered volume by destination and source id", zap.Error(err), zap.String("tenantId", t.Id.String()))
 			continue
@@ -167,6 +169,25 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 				if inVolume == 0 {
 					logger.GetLogger().Info("0 ingested data for source:"+dest.ID.String(), zap.String("sourceId", sourceId),
 						zap.String("tenantId", t.Id.String()))
+					continue
+				}
+
+				// Skip if ingestion volume is below minimum threshold OR absolute difference is below minimum threshold
+				absoluteDifference := outVolume - inVolume
+				if absoluteDifference < 0 {
+					absoluteDifference = -absoluteDifference
+				}
+
+				if inVolume < minimumIngestionVolumeThreshold || absoluteDifference < minimumVolumeDifferenceThreshold {
+					logger.GetLogger().Info("ignoring destination-source pair - either ingestion volume below minimum or difference below threshold",
+						zap.String("destinationId", dest.ID.String()),
+						zap.String("sourceId", sourceId),
+						zap.String("tenantId", t.Id.String()),
+						zap.Int64("inVolume", inVolume),
+						zap.Int64("minimumIngestionVolumeThreshold", minimumIngestionVolumeThreshold),
+						zap.Int64("absoluteDifference", absoluteDifference),
+						zap.Int64("minimumVolumeDifferenceThreshold", minimumVolumeDifferenceThreshold))
+					healthyPairs = append(healthyPairs, dstSrcPair{dstId: dest.ID.String(), srcId: sourceId})
 					continue
 				}
 
@@ -264,7 +285,7 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 	}
 }
 
-func getDeliveredVolumeByDestinationAndSourceId(ctx context.Context, err error, t tenant.Tenant, osClient *opensearch.Client, fromTime int64, toTime int64) (map[string]map[string]int64, error) {
+func getDeliveredVolumeByDestinationAndSourceId(ctx context.Context, t tenant.Tenant, osClient *opensearch.Client, fromTime int64, toTime int64) (map[string]map[string]int64, error) {
 	deliveredVolumes, err := findDeliveredVolumesForDestinations(ctx, t.Id.String(), osClient, fromTime, toTime)
 	if err != nil {
 		logger.GetLogger().Error("error while finding delivered volumes per destination", zap.Error(err), zap.String("tenantId", t.Id.String()))
