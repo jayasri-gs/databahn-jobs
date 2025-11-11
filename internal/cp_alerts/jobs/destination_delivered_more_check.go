@@ -172,14 +172,14 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 					continue
 				}
 
-				// Skip if ingestion volume is below minimum threshold AND absolute difference is below minimum threshold
+				// Skip if ingestion volume is below minimum threshold OR absolute difference is below minimum threshold
 				absoluteDifference := outVolume - inVolume
 				if absoluteDifference < 0 {
 					absoluteDifference = -absoluteDifference
 				}
 
-				if inVolume < minimumIngestionVolumeThreshold && absoluteDifference < minimumVolumeDifferenceThreshold {
-					logger.GetLogger().Info("ignoring destination-source pair - both ingestion volume below minimum and difference below threshold",
+				if inVolume < minimumIngestionVolumeThreshold || absoluteDifference < minimumVolumeDifferenceThreshold {
+					logger.GetLogger().Info("ignoring destination-source pair - either ingestion volume below minimum or difference below threshold",
 						zap.String("destinationId", dest.ID.String()),
 						zap.String("sourceId", sourceId),
 						zap.String("tenantId", t.Id.String()),
