@@ -113,7 +113,7 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 			continue
 		}
 
-		deliveredVolumeByDestIdSourceId, err := getDeliveredVolumeByDestinationAndSourceId(ctx, err, t, osClient, fromTime, toTime)
+		deliveredVolumeByDestIdSourceId, err := getDeliveredVolumeByDestinationAndSourceId(ctx, t, osClient, fromTime, toTime)
 		if err != nil {
 			logger.GetLogger().Error("error while getting delivered volume by destination and source id", zap.Error(err), zap.String("tenantId", t.Id.String()))
 			continue
@@ -285,7 +285,7 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 	}
 }
 
-func getDeliveredVolumeByDestinationAndSourceId(ctx context.Context, err error, t tenant.Tenant, osClient *opensearch.Client, fromTime int64, toTime int64) (map[string]map[string]int64, error) {
+func getDeliveredVolumeByDestinationAndSourceId(ctx context.Context, t tenant.Tenant, osClient *opensearch.Client, fromTime int64, toTime int64) (map[string]map[string]int64, error) {
 	deliveredVolumes, err := findDeliveredVolumesForDestinations(ctx, t.Id.String(), osClient, fromTime, toTime)
 	if err != nil {
 		logger.GetLogger().Error("error while finding delivered volumes per destination", zap.Error(err), zap.String("tenantId", t.Id.String()))
