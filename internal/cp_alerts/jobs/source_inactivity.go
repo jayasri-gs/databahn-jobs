@@ -98,7 +98,20 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			return common.NewJobResultFromErrors(jobErrors)
 		}
 
-		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime)
+		// Get sources that only send to sandbox destination (to skip alerts)
+		sandboxOnlySources, err := getSourcesOnlySendingToSandbox(ctx, db, tenantUuid)
+		if err != nil {
+			errorMsg := fmt.Sprintf("error getting sandbox-only sources for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error getting sandbox-only sources", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
+		}
+
+		logger.GetLogger().Info("found sources only sending to sandbox",
+			zap.String("tenantId", tenantId),
+			zap.Int("count", len(sandboxOnlySources)))
+
+		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime, sandboxOnlySources)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error finding inactive sources for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -202,7 +215,7 @@ func sendInAppAlerts(sourcesToAlert []*model.InActiveSource, alertsManager *aler
 	return nil
 }
 
-func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime map[string]time.Time) ([]*model.InActiveSource, []*source.Source, error) {
+func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime map[string]time.Time, sandboxOnlySources map[string]bool) ([]*model.InActiveSource, []*source.Source, error) {
 	var sourcesToAlert []*model.InActiveSource
 	var activeSources []*source.Source
 
@@ -234,6 +247,15 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 
 		for _, s := range sources {
 			sourceId := s.ID.String()
+
+			// Skip alert if source only sends to sandbox destination
+			if sandboxOnlySources[sourceId] {
+				logger.GetLogger().Info("skipping alert for source that only sends to sandbox destination",
+					zap.String("sourceId", sourceId),
+					zap.String("tenantId", tenantUuid.String()))
+				continue
+			}
+
 			lastEventTime, ok := sourceIdToLastEventTime[sourceId]
 			if !ok {
 				logger.GetLogger().Warn("no last event time found for source, ignoring", zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
@@ -373,4 +395,56 @@ func getAllLogSourcesOfTenant(db *gorm.DB, tenantId uuid.UUID) ([]source.Source,
 	result := db.Where("tenant_id = ? AND status = 'ACTIVE'", tenantId).Find(&sources)
 
 	return sources, result.Error
+}
+
+// getSourcesOnlySendingToSandbox returns a map of source IDs that only send to sandbox destination
+// Uses bulk query to check all sources at once for efficiency
+func getSourcesOnlySendingToSandbox(ctx context.Context, db *gorm.DB, tenantId uuid.UUID) (map[string]bool, error) {
+	sandboxOnlySources := make(map[string]bool)
+
+	// Query to find sources that have exactly 1 active pipeline and that pipeline goes to sandbox destination
+	query := `
+		SELECT DISTINCT pls.log_source_id
+		FROM pipeline_log_sources_mapping pls
+		JOIN pipelines p ON pls.pipeline_id = p.id
+		JOIN pipeline_destinations_mapping pd ON p.id = pd.pipeline_id
+		WHERE p.status = 'ACTIVE'
+		  AND p.tenant_id = ?
+		GROUP BY pls.log_source_id
+		HAVING COUNT(DISTINCT p.id) = 1
+		  AND COUNT(DISTINCT pd.destination_id) = 1
+		  AND MAX(pd.destination_id::text) = ?
+	`
+
+	rows, err := db.WithContext(ctx).Raw(query, tenantId, constants.SandboxDestinationID).Rows()
+	if err != nil {
+		logger.GetLogger().Error("error querying sources only sending to sandbox",
+			zap.Error(err),
+			zap.String("tenantId", tenantId.String()))
+		return sandboxOnlySources, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var sourceId string
+		if err := rows.Scan(&sourceId); err != nil {
+			logger.GetLogger().Error("error scanning source ID", zap.Error(err))
+			continue
+		}
+		sandboxOnlySources[sourceId] = true
+		logger.GetLogger().Debug("identified source only sending to sandbox",
+			zap.String("sourceId", sourceId),
+			zap.String("tenantId", tenantId.String()))
+	}
+
+	if err := rows.Err(); err != nil {
+		logger.GetLogger().Error("error iterating over sandbox-only sources", zap.Error(err))
+		return sandboxOnlySources, err
+	}
+
+	logger.GetLogger().Info("completed sandbox-only sources check",
+		zap.String("tenantId", tenantId.String()),
+		zap.Int("sandboxOnlySourceCount", len(sandboxOnlySources)))
+
+	return sandboxOnlySources, nil
 }
