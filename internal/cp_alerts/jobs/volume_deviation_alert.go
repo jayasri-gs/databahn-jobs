@@ -10,6 +10,7 @@ import (
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -129,6 +130,15 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 				break
 			}
 			for _, destination := range destinations {
+				// Skip alert if destination is the Databahn Sandbox
+				if destination.ID.String() == constants.SandboxDestinationID {
+					logger.GetLoggerWithContext(ctx).Info("skipping volume deviation check for sandbox destination",
+						zap.String("destinationId", destination.ID.String()),
+						zap.String("destinationName", destination.Name),
+						zap.String("tenantId", tenantId))
+					continue
+				}
+
 				deliveryStat := destinationIdToDeliveryStats[destination.ID.String()]
 				if deliveryStat == nil {
 					logger.GetLoggerWithContext(ctx).Error("delivery stat not found for destination", zap.String("destinationId", destination.ID.String()), zap.String("tenantId", tenantId))
