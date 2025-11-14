@@ -10,6 +10,7 @@ import (
 	cpcommon "github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
@@ -126,6 +127,16 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 				logger.GetLogger().Info("skipping inactive destination", zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
 				continue
 			}
+
+			// Skip alert if destination is the Databahn Sandbox
+			if dest.ID.String() == constants.SandboxDestinationID {
+				logger.GetLogger().Info("skipping sandbox destination for volume check",
+					zap.String("destinationId", dest.ID.String()),
+					zap.String("destinationName", dest.Name),
+					zap.String("tenantId", t.Id.String()))
+				continue
+			}
+
 			deliveredVolumeForThisDestBySourceId, ok := deliveredVolumeByDestIdSourceId[dest.ID.String()]
 			if !ok {
 				logger.GetLogger().Info("no data delivered for destination", zap.String("destinationId", dest.ID.String()), zap.String("tenantId", t.Id.String()))
