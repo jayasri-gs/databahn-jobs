@@ -11,6 +11,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
@@ -419,6 +420,15 @@ func getDeployingDestinations(ctx context.Context, db *gorm.DB, tenantId uuid.UU
 			return nil, err
 		}
 
+		// Skip if destination is the Databahn Sandbox
+		if entity.ID.String() == constants.SandboxDestinationID {
+			logger.GetLogger().Info("skipping deployment alert for sandbox destination",
+				zap.String("destinationId", entity.ID.String()),
+				zap.String("destinationName", entity.Name),
+				zap.String("tenantId", tenantId.String()))
+			continue
+		}
+
 		entity.Type = model.EntityTypeDestination
 		destinations = append(destinations, entity)
 	}
@@ -457,16 +467,23 @@ func getDeployingInsightRules(ctx context.Context, db *gorm.DB, tenantId uuid.UU
 }
 
 // getDeployingVCRules queries vc_rule table for entities stuck in DEPLOYING state
+// Excludes VC rules attached to pipelines going to sandbox destination
 func getDeployingVCRules(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, cutoffTime time.Time) ([]model.DeployingEntity, error) {
 	var vcRules []model.DeployingEntity
 
+	// Join with pipeline and destination to exclude sandbox pipelines
 	query := `
-		SELECT id, name, tenant_id, data_plane_id, updated_at
-		FROM vc_rule 
-		WHERE tenant_id = ? AND status = 'DEPLOYING' AND updated_at < ?
+		SELECT DISTINCT v.id, v.name, v.tenant_id, v.data_plane_id, v.updated_at
+		FROM vc_rule v
+		JOIN pipelines p ON v.pipeline_id = p.id
+		JOIN pipeline_destinations_mapping pd ON p.id = pd.pipeline_id
+		WHERE v.tenant_id = ? 
+		  AND v.status = 'DEPLOYING' 
+		  AND v.updated_at < ?
+		  AND pd.destination_id != ?
 	`
 
-	rows, err := db.WithContext(ctx).Raw(query, tenantId, cutoffTime).Rows()
+	rows, err := db.WithContext(ctx).Raw(query, tenantId, cutoffTime, constants.SandboxDestinationID).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -482,6 +499,10 @@ func getDeployingVCRules(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, c
 		entity.Type = model.EntityTypeVCRule
 		vcRules = append(vcRules, entity)
 	}
+
+	logger.GetLogger().Info("found deploying VC rules (excluding sandbox pipelines)",
+		zap.String("tenantId", tenantId.String()),
+		zap.Int("count", len(vcRules)))
 
 	return vcRules, nil
 }
@@ -599,16 +620,23 @@ func getHealthyVCRules(ctx context.Context, db *gorm.DB, tenantId uuid.UUID) ([]
 }
 
 // getDeployingEnrichments queries enrichment table for entities stuck in DEPLOYING state
+// Excludes enrichments attached to pipelines going to sandbox destination
 func getDeployingEnrichments(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, cutoffTime time.Time) ([]model.DeployingEntity, error) {
 	var enrichments []model.DeployingEntity
 
+	// Join with pipeline and destination to exclude sandbox pipelines
 	query := `
-		SELECT id, name, tenant_id, data_plane_id, updated_at
-		FROM enrichment 
-		WHERE tenant_id = ? AND status = 'DEPLOYING' AND updated_at < ?
+		SELECT DISTINCT e.id, e.name, e.tenant_id, e.data_plane_id, e.updated_at
+		FROM enrichment e
+		JOIN pipelines p ON e.pipeline_id = p.id
+		JOIN pipeline_destinations_mapping pd ON p.id = pd.pipeline_id
+		WHERE e.tenant_id = ? 
+		  AND e.status = 'DEPLOYING' 
+		  AND e.updated_at < ?
+		  AND pd.destination_id != ?
 	`
 
-	rows, err := db.WithContext(ctx).Raw(query, tenantId, cutoffTime).Rows()
+	rows, err := db.WithContext(ctx).Raw(query, tenantId, cutoffTime, constants.SandboxDestinationID).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -621,10 +649,13 @@ func getDeployingEnrichments(ctx context.Context, db *gorm.DB, tenantId uuid.UUI
 			return nil, err
 		}
 
-		// Validate that enrichment has a valid data plane ID
 		entity.Type = model.EntityTypeEnrichment
 		enrichments = append(enrichments, entity)
 	}
+
+	logger.GetLogger().Info("found deploying enrichments (excluding sandbox pipelines)",
+		zap.String("tenantId", tenantId.String()),
+		zap.Int("count", len(enrichments)))
 
 	return enrichments, nil
 }
@@ -778,16 +809,23 @@ func getHealthyLookups(ctx context.Context, db *gorm.DB, tenantId uuid.UUID) ([]
 }
 
 // getDeployingDataTransformations queries data_transformation table for entities stuck in DEPLOYING state
+// Excludes transformations attached to pipelines going to sandbox destination
 func getDeployingDataTransformations(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, cutoffTime time.Time) ([]model.DeployingEntity, error) {
 	var dataTransformations []model.DeployingEntity
 
+	// Join with pipeline and destination to exclude sandbox pipelines
 	query := `
-		SELECT id, name, tenant_id, data_plane_id, updated_at
-		FROM data_transformation 
-		WHERE tenant_id = ? AND status = 'DEPLOYING' AND updated_at < ?
+		SELECT DISTINCT dt.id, dt.name, dt.tenant_id, dt.data_plane_id, dt.updated_at
+		FROM data_transformation dt
+		JOIN pipelines p ON dt.pipeline_id = p.id
+		JOIN pipeline_destinations_mapping pd ON p.id = pd.pipeline_id
+		WHERE dt.tenant_id = ? 
+		  AND dt.status = 'DEPLOYING' 
+		  AND dt.updated_at < ?
+		  AND pd.destination_id != ?
 	`
 
-	rows, err := db.WithContext(ctx).Raw(query, tenantId, cutoffTime).Rows()
+	rows, err := db.WithContext(ctx).Raw(query, tenantId, cutoffTime, constants.SandboxDestinationID).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -803,6 +841,10 @@ func getDeployingDataTransformations(ctx context.Context, db *gorm.DB, tenantId 
 		entity.Type = model.EntityTypeDataTransformation
 		dataTransformations = append(dataTransformations, entity)
 	}
+
+	logger.GetLogger().Info("found deploying data transformations (excluding sandbox pipelines)",
+		zap.String("tenantId", tenantId.String()),
+		zap.Int("count", len(dataTransformations)))
 
 	return dataTransformations, nil
 }

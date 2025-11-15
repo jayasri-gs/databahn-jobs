@@ -12,6 +12,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -525,6 +526,17 @@ func (o *VCAlertOrchestrator) processTenantAlerts(t *tenant.Tenant) error {
 func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMapping *pipeline.PipelineWithMappings, cachedSources map[uuid.UUID]source.Source) error {
 	pipelineId := pipelineMapping.Pipeline.ID
 	tenantId := t.Id
+
+	// Skip alert if pipeline sends to Databahn Sandbox destination
+	if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID {
+		logger.GetLogger().Info("skipping VC alerts for sandbox pipeline",
+			zap.String("tenantId", tenantId.String()),
+			zap.String("pipelineId", pipelineId.String()),
+			zap.String("pipelineName", pipelineMapping.Pipeline.Name),
+			zap.String("source", pipelineMapping.SourceName),
+			zap.String("destination", pipelineMapping.DestinationName))
+		return nil // Skip all VC alert processors for this pipeline
+	}
 
 	// Get active VC rules for this pipeline
 	vcRules, err := vc_rule.GetActiveVCRulesByPipelineAndTenant(pipelineId, tenantId, o.db)
