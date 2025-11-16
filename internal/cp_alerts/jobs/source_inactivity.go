@@ -98,20 +98,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			return common.NewJobResultFromErrors(jobErrors)
 		}
 
-		// Get sources that only send to sandbox destination (to skip alerts)
-		sandboxOnlySources, err := util.GetSourcesOnlySendingToSandbox(ctx, db, tenantUuid)
-		if err != nil {
-			errorMsg := fmt.Sprintf("error getting sandbox-only sources for tenant %s: %v", tenantId, err)
-			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-			logger.GetLogger().Error("error getting sandbox-only sources", zap.Error(err), zap.String("tenantId", tenantId))
-			return common.NewJobResultFromErrors(jobErrors)
-		}
-
-		logger.GetLogger().Info("found sources only sending to sandbox",
-			zap.String("tenantId", tenantId),
-			zap.Int("count", len(sandboxOnlySources)))
-
-		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime, sandboxOnlySources)
+		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error finding inactive sources for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -215,7 +202,7 @@ func sendInAppAlerts(sourcesToAlert []*model.InActiveSource, alertsManager *aler
 	return nil
 }
 
-func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime map[string]time.Time, sandboxOnlySources map[string]bool) ([]*model.InActiveSource, []*source.Source, error) {
+func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime map[string]time.Time) ([]*model.InActiveSource, []*source.Source, error) {
 	var sourcesToAlert []*model.InActiveSource
 	var activeSources []*source.Source
 
@@ -247,14 +234,6 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 
 		for _, s := range sources {
 			sourceId := s.ID.String()
-
-			// Skip alert if source only sends to sandbox destination
-			if sandboxOnlySources[sourceId] {
-				logger.GetLogger().Info("skipping alert for source that only sends to sandbox destination",
-					zap.String("sourceId", sourceId),
-					zap.String("tenantId", tenantUuid.String()))
-				continue
-			}
 
 			lastEventTime, ok := sourceIdToLastEventTime[sourceId]
 			if !ok {

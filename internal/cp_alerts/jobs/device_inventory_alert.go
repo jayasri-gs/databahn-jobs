@@ -8,15 +8,13 @@ import (
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/common"
-	"github.com/databahn-ai/databahn-jobs/internal/store/source"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
-
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/helper"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/db-models/alerts_async"
@@ -128,19 +126,6 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) common.JobResult {
 			activeSourceIds[src.ID] = true
 		}
 
-		// Get sources that only send to sandbox destination (to skip alerts)
-		sandboxOnlySources, err := util.GetSourcesOnlySendingToSandbox(ctx, db, t.Id)
-		if err != nil {
-			errorMsg := fmt.Sprintf("error getting sandbox-only sources for tenant %s: %v", tenantId, err)
-			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-			logging.GetLoggerWithContext(ctx).Error("error getting sandbox-only sources", zap.Error(err), zap.String("tenantId", tenantId))
-			return common.NewJobResultFromErrors(jobErrors)
-		}
-
-		logging.GetLoggerWithContext(ctx).Info("found sources only sending to sandbox for device inventory check",
-			zap.String("tenantId", tenantId),
-			zap.Int("count", len(sandboxOnlySources)))
-
 		// Process each source separately with its own configuration
 		var consolidatedAlerts []*model.SourceDeviceInventoryAlert
 		for _, entityAlertConfig := range alertConfigs {
@@ -154,15 +139,6 @@ func SendAlertForDeviceLevelAlert(ctx context.Context) common.JobResult {
 			if _, isActive := activeSourceIds[entityAlertConfig.EntityID]; !isActive {
 				logging.GetLoggerWithContext(ctx).Info("skipping inactive source",
 					zap.String("tenantId", tenantId), zap.String("sourceID", entityAlertConfig.EntityID.String()))
-				continue
-			}
-
-			// Skip alert if source only sends to sandbox destination
-			sourceId := entityAlertConfig.EntityID.String()
-			if sandboxOnlySources[sourceId] {
-				logging.GetLoggerWithContext(ctx).Info("skipping device inventory alert for source that only sends to sandbox destination",
-					zap.String("sourceId", sourceId),
-					zap.String("tenantId", tenantId))
 				continue
 			}
 

@@ -101,19 +101,6 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 			}
 		}
 
-		// Get sources that only send to sandbox destination (to skip alerts)
-		sandboxOnlySources, err := util.GetSourcesOnlySendingToSandbox(ctx, db, tenantUuid)
-		if err != nil {
-			errorMsg := fmt.Sprintf("error getting sandbox-only sources for tenant %s: %v", tenantId, err)
-			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-			logger.GetLogger().Error("error getting sandbox-only sources", zap.Error(err), zap.String("tenantId", tenantId))
-			return common.NewJobResultFromErrors(jobErrors)
-		}
-
-		logger.GetLogger().Info("found sources only sending to sandbox for unparsed events check",
-			zap.String("tenantId", tenantId),
-			zap.Int("count", len(sandboxOnlySources)))
-
 		sourceDbPage := 0
 		sourceDbPageSize := 50
 		var sourcesToAlert []*model.UnparsedEventSource
@@ -131,14 +118,6 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 			}
 			for _, s := range sources {
 				sourceId := s.ID.String()
-
-				// Skip alert if source only sends to sandbox destination
-				if sandboxOnlySources[sourceId] {
-					logger.GetLogger().Info("skipping unparsed events alert for source that only sends to sandbox destination",
-						zap.String("sourceId", sourceId),
-						zap.String("tenantId", tenantId))
-					continue
-				}
 
 				if percentage, hasPercentage := sourceIdToUnparsedPercentage[sourceId]; hasPercentage {
 					if percentage >= MinUnparsedEventsPercentage {

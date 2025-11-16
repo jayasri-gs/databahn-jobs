@@ -17,7 +17,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -133,8 +132,6 @@ func ProcessSilentDevices(ctx context.Context) common.JobResult {
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
-	db := config.GetDB()
-
 	for _, t := range tenants {
 		logging.GetLoggerWithContext(ctx).Info("processing tenant", zap.String("tenantId", t.Id.String()))
 		logging.GetLoggerWithContext(ctx).Info("log sources for the tenant ", zap.String("tenantId", t.Id.String()), zap.Any("logSourceIds", logSourceIds[t.Id.String()]))
@@ -143,39 +140,7 @@ func ProcessSilentDevices(ctx context.Context) common.JobResult {
 			continue
 		}
 		tenantId := t.Id.String()
-
-		// Get sources that only send to sandbox destination (to skip alerts)
-		sandboxOnlySources, err := util.GetSourcesOnlySendingToSandbox(ctx, db, t.Id)
-		if err != nil {
-			errorMsg := fmt.Sprintf("error getting sandbox-only sources for tenant %s: %v", tenantId, err)
-			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-			logging.GetLoggerWithContext(ctx).Error("error getting sandbox-only sources", zap.Error(err), zap.String("tenantId", tenantId))
-			return common.NewJobResultFromErrors(jobErrors)
-		}
-
-		// Filter out sources that only send to sandbox
-		var filteredSourceIds []string
-		for _, sourceId := range logSourceIds[tenantId] {
-			if sandboxOnlySources[sourceId] {
-				logging.GetLoggerWithContext(ctx).Info("skipping silent device check for source that only sends to sandbox destination",
-					zap.String("sourceId", sourceId),
-					zap.String("tenantId", tenantId))
-				continue
-			}
-			filteredSourceIds = append(filteredSourceIds, sourceId)
-		}
-
-		if len(filteredSourceIds) == 0 {
-			logging.GetLoggerWithContext(ctx).Info("no sources to check after filtering sandbox-only sources", zap.String("tenantId", tenantId))
-			continue
-		}
-
-		logging.GetLoggerWithContext(ctx).Info("checking silent devices for filtered sources",
-			zap.String("tenantId", tenantId),
-			zap.Int("totalConfiguredSources", len(logSourceIds[tenantId])),
-			zap.Int("sourcesAfterFiltering", len(filteredSourceIds)))
-
-		silentDevices, err := FetchSilentDevices(ctx, tenantId, t.Name, filteredSourceIds)
+		silentDevices, err := FetchSilentDevices(ctx, tenantId, t.Name, logSourceIds[tenantId])
 		if err != nil {
 			errorMsg := fmt.Sprintf("failed to fetch silent devices for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
