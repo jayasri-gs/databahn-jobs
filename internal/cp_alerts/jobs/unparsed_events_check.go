@@ -15,7 +15,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -106,7 +105,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 		var sourcesToAlert []*model.UnparsedEventSource
 		var sourcesToDismiss []*source.Source
 		for {
-			sources, err := util.ReadSourcesPaginated(db, t.Id, sourceDbPage, sourceDbPageSize)
+			sources, err := source.ReadSourcesPaginated(db, t.Id, sourceDbPage, sourceDbPageSize)
 			if err != nil {
 				errorMsg := fmt.Sprintf("error while reading sources for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})

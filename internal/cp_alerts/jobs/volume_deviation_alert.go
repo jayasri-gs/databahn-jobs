@@ -66,7 +66,7 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 		sourceDbPage := 0
 		sourceDbPageSize := 50
 		for {
-			sources, err := util.ReadSourcesPaginated(db, tenantIdUuid, sourceDbPage, sourceDbPageSize)
+			sources, err := source.ReadSourcesPaginated(db, tenantIdUuid, sourceDbPage, sourceDbPageSize)
 			if err != nil {
 				logger.GetLoggerWithContext(ctx).Error("error while reading sources", zap.Error(err))
 				return cpcommon.NewJobResultFromError(err)

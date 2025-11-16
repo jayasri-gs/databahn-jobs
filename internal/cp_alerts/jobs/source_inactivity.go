@@ -210,7 +210,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 	sourceDbPageSize := 50
 
 	for {
-		sources, err := util.ReadSourcesPaginated(db, tenantUuid, sourceDbPage, sourceDbPageSize)
+		sources, err := source.ReadSourcesPaginated(db, tenantUuid, sourceDbPage, sourceDbPageSize)
 		if err != nil {
 			logger.GetLogger().Error("error while reading sources", zap.Error(err))
 			return nil, nil, err
