@@ -457,11 +457,9 @@ func getDeployingInsightRules(ctx context.Context, db *gorm.DB, tenantId uuid.UU
 }
 
 // getDeployingVCRules queries vc_rule table for entities stuck in DEPLOYING state
-// Excludes VC rules attached to pipelines going to sandbox destination
 func getDeployingVCRules(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, cutoffTime time.Time) ([]model.DeployingEntity, error) {
 	var vcRules []model.DeployingEntity
 
-	// Join with pipeline and destination to exclude sandbox pipelines
 	query := `
 		SELECT id, name, tenant_id, data_plane_id, updated_at
 		FROM vc_rule 
@@ -604,7 +602,6 @@ func getHealthyVCRules(ctx context.Context, db *gorm.DB, tenantId uuid.UUID) ([]
 func getDeployingEnrichments(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, cutoffTime time.Time) ([]model.DeployingEntity, error) {
 	var enrichments []model.DeployingEntity
 
-	// Join with pipeline and destination to exclude sandbox pipelines
 	query := `
 		SELECT id, name, tenant_id, data_plane_id, updated_at
 		FROM enrichment 
@@ -624,6 +621,7 @@ func getDeployingEnrichments(ctx context.Context, db *gorm.DB, tenantId uuid.UUI
 			return nil, err
 		}
 
+		// Validate that enrichment has a valid data plane ID
 		entity.Type = model.EntityTypeEnrichment
 		enrichments = append(enrichments, entity)
 	}
@@ -783,7 +781,6 @@ func getHealthyLookups(ctx context.Context, db *gorm.DB, tenantId uuid.UUID) ([]
 func getDeployingDataTransformations(ctx context.Context, db *gorm.DB, tenantId uuid.UUID, cutoffTime time.Time) ([]model.DeployingEntity, error) {
 	var dataTransformations []model.DeployingEntity
 
-	// Join with pipeline and destination to exclude sandbox pipelines
 	query := `
 		SELECT id, name, tenant_id, data_plane_id, updated_at
 		FROM data_transformation 
