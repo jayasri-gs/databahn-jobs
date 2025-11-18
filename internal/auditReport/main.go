@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/databahn-ai/common-utils/utils"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/agentDiscoveredNodesReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/agentReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/alertReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/audit"
@@ -218,6 +219,14 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 		err = agentReport.WriteAgentReportToFile(ctx, req, file)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching agent report", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId), zap.String("report_type", req.ReportType))
+			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
+			reportProcessor.failedRequestChannel <- errRequest
+			return
+		}
+	case consts.AGENT_DISCOVERED_NODES_REPORT:
+		err = agentDiscoveredNodesReport.WriteAgentDiscoveredNodesReportToFile(ctx, req, file)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while fetching agent discovered nodes report", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId), zap.String("report_type", req.ReportType))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 			reportProcessor.failedRequestChannel <- errRequest
 			return
