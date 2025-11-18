@@ -90,6 +90,7 @@ func writePagedDataToFile(ctx context.Context, req models.AuditReport, query str
 		if offset == 0 {
 			writer = csv.NewWriter(file)
 			if err := writer.Write(columns); err != nil {
+				rows.Close() // Close rows on error
 				logging.GetLoggerWithContext(ctx).Error("error while writing headers to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 				return err
 			}
@@ -98,13 +99,16 @@ func writePagedDataToFile(ctx context.Context, req models.AuditReport, query str
 		runtimeStatusColumnIndex := findRuntimeStatusColumnIndex(columns)
 		rowsFetchedFromDB, err := common.WriteRowsToFileForDbReportTypeWithoutTimeFiltersWithStatusFilter(columns, rows, writer, runtimeStatusColumnIndex, runtimeStatusFilterValues)
 		if err != nil {
+			rows.Close() // Close rows on error
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
 		}
 
 		// Use rowsFetchedFromDB (not rowsWritten) for pagination decision
 		// This ensures we continue fetching even if many rows are filtered out
-		if rowsFetchedFromDB < pageSize {
+		shouldContinue := rowsFetchedFromDB >= pageSize
+		rows.Close() // Always close rows after processing to prevent connection leaks
+		if !shouldContinue {
 			break
 		}
 		offset += pageSize
