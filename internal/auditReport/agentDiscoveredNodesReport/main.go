@@ -96,16 +96,18 @@ func writePagedDataToFile(ctx context.Context, req models.AuditReport, query str
 		}
 
 		runtimeStatusColumnIndex := findRuntimeStatusColumnIndex(columns)
-		fetchedRowsCount, err := common.WriteRowsToFileForDbReportTypeWithoutTimeFiltersWithStatusFilter(columns, rows, writer, runtimeStatusColumnIndex, runtimeStatusFilterValues)
+		rowsFetchedFromDB, err := common.WriteRowsToFileForDbReportTypeWithoutTimeFiltersWithStatusFilter(columns, rows, writer, runtimeStatusColumnIndex, runtimeStatusFilterValues)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
 		}
 
-		if fetchedRowsCount < pageSize {
+		// Use rowsFetchedFromDB (not rowsWritten) for pagination decision
+		// This ensures we continue fetching even if many rows are filtered out
+		if rowsFetchedFromDB < pageSize {
 			break
 		}
-		offset += pageSize + 1
+		offset += pageSize
 	}
 
 	return nil
