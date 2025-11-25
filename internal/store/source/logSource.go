@@ -43,9 +43,6 @@ type Source struct {
 	Config                       map[string]interface{} `gorm:"-" json:"-"`
 	DataPlaneId                  uuid.UUID              `gorm:"type:uuid" json:"data_plane_id"`
 	AdvancedConfiguration        datatypes.JSON         `gorm:"type:jsonb;column:advanced_configuration" json:"advanced_configuration"`
-
-	// Multi-fleet relationship - use Preload("ConnectorMappings.Connector.Fleet") to eager load
-	ConnectorMappings []SourceConnectorMapping `gorm:"foreignKey:SourceId" json:"connector_mappings,omitempty"`
 }
 
 func (s *Source) TableName() string {
