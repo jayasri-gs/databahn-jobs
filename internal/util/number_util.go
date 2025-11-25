@@ -2,6 +2,23 @@ package util
 
 import "fmt"
 
+func DataVolumeToBytes(vol int64, unit string) int64 {
+	switch unit {
+	case "B":
+		return vol
+	case "KB":
+		return vol * 1024
+	case "MB":
+		return vol * 1024 * 1024
+	case "GB":
+		return vol * 1024 * 1024 * 1024
+	case "TB":
+		return vol * 1024 * 1024 * 1024 * 1024
+	default:
+		return vol // Default to bytes if unit is unrecognized
+	}
+}
+
 func HumanReadableBytes(bytesSize int64) string {
 	if bytesSize < 1024 {
 		return fmt.Sprintf("%d B", bytesSize)

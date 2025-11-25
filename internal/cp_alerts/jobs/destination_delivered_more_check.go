@@ -69,7 +69,6 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 	defaultToHoursMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_TO_HOURS_MINUS", 1)
 	// Note: default 0 means no minimum threshold filtering (alerts for all volumes)
 	defaultMinimumIngestionVolumeThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MIN_INGESTION_VOLUME_THRESHOLD", 0))
-	defaultMinimumVolumeDifferenceThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MIN_VOLUME_DIFFERENCE_THRESHOLD", 0))
 
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
@@ -99,7 +98,7 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 		// Try to fetch tenant-level configuration for this alert type
 		tenantConfig, err := getDeliveredMoreConfigForTenant(db, t.Id)
 		var percentageThreshold int64
-		var minimumIngestionVolumeThreshold, minimumVolumeDifferenceThreshold int64
+		var minimumIngestionVolumeThreshold int64
 
 		if err != nil {
 			// Real database error (not "no rows found") - skip this tenant
@@ -116,7 +115,6 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 				zap.String("tenantId", tenantId))
 			percentageThreshold = defaultPercentageThreshold
 			minimumIngestionVolumeThreshold = defaultMinimumIngestionVolumeThreshold
-			minimumVolumeDifferenceThreshold = defaultMinimumVolumeDifferenceThreshold
 		} else {
 			// Use tenant-specific configuration
 			alertConfig := tenantConfig.Config.DestinationDeliveredMoreAlertConfig
@@ -125,16 +123,15 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 					zap.String("tenantId", tenantId))
 				percentageThreshold = defaultPercentageThreshold
 				minimumIngestionVolumeThreshold = defaultMinimumIngestionVolumeThreshold
-				minimumVolumeDifferenceThreshold = defaultMinimumVolumeDifferenceThreshold
 			} else {
-				percentageThreshold = int64(alertConfig.PercentageThreshold)
-				minimumIngestionVolumeThreshold = alertConfig.MinimumIngestionVolumeThreshold
-				minimumVolumeDifferenceThreshold = alertConfig.MinimumVolumeDifferenceThreshold
+				minVol := alertConfig.MinimumIngestionVolumeThreshold
+				unit := alertConfig.MinimumIngestionVolumeUnit
+				minimumIngestionVolumeThreshold = util.DataVolumeToBytes(minVol, unit)
+				percentageThreshold = int64(alertConfig.DifferencePercentageThreshold)
 				logger.GetLogger().Info("using tenant-level delivered more config",
 					zap.String("tenantId", tenantId),
 					zap.Int64("percentageThreshold", percentageThreshold),
-					zap.Int64("minimumIngestionVolumeThreshold", minimumIngestionVolumeThreshold),
-					zap.Int64("minimumVolumeDifferenceThreshold", minimumVolumeDifferenceThreshold))
+					zap.Int64("minimumIngestionVolumeThreshold", minimumIngestionVolumeThreshold))
 			}
 		}
 
@@ -223,21 +220,13 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 					continue
 				}
 
-				// Skip if ingestion volume is below minimum threshold AND absolute difference is below minimum threshold
-				absoluteDifference := outVolume - inVolume
-				if absoluteDifference < 0 {
-					absoluteDifference = -absoluteDifference
-				}
-
-				if inVolume < minimumIngestionVolumeThreshold || absoluteDifference < minimumVolumeDifferenceThreshold {
-					logger.GetLogger().Info("ignoring destination-source pair - ingestion volume or absolute difference below configured thresholds",
+				if inVolume < minimumIngestionVolumeThreshold {
+					logger.GetLogger().Info("ignoring destination-source pair - ingestion volume below configured thresholds",
 						zap.String("destinationId", dest.ID.String()),
 						zap.String("sourceId", sourceId),
 						zap.String("tenantId", t.Id.String()),
 						zap.Int64("inVolume", inVolume),
-						zap.Int64("minimumIngestionVolumeThreshold", minimumIngestionVolumeThreshold),
-						zap.Int64("absoluteDifference", absoluteDifference),
-						zap.Int64("minimumVolumeDifferenceThreshold", minimumVolumeDifferenceThreshold))
+						zap.Int64("minimumIngestionVolumeThreshold", minimumIngestionVolumeThreshold))
 					healthyPairs = append(healthyPairs, dstSrcPair{dstId: dest.ID.String(), srcId: sourceId})
 					continue
 				}

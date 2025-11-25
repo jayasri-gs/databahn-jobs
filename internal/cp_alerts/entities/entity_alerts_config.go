@@ -70,9 +70,9 @@ type LogSourceDeviceInventoryAlertConfig struct {
 }
 
 type DestinationDeliveredMoreAlertConfig struct {
-	PercentageThreshold              int   `json:"percentageThreshold"`
-	MinimumIngestionVolumeThreshold  int64 `json:"minimumIngestionVolumeThreshold"`
-	MinimumVolumeDifferenceThreshold int64 `json:"minimumVolumeDifferenceThreshold"`
+	DifferencePercentageThreshold   int    `json:"differencePercentageThreshold"`
+	MinimumIngestionVolumeThreshold int64  `json:"minimumIngestionVolumeThreshold"`
+	MinimumIngestionVolumeUnit      string `json:"minimumIngestionVolumeUnit"`
 }
 
 type VcRuleFilter struct {
