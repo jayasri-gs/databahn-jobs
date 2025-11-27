@@ -178,13 +178,23 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 				continue
 			}
 
-			// Skip alert if destination is the Databahn Sandbox
+			// Skip alert if destination is the Databahn Sandbox and tenant has disabled sandbox alerts
 			if dest.ID.String() == constants.SandboxDestinationID {
-				logger.GetLogger().Info("skipping sandbox destination for volume check",
-					zap.String("destinationId", dest.ID.String()),
-					zap.String("destinationName", dest.Name),
-					zap.String("tenantId", t.Id.String()))
-				continue
+				shouldSkip, err := entities.ShouldSkipSandboxAlerts(db, t.Id)
+				if err != nil {
+					logger.GetLogger().Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
+						zap.Error(err),
+						zap.String("tenantId", t.Id.String()),
+						zap.String("destinationId", dest.ID.String()))
+					continue
+				}
+				if shouldSkip {
+					logger.GetLogger().Info("skipping sandbox destination for volume check (tenant has disabled sandbox alerts)",
+						zap.String("destinationId", dest.ID.String()),
+						zap.String("destinationName", dest.Name),
+						zap.String("tenantId", t.Id.String()))
+					continue
+				}
 			}
 
 			deliveredVolumeForThisDestBySourceId, ok := deliveredVolumeByDestIdSourceId[dest.ID.String()]

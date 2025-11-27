@@ -199,15 +199,6 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 		for _, d := range destinations {
 			destinationId := d.ID.String()
 
-			// Skip alert if destination is the Databahn Sandbox
-			if destinationId == constants.SandboxDestinationID {
-				logger.GetLogger().Info("skipping alert for sandbox destination",
-					zap.String("destinationId", destinationId),
-					zap.String("destinationName", d.Name),
-					zap.String("tenantId", tenantUuid.String()))
-				continue
-			}
-
 			logger.GetLogger().Info("Checking for destination", zap.String("destination_id", destinationId))
 
 			lastEventTime, ok := destinationIdToLastEventTime[destinationId]

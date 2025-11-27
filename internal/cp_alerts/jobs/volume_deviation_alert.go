@@ -11,6 +11,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -130,13 +131,23 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 				break
 			}
 			for _, destination := range destinations {
-				// Skip alert if destination is the Databahn Sandbox
+				// Skip alert if destination is the Databahn Sandbox and tenant has disabled sandbox alerts
 				if destination.ID.String() == constants.SandboxDestinationID {
-					logger.GetLoggerWithContext(ctx).Info("skipping volume deviation check for sandbox destination",
-						zap.String("destinationId", destination.ID.String()),
-						zap.String("destinationName", destination.Name),
-						zap.String("tenantId", tenantId))
-					continue
+					shouldSkip, err := entities.ShouldSkipSandboxAlerts(db, tenantIdUuid)
+					if err != nil {
+						logger.GetLoggerWithContext(ctx).Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
+							zap.Error(err),
+							zap.String("tenantId", tenantId),
+							zap.String("destinationId", destination.ID.String()))
+						continue
+					}
+					if shouldSkip {
+						logger.GetLoggerWithContext(ctx).Info("skipping volume deviation check for sandbox destination (tenant has disabled sandbox alerts)",
+							zap.String("destinationId", destination.ID.String()),
+							zap.String("destinationName", destination.Name),
+							zap.String("tenantId", tenantId))
+						continue
+					}
 				}
 
 				deliveryStat := destinationIdToDeliveryStats[destination.ID.String()]

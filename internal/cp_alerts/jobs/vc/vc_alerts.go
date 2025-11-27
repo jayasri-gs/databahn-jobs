@@ -13,6 +13,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -527,15 +528,25 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 	pipelineId := pipelineMapping.Pipeline.ID
 	tenantId := t.Id
 
-	// Skip alert if pipeline sends to Databahn Sandbox destination
+	// Skip alert if pipeline sends to Databahn Sandbox destination and tenant has disabled sandbox alerts
 	if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID {
-		logger.GetLogger().Info("skipping VC alerts for sandbox pipeline",
-			zap.String("tenantId", tenantId.String()),
-			zap.String("pipelineId", pipelineId.String()),
-			zap.String("pipelineName", pipelineMapping.Pipeline.Name),
-			zap.String("source", pipelineMapping.SourceName),
-			zap.String("destination", pipelineMapping.DestinationName))
-		return nil // Skip all VC alert processors for this pipeline
+		shouldSkip, err := entities.ShouldSkipSandboxAlerts(o.db, tenantId)
+		if err != nil {
+			logger.GetLogger().Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
+				zap.Error(err),
+				zap.String("tenantId", tenantId.String()),
+				zap.String("pipelineId", pipelineId.String()))
+			return err
+		}
+		if shouldSkip {
+			logger.GetLogger().Info("skipping VC alerts for sandbox pipeline (tenant has disabled sandbox alerts)",
+				zap.String("tenantId", tenantId.String()),
+				zap.String("pipelineId", pipelineId.String()),
+				zap.String("pipelineName", pipelineMapping.Pipeline.Name),
+				zap.String("source", pipelineMapping.SourceName),
+				zap.String("destination", pipelineMapping.DestinationName))
+			return nil // Skip all VC alert processors for this pipeline
+		}
 	}
 
 	// Get active VC rules for this pipeline
