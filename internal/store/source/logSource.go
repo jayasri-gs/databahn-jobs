@@ -22,13 +22,11 @@ type AdvancedConfiguration struct {
 type Source struct {
 	ID                           uuid.UUID              `gorm:"type:uuid;primary_key" json:"id"`
 	Configuration                datatypes.JSON         `json:"configuration"`
-	ConnectorID                  uuid.UUID              `gorm:"type:uuid" json:"connector_id"`
 	CreatedAt                    time.Time              `gorm:"type:timestamp" json:"created_at"`
 	CreatedBy                    uuid.UUID              `gorm:"type:uuid" json:"created_by"`
 	CustomerID                   uuid.UUID              `gorm:"type:uuid" json:"customer_id"`
 	Description                  string                 `gorm:"type:varchar(512)" json:"description"`
 	Device                       string                 `gorm:"type:varchar(30)" json:"device"`
-	FleetID                      uuid.UUID              `gorm:"type:uuid" json:"fleet_id"`
 	LogType                      string                 `gorm:"type:varchar(30)" json:"log_type"`
 	Name                         string                 `gorm:"type:varchar(100)" json:"name"`
 	ReplaySource                 bool                   `json:"replay_source"`

@@ -10,6 +10,7 @@ import (
 	cpcommon "github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
@@ -18,8 +19,10 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
+	"github.com/google/uuid"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type DestinationToAlert struct {
@@ -60,9 +63,14 @@ func (d DestinationToAlert) GetSecondaryEntityId() string {
 func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cpcommon.JobResult {
 	var jobErrors []cpcommon.JobError
 	db := config.GetDB()
-	percentageThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_PERCENTAGE_THRESHOLD", 5))
-	fromHourMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_FROM_HOURS_MINUS", 4)
-	toHoursMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_TO_HOURS_MINUS", 1)
+
+	// Default values from environment variables (used as fallback if no config is found)
+	defaultPercentageThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_PERCENTAGE_THRESHOLD", 5))
+	defaultFromHourMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_FROM_HOURS_MINUS", 4)
+	defaultToHoursMinus := utils.GetEnvInt("DESTINATION_DELIVERED_MORE_THAN_INJECTED_TIME_TO_HOURS_MINUS", 1)
+	// Note: default 0 means no minimum threshold filtering (alerts for all volumes)
+	defaultMinimumIngestionVolumeThreshold := int64(utils.GetEnvInt("DESTINATION_DELIVERED_MIN_INGESTION_VOLUME_THRESHOLD", 0))
+
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
@@ -85,9 +93,51 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 		alertsManager.Close(ctx)
 	}()
 
-	fromTime, toTime := getTimeRange(fromHourMinus, toHoursMinus)
 	for _, t := range tenants {
 		tenantId := t.Id.String()
+
+		// Try to fetch tenant-level configuration for this alert type
+		tenantConfig, err := getDeliveredMoreConfigForTenant(db, t.Id)
+		var percentageThreshold int64
+		var minimumIngestionVolumeThreshold int64
+
+		if err != nil {
+			// Real database error (not "no rows found") - skip this tenant
+			errorMsg := fmt.Sprintf("failed to fetch tenant-level delivered more config for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, cpcommon.JobError{Message: errorMsg})
+			logger.GetLogger().Error("failed to fetch tenant-level delivered more config, skipping tenant",
+				zap.String("tenantId", tenantId), zap.Error(err))
+			continue
+		}
+
+		if tenantConfig == nil || tenantConfig.Config == nil || !tenantConfig.Config.Enabled {
+			// No config found or config is disabled - use defaults and continue
+			logger.GetLogger().Info("no tenant-level delivered more config found or disabled, using defaults",
+				zap.String("tenantId", tenantId))
+			percentageThreshold = defaultPercentageThreshold
+			minimumIngestionVolumeThreshold = defaultMinimumIngestionVolumeThreshold
+		} else {
+			// Use tenant-specific configuration
+			alertConfig := tenantConfig.Config.DestinationDeliveredMoreAlertConfig
+			if alertConfig == nil {
+				logger.GetLogger().Warn("tenant config exists but DestinationDeliveredMoreAlertConfig is nil, using defaults",
+					zap.String("tenantId", tenantId))
+				percentageThreshold = defaultPercentageThreshold
+				minimumIngestionVolumeThreshold = defaultMinimumIngestionVolumeThreshold
+			} else {
+				minVol := alertConfig.MinimumIngestionVolumeThreshold
+				unit := alertConfig.MinimumIngestionVolumeUnit
+				minimumIngestionVolumeThreshold = util.DataVolumeToBytes(minVol, unit)
+				percentageThreshold = int64(alertConfig.DifferencePercentageThreshold)
+				logger.GetLogger().Info("using tenant-level delivered more config",
+					zap.String("tenantId", tenantId),
+					zap.Int64("percentageThreshold", percentageThreshold),
+					zap.Int64("minimumIngestionVolumeThreshold", minimumIngestionVolumeThreshold))
+			}
+		}
+
+		// Time range always comes from environment variables
+		fromTime, toTime := getTimeRange(defaultFromHourMinus, defaultToHoursMinus)
 		sourceIdToSourceNameMap, err := common.GetLogSourceIdToNamesMap(ctx, tenantId)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error while getting log source id to names map for tenant %s: %v", tenantId, err)
@@ -178,6 +228,17 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 				if inVolume == 0 {
 					logger.GetLogger().Info("0 ingested data for source:"+dest.ID.String(), zap.String("sourceId", sourceId),
 						zap.String("tenantId", t.Id.String()))
+					continue
+				}
+
+				if inVolume < minimumIngestionVolumeThreshold {
+					logger.GetLogger().Info("ignoring destination-source pair - ingestion volume below configured thresholds",
+						zap.String("destinationId", dest.ID.String()),
+						zap.String("sourceId", sourceId),
+						zap.String("tenantId", t.Id.String()),
+						zap.Int64("inVolume", inVolume),
+						zap.Int64("minimumIngestionVolumeThreshold", minimumIngestionVolumeThreshold))
+					healthyPairs = append(healthyPairs, dstSrcPair{dstId: dest.ID.String(), srcId: sourceId})
 					continue
 				}
 
@@ -394,4 +455,19 @@ func findDeliveredVolumesForDestinations(ctx context.Context, tenantId string, c
 		after = newAfter
 	}
 	return deliveredVolumes, nil
+}
+
+// getDeliveredMoreConfigForTenant fetches the latest tenant-level configuration for destination delivered more alerts
+func getDeliveredMoreConfigForTenant(db *gorm.DB, tenantId uuid.UUID) (*entities.EntityAlertsConfig, error) {
+	configs, err := entities.ReadTenantLevelConfigs(db, "DESTINATION_DELIVERED_MORE", tenantId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read tenant-level configs: %w", err)
+	}
+
+	if len(configs) == 0 {
+		return nil, nil
+	}
+
+	// Return the first config (ordered by updated_at DESC, so this is the most recent)
+	return &configs[0], nil
 }
