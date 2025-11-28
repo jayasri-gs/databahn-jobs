@@ -42,6 +42,7 @@ type AlertConfig struct {
 	LogSourceDeviceInventoryAlertConfig *LogSourceDeviceInventoryAlertConfig `json:"logSourceDeviceInventoryAlertConfig"`
 	DestinationDeliveredMoreAlertConfig *DestinationDeliveredMoreAlertConfig `json:"destinationDeliveredMoreAlertConfig"`
 	DisableSandboxAlertsConfig          *DisableSandboxAlertsConfig          `json:"disableSandboxAlertsConfig"`
+	VolumeDeviationAlertConfig          *VolumeDeviationAlertConfig          `json:"volumeDeviationAlertConfig"`
 }
 
 func (a *AlertConfig) Scan(value interface{}) error {
@@ -79,6 +80,12 @@ type DestinationDeliveredMoreAlertConfig struct {
 type DisableSandboxAlertsConfig struct {
 	// This config uses the AlertConfig.Enabled field to control whether sandbox alerts are disabled
 	// No additional fields are needed
+}
+
+type VolumeDeviationAlertConfig struct {
+	PercentageThreshold         int    `json:"percentageThreshold"`
+	MinimumDifferenceVolume     int64  `json:"minimumDifferenceVolume"`
+	MinimumDifferenceVolumeUnit string `json:"minimumDifferenceVolumeUnit"`
 }
 
 type VcRuleFilter struct {

@@ -43,8 +43,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 		alertsManager.Close(ctx)
 	}()
 
-	dateRange := calculateDailyVolumeDeviationDateRange()
-	logger.GetLoggerWithContext(ctx).Info("checking volume deviation for date range", zap.Time("dateRangeStart", dateRange.DayToCheckStart), zap.Time("dateRangeEnd", dateRange.DayToCheckEnd))
+	baseDateRange := calculateDailyVolumeDeviationDateRange()
+	logger.GetLoggerWithContext(ctx).Info("checking volume deviation for date range", zap.Time("dateRangeStart", baseDateRange.DayToCheckStart), zap.Time("dateRangeEnd", baseDateRange.DayToCheckEnd))
 
 	for _, t := range tenants {
 		ingestionAlertsCount := 0
@@ -52,6 +52,46 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 		tenantIdUuid := t.Id
 		tenantId := t.Id.String()
 		logger.GetLoggerWithContext(ctx).Info("checking volume deviation for tenant", zap.String("tenant_id", tenantId))
+
+		// Fetch tenant-level volume deviation config
+		tenantConfig, err := getVolumeDeviationConfigForTenant(db, t.Id)
+		var dateRange DailyVolumeDeviationDateRange
+		if err != nil {
+			logger.GetLogger().Error("failed to fetch tenant-level volume deviation config, skipping tenant",
+				zap.String("tenantId", tenantId), zap.Error(err))
+			continue
+		}
+
+		if tenantConfig == nil || tenantConfig.Config == nil || !tenantConfig.Config.Enabled {
+			// No config found or config is disabled - use defaults from environment variables
+			logger.GetLogger().Info("no tenant-level volume deviation config found or disabled, using defaults",
+				zap.String("tenantId", tenantId))
+			dateRange = baseDateRange
+		} else {
+			// Use tenant-specific configuration
+			alertConfig := tenantConfig.Config.VolumeDeviationAlertConfig
+			if alertConfig == nil {
+				logger.GetLogger().Warn("tenant config exists but VolumeDeviationAlertConfig is nil, using defaults",
+					zap.String("tenantId", tenantId))
+				dateRange = baseDateRange
+			} else {
+				// Override the thresholds with tenant config
+				dateRange = baseDateRange
+				dateRange.PercentageIncreaseThreshold = float64(alertConfig.PercentageThreshold)
+				dateRange.PercentageDecreaseThreshold = float64(alertConfig.PercentageThreshold)
+
+				// Convert minimum difference volume to bytes
+				minDiffVolumeBytes := util.DataVolumeToBytes(alertConfig.MinimumDifferenceVolume, alertConfig.MinimumDifferenceVolumeUnit)
+				dateRange.MinimumVolumeThreshold = float64(minDiffVolumeBytes)
+
+				logger.GetLogger().Info("using tenant-level volume deviation config",
+					zap.String("tenantId", tenantId),
+					zap.Float64("percentageThreshold", float64(alertConfig.PercentageThreshold)),
+					zap.Int64("minimumDifferenceVolume", alertConfig.MinimumDifferenceVolume),
+					zap.String("minimumDifferenceVolumeUnit", alertConfig.MinimumDifferenceVolumeUnit),
+					zap.Int64("minimumDifferenceVolumeBytes", minDiffVolumeBytes))
+			}
+		}
 
 		ingestionStats, err := getIngestionStats(ctx, osClient, tenantId, &dateRange)
 		if err != nil {
