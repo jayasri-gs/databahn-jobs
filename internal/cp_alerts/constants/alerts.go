@@ -1,5 +1,9 @@
 package constants
 
+// Databahn Sandbox destination - alerts for this destination should be skipped
+const SandboxDestinationID = "dbd00000-0000-0000-0000-000000000000"
+const SandboxDestinationName = "Databahn Sandbox"
+
 const IngestionCheckerFunctionalityType = "ingestion-checker"
 const DeliveryCheckerFunctionalityType = "dispenser-checker"
 const UnparsedEventCheckerFunctionalityType = "unparsed-event-checker"
