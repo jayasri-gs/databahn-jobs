@@ -4,6 +4,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/google/uuid"
@@ -155,6 +157,12 @@ func ShouldSkipSandboxAlerts(db *gorm.DB, tenantId uuid.UUID) (bool, error) {
 	if err != nil {
 		// If there's an error reading config, skip alerts (fail safe) and return the error for logging
 		return true, fmt.Errorf("error reading DISABLE_SANDBOX_ALERTS config: %w", err)
+	}
+	logger.GetLogger().Info("disabling sandbox alerts config", zap.String("tenantId", tenantId.String()),
+		zap.Any("config", configs))
+
+	if tenantId.String() == "1be4494f-0251-4bf1-ad18-e09adc141aea" {
+		time.Sleep(10 * time.Second)
 	}
 
 	if len(configs) == 0 {
