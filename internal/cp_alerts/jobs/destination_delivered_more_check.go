@@ -110,11 +110,6 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 			continue
 		}
 
-		logger.GetLogger().Info("fetched tenant-level delivered more config for tenant",
-			zap.String("tenantId", tenantId),
-			zap.Any("tenantConfig", tenantConfig),
-		)
-
 		if tenantConfig == nil || tenantConfig.Config == nil || !tenantConfig.Config.Enabled {
 			// No config found or config is disabled - use defaults and continue
 			logger.GetLogger().Info("no tenant-level delivered more config found or disabled, using defaults",
