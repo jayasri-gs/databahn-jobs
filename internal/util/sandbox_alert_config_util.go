@@ -17,6 +17,9 @@ var sandboxAlertCache sync.Map
 // sandboxAlertCacheInitOnce ensures the cache is initialized only once
 var sandboxAlertCacheInitOnce sync.Once
 
+// sandboxAlertCacheInitError stores any error that occurred during cache initialization
+var sandboxAlertCacheInitError error
+
 // sandboxAlertCacheEntry represents a cached entry for sandbox alert configuration
 type sandboxAlertCacheEntry struct {
 	ShouldSkip bool
@@ -35,7 +38,8 @@ func initializeSandboxAlertCache(db *gorm.DB) {
 		Find(&allConfigs).Error
 
 	if err != nil {
-		logger.GetLogger().Error("error loading all sandbox alert configs, cache will be populated on-demand",
+		sandboxAlertCacheInitError = err
+		logger.GetLogger().Error("error loading all sandbox alert configs, will use fail-safe behavior",
 			zap.Error(err))
 		return
 	}
@@ -103,7 +107,18 @@ func ShouldSkipSandboxAlerts(db *gorm.DB, tenantId uuid.UUID) (bool, error) {
 		return entry.ShouldSkip, entry.Error
 	}
 
-	// Not in cache - this means it's a new tenant or tenant has no config
+	// Not in cache - check if cache initialization failed
+	if sandboxAlertCacheInitError != nil {
+		// Cache initialization failed due to database error
+		// Fail-safe: skip alerts and return the error
+		logger.GetLogger().Error("cache initialization failed, using fail-safe behavior to skip sandbox alerts",
+			zap.String("tenantId", tenantIdStr),
+			zap.Error(sandboxAlertCacheInitError))
+		return true, sandboxAlertCacheInitError
+	}
+
+	// Cache initialized successfully but tenant not found
+	// This means it's a new tenant or tenant has no config
 	// Default to not skipping sandbox alerts
 	logger.GetLogger().Debug("tenant not found in sandbox alerts cache, defaulting to not skip",
 		zap.String("tenantId", tenantIdStr))
