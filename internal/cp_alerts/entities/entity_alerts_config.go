@@ -34,6 +34,9 @@ const TenantEntityType = "TENANT"
 // Key: tenant UUID string, Value: sandboxAlertCacheEntry
 var sandboxAlertCache sync.Map
 
+// sandboxAlertCacheInitOnce ensures the cache is initialized only once
+var sandboxAlertCacheInitOnce sync.Once
+
 // sandboxAlertCacheEntry represents a cached entry for sandbox alert configuration
 type sandboxAlertCacheEntry struct {
 	ShouldSkip bool
@@ -159,16 +162,77 @@ func ReadTenantLevelConfigs(db *gorm.DB, alertType string, tenantId uuid.UUID) (
 	return tenantConfigs, err
 }
 
+// initializeSandboxAlertCache loads all tenant-level sandbox alert configurations into cache
+// This is called once on the first call to ShouldSkipSandboxAlerts
+func initializeSandboxAlertCache(db *gorm.DB) {
+	logger.GetLogger().Info("initializing sandbox alerts cache for all tenants")
+
+	// Query all tenant-level DISABLE_SANDBOX_ALERTS configurations
+	var allConfigs []EntityAlertsConfig
+	err := db.Where("entity_type = ? AND alert_type = ?", TenantEntityType, "DISABLE_SANDBOX_ALERTS").
+		Order("tenant_id, updated_at DESC").
+		Find(&allConfigs).Error
+
+	if err != nil {
+		logger.GetLogger().Error("error loading all sandbox alert configs, cache will be populated on-demand",
+			zap.Error(err))
+		return
+	}
+
+	// Group by tenant and keep only the latest config per tenant (already ordered by updated_at DESC)
+	processedTenants := make(map[string]bool)
+	cachedCount := 0
+
+	for _, config := range allConfigs {
+		tenantIdStr := config.TenantID.String()
+
+		// Skip if we've already processed this tenant (we want the latest one due to ORDER BY)
+		if processedTenants[tenantIdStr] {
+			continue
+		}
+		processedTenants[tenantIdStr] = true
+
+		// Determine shouldSkip value
+		var shouldSkip bool
+		if config.Config != nil && config.Config.Enabled {
+			shouldSkip = true
+		} else {
+			shouldSkip = false
+		}
+
+		// Store in cache
+		cacheEntry := sandboxAlertCacheEntry{
+			ShouldSkip: shouldSkip,
+			Error:      nil,
+		}
+		sandboxAlertCache.Store(tenantIdStr, cacheEntry)
+		cachedCount++
+
+		logger.GetLogger().Debug("cached sandbox alert config for tenant",
+			zap.String("tenantId", tenantIdStr),
+			zap.Bool("shouldSkip", shouldSkip))
+	}
+
+	logger.GetLogger().Info("sandbox alerts cache initialized",
+		zap.Int("tenantCount", cachedCount),
+		zap.Int("totalConfigs", len(allConfigs)))
+}
+
 // ShouldSkipSandboxAlerts checks if sandbox alerts should be skipped for a given tenant
 // Returns (shouldSkip bool, error)
 // If there's a database error, returns (true, error) - fail safe by skipping alerts and logging error
 // If config exists and enabled=true, returns (true, nil)
 // If config doesn't exist or enabled=false, returns (false, nil)
-// Results are cached per tenant to avoid repeated database queries
+// On first call, loads all tenant configurations into cache. Subsequent calls use cached data.
 func ShouldSkipSandboxAlerts(db *gorm.DB, tenantId uuid.UUID) (bool, error) {
+	// Initialize cache on first call (thread-safe, only happens once)
+	sandboxAlertCacheInitOnce.Do(func() {
+		initializeSandboxAlertCache(db)
+	})
+
 	tenantIdStr := tenantId.String()
 
-	// Check cache first
+	// Check cache
 	if cached, ok := sandboxAlertCache.Load(tenantIdStr); ok {
 		entry := cached.(sandboxAlertCacheEntry)
 		logger.GetLogger().Debug("using cached sandbox alerts config",
@@ -178,45 +242,16 @@ func ShouldSkipSandboxAlerts(db *gorm.DB, tenantId uuid.UUID) (bool, error) {
 		return entry.ShouldSkip, entry.Error
 	}
 
-	// Not in cache, query database
-	configs, err := ReadTenantLevelConfigs(db, "DISABLE_SANDBOX_ALERTS", tenantId)
-	if err != nil {
-		// If there's an error reading config, skip alerts (fail safe) and return the error for logging
-		cacheEntry := sandboxAlertCacheEntry{
-			ShouldSkip: true,
-			Error:      fmt.Errorf("error reading DISABLE_SANDBOX_ALERTS config: %w", err),
-		}
-		sandboxAlertCache.Store(tenantIdStr, cacheEntry)
-		return cacheEntry.ShouldSkip, cacheEntry.Error
-	}
-	logger.GetLogger().Info("loaded sandbox alerts config from database",
-		zap.String("tenantId", tenantIdStr),
-		zap.Any("config", configs))
+	// Not in cache - this means it's a new tenant or tenant has no config
+	// Default to not skipping sandbox alerts
+	logger.GetLogger().Debug("tenant not found in sandbox alerts cache, defaulting to not skip",
+		zap.String("tenantId", tenantIdStr))
 
-	var shouldSkip bool
-	if len(configs) == 0 {
-		// No config found - don't skip sandbox alerts
-		shouldSkip = false
-	} else {
-		config := configs[0]
-		if config.Config == nil {
-			// Config is nil - don't skip sandbox alerts
-			shouldSkip = false
-		} else {
-			// Skip sandbox alerts if the config is enabled
-			shouldSkip = config.Config.Enabled
-		}
-	}
-
-	// Store result in cache
 	cacheEntry := sandboxAlertCacheEntry{
-		ShouldSkip: shouldSkip,
+		ShouldSkip: false,
 		Error:      nil,
 	}
 	sandboxAlertCache.Store(tenantIdStr, cacheEntry)
-	logger.GetLogger().Debug("cached sandbox alerts config",
-		zap.String("tenantId", tenantIdStr),
-		zap.Bool("shouldSkip", shouldSkip))
 
-	return shouldSkip, nil
+	return false, nil
 }
