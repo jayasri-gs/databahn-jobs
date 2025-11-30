@@ -13,13 +13,13 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/databahn-jobs/internal/store/vc_rule"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
@@ -530,7 +530,7 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 
 	// Skip alert if pipeline sends to Databahn Sandbox destination and tenant has disabled sandbox alerts
 	if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID {
-		shouldSkip, err := entities.ShouldSkipSandboxAlerts(o.db, tenantId)
+		shouldSkip, err := util.ShouldSkipSandboxAlerts(o.db, tenantId)
 		if err != nil {
 			logger.GetLogger().Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
 				zap.Error(err),
