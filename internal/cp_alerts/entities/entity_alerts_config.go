@@ -144,30 +144,3 @@ func ReadTenantLevelConfigs(db *gorm.DB, alertType string, tenantId uuid.UUID) (
 		Find(&tenantConfigs).Error
 	return tenantConfigs, err
 }
-
-// ShouldSkipSandboxAlerts checks if sandbox alerts should be skipped for a given tenant
-// Returns (shouldSkip bool, error)
-// If there's a database error, returns (true, error) - fail safe by skipping alerts and logging error
-// If config exists and enabled=true, returns (true, nil)
-// If config doesn't exist or enabled=false, returns (false, nil)
-func ShouldSkipSandboxAlerts(db *gorm.DB, tenantId uuid.UUID) (bool, error) {
-	configs, err := ReadTenantLevelConfigs(db, "DISABLE_SANDBOX_ALERTS", tenantId)
-	if err != nil {
-		// If there's an error reading config, skip alerts (fail safe) and return the error for logging
-		return true, fmt.Errorf("error reading DISABLE_SANDBOX_ALERTS config: %w", err)
-	}
-
-	if len(configs) == 0 {
-		// No config found - don't skip sandbox alerts
-		return false, nil
-	}
-
-	config := configs[0]
-	if config.Config == nil {
-		// Config is nil - don't skip sandbox alerts
-		return false, nil
-	}
-
-	// Skip sandbox alerts if the config is enabled
-	return config.Config.Enabled, nil
-}

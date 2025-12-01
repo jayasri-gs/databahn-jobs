@@ -180,7 +180,7 @@ func AlertDestinationsWithMoreDataDeliveredThanInjection(ctx context.Context) cp
 
 			// Skip alert if destination is the Databahn Sandbox and tenant has disabled sandbox alerts
 			if dest.ID.String() == constants.SandboxDestinationID {
-				shouldSkip, err := entities.ShouldSkipSandboxAlerts(db, t.Id)
+				shouldSkip, err := util.ShouldSkipSandboxAlerts(db, t.Id)
 				if err != nil {
 					logger.GetLogger().Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
 						zap.Error(err),

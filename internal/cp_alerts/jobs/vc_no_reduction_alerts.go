@@ -16,7 +16,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
@@ -113,7 +112,7 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 
 			// Skip alert if pipeline sends to Databahn Sandbox destination and tenant has disabled sandbox alerts
 			if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID {
-				shouldSkip, err := entities.ShouldSkipSandboxAlerts(db, t.Id)
+				shouldSkip, err := util.ShouldSkipSandboxAlerts(db, t.Id)
 				if err != nil {
 					logger.GetLoggerWithContext(ctx).Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
 						zap.Error(err),

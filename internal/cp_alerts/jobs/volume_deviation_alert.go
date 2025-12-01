@@ -11,7 +11,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
-	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -133,7 +132,7 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 			for _, destination := range destinations {
 				// Skip alert if destination is the Databahn Sandbox and tenant has disabled sandbox alerts
 				if destination.ID.String() == constants.SandboxDestinationID {
-					shouldSkip, err := entities.ShouldSkipSandboxAlerts(db, tenantIdUuid)
+					shouldSkip, err := util.ShouldSkipSandboxAlerts(db, tenantIdUuid)
 					if err != nil {
 						logger.GetLoggerWithContext(ctx).Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
 							zap.Error(err),
