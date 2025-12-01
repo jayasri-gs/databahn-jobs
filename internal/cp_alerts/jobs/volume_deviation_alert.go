@@ -3,9 +3,10 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"time"
 
 	cpcommon "github.com/databahn-ai/databahn-jobs/internal/common"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -78,19 +80,19 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 			} else {
 				// Override the thresholds with tenant config
 				dateRange = baseDateRange
-				dateRange.PercentageIncreaseThreshold = float64(alertConfig.PercentageThreshold)
-				dateRange.PercentageDecreaseThreshold = float64(alertConfig.PercentageThreshold)
+				dateRange.PercentageIncreaseThreshold = float64(alertConfig.DeviationPercentage)
+				dateRange.PercentageDecreaseThreshold = float64(alertConfig.DeviationPercentage)
 
-				// Convert minimum difference volume to bytes
-				minDiffVolumeBytes := util.DataVolumeToBytes(alertConfig.MinimumDifferenceVolume, alertConfig.MinimumDifferenceVolumeUnit)
-				dateRange.MinimumVolumeThreshold = float64(minDiffVolumeBytes)
+				// Convert minimum volume threshold to bytes
+				minVolumeThresholdBytes := util.DataVolumeToBytes(alertConfig.MinimumVolumeThreshold, alertConfig.MinimumVolumeThresholdUnit)
+				dateRange.MinimumVolumeThreshold = float64(minVolumeThresholdBytes)
 
 				logger.GetLogger().Info("using tenant-level volume deviation config",
 					zap.String("tenantId", tenantId),
-					zap.Float64("percentageThreshold", float64(alertConfig.PercentageThreshold)),
-					zap.Int64("minimumDifferenceVolume", alertConfig.MinimumDifferenceVolume),
-					zap.String("minimumDifferenceVolumeUnit", alertConfig.MinimumDifferenceVolumeUnit),
-					zap.Int64("minimumDifferenceVolumeBytes", minDiffVolumeBytes))
+					zap.Float64("deviationPercentage", float64(alertConfig.DeviationPercentage)),
+					zap.Int64("minimumVolumeThreshold", alertConfig.MinimumVolumeThreshold),
+					zap.String("minimumVolumeThresholdUnit", alertConfig.MinimumVolumeThresholdUnit),
+					zap.Int64("minimumVolumeThresholdBytes", minVolumeThresholdBytes))
 			}
 		}
 
