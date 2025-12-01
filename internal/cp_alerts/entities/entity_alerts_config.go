@@ -41,6 +41,7 @@ type AlertConfig struct {
 	DestinationInactivityAlertConfig    *DestinationInactivityAlertConfig    `json:"destinationInactivityAlertConfig"`
 	LogSourceDeviceInventoryAlertConfig *LogSourceDeviceInventoryAlertConfig `json:"logSourceDeviceInventoryAlertConfig"`
 	DestinationDeliveredMoreAlertConfig *DestinationDeliveredMoreAlertConfig `json:"destinationDeliveredMoreAlertConfig"`
+	VolumeDeviationAlertConfig          *VolumeDeviationAlertConfig          `json:"volumeDeviationAlertConfig"`
 	DisableSandboxAlertsConfig          *DisableSandboxAlertsConfig          `json:"disableSandboxAlertsConfig"`
 }
 
@@ -74,6 +75,12 @@ type DestinationDeliveredMoreAlertConfig struct {
 	DifferencePercentageThreshold   int    `json:"differencePercentageThreshold"`
 	MinimumIngestionVolumeThreshold int64  `json:"minimumIngestionVolumeThreshold"`
 	MinimumIngestionVolumeUnit      string `json:"minimumIngestionVolumeUnit"`
+}
+
+type VolumeDeviationAlertConfig struct {
+	DeviationPercentage        int    `json:"deviationPercentage"`
+	MinimumVolumeThreshold     int64  `json:"minimumVolumeThreshold"`
+	MinimumVolumeThresholdUnit string `json:"minimumVolumeThresholdUnit"`
 }
 
 type DisableSandboxAlertsConfig struct {

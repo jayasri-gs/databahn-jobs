@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
 	cpcommon "github.com/databahn-ai/databahn-jobs/internal/common"
 
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -42,8 +46,8 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 		alertsManager.Close(ctx)
 	}()
 
-	dateRange := calculateDailyVolumeDeviationDateRange()
-	logger.GetLoggerWithContext(ctx).Info("checking volume deviation for date range", zap.Time("dateRangeStart", dateRange.DayToCheckStart), zap.Time("dateRangeEnd", dateRange.DayToCheckEnd))
+	baseDateRange := calculateDailyVolumeDeviationDateRange()
+	logger.GetLoggerWithContext(ctx).Info("checking volume deviation for date range", zap.Time("dateRangeStart", baseDateRange.DayToCheckStart), zap.Time("dateRangeEnd", baseDateRange.DayToCheckEnd))
 
 	for _, t := range tenants {
 		ingestionAlertsCount := 0
@@ -51,6 +55,46 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 		tenantIdUuid := t.Id
 		tenantId := t.Id.String()
 		logger.GetLoggerWithContext(ctx).Info("checking volume deviation for tenant", zap.String("tenant_id", tenantId))
+
+		// Fetch tenant-level volume deviation config
+		tenantConfig, err := getVolumeDeviationConfigForTenant(db, t.Id)
+		var dateRange DailyVolumeDeviationDateRange
+		if err != nil {
+			logger.GetLogger().Error("failed to fetch tenant-level volume deviation config, skipping tenant",
+				zap.String("tenantId", tenantId), zap.Error(err))
+			continue
+		}
+
+		if tenantConfig == nil || tenantConfig.Config == nil || !tenantConfig.Config.Enabled {
+			// No config found or config is disabled - use defaults from environment variables
+			logger.GetLogger().Info("no tenant-level volume deviation config found or disabled, using defaults",
+				zap.String("tenantId", tenantId))
+			dateRange = baseDateRange
+		} else {
+			// Use tenant-specific configuration
+			alertConfig := tenantConfig.Config.VolumeDeviationAlertConfig
+			if alertConfig == nil {
+				logger.GetLogger().Warn("tenant config exists but VolumeDeviationAlertConfig is nil, using defaults",
+					zap.String("tenantId", tenantId))
+				dateRange = baseDateRange
+			} else {
+				// Override the thresholds with tenant config
+				dateRange = baseDateRange
+				dateRange.PercentageIncreaseThreshold = float64(alertConfig.DeviationPercentage)
+				dateRange.PercentageDecreaseThreshold = float64(alertConfig.DeviationPercentage)
+
+				// Convert minimum volume threshold to bytes
+				minVolumeThresholdBytes := util.DataVolumeToBytes(alertConfig.MinimumVolumeThreshold, alertConfig.MinimumVolumeThresholdUnit)
+				dateRange.MinimumVolumeThreshold = float64(minVolumeThresholdBytes)
+
+				logger.GetLogger().Info("using tenant-level volume deviation config",
+					zap.String("tenantId", tenantId),
+					zap.Float64("deviationPercentage", float64(alertConfig.DeviationPercentage)),
+					zap.Int64("minimumVolumeThreshold", alertConfig.MinimumVolumeThreshold),
+					zap.String("minimumVolumeThresholdUnit", alertConfig.MinimumVolumeThresholdUnit),
+					zap.Int64("minimumVolumeThresholdBytes", minVolumeThresholdBytes))
+			}
+		}
 
 		ingestionStats, err := getIngestionStats(ctx, osClient, tenantId, &dateRange)
 		if err != nil {
@@ -676,4 +720,19 @@ func getDeliveryStats(ctx context.Context, osClient *opensearch.Client, tenantId
 	}
 
 	return deliveryStatsList, nil
+}
+
+// getVolumeDeviationConfigForTenant fetches the latest tenant-level configuration for volume deviation alerts
+func getVolumeDeviationConfigForTenant(db *gorm.DB, tenantId uuid.UUID) (*entities.EntityAlertsConfig, error) {
+	configs, err := entities.ReadTenantLevelConfigs(db, "VOLUME_DEVIATION", tenantId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read tenant-level configs: %w", err)
+	}
+
+	if len(configs) == 0 {
+		return nil, nil
+	}
+
+	// Return the first config (ordered by updated_at DESC, so this is the most recent)
+	return &configs[0], nil
 }
