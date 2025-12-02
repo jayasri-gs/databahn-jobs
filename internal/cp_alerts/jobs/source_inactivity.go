@@ -210,7 +210,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 	sourceDbPageSize := 50
 
 	for {
-		sources, err := readSourcesPaginated(db, tenantUuid, sourceDbPage, sourceDbPageSize)
+		sources, err := source.ReadSourcesPaginated(db, tenantUuid, sourceDbPage, sourceDbPageSize)
 		if err != nil {
 			logger.GetLogger().Error("error while reading sources", zap.Error(err))
 			return nil, nil, err
@@ -234,6 +234,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 
 		for _, s := range sources {
 			sourceId := s.ID.String()
+
 			lastEventTime, ok := sourceIdToLastEventTime[sourceId]
 			if !ok {
 				logger.GetLogger().Warn("no last event time found for source, ignoring", zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
@@ -310,19 +311,6 @@ func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *
 	}
 
 	return sourceIdToLastEventTime, nil
-}
-
-func readSourcesPaginated(db *gorm.DB, tenantId uuid.UUID, page, pageSize int) ([]source.Source, error) {
-	var sources []source.Source
-	offset := page * pageSize
-
-	result := db.
-		Where("tenant_id = ? AND status = 'ACTIVE'", tenantId).
-		Limit(pageSize).
-		Offset(offset).
-		Find(&sources)
-
-	return sources, result.Error
 }
 
 func getAlertDuration(alertConfig entities.EntityAlertsConfig, sourceId, tenantId string) (time.Duration, error, bool) {

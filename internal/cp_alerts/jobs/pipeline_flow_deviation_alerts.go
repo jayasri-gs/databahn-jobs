@@ -18,6 +18,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
@@ -158,6 +159,26 @@ func SendAlertForPipelineFlowDeviation(ctx context.Context) common.JobResult {
 					zap.String("pipeline_id", pipelineId),
 					zap.String("source_id", pipelineMapping.LogSourceID.String()))
 				continue
+			}
+
+			// Skip alert if pipeline sends to Databahn Sandbox destination and tenant has disabled sandbox alerts
+			if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID {
+				shouldSkip, err := util.ShouldSkipSandboxAlerts(db, t.Id)
+				if err != nil {
+					logger.GetLoggerWithContext(ctx).Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
+						zap.Error(err),
+						zap.String("tenant_id", tenantId),
+						zap.String("pipeline_id", pipelineId))
+					continue
+				}
+				if shouldSkip {
+					logger.GetLoggerWithContext(ctx).Info("skipping pipeline flow deviation check for sandbox pipeline (tenant has disabled sandbox alerts)",
+						zap.String("tenant_id", tenantId),
+						zap.String("pipeline_id", pipelineId),
+						zap.String("source", sourceName),
+						zap.String("destination", destinationName))
+					continue
+				}
 			}
 
 			logger.GetLoggerWithContext(ctx).Info("checking pipeline flow for deviation",

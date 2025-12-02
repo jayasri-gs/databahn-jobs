@@ -24,6 +24,7 @@ const Exclude IncludeExclude = "EXCLUDE"
 
 const LogSourceEntityType = "LOG_SOURCE"
 const DestinationEntityType = "DESTINATION"
+const TenantEntityType = "TENANT"
 
 type Reputation string
 
@@ -39,6 +40,9 @@ type AlertConfig struct {
 	LogSourceInactivityAlertConfig      *LogSourceInactivityAlertConfig      `json:"logSourceInactivityAlertConfig"`
 	DestinationInactivityAlertConfig    *DestinationInactivityAlertConfig    `json:"destinationInactivityAlertConfig"`
 	LogSourceDeviceInventoryAlertConfig *LogSourceDeviceInventoryAlertConfig `json:"logSourceDeviceInventoryAlertConfig"`
+	DestinationDeliveredMoreAlertConfig *DestinationDeliveredMoreAlertConfig `json:"destinationDeliveredMoreAlertConfig"`
+	VolumeDeviationAlertConfig          *VolumeDeviationAlertConfig          `json:"volumeDeviationAlertConfig"`
+	DisableSandboxAlertsConfig          *DisableSandboxAlertsConfig          `json:"disableSandboxAlertsConfig"`
 }
 
 func (a *AlertConfig) Scan(value interface{}) error {
@@ -65,6 +69,23 @@ type LogSourceDeviceInventoryAlertConfig struct {
 	ReputationsToAlert []Reputation   `json:"reputationsToAlert"`
 	VcRuleFilters      *VcRuleFilter  `json:"vcRuleFilters"`
 	IncludeExclude     IncludeExclude `json:"includeExclude"`
+}
+
+type DestinationDeliveredMoreAlertConfig struct {
+	DifferencePercentageThreshold   int    `json:"differencePercentageThreshold"`
+	MinimumIngestionVolumeThreshold int64  `json:"minimumIngestionVolumeThreshold"`
+	MinimumIngestionVolumeUnit      string `json:"minimumIngestionVolumeUnit"`
+}
+
+type VolumeDeviationAlertConfig struct {
+	DeviationPercentage        int    `json:"deviationPercentage"`
+	MinimumVolumeThreshold     int64  `json:"minimumVolumeThreshold"`
+	MinimumVolumeThresholdUnit string `json:"minimumVolumeThresholdUnit"`
+}
+
+type DisableSandboxAlertsConfig struct {
+	// This config uses the AlertConfig.Enabled field to control whether sandbox alerts are disabled
+	// No additional fields are needed
 }
 
 type VcRuleFilter struct {
@@ -96,16 +117,37 @@ func (d *Duration) GetDuration() (time.Duration, error) {
 }
 
 type EntityAlertsConfig struct {
-	ID          uuid.UUID    `gorm:"type:uuid;primary_key"`
-	EntityID    uuid.UUID    `gorm:"type:uuid"`
-	TenantID    uuid.UUID    `gorm:"type:uuid"`
-	Criticality string       `gorm:"type:varchar(255)"`
-	Config      *AlertConfig `gorm:"type:json"`
+	ID         uuid.UUID    `gorm:"type:uuid;primary_key;column:id"`
+	EntityID   uuid.UUID    `gorm:"type:uuid;column:entity_id"`
+	EntityType string       `gorm:"type:varchar(255);column:entity_type"`
+	AlertType  string       `gorm:"type:varchar(255);column:alert_type"`
+	TenantID   uuid.UUID    `gorm:"type:uuid;column:tenant_id"`
+	CustomerID uuid.UUID    `gorm:"type:uuid;column:customer_id"`
+	Config     *AlertConfig `gorm:"type:json;column:config"`
+	CreatedBy  uuid.UUID    `gorm:"type:uuid;column:created_by"`
+	UpdatedBy  uuid.UUID    `gorm:"type:uuid;column:updated_by"`
+	CreatedAt  time.Time    `gorm:"column:created_at"`
+	UpdatedAt  time.Time    `gorm:"column:updated_at"`
 }
 
-func ReadEntityConfigs(db *gorm.DB, entityType, alertType string, tenantId uuid.UUID, sourceIds []uuid.UUID) ([]EntityAlertsConfig, error) {
-	var sourceEntityConfigs []EntityAlertsConfig
-	err := db.Where("tenant_id = ? AND entity_type = ? AND alert_type = ? AND entity_id IN ?", tenantId, entityType, alertType, sourceIds).
-		Find(&sourceEntityConfigs).Error
-	return sourceEntityConfigs, err
+// TableName specifies the table name for GORM
+func (EntityAlertsConfig) TableName() string {
+	return "entity_alerts_config"
+}
+
+func ReadEntityConfigs(db *gorm.DB, entityType, alertType string, tenantId uuid.UUID, entityIds []uuid.UUID) ([]EntityAlertsConfig, error) {
+	var entityConfigs []EntityAlertsConfig
+	err := db.Where("tenant_id = ? AND entity_type = ? AND alert_type = ? AND entity_id IN ?", tenantId, entityType, alertType, entityIds).
+		Find(&entityConfigs).Error
+	return entityConfigs, err
+}
+
+// ReadTenantLevelConfigs reads the latest tenant-level alert configuration based on updated_at timestamp
+func ReadTenantLevelConfigs(db *gorm.DB, alertType string, tenantId uuid.UUID) ([]EntityAlertsConfig, error) {
+	var tenantConfigs []EntityAlertsConfig
+	err := db.Where("tenant_id = ? AND entity_type = ? AND alert_type = ?", tenantId, TenantEntityType, alertType).
+		Order("updated_at DESC").
+		Limit(1).
+		Find(&tenantConfigs).Error
+	return tenantConfigs, err
 }

@@ -22,13 +22,11 @@ type AdvancedConfiguration struct {
 type Source struct {
 	ID                           uuid.UUID              `gorm:"type:uuid;primary_key" json:"id"`
 	Configuration                datatypes.JSON         `json:"configuration"`
-	ConnectorID                  uuid.UUID              `gorm:"type:uuid" json:"connector_id"`
 	CreatedAt                    time.Time              `gorm:"type:timestamp" json:"created_at"`
 	CreatedBy                    uuid.UUID              `gorm:"type:uuid" json:"created_by"`
 	CustomerID                   uuid.UUID              `gorm:"type:uuid" json:"customer_id"`
 	Description                  string                 `gorm:"type:varchar(512)" json:"description"`
 	Device                       string                 `gorm:"type:varchar(30)" json:"device"`
-	FleetID                      uuid.UUID              `gorm:"type:uuid" json:"fleet_id"`
 	LogType                      string                 `gorm:"type:varchar(30)" json:"log_type"`
 	Name                         string                 `gorm:"type:varchar(100)" json:"name"`
 	ReplaySource                 bool                   `json:"replay_source"`
@@ -86,4 +84,19 @@ func GetSourceByID(ctx context.Context, db *gorm.DB, sourceID uuid.UUID) (*Sourc
 		return nil, fmt.Errorf("error getting source with ID %s: %w", sourceID.String(), err)
 	}
 	return &source, nil
+}
+
+// ReadSourcesPaginated reads sources in paginated fashion for a given tenant
+// Returns ACTIVE sources for the specified tenant with pagination support
+func ReadSourcesPaginated(db *gorm.DB, tenantId uuid.UUID, page, pageSize int) ([]Source, error) {
+	var sources []Source
+	offset := page * pageSize
+
+	result := db.
+		Where("tenant_id = ? AND status = 'ACTIVE'", tenantId).
+		Limit(pageSize).
+		Offset(offset).
+		Find(&sources)
+
+	return sources, result.Error
 }

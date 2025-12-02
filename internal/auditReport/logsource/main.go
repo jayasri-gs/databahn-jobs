@@ -110,7 +110,7 @@ func getQueryForLogSourceData(ctx context.Context, req models.AuditReport) (stri
 
 	whereClause, startTime, endTime := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
 
-	// Build the complete JOIN query
+	// Build the complete JOIN query with multi-fleet support
 	query := fmt.Sprintf(`
 		SELECT 
 			ls.id,
@@ -129,18 +129,25 @@ func getQueryForLogSourceData(ctx context.Context, req models.AuditReport) (stri
 			ls.replay_source,
 			ls.timestamp_override_enabled,
 			ls.timezone_normalization_enabled,
-			f.name as fleet_name,
-			c.name as connector_name,
+			STRING_AGG(DISTINCT f.name, ', ' ORDER BY f.name) as fleet_names,
+			STRING_AGG(DISTINCT c.name, ', ' ORDER BY c.name) as connector_names,
 			dp.name as dataplane_name,
 			uc.email as created_by,
 			uu.email as updated_by
 		FROM log_source ls
-		LEFT JOIN fleet f ON ls.fleet_id = f.id
-		LEFT JOIN connector c ON ls.connector_id = c.id
+		LEFT JOIN source_connector_mapping scm ON ls.id = scm.source_id
+		LEFT JOIN connector c ON scm.connector_id = c.id
+		LEFT JOIN fleet f ON c.fleet_id = f.id
 		LEFT JOIN data_planes dp ON ls.data_plane_id = dp.id
 		LEFT JOIN users uc ON ls.created_by = uc.id
 		LEFT JOIN users uu ON ls.updated_by = uu.id
-		WHERE %s`, whereClause)
+		WHERE %s
+		GROUP BY ls.id, ls.name, ls.description, ls.device, ls.log_type, 
+		         ls.reputation, ls.scope, ls.configuration::text, ls.status,
+		         ls.created_at, ls.updated_at, ls.vendor, ls.version,
+		         ls.replay_source, ls.timestamp_override_enabled,
+		         ls.timezone_normalization_enabled, dp.name, 
+		         uc.email, uu.email`, whereClause)
 
 	logging.GetLoggerWithContext(ctx).Info("query for logsource data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
