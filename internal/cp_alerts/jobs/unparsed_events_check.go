@@ -105,7 +105,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 		var sourcesToAlert []*model.UnparsedEventSource
 		var sourcesToDismiss []*source.Source
 		for {
-			sources, err := readSourcesPaginated(db, t.Id, sourceDbPage, sourceDbPageSize)
+			sources, err := source.ReadSourcesPaginated(db, t.Id, sourceDbPage, sourceDbPageSize)
 			if err != nil {
 				errorMsg := fmt.Sprintf("error while reading sources for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -117,6 +117,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 			}
 			for _, s := range sources {
 				sourceId := s.ID.String()
+
 				if percentage, hasPercentage := sourceIdToUnparsedPercentage[sourceId]; hasPercentage {
 					if percentage >= MinUnparsedEventsPercentage {
 						unparsedCount := int(sourceIdToUnparsedCount[sourceId])

@@ -16,6 +16,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/audit"
 	auditCommon "github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/contentStudioRules"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/dataTransformation"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/destination"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/deviceInventory"
@@ -275,6 +276,14 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 		err = deviceInventory.WriteDeviceInventoryReportToFile(ctx, req, file)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching device inventory report", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId), zap.String("report_type", req.ReportType))
+			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
+			reportProcessor.failedRequestChannel <- errRequest
+			return
+		}
+	case consts.CONTENT_STUDIO_RULES_REPORT:
+		err = contentStudioRules.WriteContentStudioRulesReportToFile(ctx, req, file)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while fetching content studio rules report", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId), zap.String("report_type", req.ReportType))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 			reportProcessor.failedRequestChannel <- errRequest
 			return
