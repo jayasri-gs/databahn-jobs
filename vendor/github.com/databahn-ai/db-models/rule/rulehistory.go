@@ -74,7 +74,7 @@ func NewRuleHistory(rule Rule, eventSourceId uuid.UUID) *RuleHistory {
 	h.UpdatedAt = rule.UpdatedAt
 	h.RuleFilterQuery = rule.RuleFilterQuery
 	h.RuleFilters = rule.RuleFilters
-	h.Tags = datatypes.JSONType[[]tags.Tags]{Data: rule.Tags}
+	h.Tags = datatypes.NewJSONType(rule.Tags)
 	h.AggregationConfig = rule.AggregationConfig
 	h.SuppressionConfig = rule.SuppressionConfig
 	h.AggregationQuery = rule.AggregationQuery

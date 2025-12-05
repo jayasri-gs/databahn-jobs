@@ -59,4 +59,5 @@ var (
 	DIIS20001 = errorCodeEnum{value: "DIIS20001", messageTemplate: "Alert report generation failed. {0}"}
 	DWSE10001 = errorCodeEnum{value: "DWSE10001", messageTemplate: "Smart edge alert. {0}"}
 	DJFE10001 = errorCodeEnum{value: "DJFE10001", messageTemplate: "Job execution failed. {0}"}
+	DSLN10001 = errorCodeEnum{value: "DSLN10001", messageTemplate: "Schema less normalization conflict. {0}"}
 )

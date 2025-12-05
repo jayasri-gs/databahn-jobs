@@ -88,6 +88,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = cp_jobs.SendAlertForDeviceLevelAlert(ctx)
 	case common.VOLUME_DEVIATION_ALERT:
 		result = cp_jobs.SendAlertForVolumeDeviation(ctx)
+	case common.BEHAVIORAL_VOLUME_SPIKE_ALERT:
+		result = cp_jobs.CheckBehavioralVolumeSpikes(ctx)
 	case common.VC_NO_REDUCTION_ALERT:
 		result = cp_jobs.SendAlertForVCNoReduction(ctx)
 	case common.DEPLOYMENT_DELAY_ALERT:
