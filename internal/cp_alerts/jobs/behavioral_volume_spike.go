@@ -66,7 +66,7 @@ func CheckBehavioralVolumeSpikes(ctx context.Context) cpcommon.JobResult {
 	}()
 
 	logger.GetLoggerWithContext(ctx).Info("checking behavioral spikes for all tenants")
-
+	var jobErrors []cpcommon.JobError
 	for _, t := range tenants {
 		sourceAlertsCount := 0
 		destinationAlertsCount := 0
@@ -100,7 +100,7 @@ func CheckBehavioralVolumeSpikes(ctx context.Context) cpcommon.JobResult {
 						zap.String("sourceId", src.ID.String()),
 						zap.String("tenantId", tenantId),
 						zap.Error(err))
-					return cpcommon.NewJobResultFromError(err)
+					jobErrors = append(jobErrors, cpcommon.JobError{Message: fmt.Sprintf("error checking source behavioral spike for source %s: %v", src.ID.String(), err)})
 				}
 				if alert != nil {
 					logger.GetLoggerWithContext(ctx).Info("behavioral spike alert generated for source",
@@ -156,7 +156,7 @@ func CheckBehavioralVolumeSpikes(ctx context.Context) cpcommon.JobResult {
 						zap.String("destinationId", dest.ID.String()),
 						zap.String("tenantId", tenantId),
 						zap.Error(err))
-					return cpcommon.NewJobResultFromError(err)
+					jobErrors = append(jobErrors, cpcommon.JobError{Message: fmt.Sprintf("error checking destination behavioral spike for destination %s: %v", dest.ID.String(), err)})
 				}
 				if alert != nil {
 					logger.GetLoggerWithContext(ctx).Info("behavioral spike alert generated for destination",
@@ -193,6 +193,9 @@ func CheckBehavioralVolumeSpikes(ctx context.Context) cpcommon.JobResult {
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("completed behavioral spike checks for all tenants")
+	if len(jobErrors) > 0 {
+		return cpcommon.NewJobResultFromErrors(jobErrors)
+	}
 	return cpcommon.NewJobResultSuccess()
 }
 
