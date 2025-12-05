@@ -1,9 +1,10 @@
 package enrichment
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
-	"time"
 )
 
 type Enrichment struct {
@@ -26,7 +27,7 @@ type Enrichment struct {
 
 func (e Enrichment) GetEnrichmentAttributes() []string {
 	var fields []string
-	for _, mapping := range e.Config.Data.Mappings {
+	for _, mapping := range e.Config.Data().Mappings {
 		fields = append(fields, mapping.SourceField)
 	}
 	return fields

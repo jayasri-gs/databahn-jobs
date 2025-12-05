@@ -412,14 +412,36 @@ func validateFlagDataReplay(dataReplay FlagDataReplay) error {
 		if dataReplay.BucketName == "" {
 			return errors.New("dataReplay is invalid, missing  BucketName")
 		}
-		if dataReplay.AccessKeyId == "" {
-			return errors.New("dataReplay is invalid, missing AccessKeyId")
-		}
-		if dataReplay.SecretAccessKey == "" {
-			return errors.New("dataReplay is invalid, missing  SecretAccessKey")
-		}
 		if dataReplay.Region == "" {
 			return errors.New("dataReplay is invalid, missing Region")
+		}
+		// Check authentication type
+		var authType string
+		if dataReplay.AdditionalConfig != nil {
+			if authTypeVal, exists := dataReplay.AdditionalConfig["auth_type"]; exists {
+				authType = authTypeVal
+			}
+		}
+
+		if authType == "role_based" {
+			// For role-based auth, validate role_arn instead
+			var roleArn string
+			if dataReplay.AdditionalConfig != nil {
+				if roleArnVal, exists := dataReplay.AdditionalConfig["role_arn"]; exists {
+					roleArn = roleArnVal
+				}
+			}
+			if roleArn == "" {
+				return errors.New("dataReplay is invalid, missing role_arn for role-based authentication")
+			}
+		} else {
+			// For key-based auth (default), validate access keys
+			if dataReplay.AccessKeyId == "" {
+				return errors.New("dataReplay is invalid, missing AccessKeyId")
+			}
+			if dataReplay.SecretAccessKey == "" {
+				return errors.New("dataReplay is invalid, missing  SecretAccessKey")
+			}
 		}
 	}
 	if dataReplay.FileName == "" {

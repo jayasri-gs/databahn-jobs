@@ -49,7 +49,7 @@ func NewDestinationHistory(dest Destination, conf []destination_config.Destinati
 	h.UpdatedBy = dest.UpdatedBy
 	h.Scope = dest.Scope
 	h.EntityId = dest.EntityId
-	h.DestinationConfigs = datatypes.JSONType[[]destination_config.DestinationConfig]{Data: conf}
+	h.DestinationConfigs = datatypes.NewJSONType(conf)
 	return &h
 }
 

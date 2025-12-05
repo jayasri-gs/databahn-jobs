@@ -6,10 +6,6 @@ const (
 	Replace                           TransformationOpType = "REPLACE"
 	ConstantReplace                   TransformationOpType = "CONSTANT_REPLACE"
 	SubstringExtraction               TransformationOpType = "SUBSTRING_EXTRACTION"
-	JsonExtraction                    TransformationOpType = "JSON_EXTRACT"
-	XmlExtraction                     TransformationOpType = "XML_EXTRACT"
-	KeyValueExtraction                TransformationOpType = "PARSE_KEY_VALUE"
-	CsvExtraction                     TransformationOpType = "PARSE_CSV"
 	Split                             TransformationOpType = "SPLIT"
 	Trim                              TransformationOpType = "TRIM"
 	Numerify                          TransformationOpType = "NUMERIFY"
@@ -28,11 +24,22 @@ const (
 	Integerify                        TransformationOpType = "INTEGERIFY"
 	Stringify                         TransformationOpType = "STRINGIFY"
 	Booleanify                        TransformationOpType = "BOOLEANIFY"
-	TimeNow                           TransformationOpType = "TIME_NOW"
-	StringLength                      TransformationOpType = "STRING_LENGTH"
-	StringConcat                      TransformationOpType = "STRING_CONCAT"
-	StartsWith                        TransformationOpType = "STARTS_WITH"
-	ArrayLength                       TransformationOpType = "ARRAY_LENGTH"
+
+	JsonExtraction     TransformationOpType = "JSON_EXTRACT"
+	XmlExtraction      TransformationOpType = "XML_EXTRACT"
+	KeyValueExtraction TransformationOpType = "KEY_VALUE_EXTRACT"
+	CsvExtraction      TransformationOpType = "CSV_EXTRACT"
+
+	StringLength           TransformationOpType = "STRING_LENGTH"
+	ArrayLength            TransformationOpType = "ARRAY_LENGTH"
+	StringConcat           TransformationOpType = "STRING_CONCAT"
+	StartsWith             TransformationOpType = "STARTS_WITH"
+	PercentDecode          TransformationOpType = "PERCENT_DECODE"
+	TimeNow                TransformationOpType = "TIME_NOW"
+	ParseTimestamp         TransformationOpType = "PARSE_TIMESTAMP"
+	JoinStringArray        TransformationOpType = "JOIN_STRING_ARRAY"
+	JoinObjectArrayKVPairs TransformationOpType = "JOIN_OBJECT_ARRAY_KV_PAIRS"
+	AdvancedCase           TransformationOpType = "ADVANCED_CASE"
 )
 
 type FlagTransform struct {
@@ -87,6 +94,27 @@ type RenameConfig struct {
 type RenameConfiguration struct {
 	RenameFields  []RenameFieldsWithOperators `json:"renameFields"`
 	DerivedFields []DerivedField              `json:"derivedFields"`
+	// Deprecated: use customTransformationConfig instead
+	MessageReformattingEnabled bool `json:"messageReformattingEnabled"`
+	// Deprecated: use customTransformationConfig instead
+	MessageReformattingTemplate string                     `json:"messageReformattingTemplate"`
+	MessageReformattingSegments []Segment                  `json:"messageReformattingSegments"`
+	CustomTransformationConfig  CustomTransformationConfig `json:"customTransformationConfig"`
+}
+type CustomTransformationConfig struct {
+	CustomTransformationBlocks []CustomTransformationBlock `json:"customTransformationBlocks"`
+}
+
+type CustomTransformationBlock struct {
+	CustomFilterCriteria        OcsfFilterCriteria `json:"customFilterCriteria"`
+	MessageReformattingTemplate string             `json:"messageReformattingTemplate"`
+	MessageReformattingSegments []Segment          `json:"messageReformattingSegments"`
+}
+
+type Segment struct {
+	Type         string `json:"type"`
+	Value        string `json:"value"`
+	VariableName string `json:"variableName,omitempty"`
 }
 type DerivedField struct {
 	Include       bool                     `json:"include"`
@@ -104,23 +132,29 @@ type TrimConfig struct {
 type TransformationOperator struct {
 	Type TransformationOpType `json:"type"`
 
-	ReplaceConfig                *ReplaceConfig                `json:"replaceConfig,omitempty"`
-	TrimConfig                   *TrimConfig                   `json:"trimConfig,omitempty"`
-	MaskConfig                   *MaskConfig                   `json:"maskConfig,omitempty"`
-	SubstringExtractionConfig    *SubstringExtractionConfig    `json:"substringExtractionConfig,omitempty"`
-	JsonExtractionConfig         *JsonExtractionConfig         `json:"jsonExtractionConfig,omitempty"`
-	XmlExtractionConfig          *XmlExtractionConfig          `json:"xmlExtractionConfig,omitempty"`
-	ParseKeyValueConfig          *ParseKeyValueConfig          `json:"parseKeyValueConfig,omitempty"`
-	ParseCsvConfig               *ParseCsvConfig               `json:"parseCsvConfig,omitempty"`
-	ConstantReplaceConfig        *ConstantReplaceConfig        `json:"constantReplaceConfig,omitempty"`
-	SplitOperatorConfig          *SplitOperatorConfig          `json:"splitOperatorConfig,omitempty"`
-	StringRedactOperatorConfig   *StringRedactOperatorConfig   `json:"stringRedactOperatorConfig,omitempty"`
-	StringTruncateOperatorConfig *StringTruncateOperatorConfig `json:"stringTruncateOperatorConfig,omitempty"`
-	CaseOperatorConfig           *CaseOperatorConfig           `json:"caseOperatorConfig,omitempty"`
-	TimeNowConfig                *TimeNowConfig                `json:"timeNowConfig,omitempty"`
-	StringConcatConfig           *StringConcatConfig           `json:"stringConcatConfig,omitempty"`
-	StartsWithConfig             *StartsWithConfig             `json:"startsWithConfig,omitempty"`
-	NullIfOperatorConfig         *NullIfOperatorConfig         `json:"nullIfOperatorConfig,omitempty"`
+	ReplaceConfig                  *ReplaceConfig                `json:"replaceConfig,omitempty"`
+	TrimConfig                     *TrimConfig                   `json:"trimConfig,omitempty"`
+	MaskConfig                     *MaskConfig                   `json:"maskConfig,omitempty"`
+	SubstringExtractionConfig      *SubstringExtractionConfig    `json:"substringExtractionConfig,omitempty"`
+	JsonExtractionConfig           *JsonExtractionConfig         `json:"jsonExtractionConfig,omitempty"`
+	XmlExtractionConfig            *XmlExtractionConfig          `json:"xmlExtractionConfig,omitempty"`
+	ParseKeyValueConfig            *ParseKeyValueConfig          `json:"parseKeyValueConfig,omitempty"`
+	ParseCsvConfig                 *ParseCsvConfig               `json:"parseCsvConfig,omitempty"`
+	ConstantReplaceConfig          *ConstantReplaceConfig        `json:"constantReplaceConfig,omitempty"`
+	SplitOperatorConfig            *SplitOperatorConfig          `json:"splitOperatorConfig,omitempty"`
+	StringRedactOperatorConfig     *StringRedactOperatorConfig   `json:"stringRedactOperatorConfig,omitempty"`
+	StringTruncateOperatorConfig   *StringTruncateOperatorConfig `json:"stringTruncateOperatorConfig,omitempty"`
+	CaseOperatorConfig             *CaseOperatorConfig           `json:"caseOperatorConfig,omitempty"`
+	TimeNowConfig                  *TimeNowConfig                `json:"timeNowConfig,omitempty"`
+	TimeFromUnixSecondsConfig      *TimeNowConfig                `json:"timeFromUnixSecondsConfig,omitempty"`
+	TimeFromUnixMillisecondsConfig *TimeNowConfig                `json:"timeFromUnixMillisecondsConfig,omitempty"`
+	StringConcatConfig             *StringConcatConfig           `json:"stringConcatConfig,omitempty"`
+	StartsWithConfig               *StartsWithConfig             `json:"startsWithConfig,omitempty"`
+	NullIfOperatorConfig           *NullIfOperatorConfig         `json:"nullIfOperatorConfig,omitempty"`
+	ParseTimestampConfig           *ParseTimestampConfig         `json:"parseTimestampConfig,omitempty"`
+	JoinStringArrayConfig          *JoinStringArrayConfig        `json:"joinStringArrayConfig,omitempty"`
+	JoinObjectArrayKVPairsConfig   *JoinObjectArrayKVPairsConfig `json:"joinObjectArrayKVPairsConfig,omitempty"`
+	AdvancedCaseOperatorConfig     *AdvancedCaseOperatorConfig   `json:"advancedCaseOperatorConfig,omitempty"`
 }
 
 type RenameFields struct {
@@ -295,6 +329,10 @@ const (
 	Custom            TimeFormats = "CUSTOM"
 )
 
+type ParseTimestampConfig struct {
+	CustomFormat string `json:"customFormat,omitempty"`
+}
+
 type StringConcatConfig struct {
 	Values    []ConcatValues `json:"values"`
 	Delimiter string         `json:"delimiter,omitempty"`
@@ -316,6 +354,67 @@ type StartsWithConfig struct {
 	Prefix        string `json:"prefix"`
 	CaseSensitive bool   `json:"caseSensitive"`
 }
+
+type JoinStringArrayConfig struct {
+	Delimiter string `json:"delimiter"`
+}
+
+type JoinObjectArrayKVPairsConfig struct {
+	KeyField          string `json:"keyField"`
+	ValueField        string `json:"valueField"`
+	KeyValueDelimiter string `json:"keyValueDelimiter"`
+	FieldDelimiter    string `json:"fieldDelimiter"`
+}
+
+type AdvancedCaseOperatorConfig struct {
+	Conditions       []CaseCondition `json:"cases"`
+	DefaultAction    Action          `json:"defaultAction"`
+	ReferencedFields []string        `json:"referencedFields"`
+}
+
+type CaseCondition struct {
+	Conditions            *TransformerRuleGroup `json:"conditions"`
+	Action                Action                `json:"action"`
+	GeneratedVrlCondition string                `json:"generatedVrlCondition"`
+}
+
+type TransformerRuleGroup struct {
+	Rules      []TransformerRule `json:"rules"`
+	Combinator string            `json:"combinator"` // "and", "or"
+
+	// For simple conditions (when it's not a group but a single condition)
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
+type TransformerRule struct {
+	Field      string                `json:"field"`
+	Operator   string                `json:"operator"` // "=", "!=", ">", "<", ">=", "<=", "contains", "starts_with", "ends_with"
+	Value      string                `json:"value"`
+	Conditions *TransformerRuleGroup `json:"conditions"` // For nested conditions
+}
+
+type Action struct {
+	Type                          ActionType                     `json:"type"`
+	ConstantValueAssignmentConfig *ConstantValueAssignmentConfig `json:"constantValueAssignmentConfig,omitempty"`
+	FieldValueAssignmentConfig    *FieldValueAssignmentConfig    `json:"fieldValueAssignmentConfig,omitempty"`
+}
+
+type ConstantValueAssignmentConfig struct {
+	Value string `json:"value"`
+}
+
+type FieldValueAssignmentConfig struct {
+	Field string `json:"field"`
+}
+
+type ActionType string
+
+const (
+	ConstantValueAssignment ActionType = "CONSTANT_VALUE_ASSIGNMENT"
+	FieldValueAssignment    ActionType = "FIELD_VALUE_ASSIGNMENT"
+)
 
 type OcsfTransformationBlock struct {
 	OcsfFilterCriteria OcsfFilterCriteria          `json:"ocsfFilterCriteria"`
