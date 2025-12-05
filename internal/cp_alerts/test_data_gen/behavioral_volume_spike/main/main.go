@@ -44,7 +44,7 @@ var destination1Id = "1bf93a2e-0359-4d32-b158-faeaca46f96a"
 var destination2Id = "07b35e56-29fa-4b4c-9902-3879397bc52d"
 var dataplaneId = "9bd6eac5-268c-43a6-8554-52486a8822a7"
 
-// Source 1: Normal behavior with sudden spike on last day (yesterday)
+// Source 1: Normal behavior with sudden spike on last day (today)
 var source1Id = "2e730869-b988-436a-a123-48bcf4b3c90f"
 var source1IngestionVolumes = []int64{
 	10_000_000, // 14 days ago
@@ -60,7 +60,7 @@ var source1IngestionVolumes = []int64{
 	10_500_000, // 4 days ago
 	10_800_000, // 3 days ago
 	10_600_000, // 2 days ago
-	50_000_000, // YESTERDAY - SPIKE! (almost 5x normal)
+	50_000_000, // TODAY - SPIKE! (almost 5x normal)
 }
 
 // Source 2: Gradual increase (should NOT trigger alert - within normal variance)
@@ -79,10 +79,10 @@ var source2IngestionVolumes = []int64{
 	22_500_000, // 4 days ago
 	23_000_000, // 3 days ago
 	22_700_000, // 2 days ago
-	24_000_000, // YESTERDAY - slight increase (within normal range)
+	24_000_000, // TODAY - slight increase (within normal range)
 }
 
-// Destination 1: Normal behavior with sudden spike on last day (yesterday)
+// Destination 1: Normal behavior with sudden spike on last day (today)
 var destination1DeliveryVolumes = []int64{
 	9_000_000,  // 14 days ago
 	9_500_000,  // 13 days ago
@@ -97,7 +97,7 @@ var destination1DeliveryVolumes = []int64{
 	9_400_000,  // 4 days ago
 	9_600_000,  // 3 days ago
 	9_300_000,  // 2 days ago
-	45_000_000, // YESTERDAY - SPIKE! (almost 5x normal)
+	45_000_000, // TODAY - SPIKE! (almost 5x normal)
 }
 
 // Destination 2: Gradual increase (should NOT trigger alert - within normal variance)
@@ -115,7 +115,7 @@ var destination2DeliveryVolumes = []int64{
 	20_300_000, // 4 days ago
 	20_800_000, // 3 days ago
 	20_600_000, // 2 days ago
-	22_000_000, // YESTERDAY - slight increase (within normal range)
+	22_000_000, // TODAY - slight increase (within normal range)
 }
 
 func main() {
@@ -158,17 +158,17 @@ func main() {
 
 func generateIngestionDataForSource(ctx context.Context, osClient *opensearch.Client, sourceId string, ingestionVolumes []int64) error {
 	now := time.Now().UTC()
-	yesterday := now.Add(-24 * time.Hour)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
 	numDays := len(ingestionVolumes)
 	logger.GetLogger().Info("generating ingestion data for source",
 		zap.String("sourceId", sourceId),
 		zap.Int("numDays", numDays))
 
-	// Process each day (last element is yesterday, go backwards)
+	// Process each day (last element is today, go backwards)
 	for i := 0; i < numDays; i++ {
 		daysAgo := numDays - 1 - i
-		dayDate := yesterday.AddDate(0, 0, -daysAgo)
+		dayDate := today.AddDate(0, 0, -daysAgo)
 		dayStart := time.Date(dayDate.Year(), dayDate.Month(), dayDate.Day(), 0, 0, 0, 0, time.UTC)
 		dayEnd := dayStart.Add(24 * time.Hour).Add(-1 * time.Millisecond)
 
@@ -210,7 +210,7 @@ func generateIngestionDataForSource(ctx context.Context, osClient *opensearch.Cl
 
 func generateDeliveryDataForDestination(ctx context.Context, osClient *opensearch.Client, destinationId string, sourceId string, deliveryVolumes []int64) error {
 	now := time.Now().UTC()
-	yesterday := now.Add(-24 * time.Hour)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
 	numDays := len(deliveryVolumes)
 	logger.GetLogger().Info("generating delivery data for destination",
@@ -218,10 +218,10 @@ func generateDeliveryDataForDestination(ctx context.Context, osClient *opensearc
 		zap.String("sourceId", sourceId),
 		zap.Int("numDays", numDays))
 
-	// Process each day (last element is yesterday, go backwards)
+	// Process each day (last element is today, go backwards)
 	for i := 0; i < numDays; i++ {
 		daysAgo := numDays - 1 - i
-		dayDate := yesterday.AddDate(0, 0, -daysAgo)
+		dayDate := today.AddDate(0, 0, -daysAgo)
 		dayStart := time.Date(dayDate.Year(), dayDate.Month(), dayDate.Day(), 0, 0, 0, 0, time.UTC)
 		dayEnd := dayStart.Add(24 * time.Hour).Add(-1 * time.Millisecond)
 
