@@ -215,9 +215,15 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 		return nil, nil
 	}
 
-	// Query OpenSearch for historical volume data using GetHistogram
+	// Calculate time range: from (NumberOfDays + 1) days ago to yesterday end
+	yesterday := now.Add(-24 * time.Hour)
+	yesterdayEnd := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 23, 59, 59, 999000000, time.UTC).UnixMilli()
+	fromTime := startTime.UnixMilli()
+
+	// Query OpenSearch for historical volume data using GetHistogram with time range filter
 	statsAlias := os.StatisticsIndexAlias(tenantId)
-	query := fmt.Sprintf(`name:"total_data_received" AND tags.component_name:"storage" AND tags.db_event_source_id:"%s"`, src.ID.String())
+	query := fmt.Sprintf(`name:"total_data_received" AND tags.component_name:"storage" AND tags.db_event_source_id:"%s" AND tags.db_ts_win:[%d TO %d]`,
+		src.ID.String(), fromTime, yesterdayEnd)
 
 	agg := os.AggregationFunction{
 		Name:     "total_bytes",
@@ -249,7 +255,6 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 
 	// Check if last bucket time is yesterday (bucket timestamp is start of day)
 	lastBucket := histogram.Buckets[len(histogram.Buckets)-1]
-	yesterday := now.Add(-24 * time.Hour)
 	yesterdayStart := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, time.UTC).UnixMilli()
 
 	if lastBucket.Time != yesterdayStart {
@@ -429,9 +434,15 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 		return nil, nil
 	}
 
-	// Query OpenSearch for historical volume data using GetHistogram
+	// Calculate time range: from (NumberOfDays + 1) days ago to yesterday end
+	yesterday := now.Add(-24 * time.Hour)
+	yesterdayEnd := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 23, 59, 59, 999000000, time.UTC).UnixMilli()
+	fromTime := startTime.UnixMilli()
+
+	// Query OpenSearch for historical volume data using GetHistogram with time range filter
 	statsAlias := os.StatisticsIndexAlias(tenantId)
-	query := fmt.Sprintf(`name:"total_bytes_delivered" AND tags.component_name:"dispenser" AND tags.destination_id:"%s"`, dest.ID.String())
+	query := fmt.Sprintf(`name:"total_bytes_delivered" AND tags.component_name:"dispenser" AND tags.destination_id:"%s" AND tags.db_ts_win:[%d TO %d]`,
+		dest.ID.String(), fromTime, yesterdayEnd)
 
 	agg := os.AggregationFunction{
 		Name:     "total_bytes",
@@ -463,7 +474,6 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 
 	// Check if last bucket time is yesterday (bucket timestamp is start of day)
 	lastBucket := histogram.Buckets[len(histogram.Buckets)-1]
-	yesterday := now.Add(-24 * time.Hour)
 	yesterdayStart := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, time.UTC).UnixMilli()
 
 	if lastBucket.Time != yesterdayStart {
