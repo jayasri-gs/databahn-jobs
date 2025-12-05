@@ -215,15 +215,14 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 		return nil, nil
 	}
 
-	// Calculate time range: from (NumberOfDays + 1) days ago to yesterday end
-	yesterday := now.Add(-24 * time.Hour)
-	yesterdayEnd := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 23, 59, 59, 999000000, time.UTC).UnixMilli()
+	// Calculate time range: from (NumberOfDays + 1) days ago to today end
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999000000, time.UTC).UnixMilli()
 	fromTime := startTime.UnixMilli()
 
 	// Query OpenSearch for historical volume data using GetHistogram with time range filter
 	statsAlias := os.StatisticsIndexAlias(tenantId)
 	query := fmt.Sprintf(`name:"total_data_received" AND tags.component_name:"storage" AND tags.db_event_source_id:"%s" AND tags.db_ts_win:[%d TO %d]`,
-		src.ID.String(), fromTime, yesterdayEnd)
+		src.ID.String(), fromTime, todayEnd)
 
 	agg := os.AggregationFunction{
 		Name:     "total_bytes",
@@ -253,25 +252,25 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 		return histogram.Buckets[i].Time < histogram.Buckets[j].Time
 	})
 
-	// Check if last bucket time is yesterday (bucket timestamp is start of day)
+	// Check if last bucket time is today (bucket timestamp is start of day)
 	lastBucket := histogram.Buckets[len(histogram.Buckets)-1]
-	yesterdayStart := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, time.UTC).UnixMilli()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).UnixMilli()
 
-	if lastBucket.Time != yesterdayStart {
-		logger.GetLogger().Info("last bucket is not yesterday, skipping",
+	if lastBucket.Time != todayStart {
+		logger.GetLogger().Info("last bucket is not today, skipping",
 			zap.String("sourceId", src.ID.String()),
 			zap.String("tenantId", tenantId),
 			zap.Int64("lastBucketTime", lastBucket.Time),
-			zap.Int64("yesterdayStart", yesterdayStart),
+			zap.Int64("todayStart", todayStart),
 			zap.String("lastBucketDate", time.UnixMilli(lastBucket.Time).Format("2006-01-02")),
-			zap.String("yesterdayDate", time.UnixMilli(yesterdayStart).Format("2006-01-02")))
+			zap.String("todayDate", time.UnixMilli(todayStart).Format("2006-01-02")))
 		return nil, nil
 	}
 
-	// Last day value to check
-	lastDayValue := float64(lastBucket.Value)
+	// Today's value to check
+	todayValue := float64(lastBucket.Value)
 
-	// Filter and collect historical values (excluding last day and values below threshold)
+	// Filter and collect historical values (excluding today and values below threshold)
 	var historicalValues []float64
 	for i := 0; i < len(histogram.Buckets)-1; i++ {
 		value := float64(histogram.Buckets[i].Value)
@@ -280,12 +279,12 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 		}
 	}
 
-	// Check if last day value is below threshold
-	if lastDayValue < float64(config.MinimumVolumeThreshold) {
-		logger.GetLogger().Info("last day volume below minimum threshold",
+	// Check if today's value is below threshold
+	if todayValue < float64(config.MinimumVolumeThreshold) {
+		logger.GetLogger().Info("today's volume below minimum threshold",
 			zap.String("sourceId", src.ID.String()),
 			zap.String("tenantId", tenantId),
-			zap.Float64("lastDayValue", lastDayValue),
+			zap.Float64("todayValue", todayValue),
 			zap.Int64("minimumThreshold", config.MinimumVolumeThreshold))
 		return nil, nil
 	}
@@ -307,7 +306,7 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 		zap.String("tenantId", tenantId),
 		zap.Float64("mean", mean),
 		zap.Float64("stdDev", stdDev),
-		zap.Float64("lastDayValue", lastDayValue),
+		zap.Float64("todayValue", todayValue),
 		zap.Int("historicalSampleSize", len(historicalValues)))
 
 	// Check for zero or NaN standard deviation
@@ -320,7 +319,7 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 	}
 
 	// Calculate z-score
-	zScore := util.CalculateZScore(lastDayValue, mean, stdDev)
+	zScore := util.CalculateZScore(todayValue, mean, stdDev)
 	threshold := dynamicThreshold(len(historicalValues))
 
 	logger.GetLoggerWithContext(ctx).Info("z-score calculation for behavioral spike",
@@ -338,7 +337,7 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 			expectedMin = 0
 		}
 
-		percentageIncrease := ((lastDayValue - mean) / mean) * 100
+		percentageIncrease := ((todayValue - mean) / mean) * 100
 
 		logger.GetLoggerWithContext(ctx).Info("behavioral spike detected for source",
 			zap.String("sourceId", src.ID.String()),
@@ -346,7 +345,7 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 			zap.Float64("zScore", zScore),
 			zap.Float64("percentageIncrease", percentageIncrease))
 
-		return buildBehavioralSpikeAlertForSource(src, tenantId, lastDayValue, mean, stdDev, zScore, threshold, expectedMin, expectedMax, percentageIncrease)
+		return buildBehavioralSpikeAlertForSource(src, tenantId, todayValue, mean, stdDev, zScore, threshold, expectedMin, expectedMax, percentageIncrease)
 	}
 
 	return nil, nil
@@ -367,7 +366,7 @@ func dynamicThreshold(sampleSize int) float64 {
 // buildBehavioralSpikeAlertForSource creates an alert for behavioral spike detection in sources
 func buildBehavioralSpikeAlertForSource(src *source.Source, tenantId string, actualValue, mean, stdDev, zScore, threshold, expectedMin, expectedMax, percentageIncrease float64) (*alerts_async.Alert, error) {
 	title := fmt.Sprintf("Unusual Ingestion Spike Alert: Unusual ingestion volume spike detected (%.1f%% above normal)", percentageIncrease)
-	message := fmt.Sprintf("Source '%s' ingested %s yesterday, which is significantly above the expected range of %s-%s (based on historical average of %s). This represents a %.1f%% increase from normal behavior.",
+	message := fmt.Sprintf("Source '%s' ingested %s today, which is significantly above the expected range of %s-%s (based on historical average of %s). This represents a %.1f%% increase from normal behavior.",
 		src.Name,
 		util.HumanReadableBytes(int64(actualValue)),
 		util.HumanReadableBytes(int64(expectedMin)),
@@ -434,15 +433,14 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 		return nil, nil
 	}
 
-	// Calculate time range: from (NumberOfDays + 1) days ago to yesterday end
-	yesterday := now.Add(-24 * time.Hour)
-	yesterdayEnd := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 23, 59, 59, 999000000, time.UTC).UnixMilli()
+	// Calculate time range: from (NumberOfDays + 1) days ago to today end
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999000000, time.UTC).UnixMilli()
 	fromTime := startTime.UnixMilli()
 
 	// Query OpenSearch for historical volume data using GetHistogram with time range filter
 	statsAlias := os.StatisticsIndexAlias(tenantId)
 	query := fmt.Sprintf(`name:"total_bytes_delivered" AND tags.component_name:"dispenser" AND tags.destination_id:"%s" AND tags.db_ts_win:[%d TO %d]`,
-		dest.ID.String(), fromTime, yesterdayEnd)
+		dest.ID.String(), fromTime, todayEnd)
 
 	agg := os.AggregationFunction{
 		Name:     "total_bytes",
@@ -472,25 +470,25 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 		return histogram.Buckets[i].Time < histogram.Buckets[j].Time
 	})
 
-	// Check if last bucket time is yesterday (bucket timestamp is start of day)
+	// Check if last bucket time is today (bucket timestamp is start of day)
 	lastBucket := histogram.Buckets[len(histogram.Buckets)-1]
-	yesterdayStart := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, time.UTC).UnixMilli()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).UnixMilli()
 
-	if lastBucket.Time != yesterdayStart {
-		logger.GetLogger().Info("last bucket is not yesterday, skipping",
+	if lastBucket.Time != todayStart {
+		logger.GetLogger().Info("last bucket is not today, skipping",
 			zap.String("destinationId", dest.ID.String()),
 			zap.String("tenantId", tenantId),
 			zap.Int64("lastBucketTime", lastBucket.Time),
-			zap.Int64("yesterdayStart", yesterdayStart),
+			zap.Int64("todayStart", todayStart),
 			zap.String("lastBucketDate", time.UnixMilli(lastBucket.Time).Format("2006-01-02")),
-			zap.String("yesterdayDate", time.UnixMilli(yesterdayStart).Format("2006-01-02")))
+			zap.String("todayDate", time.UnixMilli(todayStart).Format("2006-01-02")))
 		return nil, nil
 	}
 
-	// Last day value to check
-	lastDayValue := float64(lastBucket.Value)
+	// Today's value to check
+	todayValue := float64(lastBucket.Value)
 
-	// Filter and collect historical values (excluding last day and values below threshold)
+	// Filter and collect historical values (excluding today and values below threshold)
 	var historicalValues []float64
 	for i := 0; i < len(histogram.Buckets)-1; i++ {
 		value := float64(histogram.Buckets[i].Value)
@@ -499,12 +497,12 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 		}
 	}
 
-	// Check if last day value is below threshold
-	if lastDayValue < float64(config.MinimumVolumeThreshold) {
-		logger.GetLogger().Info("last day volume below minimum threshold",
+	// Check if today's value is below threshold
+	if todayValue < float64(config.MinimumVolumeThreshold) {
+		logger.GetLogger().Info("today's volume below minimum threshold",
 			zap.String("destinationId", dest.ID.String()),
 			zap.String("tenantId", tenantId),
-			zap.Float64("lastDayValue", lastDayValue),
+			zap.Float64("todayValue", todayValue),
 			zap.Int64("minimumThreshold", config.MinimumVolumeThreshold))
 		return nil, nil
 	}
@@ -526,7 +524,7 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 		zap.String("tenantId", tenantId),
 		zap.Float64("mean", mean),
 		zap.Float64("stdDev", stdDev),
-		zap.Float64("lastDayValue", lastDayValue),
+		zap.Float64("todayValue", todayValue),
 		zap.Int("historicalSampleSize", len(historicalValues)))
 
 	// Check for zero or NaN standard deviation
@@ -539,7 +537,7 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 	}
 
 	// Calculate z-score
-	zScore := util.CalculateZScore(lastDayValue, mean, stdDev)
+	zScore := util.CalculateZScore(todayValue, mean, stdDev)
 	threshold := dynamicThreshold(len(historicalValues))
 
 	logger.GetLoggerWithContext(ctx).Info("z-score calculation for behavioral spike",
@@ -557,7 +555,7 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 			expectedMin = 0
 		}
 
-		percentageIncrease := ((lastDayValue - mean) / mean) * 100
+		percentageIncrease := ((todayValue - mean) / mean) * 100
 
 		logger.GetLoggerWithContext(ctx).Info("behavioral spike detected for destination",
 			zap.String("destinationId", dest.ID.String()),
@@ -565,7 +563,7 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 			zap.Float64("zScore", zScore),
 			zap.Float64("percentageIncrease", percentageIncrease))
 
-		return buildBehavioralSpikeAlertForDestination(dest, tenantId, lastDayValue, mean, stdDev, zScore, threshold, expectedMin, expectedMax, percentageIncrease)
+		return buildBehavioralSpikeAlertForDestination(dest, tenantId, todayValue, mean, stdDev, zScore, threshold, expectedMin, expectedMax, percentageIncrease)
 	}
 
 	return nil, nil
@@ -574,7 +572,7 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 // buildBehavioralSpikeAlertForDestination creates an alert for behavioral spike detection in destinations
 func buildBehavioralSpikeAlertForDestination(dest *destination.Destination, tenantId string, actualValue, mean, stdDev, zScore, threshold, expectedMin, expectedMax, percentageIncrease float64) (*alerts_async.Alert, error) {
 	title := fmt.Sprintf("Unusual Delivery Spike Alert: Unusual delivery volume spike detected (%.1f%% above normal)", percentageIncrease)
-	message := fmt.Sprintf("Destination '%s' delivered %s yesterday, which is significantly above the expected range of %s-%s (based on historical average of %s). This represents a %.1f%% increase from normal behavior.",
+	message := fmt.Sprintf("Destination '%s' delivered %s today, which is significantly above the expected range of %s-%s (based on historical average of %s). This represents a %.1f%% increase from normal behavior.",
 		dest.Name,
 		util.HumanReadableBytes(int64(actualValue)),
 		util.HumanReadableBytes(int64(expectedMin)),
