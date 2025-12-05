@@ -31,7 +31,7 @@ type BehavioralSpikeConfig struct {
 // getBehavioralSpikeConfig reads behavioral spike configuration from environment variables
 func getBehavioralSpikeConfig() BehavioralSpikeConfig {
 	numberOfDays := utils.GetEnvInt("BEHAVIORAL_SPIKE_NUMBER_OF_DAYS", 14)
-	minimumVolumeThreshold := int64(utils.GetEnvInt("BEHAVIORAL_SPIKE_MINIMUM_VOLUME_THRESHOLD", 1_000_000))
+	minimumVolumeThreshold := int64(utils.GetEnvInt("BEHAVIORAL_SPIKE_MINIMUM_VOLUME_THRESHOLD", 10_000_000))
 
 	return BehavioralSpikeConfig{
 		NumberOfDays:           numberOfDays,
@@ -240,7 +240,7 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 		return nil, err
 	}
 
-	if len(histogram.Buckets) < 3 {
+	if len(histogram.Buckets) < 5 {
 		logger.GetLogger().Info("insufficient data for behavioral spike detection",
 			zap.String("sourceId", src.ID.String()),
 			zap.String("tenantId", tenantId),
@@ -290,7 +290,7 @@ func checkSourceBehavioralSpike(ctx context.Context, tenantId string, src *sourc
 		return nil, nil
 	}
 
-	if len(historicalValues) < 2 {
+	if len(historicalValues) < 3 {
 		logger.GetLogger().Info("insufficient historical data after filtering",
 			zap.String("sourceId", src.ID.String()),
 			zap.String("tenantId", tenantId),
@@ -459,7 +459,7 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 		return nil, err
 	}
 
-	if len(histogram.Buckets) < 3 {
+	if len(histogram.Buckets) < 5 {
 		logger.GetLogger().Info("insufficient data for behavioral spike detection",
 			zap.String("destinationId", dest.ID.String()),
 			zap.String("tenantId", tenantId),
@@ -509,7 +509,7 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 		return nil, nil
 	}
 
-	if len(historicalValues) < 2 {
+	if len(historicalValues) < 3 {
 		logger.GetLogger().Info("insufficient historical data after filtering",
 			zap.String("destinationId", dest.ID.String()),
 			zap.String("tenantId", tenantId),
