@@ -368,7 +368,7 @@ func dynamicThreshold(sampleSize int) float64 {
 
 // buildBehavioralSpikeAlertForSource creates an alert for behavioral spike detection in sources
 func buildBehavioralSpikeAlertForSource(src *source.Source, tenantId string, actualValue, mean, stdDev, zScore, threshold, expectedMin, expectedMax, percentageIncrease float64) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf("Unusual Ingestion Spike Alert: Unusual ingestion volume spike detected (%.1f%% above normal)", percentageIncrease)
+	title := fmt.Sprintf("Abnormal Ingestion Spike Alert: Abnormal ingestion volume spike detected (%.1f%% above normal)", percentageIncrease)
 	message := fmt.Sprintf("Source '%s' ingested %s today, which is significantly above the expected range of %s-%s (based on historical average of %s). This represents a %.1f%% increase from normal behavior.",
 		src.Name,
 		util.HumanReadableBytes(int64(actualValue)),
@@ -389,7 +389,7 @@ func buildBehavioralSpikeAlertForSource(src *source.Source, tenantId string, act
 		alerts_async.WithFunctionalityType(alerts_async.VolumeAnomalyAlertChecker),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
-		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Unusual spike detected in ingestion volume."),
+		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Abnormal spike detected in ingestion volume."),
 		alerts_async.WithAction("Please investigate if this spike is expected. Check for new data sources added, changes in upstream systems, bulk data imports or system configuration changes."),
 	)
 }
@@ -574,7 +574,7 @@ func checkDestinationBehavioralSpike(ctx context.Context, tenantId string, dest 
 
 // buildBehavioralSpikeAlertForDestination creates an alert for behavioral spike detection in destinations
 func buildBehavioralSpikeAlertForDestination(dest *destination.Destination, tenantId string, actualValue, mean, stdDev, zScore, threshold, expectedMin, expectedMax, percentageIncrease float64) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf("Unusual Delivery Spike Alert: Unusual delivery volume spike detected (%.1f%% above normal)", percentageIncrease)
+	title := fmt.Sprintf("Abnormal Delivery Spike Alert: Abnormal delivery volume spike detected (%.1f%% above normal)", percentageIncrease)
 	message := fmt.Sprintf("Destination '%s' delivered %s today, which is significantly above the expected range of %s-%s (based on historical average of %s). This represents a %.1f%% increase from normal behavior.",
 		dest.Name,
 		util.HumanReadableBytes(int64(actualValue)),
@@ -595,7 +595,7 @@ func buildBehavioralSpikeAlertForDestination(dest *destination.Destination, tena
 		alerts_async.WithFunctionalityType(alerts_async.VolumeAnomalyAlertChecker),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
-		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Behavioral spike detected in delivery volume."),
+		alerts_async.WithErrorCode(alerts_async.DNDW10006, "Abnormal spike detected in delivery volume."),
 		alerts_async.WithAction("Please investigate if this spike is expected. Check for: increased ingestion volumes, changes in volume control rules, transformation logic changes or destination configuration changes."),
 	)
 }
