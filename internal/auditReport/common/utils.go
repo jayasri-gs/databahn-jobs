@@ -72,13 +72,17 @@ func WriteRowsToFileForDbReportTypeWithoutTimeFilters(columns []string, rows *sq
 	return fetchedRowsCount, nil
 }
 
+// WriteRowsToFileForDbReportTypeWithoutTimeFiltersWithStatusFilter writes rows to CSV with status filtering
+// Returns: (rowsFetchedFromDB, error)
+// rowsFetchedFromDB: total rows fetched from database (before filtering)
 func WriteRowsToFileForDbReportTypeWithoutTimeFiltersWithStatusFilter(columns []string, rows *sql.Rows, writer *csv.Writer, statusColumnIndex int, statusFilterValues []string) (int, error) {
-	fetchedRowsCount := 0
+	rowsFetchedFromDB := 0
 	values := make([]interface{}, len(columns))
 	for i := range values {
 		values[i] = new(sql.RawBytes)
 	}
 	for rows.Next() {
+		rowsFetchedFromDB++ // Count all rows fetched from database
 		if err := rows.Scan(values...); err != nil {
 			return 0, err
 		}
@@ -109,11 +113,10 @@ func WriteRowsToFileForDbReportTypeWithoutTimeFiltersWithStatusFilter(columns []
 		if err != nil {
 			return 0, err
 		}
-		fetchedRowsCount++
 	}
 	writer.Flush()
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	return fetchedRowsCount, nil
+	return rowsFetchedFromDB, nil
 }

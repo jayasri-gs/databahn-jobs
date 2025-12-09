@@ -568,3 +568,144 @@ type ErrorResponse struct {
 		Reason string `json:"reason"`
 	} `json:"error"`
 }
+
+// HistogramBucket represents a single bucket in the histogram aggregation
+type HistogramBucket struct {
+	Time  int64 `json:"time"`  // Epoch milliseconds
+	Value int64 `json:"value"` // Aggregated value
+}
+
+// HistogramResponse contains the histogram buckets
+type HistogramResponse struct {
+	Buckets []HistogramBucket `json:"buckets"`
+}
+
+// HistogramAggRequest represents the request structure for histogram aggregation
+type HistogramAggRequest struct {
+	Size  int `json:"size"`
+	Query struct {
+		QueryString struct {
+			Query string `json:"query"`
+		} `json:"query_string"`
+	} `json:"query"`
+	Aggs struct {
+		Histogram struct {
+			DateHistogram struct {
+				Field         string `json:"field"`
+				FixedInterval string `json:"fixed_interval"`
+				MinDocCount   int    `json:"min_doc_count"`
+			} `json:"date_histogram"`
+			Aggs map[string]map[string]Field `json:"aggs,omitempty"`
+		} `json:"histogram"`
+	} `json:"aggs"`
+}
+
+// HistogramAggregationResponse represents the response from histogram aggregation
+type HistogramAggregationResponse struct {
+	ErrorResponse
+	Took     int  `json:"took"`
+	TimedOut bool `json:"timed_out"`
+	Hits     struct {
+		Total struct {
+			Value    int    `json:"value"`
+			Relation string `json:"relation"`
+		} `json:"total"`
+	} `json:"hits"`
+	Aggregations struct {
+		Histogram struct {
+			Buckets []map[string]any `json:"buckets"`
+		} `json:"histogram"`
+	} `json:"aggregations"`
+}
+
+// GetHistogram performs a date histogram aggregation on the given index
+// Returns histogram buckets with time (epoch millis) and aggregated value
+func GetHistogram(
+	ctx context.Context,
+	client *opensearch.Client,
+	index string,
+	query string,
+	timeField string,
+	agg AggregationFunction,
+	interval string,
+) (*HistogramResponse, error) {
+
+	// Build the request
+	req := HistogramAggRequest{}
+	req.Size = 0 // We only want aggregation results, not documents
+	req.Query.QueryString.Query = query
+	req.Aggs.Histogram.DateHistogram.Field = timeField
+	req.Aggs.Histogram.DateHistogram.FixedInterval = interval
+	req.Aggs.Histogram.DateHistogram.MinDocCount = 0 // Include empty buckets
+
+	// Add the aggregation function (e.g., sum, avg, max, min)
+	if agg.Name != "" {
+		req.Aggs.Histogram.Aggs = make(map[string]map[string]Field)
+		req.Aggs.Histogram.Aggs[agg.Name] = make(map[string]Field)
+		req.Aggs.Histogram.Aggs[agg.Name][agg.Function] = Field{Field: agg.Field}
+	}
+
+	// Make the search call
+	response, err := MakeSearchCall(ctx, index, req, client)
+	if err != nil {
+		logger.GetLogger().Error("failed to make histogram aggregation call", zap.Error(err))
+		return nil, err
+	}
+
+	if response.IsError() {
+		msg := fmt.Sprintf("[%d] Status from OpenSearch body: %s", response.StatusCode, response.String())
+		return nil, errors.New(msg)
+	}
+
+	// Parse the response
+	bodyContent, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	aggResponse := &HistogramAggregationResponse{}
+	err = json.Unmarshal(bodyContent, aggResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	if aggResponse.Error.Reason != "" {
+		return nil, errors.New(aggResponse.Error.Reason)
+	}
+
+	// Extract buckets
+	histogramResp := &HistogramResponse{
+		Buckets: make([]HistogramBucket, 0),
+	}
+
+	for _, bucket := range aggResponse.Aggregations.Histogram.Buckets {
+		// Extract time (key_as_string or key)
+		timeMs := int64(0)
+		if keyVal, ok := bucket["key"].(float64); ok {
+			timeMs = int64(keyVal)
+		}
+
+		// Extract aggregated value
+		value := int64(0)
+		if agg.Name != "" {
+			if aggVal, ok := bucket[agg.Name].(map[string]any); ok {
+				if val, ok := aggVal["value"].(float64); ok {
+					value = int64(val)
+				}
+			}
+		} else {
+			// If no aggregation specified, use doc_count
+			if docCount, ok := bucket["doc_count"].(float64); ok {
+				value = int64(docCount)
+			}
+		}
+
+		histogramBucket := HistogramBucket{
+			Time:  timeMs,
+			Value: value,
+		}
+		histogramResp.Buckets = append(histogramResp.Buckets, histogramBucket)
+	}
+
+	return histogramResp, nil
+}
