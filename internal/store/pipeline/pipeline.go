@@ -141,3 +141,22 @@ func HasActiveRules(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID, tena
 
 	return count > 0, count, err
 }
+
+// GetPipelinesByDestinationAndStatus gets all pipelines for a specific destination and status
+func GetPipelinesByDestinationAndStatus(ctx context.Context, db *gorm.DB, destinationID uuid.UUID, status string) ([]Pipeline, error) {
+	var pipelines []Pipeline
+
+	query := `
+		SELECT DISTINCT p.*
+		FROM pipelines p
+		JOIN pipeline_destinations_mapping pd ON p.id = pd.pipeline_id
+		WHERE pd.destination_id = ? AND p.status = ?
+	`
+
+	err := db.WithContext(ctx).Raw(query, destinationID, status).Scan(&pipelines).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return pipelines, nil
+}
