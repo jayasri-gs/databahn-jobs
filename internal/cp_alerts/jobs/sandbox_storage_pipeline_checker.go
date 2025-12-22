@@ -225,17 +225,17 @@ func disableSandboxPipeline(ctx context.Context, db *gorm.DB, pl *pipeline.Pipel
 	})
 }
 
-func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, createdAt time.Time, now time.Time, disableDays int) (*alerts_async.Alert, error) {
-	ageDays := int(now.Sub(createdAt).Hours() / 24)
+func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, lastUpdatedAt time.Time, now time.Time, disableDays int) (*alerts_async.Alert, error) {
+	daysSinceUpdate := int(now.Sub(lastUpdatedAt).Hours() / 24)
 
-	title := fmt.Sprintf("Sandbox pipeline '%s' active for %d days", entity.PipelineName, ageDays)
-	message := fmt.Sprintf("Pipeline '%s' (ID: %s) targeting Databahn Sandbox Storage has been active since %s. "+
-		"It will be automatically disabled after %d days of activity. If this pipeline is still needed, please disable it or move it before %s.",
+	title := fmt.Sprintf("Sandbox pipeline '%s' unchanged for %d days", entity.PipelineName, daysSinceUpdate)
+	message := fmt.Sprintf("Pipeline '%s' (ID: %s) targeting Databahn Sandbox Storage has not been modified since %s. "+
+		"It will be automatically disabled if it remains unchanged for %d days. To keep this pipeline active, update its configuration or disable it manually and move to a permanent destination before %s.",
 		entity.PipelineName,
 		entity.PipelineID.String(),
-		util.HumanReadableTimeWithZone(createdAt),
+		util.HumanReadableTimeWithZone(lastUpdatedAt),
 		disableDays,
-		util.HumanReadableTimeWithZone(createdAt.AddDate(0, 0, disableDays)),
+		util.HumanReadableTimeWithZone(lastUpdatedAt.AddDate(0, 0, disableDays)),
 	)
 
 	return alerts_async.NewAlert(
@@ -250,15 +250,16 @@ func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, createdAt ti
 	)
 }
 
-func buildSandboxPipelineDisabledAlert(entity sandboxPipelineEntity, createdAt time.Time, now time.Time, disableDays int) (*alerts_async.Alert, error) {
-	ageDays := int(now.Sub(createdAt).Hours() / 24)
+func buildSandboxPipelineDisabledAlert(entity sandboxPipelineEntity, lastUpdatedAt time.Time, now time.Time, disableDays int) (*alerts_async.Alert, error) {
+	daysSinceUpdate := int(now.Sub(lastUpdatedAt).Hours() / 24)
 
-	title := fmt.Sprintf("Sandbox pipeline '%s' disabled after %d days", entity.PipelineName, ageDays)
-	message := fmt.Sprintf("Pipeline '%s' (ID: %s) targeting Databahn Sandbox Storage was disabled after being active for more than %d days. "+
-		"Pipeline status has been set to DISABLED",
+	title := fmt.Sprintf("Sandbox pipeline '%s' disabled after %d days without changes", entity.PipelineName, daysSinceUpdate)
+	message := fmt.Sprintf("Pipeline '%s' (ID: %s) targeting Databahn Sandbox Storage was automatically disabled after remaining unchanged for more than %d days (last updated: %s). "+
+		"Pipeline status has been set to DISABLED. To use this pipeline again, re-enable it and consider moving to a permanent destination.",
 		entity.PipelineName,
 		entity.PipelineID.String(),
 		disableDays,
+		util.HumanReadableTimeWithZone(lastUpdatedAt),
 	)
 
 	return alerts_async.NewAlert(

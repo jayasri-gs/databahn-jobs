@@ -225,7 +225,9 @@ func deleteHourFolder(ctx context.Context, s3Client *s3.Client, bucket, hourFold
 
 // extractHourFolder extracts the hour folder path from an object key
 // Example: published/tenant_id=xxx/source_id=yyy/year=2025/month=12/day=17/hour=11/file.json
-// Returns: published/tenant_id=xxx/source_id=yyy/year=2025/month=12/day=17/hour=11
+// Returns: published/tenant_id=xxx/source_id=yyy/year=2025/month=12/day=17/hour=11/
+// Note: The trailing slash is CRITICAL to prevent prefix matching issues in S3.
+// Without it, hour=1 would match hour=10, hour=11, through hour=19, causing unintended data deletion.
 func extractHourFolder(key string) string {
 	// Find the last occurrence of "hour="
 	hourIdx := strings.LastIndex(key, "/hour=")
@@ -238,11 +240,12 @@ func extractHourFolder(key string) string {
 	nextSlash := strings.Index(remaining, "/")
 	if nextSlash == -1 {
 		// The key ends with hour=XX, this is the folder itself
-		return key
+		// Add trailing slash to ensure exact prefix matching in S3
+		return key + "/"
 	}
 
-	// Return up to and including the hour folder
-	return key[:hourIdx+1+nextSlash]
+	// Return up to and including the hour folder with trailing slash
+	return key[:hourIdx+1+nextSlash] + "/"
 }
 
 // parseHourFolderPath parses the folder path to extract timestamp in UTC
