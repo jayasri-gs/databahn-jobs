@@ -32,7 +32,7 @@ type DataPlane struct {
 	BaseURL             string          `gorm:"type:text;column:base_url" json:"base_url"`
 }
 
-func (DataPlane) TableName() string {
+func (*DataPlane) TableName() string {
 	return "data_planes"
 }
 
