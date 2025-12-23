@@ -91,14 +91,14 @@ func (p *DropRuleIncreaseProcessor) ProcessAlerts(_ context.Context, data *Proce
 				zap.String("ruleId", vcRule.ID.String()))
 		} else {
 			// Only auto-resolve if rule has sufficient traffic
-			if todayStats.Evaluated >= data.Config.MinimumEventsThreshold {
+			if todayStats.Matched >= data.Config.DropRuleMinimumEventMatched {
 				healthyRuleIds = append(healthyRuleIds, vcRule.ID.String())
 				logger.GetLogger().Info("Rule is healthy with sufficient traffic, adding to auto-resolution list",
 					zap.String("tenantId", data.Tenant.Id.String()),
 					zap.String("ruleId", vcRule.ID.String()),
 					zap.String("ruleName", vcRule.Name),
 					zap.Int64("todayEvaluated", todayStats.Evaluated),
-					zap.Int64("minimumThreshold", data.Config.MinimumEventsThreshold))
+					zap.Int64("dropRuleMinimumEventMatched", data.Config.DropRuleMinimumEventMatched))
 			}
 		}
 	}
@@ -117,12 +117,12 @@ func (p *DropRuleIncreaseProcessor) AutoResolveAlerts(ctx context.Context, data 
 
 // checkDropRuleIncreaseCondition checks if DROP rule increase condition is met
 func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule vc_rule.VCRule, todayStats, yesterdayStats *RuleStats, config *VCAlertConfig) bool {
-	// Only alert if there's significant traffic to avoid noise (using general minimum events threshold)
-	if todayStats.Evaluated < config.MinimumEventsThreshold {
-		logger.GetLogger().Debug("skipping alert due to low traffic",
+	// Check if today's matched events meet the minimum threshold
+	if todayStats.Matched < config.DropRuleMinimumEventMatched {
+		logger.GetLogger().Debug("skipping alert due to low matched event count",
 			zap.String("ruleId", vcRule.ID.String()),
-			zap.Int64("todayEvaluated", todayStats.Evaluated),
-			zap.Int64("minimumThreshold", config.MinimumEventsThreshold))
+			zap.Int64("todayMatched", todayStats.Matched),
+			zap.Int64("minimumEventMatched", config.DropRuleMinimumEventMatched))
 		return false
 	}
 
@@ -133,15 +133,6 @@ func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule vc_rul
 
 	// Need valid data for both days
 	if yesterdayStats.Matched <= 0 || todayStats.Matched <= 0 || yesterdayStats.Evaluated <= 0 || todayStats.Evaluated <= 0 {
-		return false
-	}
-
-	// Check if today's matched events meet the minimum threshold
-	if todayStats.Matched < config.DropRuleMinimumEventMatched {
-		logger.GetLogger().Debug("skipping alert due to low matched event count",
-			zap.String("ruleId", vcRule.ID.String()),
-			zap.Int64("todayMatched", todayStats.Matched),
-			zap.Int64("minimumEventMatched", config.DropRuleMinimumEventMatched))
 		return false
 	}
 
