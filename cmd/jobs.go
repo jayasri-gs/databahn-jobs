@@ -26,6 +26,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/kafkaquery"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
+	"github.com/databahn-ai/databahn-jobs/internal/sandbox"
 	"github.com/databahn-ai/databahn-jobs/internal/stats"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -106,9 +107,9 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.FETCH_AGENT_DISCOVERED_CHANNEL_SUBSRIPTIONS:
 		result = agent.FetchAgentDiscoveredChannelSubscriptions(ctx)
 	case common.SANDBOX_STORAGE_PIPELINE_CHECKER:
-		result = cp_jobs.CheckSandboxStoragePipelines(ctx)
+		result = sandbox.CheckSandboxStoragePipelines(ctx)
 	case common.SANDBOX_STORAGE_CLEANUP:
-		result = cp_jobs.CleanupSandboxStorage(ctx)
+		result = sandbox.CleanupSandboxStorage(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}

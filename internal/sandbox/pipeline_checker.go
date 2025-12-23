@@ -1,4 +1,4 @@
-package jobs
+package sandbox
 
 import (
 	"context"
@@ -13,7 +13,9 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
+	"github.com/databahn-ai/databahn-jobs/internal/store/audit"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
+	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
@@ -29,6 +31,36 @@ const (
 	statusActive                = "ACTIVE"
 	statusDisabled              = "DISABLED"
 )
+
+type sandboxPipelineEntity struct {
+	PipelineID   uuid.UUID
+	PipelineName string
+	DataPlaneID  uuid.UUID
+	TenantID     uuid.UUID
+}
+
+func (s sandboxPipelineEntity) GetEntityId() string {
+	return s.PipelineID.String()
+}
+
+func (s sandboxPipelineEntity) GetEntityName() string {
+	return s.PipelineName
+}
+
+func (s sandboxPipelineEntity) GetDataPlaneId() string {
+	if s.DataPlaneID == uuid.Nil {
+		return common.DatabahnDataPlaneId
+	}
+	return s.DataPlaneID.String()
+}
+
+func (s sandboxPipelineEntity) GetTenantId() string {
+	return s.TenantID.String()
+}
+
+func (s sandboxPipelineEntity) GetSecondaryEntityId() string {
+	return ""
+}
 
 // CheckSandboxStoragePipelines disables aged sandbox storage pipelines and alerts tenants.
 func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
@@ -54,12 +86,12 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
-	// Get all active pipelines with sandbox storage destination
-	pipelines, err := pipeline.GetPipelinesByDestinationAndStatus(ctx, db, destID, statusActive)
+	// Get all active tenants
+	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
-		errorMsg := fmt.Sprintf("error getting sandbox storage pipelines: %v", err)
+		errorMsg := fmt.Sprintf("error getting tenants: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-		logger.GetLoggerWithContext(ctx).Error("error getting sandbox storage pipelines", zap.Error(err))
+		logger.GetLoggerWithContext(ctx).Error("error getting tenants", zap.Error(err))
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
@@ -68,7 +100,7 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 	disableDays := utils.GetEnvInt("SANDBOX_DISABLE_DAYS", defaultSandboxDisableDays)
 
 	logger.GetLoggerWithContext(ctx).Info("checking sandbox storage pipelines",
-		zap.Int("pipeline_count", len(pipelines)),
+		zap.Int("tenant_count", len(tenants)),
 		zap.Int("warning_days", warningDays),
 		zap.Int("disable_days", disableDays))
 
@@ -77,62 +109,91 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 	disableCutoff := now.AddDate(0, 0, -disableDays)
 
 	var alertsToSend []*alerts_async.Alert
+	totalPipelinesProcessed := 0
 
-	for _, p := range pipelines {
-		updatedAt := p.UpdatedAt.UTC()
-		tenantId := p.TenantID.String()
+	// Process each tenant separately to avoid loading all pipelines in memory
+	for _, t := range tenants {
+		tenantId := t.Id.String()
 
-		entity := sandboxPipelineEntity{
-			PipelineID:   p.ID,
-			PipelineName: p.Name,
-			DataPlaneID:  p.DataPlaneID,
-			TenantID:     p.TenantID,
+		// Get sandbox storage pipelines for this tenant
+		pipelines, err := pipeline.GetPipelinesByDestinationAndStatus(ctx, db, t.Id, destID, statusActive)
+		if err != nil {
+			errorMsg := fmt.Sprintf("error getting sandbox storage pipelines for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLoggerWithContext(ctx).Error("error getting sandbox storage pipelines for tenant",
+				zap.String("tenant_id", tenantId),
+				zap.Error(err))
+			continue
 		}
 
-		switch {
-		case updatedAt.Before(disableCutoff):
-			if err := disableSandboxPipeline(ctx, db, &p); err != nil {
-				errorMsg := fmt.Sprintf("error disabling sandbox pipeline %s for tenant %s: %v",
-					p.ID.String(), tenantId, err)
-				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-				logger.GetLoggerWithContext(ctx).Error("error disabling sandbox pipeline",
-					zap.Error(err),
-					zap.String("pipeline_id", p.ID.String()),
-					zap.String("tenant_id", tenantId))
-				continue
+		if len(pipelines) == 0 {
+			logger.GetLoggerWithContext(ctx).Debug("no sandbox storage pipelines found for tenant",
+				zap.String("tenant_name", t.Name), zap.String("tenant_id", tenantId))
+			continue
+		}
+
+		logger.GetLoggerWithContext(ctx).Debug("processing sandbox storage pipelines for tenant",
+			zap.String("tenant_id", tenantId),
+			zap.Int("pipeline_count", len(pipelines)))
+
+		totalPipelinesProcessed += len(pipelines)
+
+		for _, p := range pipelines {
+			updatedAt := p.UpdatedAt.UTC()
+			pipelineTenantId := p.TenantID.String()
+
+			entity := sandboxPipelineEntity{
+				PipelineID:   p.ID,
+				PipelineName: p.Name,
+				DataPlaneID:  p.DataPlaneID,
+				TenantID:     p.TenantID,
 			}
 
-			alert, buildErr := buildSandboxPipelineDisabledAlert(entity, updatedAt, now, disableDays)
-			if buildErr != nil {
-				errorMsg := fmt.Sprintf("error building sandbox pipeline disabled alert for pipeline %s: %v",
-					p.ID.String(), buildErr)
-				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-				logger.GetLoggerWithContext(ctx).Error("error building sandbox pipeline disabled alert",
-					zap.Error(buildErr),
-					zap.String("pipeline_id", p.ID.String()),
-					zap.String("tenant_id", tenantId))
-				continue
-			}
-			alertsToSend = append(alertsToSend, alert)
+			switch {
+			case updatedAt.Before(disableCutoff):
+				if err := disableSandboxPipeline(ctx, db, &p); err != nil {
+					errorMsg := fmt.Sprintf("error disabling sandbox pipeline %s for tenant %s: %v",
+						p.ID.String(), pipelineTenantId, err)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+					logger.GetLoggerWithContext(ctx).Error("error disabling sandbox pipeline",
+						zap.Error(err),
+						zap.String("pipeline_id", p.ID.String()),
+						zap.String("tenant_id", pipelineTenantId))
+					continue
+				}
 
-		case updatedAt.Before(warnCutoff):
-			alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays)
-			if buildErr != nil {
-				errorMsg := fmt.Sprintf("error building sandbox pipeline warning alert for pipeline %s: %v",
-					p.ID.String(), buildErr)
-				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-				logger.GetLoggerWithContext(ctx).Error("error building sandbox pipeline warning alert",
-					zap.Error(buildErr),
+				alert, buildErr := buildSandboxPipelineDisabledAlert(entity, updatedAt, now, disableDays)
+				if buildErr != nil {
+					errorMsg := fmt.Sprintf("error building sandbox pipeline disabled alert for pipeline %s: %v",
+						p.ID.String(), buildErr)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+					logger.GetLoggerWithContext(ctx).Error("error building sandbox pipeline disabled alert",
+						zap.Error(buildErr),
+						zap.String("pipeline_id", p.ID.String()),
+						zap.String("tenant_id", pipelineTenantId))
+					continue
+				}
+				alertsToSend = append(alertsToSend, alert)
+
+			case updatedAt.Before(warnCutoff):
+				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays)
+				if buildErr != nil {
+					errorMsg := fmt.Sprintf("error building sandbox pipeline warning alert for pipeline %s: %v",
+						p.ID.String(), buildErr)
+					jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+					logger.GetLoggerWithContext(ctx).Error("error building sandbox pipeline warning alert",
+						zap.Error(buildErr),
+						zap.String("pipeline_id", p.ID.String()),
+						zap.String("tenant_id", pipelineTenantId))
+					continue
+				}
+				alertsToSend = append(alertsToSend, alert)
+			default:
+				logger.GetLoggerWithContext(ctx).Debug("sandbox pipeline is within allowed window",
 					zap.String("pipeline_id", p.ID.String()),
-					zap.String("tenant_id", tenantId))
-				continue
+					zap.String("tenant_id", pipelineTenantId),
+					zap.Time("updated_at", updatedAt))
 			}
-			alertsToSend = append(alertsToSend, alert)
-		default:
-			logger.GetLoggerWithContext(ctx).Debug("sandbox pipeline is within allowed window",
-				zap.String("pipeline_id", p.ID.String()),
-				zap.String("tenant_id", tenantId),
-				zap.Time("updated_at", updatedAt))
 		}
 	}
 
@@ -145,11 +206,16 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 	}
 
 	if len(jobErrors) == 0 {
-		logger.GetLoggerWithContext(ctx).Info("successfully completed sandbox storage pipeline checker")
+		logger.GetLoggerWithContext(ctx).Info("successfully completed sandbox storage pipeline checker",
+			zap.Int("total_pipelines_processed", totalPipelinesProcessed),
+			zap.Int("alerts_sent", len(alertsToSend)))
 		return common.NewJobResultSuccess()
 	}
 
-	logger.GetLoggerWithContext(ctx).Info("sandbox storage pipeline checker completed with errors", zap.Int("error_count", len(jobErrors)))
+	logger.GetLoggerWithContext(ctx).Info("sandbox storage pipeline checker completed with errors",
+		zap.Int("error_count", len(jobErrors)),
+		zap.Int("total_pipelines_processed", totalPipelinesProcessed),
+		zap.Int("alerts_sent", len(alertsToSend)))
 	return common.NewJobResultFromErrors(jobErrors)
 }
 
@@ -221,6 +287,14 @@ func disableSandboxPipeline(ctx context.Context, db *gorm.DB, pl *pipeline.Pipel
 			zap.String("source_id", sourceMapping.LogSourceID.String()),
 			zap.String("data_plane_id", pl.DataPlaneID.String()))
 
+		// Create audit entry for pipeline disable action
+		if err := createPipelineDisabledAuditEntry(tx, pl); err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error creating audit entry for disabled pipeline",
+				zap.String("pipeline_id", pl.ID.String()),
+				zap.Error(err))
+			// Don't fail the transaction for audit entry failure, just log it
+		}
+
 		return nil
 	})
 }
@@ -229,20 +303,19 @@ func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, lastUpdatedA
 	daysSinceUpdate := int(now.Sub(lastUpdatedAt).Hours() / 24)
 
 	title := fmt.Sprintf("Sandbox pipeline '%s' unchanged for %d days", entity.PipelineName, daysSinceUpdate)
-	message := fmt.Sprintf("Pipeline '%s' (ID: %s) targeting Databahn Sandbox Storage has not been modified since %s. "+
+	message := fmt.Sprintf("Pipeline '%s' targeting Databahn Sandbox Storage has not been modified since %s. "+
 		"It will be automatically disabled if it remains unchanged for %d days. To keep this pipeline active, update its configuration or disable it manually and move to a permanent destination before %s.",
 		entity.PipelineName,
-		entity.PipelineID.String(),
 		util.HumanReadableTimeWithZone(lastUpdatedAt),
 		disableDays,
 		util.HumanReadableTimeWithZone(lastUpdatedAt.AddDate(0, 0, disableDays)),
 	)
 
 	return alerts_async.NewAlert(
-		alerts_async.Unknown,
+		alerts_async.Pipeline,
 		alerts_async.WithEntity(entity),
 		alerts_async.WithCriticality(alerts_async.Warning),
-		alerts_async.WithFunctionalityType(alerts_async.DeploymentStatus),
+		alerts_async.WithFunctionalityType(alerts_async.SandboxStorageExpirationWarning),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DGRW10001, "Sandbox pipeline guardrail"),
@@ -254,19 +327,18 @@ func buildSandboxPipelineDisabledAlert(entity sandboxPipelineEntity, lastUpdated
 	daysSinceUpdate := int(now.Sub(lastUpdatedAt).Hours() / 24)
 
 	title := fmt.Sprintf("Sandbox pipeline '%s' disabled after %d days without changes", entity.PipelineName, daysSinceUpdate)
-	message := fmt.Sprintf("Pipeline '%s' (ID: %s) targeting Databahn Sandbox Storage was automatically disabled after remaining unchanged for more than %d days (last updated: %s). "+
+	message := fmt.Sprintf("Pipeline '%s' targeting Databahn Sandbox Storage was automatically disabled after remaining unchanged for more than %d days (last updated: %s). "+
 		"Pipeline status has been set to DISABLED. To use this pipeline again, re-enable it and consider moving to a permanent destination.",
 		entity.PipelineName,
-		entity.PipelineID.String(),
 		disableDays,
 		util.HumanReadableTimeWithZone(lastUpdatedAt),
 	)
 
 	return alerts_async.NewAlert(
-		alerts_async.Unknown,
+		alerts_async.Pipeline,
 		alerts_async.WithEntity(entity),
 		alerts_async.WithCriticality(alerts_async.Sever),
-		alerts_async.WithFunctionalityType(alerts_async.DeploymentStatus),
+		alerts_async.WithFunctionalityType(alerts_async.SandboxStorageAutoDisabled),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DGRW10001, "Sandbox pipeline guardrail"),
@@ -274,32 +346,19 @@ func buildSandboxPipelineDisabledAlert(entity sandboxPipelineEntity, lastUpdated
 	)
 }
 
-type sandboxPipelineEntity struct {
-	PipelineID   uuid.UUID
-	PipelineName string
-	DataPlaneID  uuid.UUID
-	TenantID     uuid.UUID
-}
-
-func (s sandboxPipelineEntity) GetEntityId() string {
-	return s.PipelineID.String()
-}
-
-func (s sandboxPipelineEntity) GetEntityName() string {
-	return s.PipelineName
-}
-
-func (s sandboxPipelineEntity) GetDataPlaneId() string {
-	if s.DataPlaneID == uuid.Nil {
-		return common.DatabahnDataPlaneId
+// createPipelineDisabledAuditEntry creates an audit log entry for a disabled sandbox pipeline
+func createPipelineDisabledAuditEntry(tx *gorm.DB, pl *pipeline.Pipeline) error {
+	isSuccess := true
+	entry := &audit.AuditEntry{
+		TenantUUID: pl.TenantID,
+		ObjectID:   pl.ID.String(),
+		ObjectType: "Pipeline",
+		ObjectName: pl.Name,
+		Action:     "Disabled",
+		Timestamp:  time.Now(),
+		IsSuccess:  &isSuccess,
+		Message:    "Sandbox pipeline automatically disabled due to inactivity (guardrail policy)",
 	}
-	return s.DataPlaneID.String()
-}
 
-func (s sandboxPipelineEntity) GetTenantId() string {
-	return s.TenantID.String()
-}
-
-func (s sandboxPipelineEntity) GetSecondaryEntityId() string {
-	return ""
+	return audit.CreateAuditEntry(tx, entry)
 }

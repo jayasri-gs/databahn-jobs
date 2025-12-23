@@ -1,4 +1,4 @@
-package jobs
+package sandbox
 
 import (
 	"context"
@@ -12,11 +12,12 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/store/dataplane"
 	"github.com/databahn-ai/go-logging/logger"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -25,24 +26,22 @@ const (
 	batchDeleteSize                     = 1000 // S3 DeleteObjects supports up to 1000 keys per request
 )
 
-// CleanupSandboxStorage removes old data from sandbox storage S3 bucket
+// CleanupSandboxStorage removes old data from sandbox storage S3 buckets across all data planes
 func CleanupSandboxStorage(ctx context.Context) common.JobResult {
 	var jobErrors []common.JobError
 
-	bucketName := config.GetAppConfiguration().GetString(configuration.BackupEventsS3Bucket)
-	if bucketName == "" {
-		errorMsg := "backup events S3 bucket not configured"
+	// Load sandbox storage configurations for all data planes
+	dataplaneConfigs, err := loadDataPlaneSandboxConfigs(ctx)
+	if err != nil {
+		errorMsg := fmt.Sprintf("error loading data plane sandbox configurations: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-		logger.GetLoggerWithContext(ctx).Error(errorMsg)
+		logger.GetLoggerWithContext(ctx).Error("error loading data plane sandbox configurations", zap.Error(err))
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
-	s3Client, err := createS3ClientForCleanup(ctx)
-	if err != nil {
-		errorMsg := fmt.Sprintf("error creating S3 client: %v", err)
-		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-		logger.GetLoggerWithContext(ctx).Error("error creating S3 client", zap.Error(err))
-		return common.NewJobResultFromErrors(jobErrors)
+	if len(dataplaneConfigs) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("no data planes with sandbox storage configuration found")
+		return common.NewJobResultSuccess()
 	}
 
 	// Read retention hours from environment variable or use default
@@ -53,50 +52,112 @@ func CleanupSandboxStorage(ctx context.Context) common.JobResult {
 	cutoffTime := now.Add(-time.Duration(retentionHours) * time.Hour)
 
 	logger.GetLoggerWithContext(ctx).Info("starting sandbox storage cleanup",
-		zap.String("bucket", bucketName),
+		zap.Int("dataplane_count", len(dataplaneConfigs)),
 		zap.Time("current_time_utc", now),
 		zap.Time("cutoff_time_utc", cutoffTime),
-		zap.Int("retention_hours", retentionHours),
-		zap.String("timezone", "UTC"))
+		zap.Int("retention_hours", retentionHours))
 
-	// Process both published and dropped prefixes
-	prefixes := []string{"databahn-sandbox-storage/published/", "databahn-sandbox-storage/dropped/"}
 	totalDeleted := 0
 
-	for _, prefix := range prefixes {
-		deleted, err := cleanupPrefix(ctx, s3Client, bucketName, prefix, cutoffTime)
+	// Process each data plane
+	for dataplaneID, sandboxConfig := range dataplaneConfigs {
+		bucketName := sandboxConfig.AWSConfiguration.Bucket
+		region := sandboxConfig.AWSConfiguration.Region
+
+		logger.GetLoggerWithContext(ctx).Info("processing sandbox storage cleanup for data plane",
+			zap.String("dataplane_id", dataplaneID.String()),
+			zap.String("bucket", bucketName),
+			zap.String("region", region))
+
+		s3Client, err := createS3ClientForCleanup(ctx, region)
 		if err != nil {
-			errorMsg := fmt.Sprintf("error cleaning up prefix %s: %v", prefix, err)
+			errorMsg := fmt.Sprintf("error creating S3 client for data plane %s: %v", dataplaneID.String(), err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-			logger.GetLoggerWithContext(ctx).Error("error cleaning up prefix",
-				zap.String("prefix", prefix),
+			logger.GetLoggerWithContext(ctx).Error("error creating S3 client",
+				zap.String("dataplane_id", dataplaneID.String()),
 				zap.Error(err))
-			// Continue with other prefixes even if one fails
 			continue
 		}
-		totalDeleted += deleted
-		logger.GetLoggerWithContext(ctx).Info("cleaned up prefix",
-			zap.String("prefix", prefix),
-			zap.Int("objects_deleted", deleted))
+
+		// Process both published and dropped prefixes
+		prefixes := []string{"databahn-sandbox-storage/status=published/", "databahn-sandbox-storage/status=dropped/"}
+		objectDeleted := 0
+
+		for _, prefix := range prefixes {
+			deleted, err := cleanupPrefix(ctx, s3Client, bucketName, prefix, cutoffTime)
+			if err != nil {
+				errorMsg := fmt.Sprintf("error cleaning up prefix %s in bucket %s for data plane %s: %v",
+					prefix, bucketName, dataplaneID.String(), err)
+				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+				logger.GetLoggerWithContext(ctx).Error("error cleaning up prefix",
+					zap.String("dataplane_id", dataplaneID.String()),
+					zap.String("bucket", bucketName),
+					zap.String("prefix", prefix),
+					zap.Error(err))
+				continue
+			}
+			objectDeleted += deleted
+		}
+
+		totalDeleted += objectDeleted
+		logger.GetLoggerWithContext(ctx).Info("completed cleanup for data plane",
+			zap.String("dataplane_id", dataplaneID.String()),
+			zap.String("bucket", bucketName),
+			zap.Int("objects_deleted", objectDeleted))
 	}
 
 	if len(jobErrors) == 0 {
 		logger.GetLoggerWithContext(ctx).Info("successfully completed sandbox storage cleanup",
-			zap.Int("total_objects_deleted", totalDeleted))
+			zap.Int("total_objects_deleted", totalDeleted),
+			zap.Int("dataplanes_processed", len(dataplaneConfigs)))
 		return common.NewJobResultSuccess()
 	}
 
 	logger.GetLoggerWithContext(ctx).Info("sandbox storage cleanup completed with errors",
 		zap.Int("error_count", len(jobErrors)),
-		zap.Int("total_objects_deleted", totalDeleted))
+		zap.Int("total_objects_deleted", totalDeleted),
+		zap.Int("dataplanes_processed", len(dataplaneConfigs)))
 	return common.NewJobResultFromErrors(jobErrors)
 }
 
-func createS3ClientForCleanup(ctx context.Context) (*s3.Client, error) {
-	cfg, err := awsConfig.LoadDefaultConfig(ctx,
-		awsConfig.WithRegion(config.GetAppConfiguration().GetString(configuration.Region)))
+// loadDataPlaneSandboxConfigs retrieves all data planes and builds a map of their sandbox storage configurations
+func loadDataPlaneSandboxConfigs(ctx context.Context) (map[uuid.UUID]*dataplane.SandboxStorageConfig, error) {
+	db := config.GetDB()
+	// Get all data planes
+	dataPlanes, err := dataplane.GetAllDataPlanes(ctx, db)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, fmt.Errorf("error getting data planes: %w", err)
+	}
+
+	// Build map of dataplane ID to sandbox storage configuration
+	dataplaneConfigs := make(map[uuid.UUID]*dataplane.SandboxStorageConfig)
+	for _, dp := range dataPlanes {
+		config, err := dp.ParseBackupConfiguration()
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Warn("error parsing backup configuration for data plane",
+				zap.String("dataplane_id", dp.ID.String()),
+				zap.String("dataplane_name", dp.Name),
+				zap.Error(err))
+			continue
+		}
+
+		if config != nil && config.SandboxStorageConfiguration.AWSConfiguration.Bucket != "" {
+			dataplaneConfigs[dp.ID] = &config.SandboxStorageConfiguration
+			logger.GetLoggerWithContext(ctx).Debug("loaded sandbox storage configuration for data plane",
+				zap.String("dataplane_id", dp.ID.String()),
+				zap.String("dataplane_name", dp.Name),
+				zap.String("bucket", config.SandboxStorageConfiguration.AWSConfiguration.Bucket),
+				zap.String("region", config.SandboxStorageConfiguration.AWSConfiguration.Region))
+		}
+	}
+
+	return dataplaneConfigs, nil
+}
+
+func createS3ClientForCleanup(ctx context.Context, region string) (*s3.Client, error) {
+	cfg, err := awsConfig.LoadDefaultConfig(ctx, awsConfig.WithRegion(region))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config for region %s: %w", region, err)
 	}
 	return s3.NewFromConfig(cfg), nil
 }
@@ -260,10 +321,25 @@ func parseHourFolderPath(folderPath string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("invalid folder path format: %s", folderPath)
 	}
 
-	year, _ := strconv.Atoi(matches[1])
-	month, _ := strconv.Atoi(matches[2])
-	day, _ := strconv.Atoi(matches[3])
-	hour, _ := strconv.Atoi(matches[4])
+	year, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid year value in folder path %s: %w", folderPath, err)
+	}
+
+	month, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid month value in folder path %s: %w", folderPath, err)
+	}
+
+	day, err := strconv.Atoi(matches[3])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid day value in folder path %s: %w", folderPath, err)
+	}
+
+	hour, err := strconv.Atoi(matches[4])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid hour value in folder path %s: %w", folderPath, err)
+	}
 
 	// Return time in UTC to match S3 folder timezone
 	return time.Date(year, time.Month(month), day, hour, 0, 0, 0, time.UTC), nil
