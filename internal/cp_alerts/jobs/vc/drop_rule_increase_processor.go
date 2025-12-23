@@ -117,7 +117,7 @@ func (p *DropRuleIncreaseProcessor) AutoResolveAlerts(ctx context.Context, data 
 
 // checkDropRuleIncreaseCondition checks if DROP rule increase condition is met
 func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule vc_rule.VCRule, todayStats, yesterdayStats *RuleStats, config *VCAlertConfig) bool {
-	// Only alert if there's significant traffic to avoid noise
+	// Only alert if there's significant traffic to avoid noise (using general minimum events threshold)
 	if todayStats.Evaluated < config.MinimumEventsThreshold {
 		logger.GetLogger().Debug("skipping alert due to low traffic",
 			zap.String("ruleId", vcRule.ID.String()),
@@ -136,6 +136,15 @@ func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule vc_rul
 		return false
 	}
 
+	// Check if today's matched events meet the minimum threshold
+	if todayStats.Matched < config.DropRuleMinimumEventMatched {
+		logger.GetLogger().Debug("skipping alert due to low matched event count",
+			zap.String("ruleId", vcRule.ID.String()),
+			zap.Int64("todayMatched", todayStats.Matched),
+			zap.Int64("minimumEventMatched", config.DropRuleMinimumEventMatched))
+		return false
+	}
+
 	// Calculate percentages
 	yesterdayMatchPercent := float64(yesterdayStats.Matched) / float64(yesterdayStats.Evaluated) * 100
 	todayMatchPercent := float64(todayStats.Matched) / float64(todayStats.Evaluated) * 100
@@ -150,7 +159,8 @@ func (p *DropRuleIncreaseProcessor) checkDropRuleIncreaseCondition(vcRule vc_rul
 			zap.Float64("yesterdayMatchPercent", yesterdayMatchPercent),
 			zap.Float64("todayMatchPercent", todayMatchPercent),
 			zap.Float64("increasePercent", increasePercent),
-			zap.Float64("threshold", config.DropRuleIncreaseThreshold))
+			zap.Float64("dropPercentage", config.DropRuleIncreaseThreshold),
+			zap.Int64("minimumEventMatched", config.DropRuleMinimumEventMatched))
 		return true
 	}
 
