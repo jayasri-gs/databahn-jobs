@@ -97,7 +97,7 @@ func (p *DropRuleIncreaseProcessor) ProcessAlerts(_ context.Context, data *Proce
 					zap.String("tenantId", data.Tenant.Id.String()),
 					zap.String("ruleId", vcRule.ID.String()),
 					zap.String("ruleName", vcRule.Name),
-					zap.Int64("todayEvaluated", todayStats.Evaluated),
+					zap.Int64("todayMatched", todayStats.Matched),
 					zap.Int64("dropRuleMinimumEventMatched", data.Config.DropRuleMinimumEventMatched))
 			}
 		}
