@@ -181,20 +181,10 @@ func resolveConfigForAgent(
 	agentConfigsByAgentId map[uuid.UUID]entities.EntityAlertsConfig,
 	tenantConfigsByTenantId map[uuid.UUID]*entities.EntityAlertsConfig,
 ) *AgentVolumeDeviationConfig {
-	agentConfig, agentConfigExists := agentConfigsByAgentId[agentId]
-	if agentConfigExists {
-		if agentConfig.Config != nil && !agentConfig.Config.Enabled {
-			return nil
-		}
-		if config := resolveAgentLevelConfig(agentId, agentConfigsByAgentId); config != nil {
-			return config
-		}
-	}
-	if config := resolveTenantLevelConfig(tenantId, tenantConfigsByTenantId); config != nil {
+	if config := resolveAgentLevelConfig(agentId, agentConfigsByAgentId); config != nil {
 		return config
 	}
-
-	return nil
+	return resolveTenantLevelConfig(tenantId, tenantConfigsByTenantId)
 }
 
 // resolveAgentLevelConfig resolves agent-level config if available and enabled
@@ -207,16 +197,8 @@ func resolveAgentLevelConfig(
 		return nil
 	}
 
-	if agentConfig.Config == nil {
-		return nil
-	}
-
 	if !agentConfig.Config.Enabled {
 		return nil // Agent-level config disabled
-	}
-
-	if agentConfig.Config.AgentVolumeDeviationAlertConfig == nil {
-		return nil // Agent config enabled but alert config is nil - fall through to tenant/default
 	}
 
 	return buildConfigFromAlertConfig(agentConfig.Config.AgentVolumeDeviationAlertConfig, true)
@@ -232,16 +214,8 @@ func resolveTenantLevelConfig(
 		return nil
 	}
 
-	if tenantConfig.Config == nil {
-		return nil
-	}
-
 	if !tenantConfig.Config.Enabled {
 		return nil // Tenant-level config disabled
-	}
-
-	if tenantConfig.Config.AgentVolumeDeviationAlertConfig == nil {
-		return nil // Tenant config enabled but alert config is nil - fall through to default
 	}
 
 	return buildConfigFromAlertConfig(tenantConfig.Config.AgentVolumeDeviationAlertConfig, true)
