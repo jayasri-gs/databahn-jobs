@@ -53,7 +53,9 @@ type SchemaLessConfig struct {
 type ParserConfig struct {
 	DataType       DataType        `json:"dataType,omitempty"`       // Data type: "json", "keyvalue", etc.
 	KeyValueConfig *KeyValueConfig `json:"keyValueConfig,omitempty"` // Configuration for key-value data type
-	LeefConfig     *LeefConfig     `json:"leefConfig,omitempty"`     // Configuration for LEF data type
+	LeefConfig     *LeefConfig     `json:"leefConfig,omitempty"`     // Configuration for LEEF data type
+	CsvConfig      *CsvConfig      `json:"csvConfig,omitempty"`      // Configuration for CSV data type
+	PsvConfig      *PsvConfig      `json:"psvConfig,omitempty"`      // Configuration for PSV data type
 }
 
 // KeyValueConfig holds configuration for key-value data type parsing
@@ -65,6 +67,16 @@ type KeyValueConfig struct {
 // LeefConfig holds configuration for LEEF data type parsing
 type LeefConfig struct {
 	FieldDelimiter string `json:"fieldDelimiter"` // Delimiter between fields (e.g., "\n", "|", " ")
+}
+
+// CsvConfig holds configuration for CSV data type parsing
+type CsvConfig struct {
+	Headers []string `json:"headers"` // Column headers for CSV data
+}
+
+// PsvConfig holds configuration for PSV data type parsing
+type PsvConfig struct {
+	Headers []string `json:"headers"` // Column headers for PSV data
 }
 
 type PreProcessor struct {

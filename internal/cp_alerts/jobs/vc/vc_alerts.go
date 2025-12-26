@@ -591,7 +591,7 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 	tenantId := t.Id
 
 	// Skip alert if pipeline sends to Databahn Sandbox destination and tenant has disabled sandbox alerts
-	if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID {
+	if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID || pipelineMapping.DestinationID.String() == constants.SandboxStorageDestinationID {
 		shouldSkip, err := util.ShouldSkipSandboxAlerts(o.db, tenantId)
 		if err != nil {
 			logger.GetLogger().Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",

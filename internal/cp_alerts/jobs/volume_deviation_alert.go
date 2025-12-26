@@ -175,7 +175,7 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 			}
 			for _, destination := range destinations {
 				// Skip alert if destination is the Databahn Sandbox and tenant has disabled sandbox alerts
-				if destination.ID.String() == constants.SandboxDestinationID {
+				if destination.ID.String() == constants.SandboxDestinationID || destination.ID.String() == constants.SandboxStorageDestinationID {
 					shouldSkip, err := util.ShouldSkipSandboxAlerts(db, tenantIdUuid)
 					if err != nil {
 						logger.GetLoggerWithContext(ctx).Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",

@@ -69,4 +69,6 @@ var (
 	AgentSilentInput                 = functionalityTypeEnum{value: "agent_silent_input"}
 	SchemaLessNormalizationConflict  = functionalityTypeEnum{value: "schema_less_normalization_conflict"}
 	TransformationFieldsDrop         = functionalityTypeEnum{value: "transformation_fields_drop"}
+	SandboxStorageExpirationWarning  = functionalityTypeEnum{value: "sandbox_storage_expiration_warning"}
+	SandboxStorageAutoDisabled       = functionalityTypeEnum{value: "sandbox_storage_auto_disabled"}
 )
