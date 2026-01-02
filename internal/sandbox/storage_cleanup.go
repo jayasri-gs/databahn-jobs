@@ -142,6 +142,15 @@ func loadDataPlaneSandboxConfigs(ctx context.Context) (map[uuid.UUID]*dataplane.
 			continue
 		}
 
+		// Check if config is nil first (happens when BackupConfiguration is empty)
+		if config == nil {
+			logger.GetLoggerWithContext(ctx).Debug("no backup configuration found for data plane",
+				zap.String("dataplane_id", dp.ID.String()),
+				zap.String("dataplane_name", dp.Name))
+			continue
+		}
+
+		// Check if sandbox cleanup is enabled for this data plane
 		if !config.SandboxConfiguration.Enabled {
 			logger.GetLoggerWithContext(ctx).Debug("sandbox storage cleanup is disabled for data plane",
 				zap.String("dataplane_id", dp.ID.String()),
@@ -149,7 +158,8 @@ func loadDataPlaneSandboxConfigs(ctx context.Context) (map[uuid.UUID]*dataplane.
 			continue
 		}
 
-		if config != nil && config.SandboxConfiguration.AWSConfiguration.Bucket != "" {
+		// Check if AWS configuration is properly set
+		if config.SandboxConfiguration.AWSConfiguration.Bucket != "" {
 			dataplaneConfigs[dp.ID] = &config.SandboxConfiguration
 			logger.GetLoggerWithContext(ctx).Debug("loaded sandbox storage configuration for data plane",
 				zap.String("dataplane_id", dp.ID.String()),

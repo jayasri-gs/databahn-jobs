@@ -198,7 +198,7 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 				alertsToSend = append(alertsToSend, alert)
 
 			case updatedAt.Before(secondWarnCutoff):
-				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays, true, alerts_async.SandboxExpirationSecondWarning)
+				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays, alerts_async.SandboxExpirationSecondWarning)
 				if buildErr != nil {
 					errorMsg := fmt.Sprintf("error building sandbox pipeline second warning alert for pipeline %s: %v",
 						p.ID.String(), buildErr)
@@ -212,7 +212,7 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 				alertsToSend = append(alertsToSend, alert)
 
 			case updatedAt.Before(firstWarnCutoff):
-				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays, false, alerts_async.SandboxExpirationFirstWarning)
+				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays, alerts_async.SandboxExpirationFirstWarning)
 				if buildErr != nil {
 					errorMsg := fmt.Sprintf("error building sandbox pipeline first warning alert for pipeline %s: %v",
 						p.ID.String(), buildErr)
@@ -336,7 +336,7 @@ func disableSandboxPipeline(ctx context.Context, db *gorm.DB, pl *pipeline.Pipel
 	})
 }
 
-func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, lastUpdatedAt time.Time, now time.Time, disableDays int, isUrgent bool, functionalityType alerts_async.FunctionalityType) (*alerts_async.Alert, error) {
+func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, lastUpdatedAt time.Time, now time.Time, disableDays int, functionalityType alerts_async.FunctionalityType) (*alerts_async.Alert, error) {
 	daysSinceUpdate := int(now.Sub(lastUpdatedAt).Hours() / 24)
 	daysUntilDisable := disableDays - daysSinceUpdate
 
