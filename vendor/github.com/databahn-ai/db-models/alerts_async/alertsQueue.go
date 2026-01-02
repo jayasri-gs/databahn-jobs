@@ -1,12 +1,13 @@
 package alerts_async
 
 import (
+	"time"
+
 	"github.com/databahn-ai/common-utils/queue"
 	"github.com/databahn-ai/db-models/alerts_common"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"time"
 )
 
 var alertQueue *queue.DedupeQueue[alerts_common.Alert]

@@ -102,6 +102,14 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 	secondWarningDays := utils.GetEnvInt("SANDBOX_SECOND_WARNING_DAYS", defaultSandboxSecondWarningDays)
 	disableDays := utils.GetEnvInt("SANDBOX_DISABLE_DAYS", defaultSandboxDisableDays)
 
+	// Parse release date from environment variable (DD-MM-YYYY format)
+	releaseTime, err := parseReleaseDate(ctx)
+	if err != nil {
+		errorMsg := fmt.Sprintf("failed to parse RELEASE_DATE: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		return common.NewJobResultFromErrors(jobErrors)
+	}
+
 	logger.GetLoggerWithContext(ctx).Info("checking sandbox destination pipelines",
 		zap.Int("tenant_count", len(tenants)),
 		zap.Int("first_warning_days", firstWarningDays),
@@ -147,6 +155,15 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 			updatedAt := p.UpdatedAt.UTC()
 			pipelineTenantId := p.TenantID.String()
 
+			// If release date is set and pipeline was updated before release date, use release date
+			if releaseTime != nil && updatedAt.Before(*releaseTime) {
+				logger.GetLoggerWithContext(ctx).Info("pipeline updated before release date, using release date",
+					zap.String("pipeline_id", p.ID.String()),
+					zap.Time("original_updated_at", updatedAt),
+					zap.Time("release_time", *releaseTime))
+				updatedAt = *releaseTime
+			}
+
 			entity := sandboxPipelineEntity{
 				PipelineID:   p.ID,
 				PipelineName: p.Name,
@@ -181,7 +198,7 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 				alertsToSend = append(alertsToSend, alert)
 
 			case updatedAt.Before(secondWarnCutoff):
-				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays, true)
+				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays, true, alerts_async.SandboxExpirationSecondWarning)
 				if buildErr != nil {
 					errorMsg := fmt.Sprintf("error building sandbox pipeline second warning alert for pipeline %s: %v",
 						p.ID.String(), buildErr)
@@ -195,7 +212,7 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 				alertsToSend = append(alertsToSend, alert)
 
 			case updatedAt.Before(firstWarnCutoff):
-				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays, false)
+				alert, buildErr := buildSandboxPipelineWarningAlert(entity, updatedAt, now, disableDays, false, alerts_async.SandboxExpirationFirstWarning)
 				if buildErr != nil {
 					errorMsg := fmt.Sprintf("error building sandbox pipeline first warning alert for pipeline %s: %v",
 						p.ID.String(), buildErr)
@@ -319,7 +336,7 @@ func disableSandboxPipeline(ctx context.Context, db *gorm.DB, pl *pipeline.Pipel
 	})
 }
 
-func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, lastUpdatedAt time.Time, now time.Time, disableDays int, isUrgent bool) (*alerts_async.Alert, error) {
+func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, lastUpdatedAt time.Time, now time.Time, disableDays int, isUrgent bool, functionalityType alerts_async.FunctionalityType) (*alerts_async.Alert, error) {
 	daysSinceUpdate := int(now.Sub(lastUpdatedAt).Hours() / 24)
 	daysUntilDisable := disableDays - daysSinceUpdate
 
@@ -339,7 +356,7 @@ func buildSandboxPipelineWarningAlert(entity sandboxPipelineEntity, lastUpdatedA
 		alerts_async.Pipeline,
 		alerts_async.WithEntity(entity),
 		alerts_async.WithCriticality(alerts_async.Warning),
-		alerts_async.WithFunctionalityType(alerts_async.SandboxStorageExpirationWarning),
+		alerts_async.WithFunctionalityType(functionalityType),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DGRW10001, "Sandbox pipeline guardrail"),
@@ -361,7 +378,7 @@ func buildSandboxPipelineDisabledAlert(entity sandboxPipelineEntity, lastUpdated
 		alerts_async.Pipeline,
 		alerts_async.WithEntity(entity),
 		alerts_async.WithCriticality(alerts_async.Sever),
-		alerts_async.WithFunctionalityType(alerts_async.SandboxStorageAutoDisabled),
+		alerts_async.WithFunctionalityType(alerts_async.SandboxAutoDisabled),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DGRW10001, "Sandbox pipeline guardrail"),
@@ -384,4 +401,29 @@ func createPipelineDisabledAuditEntry(tx *gorm.DB, pl *pipeline.Pipeline) error 
 	}
 
 	return audit.CreateAuditEntry(tx, entry)
+}
+
+// parseReleaseDate parses the RELEASE_DATE environment variable and returns the release time.
+// Returns nil if RELEASE_DATE is not set or is "0".
+// Expected format: DD-MM-YYYY
+func parseReleaseDate(ctx context.Context) (*time.Time, error) {
+	releaseDateStr := utils.GetEnvOrDefault("RELEASE_DATE", "0")
+	if releaseDateStr == "0" {
+		return nil, nil
+	}
+
+	parsedTime, err := time.Parse("02-01-2006", releaseDateStr)
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("error parsing RELEASE_DATE",
+			zap.String("value", releaseDateStr),
+			zap.Error(err))
+		return nil, fmt.Errorf("error parsing RELEASE_DATE '%s': %w", releaseDateStr, err)
+	}
+
+	releaseTimeUTC := parsedTime.UTC()
+	logger.GetLoggerWithContext(ctx).Info("using release date for pipeline comparison",
+		zap.String("release_date", releaseDateStr),
+		zap.Time("release_time_utc", releaseTimeUTC))
+
+	return &releaseTimeUTC, nil
 }
