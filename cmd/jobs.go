@@ -106,9 +106,9 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = unparsedReport.SendUnparsedEventsReport(ctx)
 	case common.FETCH_AGENT_DISCOVERED_CHANNEL_SUBSRIPTIONS:
 		result = agent.FetchAgentDiscoveredChannelSubscriptions(ctx)
-	case common.SANDBOX_STORAGE_PIPELINE_CHECKER:
+	case common.SANDBOX_PIPELINE_CHECKER:
 		result = sandbox.CheckSandboxStoragePipelines(ctx)
-	case common.SANDBOX_STORAGE_CLEANUP:
+	case common.SANDBOX_CLEANUP:
 		result = sandbox.CleanupSandboxStorage(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))

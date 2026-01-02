@@ -69,6 +69,8 @@ var (
 	AgentSilentInput                 = functionalityTypeEnum{value: "agent_silent_input"}
 	SchemaLessNormalizationConflict  = functionalityTypeEnum{value: "schema_less_normalization_conflict"}
 	TransformationFieldsDrop         = functionalityTypeEnum{value: "transformation_fields_drop"}
-	SandboxStorageExpirationWarning  = functionalityTypeEnum{value: "sandbox_storage_expiration_warning"}
-	SandboxStorageAutoDisabled       = functionalityTypeEnum{value: "sandbox_storage_auto_disabled"}
+	SandboxExpirationFirstWarning    = functionalityTypeEnum{value: "sandbox_expiration_first_warning"}
+	SandboxExpirationSecondWarning   = functionalityTypeEnum{value: "sandbox_expiration_second_warning"}
+	SandboxAutoDisabled              = functionalityTypeEnum{value: "sandbox_auto_disabled"}
+	DataTypeMismatchConflict         = functionalityTypeEnum{value: "data_type_mismatch_conflict"}
 )

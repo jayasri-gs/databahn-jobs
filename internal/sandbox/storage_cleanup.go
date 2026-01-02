@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	defaultSandboxCleanupRetentionHours = 3
+	defaultSandboxCleanupRetentionHours = 4
 	batchDeleteSize                     = 1000 // S3 DeleteObjects supports up to 1000 keys per request
 )
 
@@ -48,8 +48,9 @@ func CleanupSandboxStorage(ctx context.Context) common.JobResult {
 	retentionHours := utils.GetEnvInt("SANDBOX_CLEANUP_RETENTION_HOURS", defaultSandboxCleanupRetentionHours)
 
 	// Use UTC timezone to match S3 folder structure (hour=HH is in UTC)
+	// Truncate cutoff time to start of hour (00:00:00) - e.g., 14:30 - 4hrs = 10:30 -> 10:00:00
 	now := time.Now().UTC()
-	cutoffTime := now.Add(-time.Duration(retentionHours) * time.Hour)
+	cutoffTime := now.Add(-time.Duration(retentionHours) * time.Hour).Truncate(time.Hour)
 
 	logger.GetLoggerWithContext(ctx).Info("starting sandbox storage cleanup",
 		zap.Int("dataplane_count", len(dataplaneConfigs)),
@@ -80,7 +81,7 @@ func CleanupSandboxStorage(ctx context.Context) common.JobResult {
 		}
 
 		// Process both published and dropped prefixes
-		prefixes := []string{"databahn-sandbox-storage/status=published/", "databahn-sandbox-storage/status=dropped/"}
+		prefixes := []string{"databahn-sandbox/status=published/", "databahn-sandbox/status=dropped/"}
 		objectDeleted := 0
 
 		for _, prefix := range prefixes {
@@ -121,7 +122,7 @@ func CleanupSandboxStorage(ctx context.Context) common.JobResult {
 }
 
 // loadDataPlaneSandboxConfigs retrieves all data planes and builds a map of their sandbox storage configurations
-func loadDataPlaneSandboxConfigs(ctx context.Context) (map[uuid.UUID]*dataplane.SandboxStorageConfig, error) {
+func loadDataPlaneSandboxConfigs(ctx context.Context) (map[uuid.UUID]*dataplane.SandboxConfig, error) {
 	db := config.GetDB()
 	// Get all data planes
 	dataPlanes, err := dataplane.GetAllDataPlanes(ctx, db)
@@ -130,7 +131,7 @@ func loadDataPlaneSandboxConfigs(ctx context.Context) (map[uuid.UUID]*dataplane.
 	}
 
 	// Build map of dataplane ID to sandbox storage configuration
-	dataplaneConfigs := make(map[uuid.UUID]*dataplane.SandboxStorageConfig)
+	dataplaneConfigs := make(map[uuid.UUID]*dataplane.SandboxConfig)
 	for _, dp := range dataPlanes {
 		config, err := dp.ParseBackupConfiguration()
 		if err != nil {
@@ -141,13 +142,30 @@ func loadDataPlaneSandboxConfigs(ctx context.Context) (map[uuid.UUID]*dataplane.
 			continue
 		}
 
-		if config != nil && config.SandboxStorageConfiguration.AWSConfiguration.Bucket != "" {
-			dataplaneConfigs[dp.ID] = &config.SandboxStorageConfiguration
+		// Check if config is nil first (happens when BackupConfiguration is empty)
+		if config == nil {
+			logger.GetLoggerWithContext(ctx).Debug("no backup configuration found for data plane",
+				zap.String("dataplane_id", dp.ID.String()),
+				zap.String("dataplane_name", dp.Name))
+			continue
+		}
+
+		// Check if sandbox cleanup is enabled for this data plane
+		if !config.SandboxConfiguration.Enabled {
+			logger.GetLoggerWithContext(ctx).Debug("sandbox storage cleanup is disabled for data plane",
+				zap.String("dataplane_id", dp.ID.String()),
+				zap.String("dataplane_name", dp.Name))
+			continue
+		}
+
+		// Check if AWS configuration is properly set
+		if config.SandboxConfiguration.AWSConfiguration.Bucket != "" {
+			dataplaneConfigs[dp.ID] = &config.SandboxConfiguration
 			logger.GetLoggerWithContext(ctx).Debug("loaded sandbox storage configuration for data plane",
 				zap.String("dataplane_id", dp.ID.String()),
 				zap.String("dataplane_name", dp.Name),
-				zap.String("bucket", config.SandboxStorageConfiguration.AWSConfiguration.Bucket),
-				zap.String("region", config.SandboxStorageConfiguration.AWSConfiguration.Region))
+				zap.String("bucket", config.SandboxConfiguration.AWSConfiguration.Bucket),
+				zap.String("region", config.SandboxConfiguration.AWSConfiguration.Region))
 		}
 	}
 

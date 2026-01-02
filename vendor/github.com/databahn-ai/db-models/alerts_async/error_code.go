@@ -37,6 +37,9 @@ var (
 	DCFE10001 = errorCodeEnum{value: "DCFE10001", messageTemplate: "Configuration Not Supported. {0}"}
 	DCFE10002 = errorCodeEnum{value: "DCFE10002", messageTemplate: "Configuration Not Found. {0}"}
 	DCFE10003 = errorCodeEnum{value: "DCFE10003", messageTemplate: "Configuration not processed successfully. {0}"}
+	DCFE10004 = errorCodeEnum{value: "DCFE10004", messageTemplate: "Configuration has conflicts. {0}"} // used in backend-service
+	DCFE10005 = errorCodeEnum{value: "DCFE10005", messageTemplate: "Device inventory disabled. {0}"}   // used in backend-service
+	DCFE10006 = errorCodeEnum{value: "DCFE10006", messageTemplate: "Data type mismatch conflict. {0}"}
 	DDTE10001 = errorCodeEnum{value: "DDTE10001", messageTemplate: "Data Conversion Issue. {0}"}
 	DDTE10002 = errorCodeEnum{value: "DDTE10002", messageTemplate: "Data Parsing Issue. {0}"}
 	DDTE10003 = errorCodeEnum{value: "DDTE10003", messageTemplate: "Data Forwarding Issue. {0}"}
