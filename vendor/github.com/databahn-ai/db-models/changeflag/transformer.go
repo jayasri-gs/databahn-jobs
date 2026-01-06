@@ -86,7 +86,8 @@ type ReorderConfig struct {
 	Fields []string `json:"fields"`
 }
 type ResizeConfig struct {
-	FieldsToInclude []string `json:"fieldsToInclude"`
+	FieldsToInclude    []string `json:"fieldsToInclude"`
+	GetFlattenedOutput bool     `json:"getFlattenedOutput"`
 }
 type RenameConfig struct {
 	RenameFields []RenameFields `json:"renameFields"`
@@ -100,6 +101,7 @@ type RenameConfiguration struct {
 	MessageReformattingTemplate string                     `json:"messageReformattingTemplate"`
 	MessageReformattingSegments []Segment                  `json:"messageReformattingSegments"`
 	CustomTransformationConfig  CustomTransformationConfig `json:"customTransformationConfig"`
+	GetFlattenedOutput          bool                       `json:"getFlattenedOutput"`
 }
 type CustomTransformationConfig struct {
 	CustomTransformationBlocks []CustomTransformationBlock `json:"customTransformationBlocks"`

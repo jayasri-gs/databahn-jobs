@@ -43,6 +43,7 @@ type AlertConfig struct {
 	DestinationDeliveredMoreAlertConfig *DestinationDeliveredMoreAlertConfig `json:"destinationDeliveredMoreAlertConfig"`
 	VolumeDeviationAlertConfig          *VolumeDeviationAlertConfig          `json:"volumeDeviationAlertConfig"`
 	DisableSandboxAlertsConfig          *DisableSandboxAlertsConfig          `json:"disableSandboxAlertsConfig"`
+	DropRuleIncreaseAlertConfig         *DropRuleIncreaseAlertConfig         `json:"dropRuleIncreaseAlertConfig"`
 }
 
 func (a *AlertConfig) Scan(value interface{}) error {
@@ -81,6 +82,11 @@ type VolumeDeviationAlertConfig struct {
 	DeviationPercentage        int    `json:"deviationPercentage"`
 	MinimumVolumeThreshold     int64  `json:"minimumVolumeThreshold"`
 	MinimumVolumeThresholdUnit string `json:"minimumVolumeThresholdUnit"`
+}
+
+type DropRuleIncreaseAlertConfig struct {
+	DropPercentage      int   `json:"dropPercentage"`
+	MinimumEventMatched int64 `json:"minimumEventMatched"`
 }
 
 type DisableSandboxAlertsConfig struct {

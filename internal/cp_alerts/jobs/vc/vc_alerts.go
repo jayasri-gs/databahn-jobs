@@ -13,6 +13,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/constants"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -32,6 +33,7 @@ import (
 const (
 	// DefaultDropRuleIncreaseThreshold Default thresholds (can be overridden by environment variables)
 	DefaultDropRuleIncreaseThreshold          = 50.0
+	DefaultDropRuleMinimumEventMatched        = 1000
 	DefaultPipelineDataReductionThreshold     = 50.0
 	DefaultUnmatchedNoRouteProcessorThreshold = 20.0
 	// MinimumEventsThreshold Minimum events threshold to avoid noise from low-traffic sources
@@ -88,6 +90,7 @@ func getYesterdayTimeRange(useCurrentDay bool) (time.Time, time.Time) {
 
 type VCAlertConfig struct {
 	DropRuleIncreaseThreshold          float64
+	DropRuleMinimumEventMatched        int64
 	PipelineDataReductionThreshold     float64
 	UnmatchedNoRouteProcessorThreshold float64
 	MinimumEventsThreshold             int64
@@ -153,6 +156,7 @@ type VCAlertOrchestrator struct {
 
 func NewVCAlertConfig() *VCAlertConfig {
 	dropRuleIncreaseThreshold := utils.GetEnvFloat("VC_DROP_RULE_INCREASE_THRESHOLD", DefaultDropRuleIncreaseThreshold)
+	dropRuleMinimumEventMatched := utils.GetEnvInt("VC_DROP_RULE_MINIMUM_EVENT_MATCHED", DefaultDropRuleMinimumEventMatched)
 	pipelineDataReductionThreshold := utils.GetEnvFloat("VC_PIPELINE_DATA_REDUCTION_THRESHOLD", DefaultPipelineDataReductionThreshold)
 	unmatchedNoRouteProcessorThreshold := utils.GetEnvFloat("VC_UNMATCHED_NO_ROUTE_PROCESSOR_THRESHOLD", DefaultUnmatchedNoRouteProcessorThreshold)
 	minimumEventsThreshold := utils.GetEnvInt("VC_MINIMUM_EVENTS_THRESHOLD", MinimumEventsThreshold)
@@ -163,6 +167,7 @@ func NewVCAlertConfig() *VCAlertConfig {
 
 	cfg := &VCAlertConfig{
 		DropRuleIncreaseThreshold:          dropRuleIncreaseThreshold,
+		DropRuleMinimumEventMatched:        int64(dropRuleMinimumEventMatched),
 		PipelineDataReductionThreshold:     pipelineDataReductionThreshold,
 		UnmatchedNoRouteProcessorThreshold: unmatchedNoRouteProcessorThreshold,
 		MinimumEventsThreshold:             int64(minimumEventsThreshold),
@@ -175,6 +180,7 @@ func NewVCAlertConfig() *VCAlertConfig {
 
 	logger.GetLogger().Info("Volume control alert configuration loaded",
 		zap.Float64("drop_rule_increase_threshold", cfg.DropRuleIncreaseThreshold),
+		zap.Int64("drop_rule_minimum_event_matched", cfg.DropRuleMinimumEventMatched),
 		zap.Float64("pipeline_data_reduction_threshold", cfg.PipelineDataReductionThreshold),
 		zap.Float64("unmatched_no_route_processor_threshold", cfg.UnmatchedNoRouteProcessorThreshold),
 		zap.Int64("minimum_events_threshold", cfg.MinimumEventsThreshold),
@@ -487,6 +493,59 @@ func (o *VCAlertOrchestrator) cacheSourcesForTenant(tenantId uuid.UUID) (map[uui
 	return cachedSources, nil
 }
 
+// getDropRuleIncreaseConfigForTenant fetches the latest tenant-level configuration for drop rule increase alerts
+func getDropRuleIncreaseConfigForTenant(db *gorm.DB, tenantId uuid.UUID) (*entities.EntityAlertsConfig, error) {
+	configs, err := entities.ReadTenantLevelConfigs(db, "DROP_RULE_INCREASE", tenantId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read tenant-level drop rule increase configs: %w", err)
+	}
+
+	if len(configs) == 0 {
+		return nil, nil
+	}
+
+	// Return the first config (ordered by updated_at DESC, so this is the most recent)
+	return &configs[0], nil
+}
+
+// getTenantSpecificConfig creates a tenant-specific VCAlertConfig by overriding defaults with tenant config
+func (o *VCAlertOrchestrator) getTenantSpecificConfig(tenantId uuid.UUID) *VCAlertConfig {
+	// Start with a copy of the default config
+	tenantConfig := *o.config
+
+	// Try to fetch tenant-level configuration for DROP_RULE_INCREASE
+	dbConfig, err := getDropRuleIncreaseConfigForTenant(o.db, tenantId)
+	if err != nil {
+		logger.GetLogger().Warn("failed to fetch tenant-level drop rule increase config, using defaults",
+			zap.String("tenantId", tenantId.String()), zap.Error(err))
+		return &tenantConfig
+	}
+
+	if dbConfig == nil || dbConfig.Config == nil || !dbConfig.Config.Enabled {
+		logger.GetLogger().Debug("no tenant-level drop rule increase config found or disabled, using defaults",
+			zap.String("tenantId", tenantId.String()))
+		return &tenantConfig
+	}
+
+	alertConfig := dbConfig.Config.DropRuleIncreaseAlertConfig
+	if alertConfig == nil {
+		logger.GetLogger().Warn("tenant config exists but DropRuleIncreaseAlertConfig is nil, using defaults",
+			zap.String("tenantId", tenantId.String()))
+		return &tenantConfig
+	}
+
+	// Override with tenant-specific values
+	tenantConfig.DropRuleIncreaseThreshold = float64(alertConfig.DropPercentage)
+	tenantConfig.DropRuleMinimumEventMatched = alertConfig.MinimumEventMatched
+
+	logger.GetLogger().Info("using tenant-level drop rule increase config",
+		zap.String("tenantId", tenantId.String()),
+		zap.Float64("dropPercentage", tenantConfig.DropRuleIncreaseThreshold),
+		zap.Int64("minimumEventMatched", tenantConfig.DropRuleMinimumEventMatched))
+
+	return &tenantConfig
+}
+
 // processTenantAlerts processes alerts for a single tenant
 func (o *VCAlertOrchestrator) processTenantAlerts(t *tenant.Tenant) error {
 	tenantId := t.Id
@@ -500,6 +559,9 @@ func (o *VCAlertOrchestrator) processTenantAlerts(t *tenant.Tenant) error {
 
 	logger.GetLogger().Info("cached sources for tenant", zap.Int("sourceCount", len(cachedSources)), zap.String("tenantId", tenantId.String()))
 
+	// Get tenant-specific config (overrides defaults with any tenant-level DB config)
+	tenantConfig := o.getTenantSpecificConfig(tenantId)
+
 	// Get all active pipelines for the tenant
 	pipelines, err := pipeline.GetActivePipelinesWithMappings(o.ctx, o.db, tenantId)
 	if err != nil {
@@ -512,7 +574,7 @@ func (o *VCAlertOrchestrator) processTenantAlerts(t *tenant.Tenant) error {
 	for _, pipelineInfo := range pipelines {
 		pipelineId := pipelineInfo.Pipeline.ID
 
-		err = o.processPipelineAlerts(t, &pipelineInfo, cachedSources)
+		err = o.processPipelineAlerts(t, &pipelineInfo, cachedSources, tenantConfig)
 		if err != nil {
 			logger.GetLogger().Error("error processing pipeline alerts", zap.Error(err),
 				zap.String("tenantId", tenantId.String()), zap.String("pipelineId", pipelineId.String()))
@@ -524,12 +586,12 @@ func (o *VCAlertOrchestrator) processTenantAlerts(t *tenant.Tenant) error {
 }
 
 // processPipelineAlerts processes alerts for a single pipeline
-func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMapping *pipeline.PipelineWithMappings, cachedSources map[uuid.UUID]source.Source) error {
+func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMapping *pipeline.PipelineWithMappings, cachedSources map[uuid.UUID]source.Source, tenantConfig *VCAlertConfig) error {
 	pipelineId := pipelineMapping.Pipeline.ID
 	tenantId := t.Id
 
 	// Skip alert if pipeline sends to Databahn Sandbox destination and tenant has disabled sandbox alerts
-	if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID {
+	if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID || pipelineMapping.DestinationID.String() == constants.SandboxStorageDestinationID {
 		shouldSkip, err := util.ShouldSkipSandboxAlerts(o.db, tenantId)
 		if err != nil {
 			logger.GetLogger().Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",
@@ -558,7 +620,7 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 	}
 
 	// Create statistics service
-	statsService := NewVCStatisticsService(o.ctx, tenantId, o.config)
+	statsService := NewVCStatisticsService(o.ctx, tenantId, tenantConfig)
 
 	// Prepare processing data
 	processingData := &ProcessingData{
@@ -567,7 +629,7 @@ func (o *VCAlertOrchestrator) processPipelineAlerts(t *tenant.Tenant, pipelineMa
 		VCRules:         vcRules,
 		CachedSources:   cachedSources,
 		StatsService:    statsService,
-		Config:          o.config,
+		Config:          tenantConfig,
 		// Dependencies for auto-resolution
 		OSClient:      o.osClient,
 		AlertsManager: o.alertsManager,

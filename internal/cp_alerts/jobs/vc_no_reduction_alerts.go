@@ -111,7 +111,7 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 			destinationName := pipelineMapping.DestinationName
 
 			// Skip alert if pipeline sends to Databahn Sandbox destination and tenant has disabled sandbox alerts
-			if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID {
+			if pipelineMapping.DestinationID.String() == constants.SandboxDestinationID || pipelineMapping.DestinationID.String() == constants.SandboxStorageDestinationID {
 				shouldSkip, err := util.ShouldSkipSandboxAlerts(db, t.Id)
 				if err != nil {
 					logger.GetLoggerWithContext(ctx).Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",

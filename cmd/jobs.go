@@ -3,12 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
 	"github.com/databahn-ai/databahn-jobs/internal/transformationCheckerUtility"
 	"github.com/databahn-ai/databahn-jobs/internal/unparsedReport"
 	"github.com/databahn-ai/db-models/alerts_async"
-	"os"
 
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
@@ -25,6 +26,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/kafkaquery"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
+	"github.com/databahn-ai/databahn-jobs/internal/sandbox"
 	"github.com/databahn-ai/databahn-jobs/internal/stats"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -104,6 +106,10 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = unparsedReport.SendUnparsedEventsReport(ctx)
 	case common.FETCH_AGENT_DISCOVERED_CHANNEL_SUBSRIPTIONS:
 		result = agent.FetchAgentDiscoveredChannelSubscriptions(ctx)
+	case common.SANDBOX_PIPELINE_CHECKER:
+		result = sandbox.CheckSandboxStoragePipelines(ctx)
+	case common.SANDBOX_CLEANUP:
+		result = sandbox.CleanupSandboxStorage(ctx)
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}

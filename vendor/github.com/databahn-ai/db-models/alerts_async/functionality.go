@@ -39,6 +39,7 @@ var (
 	Unknown                 = functionalityEnum{value: "unknown"}
 	Job                     = functionalityEnum{value: "job"}
 	SchemaLessNormalization = functionalityEnum{value: "schema_less_normalization"}
+	Pipeline                = functionalityEnum{value: "pipeline"}
 )
 
 func GetAllFunctionalities() []Functionality {
@@ -61,6 +62,7 @@ func GetAllFunctionalities() []Functionality {
 		Unknown,
 		Job,
 		SchemaLessNormalization,
+		Pipeline,
 	}
 }
 
