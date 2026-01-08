@@ -87,13 +87,13 @@ func GetSourceByID(ctx context.Context, db *gorm.DB, sourceID uuid.UUID) (*Sourc
 }
 
 // ReadSourcesPaginated reads sources in paginated fashion for a given tenant
-// Returns ACTIVE sources for the specified tenant with pagination support
-func ReadSourcesPaginated(db *gorm.DB, tenantId uuid.UUID, page, pageSize int) ([]Source, error) {
+// Returns sources with specified statuses for the given tenant with pagination support
+func ReadSourcesPaginated(db *gorm.DB, tenantId uuid.UUID, page, pageSize int, statuses []string) ([]Source, error) {
 	var sources []Source
 	offset := page * pageSize
 
 	result := db.
-		Where("tenant_id = ? AND status = 'ACTIVE'", tenantId).
+		Where("tenant_id = ? AND status IN ?", tenantId, statuses).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&sources)

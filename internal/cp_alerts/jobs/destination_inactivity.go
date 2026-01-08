@@ -171,7 +171,7 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 	destinationDbPageSize := 50
 
 	for {
-		destinations, err := readDestinationsPaginated(db, tenantUuid, destinationDbPage, destinationDbPageSize)
+		destinations, err := readDestinationsPaginated(db, tenantUuid, destinationDbPage, destinationDbPageSize, []string{"ACTIVE", "ERRORED", "DEPLOYING"})
 		if err != nil {
 			logger.GetLogger().Error("error while reading destinations", zap.Error(err))
 			return nil, nil, err
@@ -236,7 +236,7 @@ func findInactiveAndActiveDestinations(db *gorm.DB, tenantUuid uuid.UUID, destin
 				destinationsToAlert = append(destinationsToAlert, iad)
 				logger.GetLogger().Info("Alerting destinations", zap.Any("alert_destinations", destinationsToAlert))
 			} else {
-				logger.GetLogger().Info("destination received data within alert duration , not eligible for alert", zap.String("destination_id", destinationId), zap.Duration("duration ", defaultAlertDuration30Min), zap.Time("last_event_time", lastEventTime))
+				logger.GetLogger().Info("destination received data within alert duration , not eligible for alert", zap.String("destination_id", destinationId), zap.Duration("alertDuration ", alertDuration), zap.Time("last_event_time", lastEventTime))
 				activeDestinations = append(activeDestinations, &d)
 			}
 		}
@@ -323,12 +323,12 @@ func buildDestAlert(iad model.InactiveDestination) (*alerts_async.Alert, error) 
 	)
 }
 
-func readDestinationsPaginated(db *gorm.DB, tenantId uuid.UUID, page, pageSize int) ([]destination.Destination, error) {
+func readDestinationsPaginated(db *gorm.DB, tenantId uuid.UUID, page, pageSize int, statuses []string) ([]destination.Destination, error) {
 
 	var destinations []destination.Destination
 	offset := page * pageSize
 
-	result := db.Where("tenant_id = ? AND status = 'ACTIVE' ", tenantId).
+	result := db.Where("tenant_id = ? AND status IN ?", tenantId, statuses).
 		Limit(pageSize).
 		Offset(offset).
 		Find(&destinations)
