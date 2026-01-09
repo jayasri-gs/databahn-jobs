@@ -79,7 +79,7 @@ func CheckBehavioralVolumeSpikes(ctx context.Context) cpcommon.JobResult {
 		sourceDbPage := 0
 		sourceDbPageSize := 50
 		for {
-			sources, err := source.ReadSourcesPaginated(db, tenantIdUuid, sourceDbPage, sourceDbPageSize)
+			sources, err := source.ReadSourcesPaginated(db, tenantIdUuid, sourceDbPage, sourceDbPageSize, []string{"ACTIVE"})
 			if err != nil {
 				logger.GetLoggerWithContext(ctx).Error("error while reading sources", zap.Error(err))
 				return cpcommon.NewJobResultFromError(err)
@@ -135,7 +135,7 @@ func CheckBehavioralVolumeSpikes(ctx context.Context) cpcommon.JobResult {
 		destinationDbPage := 0
 		destinationDbPageSize := 50
 		for {
-			destinations, err := readDestinationsPaginated(db, tenantIdUuid, destinationDbPage, destinationDbPageSize)
+			destinations, err := readDestinationsPaginated(db, tenantIdUuid, destinationDbPage, destinationDbPageSize, []string{"ACTIVE"})
 			if err != nil {
 				logger.GetLoggerWithContext(ctx).Error("error while reading destinations", zap.Error(err))
 				return cpcommon.NewJobResultFromError(err)

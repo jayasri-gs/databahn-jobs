@@ -105,7 +105,7 @@ func SendAlertsForUnparsedEvents(ctx context.Context) common.JobResult {
 		var sourcesToAlert []*model.UnparsedEventSource
 		var sourcesToDismiss []*source.Source
 		for {
-			sources, err := source.ReadSourcesPaginated(db, t.Id, sourceDbPage, sourceDbPageSize)
+			sources, err := source.ReadSourcesPaginated(db, t.Id, sourceDbPage, sourceDbPageSize, []string{"ACTIVE"})
 			if err != nil {
 				errorMsg := fmt.Sprintf("error while reading sources for tenant %s: %v", tenantId, err)
 				jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
