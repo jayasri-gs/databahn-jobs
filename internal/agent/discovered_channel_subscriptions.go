@@ -182,7 +182,7 @@ func parseCSVFromS3(ctx context.Context, s3Client *s3.Client, bucket, s3Path str
 		if i == 0 {
 			continue // Skip header row
 		}
-		if len(record) >= 4 {
+		if len(record) == 4 {
 			computerName := record[0]
 			logName := record[1]
 			channelAccess := record[2]
