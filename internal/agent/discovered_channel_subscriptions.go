@@ -25,6 +25,7 @@ func FetchAgentDiscoveredChannelSubscriptions(ctx context.Context) common.JobRes
 	logger.GetLoggerWithContext(ctx).Info("starting agent discovered channel subscriptions fetch")
 
 	// Get database connection
+
 	db := config.GetDB()
 	if db == nil {
 		err := fmt.Errorf("failed to get database connection")
@@ -144,7 +145,7 @@ func parseCSVFromS3(ctx context.Context, s3Client *s3.Client, bucket, s3Path str
 
 	// Sort objects by last modified date (most recent first)
 	sort.Slice(listObjectsOutput.Contents, func(i, j int) bool {
-		return listObjectsOutput.Contents[i].LastModified.After(*listObjectsOutput.Contents[j].LastModified)
+		return (*listObjectsOutput.Contents[i].LastModified).After(*listObjectsOutput.Contents[j].LastModified)
 	})
 
 	// Get the most recent object
@@ -176,17 +177,16 @@ func parseCSVFromS3(ctx context.Context, s3Client *s3.Client, bucket, s3Path str
 	}
 
 	// Process records (skip header row)
-	// CSV structure: "Computer Name","LogName","ChannelAccess","WinRM status","Data"
+	// CSV structure: "Computer Name","LogName","ChannelAccess","Data"
 	for i, record := range records {
 		if i == 0 {
 			continue // Skip header row
 		}
-		if len(record) >= 5 {
+		if len(record) >= 4 {
 			computerName := record[0]
 			logName := record[1]
 			channelAccess := record[2]
-			winrmStatus := record[3]
-			data := record[4]
+			data := record[3]
 
 			if _, ok := dataMap[computerName]; !ok {
 				dataMap[computerName] = make(map[string]map[string]string)
@@ -195,7 +195,6 @@ func parseCSVFromS3(ctx context.Context, s3Client *s3.Client, bucket, s3Path str
 				dataMap[computerName][logName] = make(map[string]string)
 			}
 			dataMap[computerName][logName]["ChannelAccess"] = channelAccess
-			dataMap[computerName][logName]["WinRM status"] = winrmStatus
 			dataMap[computerName][logName]["Data"] = data
 		}
 	}
@@ -275,7 +274,6 @@ func convertLogEntriesToJSON(logEntries map[string]map[string]string) (string, e
 	type LogEntry struct {
 		LogName       string `json:"log_name"`
 		ChannelAccess string `json:"channel_access"`
-		WinrmStatus   string `json:"winrm_status"`
 		Data          string `json:"data"`
 	}
 
@@ -284,7 +282,6 @@ func convertLogEntriesToJSON(logEntries map[string]map[string]string) (string, e
 		entries = append(entries, LogEntry{
 			LogName:       logName,
 			ChannelAccess: details["ChannelAccess"],
-			WinrmStatus:   details["WinRM status"],
 			Data:          details["Data"],
 		})
 	}
