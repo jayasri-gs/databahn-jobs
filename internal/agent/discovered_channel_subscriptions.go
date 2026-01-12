@@ -145,7 +145,7 @@ func parseCSVFromS3(ctx context.Context, s3Client *s3.Client, bucket, s3Path str
 
 	// Sort objects by last modified date (most recent first)
 	sort.Slice(listObjectsOutput.Contents, func(i, j int) bool {
-		return (*listObjectsOutput.Contents[i].LastModified).After(*listObjectsOutput.Contents[j].LastModified)
+		return listObjectsOutput.Contents[i].LastModified.After(*listObjectsOutput.Contents[j].LastModified)
 	})
 
 	// Get the most recent object
