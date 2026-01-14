@@ -210,7 +210,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 	sourceDbPageSize := 50
 
 	for {
-		sources, err := source.ReadSourcesPaginated(db, tenantUuid, sourceDbPage, sourceDbPageSize)
+		sources, err := source.ReadSourcesPaginated(db, tenantUuid, sourceDbPage, sourceDbPageSize, []string{"ACTIVE", "ERRORED", "DEPLOYING"})
 		if err != nil {
 			logger.GetLogger().Error("error while reading sources", zap.Error(err))
 			return nil, nil, err
@@ -358,7 +358,7 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 
 func getAllLogSourcesOfTenant(db *gorm.DB, tenantId uuid.UUID) ([]source.Source, error) {
 	var sources []source.Source
-	result := db.Where("tenant_id = ? AND status = 'ACTIVE'", tenantId).Find(&sources)
+	result := db.Where("tenant_id = ? AND status IN ('ACTIVE', 'ERRORED', 'DEPLOYING')", tenantId).Find(&sources)
 
 	return sources, result.Error
 }
