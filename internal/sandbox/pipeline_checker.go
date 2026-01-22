@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	pipelineconstants "github.com/databahn-ai/common-utils/constants"
@@ -16,6 +17,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/store/audit"
+	"github.com/databahn-ai/databahn-jobs/internal/store/dataplane"
 	"github.com/databahn-ai/databahn-jobs/internal/store/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
@@ -101,12 +103,23 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 	firstWarningDays := utils.GetEnvInt("SANDBOX_FIRST_WARNING_DAYS", defaultSandboxFirstWarningDays)
 	secondWarningDays := utils.GetEnvInt("SANDBOX_SECOND_WARNING_DAYS", defaultSandboxSecondWarningDays)
 	disableDays := utils.GetEnvInt("SANDBOX_DISABLE_DAYS", defaultSandboxDisableDays)
+	skipTenantIds := utils.GetEnvOrDefault("SKIP_TENANT_IDS", "")
+	skipTenantIdsMap := getSkipTenantIdMap(skipTenantIds)
 
 	// Parse release date from environment variable (DD-MM-YYYY format)
 	releaseTime, err := parseReleaseDate(ctx)
 	if err != nil {
 		errorMsg := fmt.Sprintf("failed to parse RELEASE_DATE: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		return common.NewJobResultFromErrors(jobErrors)
+	}
+
+	// Load data plane enabled status for sandbox pipeline checker
+	dataplaneEnabledStatus, err := loadDataPlaneEnabledStatus(ctx, db)
+	if err != nil {
+		errorMsg := fmt.Sprintf("error loading data plane enabled status: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLoggerWithContext(ctx).Error("error loading data plane enabled status", zap.Error(err))
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
@@ -127,7 +140,10 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 	// Process each tenant separately to avoid loading all pipelines in memory
 	for _, t := range tenants {
 		tenantId := t.Id.String()
-
+		if skipTenantIdsMap[tenantId] {
+			logger.GetLoggerWithContext(ctx).Info("skipping tenant as configured in SKIP_TENANT_IDS", zap.String("tenant_id", tenantId), zap.String("tenant_name", t.Name))
+			continue
+		}
 		// Get sandbox destination pipelines for this tenant
 		pipelines, err := pipeline.GetPipelinesByDestinationAndStatus(ctx, db, t.Id, destID, statusActive)
 		if err != nil {
@@ -154,6 +170,17 @@ func CheckSandboxStoragePipelines(ctx context.Context) common.JobResult {
 		for _, p := range pipelines {
 			updatedAt := p.UpdatedAt.UTC()
 			pipelineTenantId := p.TenantID.String()
+
+			// Check if sandbox pipeline checker is enabled for this pipeline's data plane
+			dataPlaneId := p.DataPlaneID.String()
+			if !dataplaneEnabledStatus[dataPlaneId] {
+				logger.GetLoggerWithContext(ctx).Debug("sandbox pipeline checker is disabled for pipeline's data plane, skipping",
+					zap.String("pipeline_id", p.ID.String()),
+					zap.String("pipeline_name", p.Name),
+					zap.String("dataplane_id", dataPlaneId),
+					zap.String("tenant_id", pipelineTenantId))
+				continue
+			}
 
 			// If release date is set and pipeline was updated before release date, use release date
 			if releaseTime != nil && updatedAt.Before(*releaseTime) {
@@ -426,4 +453,73 @@ func parseReleaseDate(ctx context.Context) (*time.Time, error) {
 		zap.Time("release_time_utc", releaseTimeUTC))
 
 	return &releaseTimeUTC, nil
+}
+
+// loadDataPlaneEnabledStatus retrieves all data planes and builds a map of their sandbox pipeline checker enabled status.
+// Returns a map of dataPlaneId (string) to enabled (bool).
+func loadDataPlaneEnabledStatus(ctx context.Context, db *gorm.DB) (map[string]bool, error) {
+	// Get all data planes
+	dataPlanes, err := dataplane.GetAllDataPlanes(ctx, db)
+	if err != nil {
+		return nil, fmt.Errorf("error getting data planes: %w", err)
+	}
+
+	// Build map of dataplane ID to enabled status
+	dataplaneEnabledStatus := make(map[string]bool)
+	for _, dp := range dataPlanes {
+		config, err := dp.ParseBackupConfiguration()
+		if err != nil {
+			logger.GetLoggerWithContext(ctx).Warn("error parsing backup configuration for data plane",
+				zap.String("dataplane_id", dp.ID.String()),
+				zap.String("dataplane_name", dp.Name),
+				zap.Error(err))
+			// Default to disabled if configuration can't be parsed
+			dataplaneEnabledStatus[dp.ID.String()] = false
+			continue
+		}
+
+		// Check if config is nil first (happens when BackupConfiguration is empty)
+		if config == nil {
+			logger.GetLoggerWithContext(ctx).Debug("no backup configuration found for data plane, disabling sandbox pipeline checker",
+				zap.String("dataplane_id", dp.ID.String()),
+				zap.String("dataplane_name", dp.Name))
+			dataplaneEnabledStatus[dp.ID.String()] = false
+			continue
+		}
+
+		// Check if sandbox pipeline checker is enabled for this data plane
+		isEnabled := config.SandboxConfiguration.Enabled
+		dataplaneEnabledStatus[dp.ID.String()] = isEnabled
+
+		logger.GetLoggerWithContext(ctx).Debug("loaded sandbox pipeline checker status for data plane",
+			zap.String("dataplane_id", dp.ID.String()),
+			zap.String("dataplane_name", dp.Name),
+			zap.Bool("enabled", isEnabled))
+	}
+
+	logger.GetLoggerWithContext(ctx).Info("loaded sandbox pipeline checker status for data planes",
+		zap.Int("total_dataplanes", len(dataPlanes)),
+		zap.Int("enabled_count", countEnabled(dataplaneEnabledStatus)))
+
+	return dataplaneEnabledStatus, nil
+}
+
+// countEnabled counts the number of enabled data planes in the map
+func countEnabled(statusMap map[string]bool) int {
+	count := 0
+	for _, enabled := range statusMap {
+		if enabled {
+			count++
+		}
+	}
+	return count
+}
+
+func getSkipTenantIdMap(skipTenantId string) map[string]bool {
+	skipTenantIdList := strings.Split(skipTenantId, ",")
+	skipTenantIdMap := make(map[string]bool)
+	for _, tenantId := range skipTenantIdList {
+		skipTenantIdMap[tenantId] = true
+	}
+	return skipTenantIdMap
 }
