@@ -151,7 +151,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
 		interval := 20
 		oneInactiveSource := false
 		// Get last event times for all specified sources
-		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(tenantId, ctx, osClient, sourceIds)
+		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(ctx, tenantId, osClient)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error getting sourceIdToLastEventTime for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -195,7 +195,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
 				zap.String("tenantName", tenantName))
 
 			// Convert agentIds to UUIDs for the query
-			agentUUIDs := []uuid.UUID{}
+			var agentUUIDs []uuid.UUID
 			for _, agentId := range agentIds {
 				if agentId != "" { // Skip empty agent IDs
 					agentUUID := utils.UUIDFromStringOrNil(agentId)
@@ -245,7 +245,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
 	}
 }
 
-func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *opensearch.Client, sourceIds []string) (map[string]time.Time, error) {
+func getSourceIdToLastEventTime(ctx context.Context, tenantId string, osClient *opensearch.Client) (map[string]time.Time, error) {
 	statsAlias := os.StatisticsIndexAlias(tenantId)
 	aggFunc := os.AggregationFunction{
 		Function: "max",
