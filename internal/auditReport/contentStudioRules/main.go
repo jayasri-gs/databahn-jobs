@@ -126,7 +126,8 @@ func getQueryForContentStudioRulesData(ctx context.Context, req models.AuditRepo
 			rcs.source_device,
 			rcs.source_log_type,
 			rcs.release_number,
-			rcs.reduction_percentage
+			rcs.reduction_percentage,
+			rcs.is_schemaless
 		FROM rule_content_studio rcs
 		WHERE %s`, whereClause)
 
@@ -176,7 +177,12 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query
 			var headerColumns []string
 			for _, col := range columns {
 				if col != "id" {
-					headerColumns = append(headerColumns, col)
+					// Replace is_schemaless with normalization_mode
+					if col == "is_schemaless" {
+						headerColumns = append(headerColumns, "normalization_mode")
+					} else {
+						headerColumns = append(headerColumns, col)
+					}
 				}
 			}
 			// Add additional columns for onboarded status and source names
@@ -222,6 +228,14 @@ func writeRowsToFileForContentStudioRules(columns []string, rows *sql.Rows, onbo
 				continue // Skip id column in output
 			}
 			columnValue := string(*col.(*sql.RawBytes))
+			// Transform is_schemaless to normalization_mode
+			if columns[i] == "is_schemaless" {
+				if columnValue == "true" {
+					columnValue = "Schemaless"
+				} else {
+					columnValue = "Schema Oriented"
+				}
+			}
 			row = append(row, columnValue)
 		}
 
@@ -235,6 +249,8 @@ func writeRowsToFileForContentStudioRules(columns []string, rows *sql.Rows, onbo
 
 		row = append(row, isOnboarded)
 		row = append(row, sourceNames)
+
+		fmt.Println("row", row)
 
 		err := writer.Write(row)
 		if err != nil {
