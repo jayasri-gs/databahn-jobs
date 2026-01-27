@@ -250,8 +250,6 @@ func writeRowsToFileForContentStudioRules(columns []string, rows *sql.Rows, onbo
 		row = append(row, isOnboarded)
 		row = append(row, sourceNames)
 
-		fmt.Println("row", row)
-
 		err := writer.Write(row)
 		if err != nil {
 			return 0, err
