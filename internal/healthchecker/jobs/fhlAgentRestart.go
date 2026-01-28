@@ -121,7 +121,6 @@ var agentData = []AgentData{
 		SourceIds: []string{
 			"dccf368f-0e71-445c-afa5-d815eab44da7", // windows-security-events
 			"46db6aa9-f21c-48e9-9035-b77b8b7fc2da", // windows-application-events
-			"fad9cac1-7555-448d-bdd7-7b733bd173f8", // windows-setup-events
 			"3e306501-a862-4948-82cf-78af879465bf", // windows-system-events
 			"12e26c20-728b-46d1-a7ee-80e905dcd5da", // windows-powershell-events
 			"ffc48446-bdb3-4366-b26a-560a524d4c62", // windows-sysmon-events
