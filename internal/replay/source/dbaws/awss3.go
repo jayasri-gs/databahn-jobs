@@ -2,6 +2,9 @@ package dbaws
 
 import (
 	"context"
+	"errors"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
@@ -10,7 +13,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/utils"
 
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,8 +69,47 @@ func createAwsConnection(input model.Message) (*s3.Client, error) {
 		}
 	}
 
-	client := s3.NewFromConfig(cfg)
-	return client, nil
+	// Check for S3-compatible endpoint URL
+	endpointURL := strings.TrimSpace(input.AdditionalConfig["url"])
+	enablePathStyle := false
+
+	if endpointURL != "" {
+		// Validate URL format
+		_, err := url.Parse(endpointURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid endpoint URL: %v", err)
+		}
+
+		logger.GetLogger().Info("Creating S3-compatible client with endpoint",
+			zap.String("endpoint", endpointURL),
+			zap.String("requestId", input.RequestId))
+
+		// Check if path style is enabled
+		pathStyleStr := input.AdditionalConfig["enable_path_style"]
+		if pathStyleStr != "" {
+			enablePathStyle, err = strconv.ParseBool(pathStyleStr)
+			if err != nil {
+				logger.GetLogger().Warn("invalid enable_path_style value, defaulting to false",
+					zap.String("value", pathStyleStr),
+					zap.Error(err))
+				enablePathStyle = false
+			}
+		}
+
+		// Create S3 client with custom endpoint and path style
+		client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(endpointURL)
+			if enablePathStyle {
+				o.UsePathStyle = true
+			}
+		})
+
+		return client, nil
+	} else {
+		// Use region-based configuration (standard AWS S3)
+		client := s3.NewFromConfig(cfg)
+		return client, nil
+	}
 }
 
 func getOrCreateS3Connection(input model.Message) (*s3.Client, error) {
