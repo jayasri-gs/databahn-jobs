@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - feature/DB-21882-agent-deviation-alerts
 
 jobs:
   develop:
