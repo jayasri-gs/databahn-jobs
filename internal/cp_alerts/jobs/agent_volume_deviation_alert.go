@@ -521,14 +521,12 @@ func buildAgentVolumeDeviationAlert(
 	// Format dates in human-readable format (YYYY-MM-DD)
 	currentDayDate := dateRange.CurrentDayStart.Format("2006-01-02")
 	previousDayDate := dateRange.YesterdayStart.Format("2006-01-02")
-	currentWeekSameDayDate := dateRange.CurrentDayStart.Format("2006-01-02")
 	previousWeekSameDayDate := dateRange.PreviousWeekSameDayStart.Format("2006-01-02")
 
-	// Build detailed message with date ranges (current day, yesterday, current week same day, previous week same day)
+	// Build detailed message with date ranges (current day, yesterday, previous week same day)
 	message := fmt.Sprintf(
 		"Agent '%s' (ID: %s) shows a %.1f%% %s in volume. "+
-			"Current day (%s): %s, Previous day (%s): %s. "+
-			"Current week same day (%s): %s, Previous week same day (%s): %s. "+
+			"Current (%s): %s, Previous day (%s): %s, Same day last week (%s): %s. "+
 			"Alert severity: %s.",
 		agent.Name,
 		agent.ID.String(),
@@ -538,8 +536,6 @@ func buildAgentVolumeDeviationAlert(
 		util.HumanReadableBytes(int64(stats.CurrentDayVolume)),
 		previousDayDate,
 		util.HumanReadableBytes(int64(stats.YesterdayVolume)),
-		currentWeekSameDayDate,
-		util.HumanReadableBytes(int64(stats.CurrentDayVolume)),
 		previousWeekSameDayDate,
 		util.HumanReadableBytes(int64(stats.PreviousWeekSameDayVolume)),
 		severityText,
