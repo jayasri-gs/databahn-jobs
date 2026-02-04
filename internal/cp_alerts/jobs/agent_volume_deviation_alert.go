@@ -547,7 +547,7 @@ func buildAgentVolumeDeviationAlert(
 		alerts_async.WithMessage(message),
 		alerts_async.WithCriticality(criticality),
 		alerts_async.WithFunctionalityType(alerts_async.DataRatioAlertChecker),
-		alerts_async.WithEntityDetails("agent", agent.ID.String(), agent.DataPlaneId.String(), stats.TenantId.String()),
+		alerts_async.WithEntityDetails("agent", agent.Name, agent.DataPlaneId.String(), stats.TenantId.String()),
 		alerts_async.WithErrorCode(alerts_async.DNDW10005, "Unusual agent log volume deviation detected."),
 		alerts_async.WithAction("Please check agent configuration, network connectivity, source data availability, or potential security incidents."),
 	)
