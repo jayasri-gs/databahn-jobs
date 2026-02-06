@@ -3,10 +3,11 @@ package statistics
 import (
 	"context"
 	"encoding/json"
-	"github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"fmt"
 	"io"
 	"strings"
 
+	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -30,7 +31,7 @@ func BuildNextAggregation(termFields []string, i int) NestedAgg {
 	return nextAggs
 }
 
-func GetStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime string, endTime string) (SumResponse, error) {
+func GetStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime, endTime string) (SumResponse, error) {
 	query := AddDateRange(q, startTime, endTime)
 
 	searchBody := &SumQueryRequest{}
@@ -54,7 +55,7 @@ func GetStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime st
 	return aggObj, err
 }
 
-func GetStatsAggregate(ctx context.Context, q string, tenantId uuid.UUID, agg string, startTime string, endTime string) (AggregateResponse, error) {
+func GetStatsAggregate(ctx context.Context, q string, tenantId uuid.UUID, agg, startTime, endTime string) (AggregateResponse, error) {
 	query := AddDateRange(q, startTime, endTime)
 
 	searchBody := &AggregateQueryRequest{}
@@ -79,5 +80,38 @@ func GetStatsAggregate(ctx context.Context, q string, tenantId uuid.UUID, agg st
 	resp := &AggregateQueryResponse{}
 	err = json.Unmarshal(bodyContent, resp)
 	aggObj := NewAggregateResponse(resp)
+	return aggObj, err
+}
+
+// GetAgentStatsSum queries the db_statistics_agent data stream for agent-specific metrics
+func GetAgentStatsSum(ctx context.Context, q string, tenantId uuid.UUID, startTime, endTime string) (SumResponse, error) {
+	queryWithTenant := AddTenantId(q, tenantId)
+	query := AddDateRange(queryWithTenant, startTime, endTime)
+
+	searchBody := &SumQueryRequest{}
+	searchBody.Size = 0
+	searchBody.Query.QueryString.Query = query
+	searchBody.Aggs.SumValue.Sum.Field = ES_COUNTER_VALUE_FIELD
+	// Query db_statistics_agent data stream
+	client := os.GetClient()
+	if client == nil {
+		err := fmt.Errorf("OpenSearch client is not initialized")
+		logging.GetLoggerWithContext(ctx).Error("error while querying agent statistics store", zap.Error(err))
+		return SumResponse{}, err
+	}
+	searchResponse, err := os.MakeSearchCall(ctx, "db_statistics_agent", &searchBody, client)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while querying agent statistics store", zap.Error(err))
+		return SumResponse{}, err
+	}
+	bodyContent, err := io.ReadAll(searchResponse.Body)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while reading response body", zap.Error(err))
+		return SumResponse{}, err
+	}
+
+	resp := &SumQueryResponse{}
+	err = json.Unmarshal(bodyContent, resp)
+	aggObj := NewSumResponse(resp)
 	return aggObj, err
 }

@@ -106,6 +106,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = unparsedReport.SendUnparsedEventsReport(ctx)
 	case common.FETCH_AGENT_DISCOVERED_CHANNEL_SUBSRIPTIONS:
 		result = agent.FetchAgentDiscoveredChannelSubscriptions(ctx)
+	case common.AGENT_VOLUME_DEVIATION_ALERT:
+		result = cp_jobs.SendAlertForAgentVolumeDeviation(ctx)
 	case common.SANDBOX_PIPELINE_CHECKER:
 		result = sandbox.CheckSandboxStoragePipelines(ctx)
 	case common.SANDBOX_CLEANUP:
@@ -185,7 +187,7 @@ func sendJobFailureAlert(ctx context.Context, jobName string, input model.Messag
 }
 
 // formatJobFailureMessage creates a detailed error message for the alert
-func formatJobFailureMessage(jobName string, errorMessage string, input model.Message) string {
+func formatJobFailureMessage(jobName, errorMessage string, input model.Message) string {
 	message := "Job '" + jobName + "' failed with error: " + errorMessage
 
 	// Add job parameters if available

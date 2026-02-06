@@ -25,6 +25,7 @@ const Exclude IncludeExclude = "EXCLUDE"
 const LogSourceEntityType = "LOG_SOURCE"
 const DestinationEntityType = "DESTINATION"
 const TenantEntityType = "TENANT"
+const AgentEntityType = "AGENT"
 
 type Reputation string
 
@@ -43,6 +44,7 @@ type AlertConfig struct {
 	DestinationDeliveredMoreAlertConfig *DestinationDeliveredMoreAlertConfig `json:"destinationDeliveredMoreAlertConfig"`
 	VolumeDeviationAlertConfig          *VolumeDeviationAlertConfig          `json:"volumeDeviationAlertConfig"`
 	DisableSandboxAlertsConfig          *DisableSandboxAlertsConfig          `json:"disableSandboxAlertsConfig"`
+	AgentVolumeDeviationAlertConfig     *AgentVolumeDeviationAlertConfig     `json:"agentVolumeDeviationAlertConfig"`
 	DropRuleIncreaseAlertConfig         *DropRuleIncreaseAlertConfig         `json:"dropRuleIncreaseAlertConfig"`
 }
 
@@ -92,6 +94,13 @@ type DropRuleIncreaseAlertConfig struct {
 type DisableSandboxAlertsConfig struct {
 	// This config uses the AlertConfig.Enabled field to control whether sandbox alerts are disabled
 	// No additional fields are needed
+}
+
+type AgentVolumeDeviationAlertConfig struct {
+	PercentageIncreaseThreshold int    `json:"percentageIncreaseThreshold"`
+	PercentageDecreaseThreshold int    `json:"percentageDecreaseThreshold"`
+	MinimumVolumeThreshold      int64  `json:"minimumVolumeThreshold"`
+	MinimumVolumeThresholdUnit  string `json:"minimumVolumeThresholdUnit"`
 }
 
 type VcRuleFilter struct {
