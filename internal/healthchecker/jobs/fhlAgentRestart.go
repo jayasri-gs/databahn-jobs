@@ -117,6 +117,22 @@ var agentData = []AgentData{
 		AgentId:    []string{"d2d9e140-065a-45e2-ba6e-68821b263086"},
 		TenantName: "CSL-lvp server",
 	},
+	{
+		SourceIds: []string{
+			"dccf368f-0e71-445c-afa5-d815eab44da7", // windows-security-events
+			"46db6aa9-f21c-48e9-9035-b77b8b7fc2da", // windows-application-events
+			"3e306501-a862-4948-82cf-78af879465bf", // windows-system-events
+			"12e26c20-728b-46d1-a7ee-80e905dcd5da", // windows-powershell-events
+			"ffc48446-bdb3-4366-b26a-560a524d4c62", // windows-sysmon-events
+		},
+		TenantId: "e3d5fa7e-e232-4be2-895e-9125c5b753ff",
+		AgentId: []string{
+			"f58cc826-3393-4c6a-9d9f-cf70d9dc7111", // wec1
+			"c3ad5714-b748-4f2a-b435-5d35e327c7b3", // wec2
+			"4a46ecb8-d5b9-4bd4-a7f5-0869bd278d74", // wec3
+		},
+		TenantName: "Centene",
+	},
 }
 
 func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
@@ -134,7 +150,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
 		interval := 20
 		oneInactiveSource := false
 		// Get last event times for all specified sources
-		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(tenantId, ctx, osClient, sourceIds)
+		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(ctx, tenantId, osClient)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error getting sourceIdToLastEventTime for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -178,7 +194,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
 				zap.String("tenantName", tenantName))
 
 			// Convert agentIds to UUIDs for the query
-			agentUUIDs := []uuid.UUID{}
+			var agentUUIDs []uuid.UUID
 			for _, agentId := range agentIds {
 				if agentId != "" { // Skip empty agent IDs
 					agentUUID := utils.UUIDFromStringOrNil(agentId)
@@ -228,7 +244,7 @@ func CheckAndRestartFHLAgent(ctx context.Context) common.JobResult {
 	}
 }
 
-func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *opensearch.Client, sourceIds []string) (map[string]time.Time, error) {
+func getSourceIdToLastEventTime(ctx context.Context, tenantId string, osClient *opensearch.Client) (map[string]time.Time, error) {
 	statsAlias := os.StatisticsIndexAlias(tenantId)
 	aggFunc := os.AggregationFunction{
 		Function: "max",

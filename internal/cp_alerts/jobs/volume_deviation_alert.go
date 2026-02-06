@@ -110,7 +110,7 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 		sourceDbPage := 0
 		sourceDbPageSize := 50
 		for {
-			sources, err := source.ReadSourcesPaginated(db, tenantIdUuid, sourceDbPage, sourceDbPageSize)
+			sources, err := source.ReadSourcesPaginated(db, tenantIdUuid, sourceDbPage, sourceDbPageSize, []string{"ACTIVE"})
 			if err != nil {
 				logger.GetLoggerWithContext(ctx).Error("error while reading sources", zap.Error(err))
 				return cpcommon.NewJobResultFromError(err)
@@ -165,7 +165,7 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 		destinationDbPage := 0
 		destinationDbPageSize := 50
 		for {
-			destinations, err := readDestinationsPaginated(db, tenantIdUuid, destinationDbPage, destinationDbPageSize)
+			destinations, err := readDestinationsPaginated(db, tenantIdUuid, destinationDbPage, destinationDbPageSize, []string{"ACTIVE"})
 			if err != nil {
 				logger.GetLoggerWithContext(ctx).Error("error while reading destinations", zap.Error(err))
 				return cpcommon.NewJobResultFromError(err)
@@ -175,7 +175,7 @@ func SendAlertForVolumeDeviation(ctx context.Context) cpcommon.JobResult {
 			}
 			for _, destination := range destinations {
 				// Skip alert if destination is the Databahn Sandbox and tenant has disabled sandbox alerts
-				if destination.ID.String() == constants.SandboxDestinationID {
+				if destination.ID.String() == constants.SandboxDestinationID || destination.ID.String() == constants.SandboxStorageDestinationID {
 					shouldSkip, err := util.ShouldSkipSandboxAlerts(db, tenantIdUuid)
 					if err != nil {
 						logger.GetLoggerWithContext(ctx).Error("error checking sandbox alerts config, skipping sandbox alerts as fail-safe",

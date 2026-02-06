@@ -15,6 +15,9 @@ type ChangeFlagRequest struct {
 	EntityType  string `json:"entity_type"`
 	Action      string `json:"action"`
 	IsProcessed bool   `json:"is_processed"`
+	Body        string `json:"body"`
+	DataPlaneId string `json:"data_plane_id"`
+	EntityName  string `json:"entity_name"`
 }
 
 func GetChangeFlagRequest(cfRequestIds []string) ([]ChangeFlagRequest, error) {

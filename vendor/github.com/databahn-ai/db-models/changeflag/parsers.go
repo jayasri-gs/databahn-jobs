@@ -668,3 +668,35 @@ func validateGlobalDestination(globaldestination FlagGlobalDestination) error {
 	}
 	return nil
 }
+
+func ParseFlagAlertConfig(data []byte) (*FlagAlertConfig, error) {
+	var flag ChangeFlagBody
+	err := json.Unmarshal(data, &flag)
+	if err != nil {
+		return nil, err
+	}
+
+	var alertConfig FlagAlertConfig
+	err = decode(flag.Entity, &alertConfig)
+	if err != nil {
+		return nil, err
+	}
+	err = validateAlertConfig(alertConfig)
+	if err != nil {
+		return nil, err
+	}
+	return &alertConfig, nil
+}
+
+func validateAlertConfig(alertConfig FlagAlertConfig) error {
+	if alertConfig.Id == "" {
+		return errors.New("alert config is invalid, missing id")
+	}
+	if alertConfig.TenantId == "" {
+		return errors.New("alert config is invalid, missing tenant id")
+	}
+	if alertConfig.AlertType == "" {
+		return errors.New("alert config is invalid, missing alert type")
+	}
+	return nil
+}
