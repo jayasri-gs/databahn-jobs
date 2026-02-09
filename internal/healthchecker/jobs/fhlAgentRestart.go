@@ -26,15 +26,6 @@ type AgentData struct {
 var agentData = []AgentData{
 	{
 		SourceIds: []string{
-			"63d9f8d0-6bf0-4fbd-b0d0-c8dc3e9f11ec",
-			"de1344b6-07e5-4f06-b74d-4bb02665bad7",
-			"057a52f2-c8e1-4773-9de1-f22a2eac451c"},
-		TenantId:   "59876413-3295-44a0-9fd6-251aecfda9f5",
-		AgentId:    []string{"a648dbc1-c493-49bd-ba76-3382803aaddc"},
-		TenantName: "FHL",
-	},
-	{
-		SourceIds: []string{
 			"e16d0c1f-069c-4e83-94db-0c09499781bb",
 			"85f6e763-1ce1-48c8-9e50-4c3635498a66"},
 		TenantId: "bd1d99b5-1049-4fab-b5ad-0dac8474d551",
