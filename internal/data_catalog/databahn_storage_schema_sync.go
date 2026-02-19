@@ -3,6 +3,7 @@ package data_catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -63,6 +64,33 @@ func athenaType(fieldType string) string {
 	}
 }
 
+// tableNotFoundError is a non-fatal error indicating that the Athena table or
+// its configuration is missing.  The group should be skipped with a warning.
+type tableNotFoundError struct{ msg string }
+
+func (e *tableNotFoundError) Error() string { return e.msg }
+
+func newTableNotFoundError(format string, args ...interface{}) *tableNotFoundError {
+	return &tableNotFoundError{msg: fmt.Sprintf(format, args...)}
+}
+
+// isTableNotFound returns true when the error signals a missing Athena table or
+// configuration—these are expected and should not fail the whole job.
+func isTableNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var tnf *tableNotFoundError
+	if errors.As(err, &tnf) {
+		return true
+	}
+	// Catch Athena-level "table not found" messages returned by the query engine.
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "table_not_found") ||
+		strings.Contains(msg, "table not found") ||
+		strings.Contains(msg, "does not exist")
+}
+
 // databaseName returns the Athena database name for a tenant.
 func databaseName(tenantID uuid.UUID) string {
 	return "databahn_tenant_" + strings.ReplaceAll(tenantID.String(), "-", "_")
@@ -102,6 +130,17 @@ func ApplyDataCatalogToAthena(ctx context.Context) common.JobResult {
 		first := group[0]
 		err := processGroup(ctx, first.DestID, first.SourceID, first.TenantID, group)
 		if err != nil {
+			if isTableNotFound(err) {
+				// Athena table or configuration not found for this destination/source.
+				// This is expected when the table hasn't been created yet — skip gracefully.
+				logger.GetLoggerWithContext(ctx).Warn("skipping group — Athena table or config not found, will retry on next run",
+					zap.String("destination_id", first.DestID.String()),
+					zap.String("source_id", first.SourceID.String()),
+					zap.String("tenant_id", first.TenantID.String()),
+					zap.String("reason", err.Error()))
+				continue
+			}
+
 			logger.GetLoggerWithContext(ctx).Error("failed to apply catalog fields to Athena",
 				zap.String("destination_id", first.DestID.String()),
 				zap.String("source_id", first.SourceID.String()),
@@ -146,7 +185,7 @@ func processGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fie
 		destID,
 	).Scan(&storeIDStr).Error
 	if err != nil || storeIDStr == "" {
-		return fmt.Errorf("search_data_store not found for destination %s: %w", destID, err)
+		return newTableNotFoundError("search_data_store not found for destination %s: %v", destID, err)
 	}
 
 	// Look up search_configuration JSON
@@ -156,7 +195,7 @@ func processGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fie
 		storeIDStr, sourceID,
 	).Scan(&searchConfigJSON).Error
 	if err != nil || searchConfigJSON == "" {
-		return fmt.Errorf("search_data_set not found for store %s, source %s: %w", storeIDStr, sourceID, err)
+		return newTableNotFoundError("search_data_set not found for store %s, source %s: %v", storeIDStr, sourceID, err)
 	}
 
 	// Parse to get Athena table name, region, and bucket
@@ -166,7 +205,7 @@ func processGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fie
 	}
 	tableName := sc.S3Configuration.AthenaTable
 	if tableName == "" {
-		return fmt.Errorf("athenaTable is empty in search_configuration for store %s, source %s", storeIDStr, sourceID)
+		return newTableNotFoundError("athenaTable is empty in search_configuration for store %s, source %s", storeIDStr, sourceID)
 	}
 	region := sc.S3Configuration.DatabahnStorageRegion
 	if region == "" {
