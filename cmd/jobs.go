@@ -7,6 +7,7 @@ import (
 
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
+	"github.com/databahn-ai/databahn-jobs/internal/data_catalog"
 	"github.com/databahn-ai/databahn-jobs/internal/transformationCheckerUtility"
 	"github.com/databahn-ai/databahn-jobs/internal/unparsedReport"
 	"github.com/databahn-ai/db-models/alerts_async"
@@ -112,6 +113,9 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = sandbox.CheckSandboxStoragePipelines(ctx)
 	case common.SANDBOX_CLEANUP:
 		result = sandbox.CleanupSandboxStorage(ctx)
+	case common.DATABAHN_STORAGE_SCHEMA_SYNC:
+		result = data_catalog.ApplyDataCatalogToAthena(ctx)
+
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}

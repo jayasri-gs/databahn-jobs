@@ -85,3 +85,4 @@ const FETCH_AGENT_DISCOVERED_CHANNEL_SUBSRIPTIONS = "fetch-agent-discovered-chan
 const AGENT_VOLUME_DEVIATION_ALERT = "agent-volume-deviation-alert"
 const SANDBOX_PIPELINE_CHECKER = "sandbox-pipeline-checker"
 const SANDBOX_CLEANUP = "sandbox-cleanup"
+const DATABAHN_STORAGE_SCHEMA_SYNC = "databahn-storage-schema-sync"
