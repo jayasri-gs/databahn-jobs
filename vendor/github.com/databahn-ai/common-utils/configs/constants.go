@@ -43,6 +43,7 @@ const (
 	DBSchema            = "DB_SCHEMA"
 	DbClusterIdentifier = "DB_CLUSTER_IDENTIFIER"
 	DBDatabase          = "DB_DATABASE"
+	DBSSLMode           = "DB_SSL_MODE"
 
 	ScriptEndpointVersion = "SCRIPT_ENDPOINT_VERSION"
 

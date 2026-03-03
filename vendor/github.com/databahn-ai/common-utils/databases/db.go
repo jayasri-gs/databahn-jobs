@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	azsecrets "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/configs"
 	"github.com/databahn-ai/common-utils/configuration"
@@ -16,8 +21,6 @@ import (
 	glogger "gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 	"moul.io/zapgorm2"
-	"strings"
-	"time"
 )
 
 type DatabaseCredentials struct {
@@ -31,6 +34,8 @@ type Connection struct {
 	Port         string
 	DatabaseName string
 	SchemaName   string
+	// SSLMode sets postgres sslmode (disable, require, verify-ca, verify-full). Empty means disable.
+	SSLMode string
 }
 
 // Connect moved database to one object to avoid multiple functions to connect
@@ -106,6 +111,17 @@ func (c *Connection) ConnectWithSecrets(ctx context.Context, useTablePrefix bool
 			logging.GetLoggerWithContext(ctx).Error("error while fetching database credentials", zap.Error(err))
 			return nil, err
 		}
+	case configuration.SecretBackendAzure:
+		logging.GetLogger().Info("loading azure key vault secrets", zap.String("secret name", utils.GetMaskedString(secretName, 5)))
+		vaultUrl := appConfig.GetString(configuration.AzureInfraKeyVaultUrl)
+		if vaultUrl == "" {
+			return nil, fmt.Errorf("missing config value %s", configuration.AzureInfraKeyVaultUrl)
+		}
+		dbSecrets, err = readDBSecretsFromAzureKeyVault(ctx, vaultUrl, secretName)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while fetching database credentials from azure key vault", zap.Error(err))
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("invalid secret backend: %s", secretBackend)
 	}
@@ -115,6 +131,11 @@ func (c *Connection) ConnectWithSecrets(ctx context.Context, useTablePrefix bool
 }
 
 func (c *Connection) getConnectionString() (string, string) {
+	sslmode := c.SSLMode
+	if sslmode == "" {
+		logging.GetLogger().Info("SSLMode not set. Using default value disable")
+		sslmode = "disable"
+	}
 	connectString := buildDBConnectStringWith(
 		c.Credentials.Username,
 		c.Credentials.Password,
@@ -122,6 +143,7 @@ func (c *Connection) getConnectionString() (string, string) {
 		c.Port,
 		c.DatabaseName,
 		"30",
+		sslmode,
 	)
 	maskedConnectString := buildDBConnectStringWith(
 		c.Credentials.Username,
@@ -130,6 +152,7 @@ func (c *Connection) getConnectionString() (string, string) {
 		c.Port,
 		c.DatabaseName,
 		"30",
+		sslmode,
 	)
 	return connectString, maskedConnectString
 }
@@ -170,9 +193,7 @@ func readDBSecretsFromVault(ctx context.Context, secretName, vaultAddress, vault
 	logging.GetLoggerWithContext(ctx).Info("Attempting to read database credentials",
 		zap.String("secret name", secretName), zap.String("vault address", vaultAddress),
 		zap.String("vault token", utils.GetMaskedString(vaultToken, 4)))
-	if strings.HasPrefix(secretName, "vault://") {
-		secretName = strings.TrimPrefix(secretName, "vault://")
-	}
+	secretName = strings.TrimPrefix(secretName, "vault://")
 
 	secret, err := vault.ReadSecrets(vaultAddress, vaultToken, secretName)
 	if err != nil {
@@ -198,6 +219,34 @@ func readDBSecretsFromVault(ctx context.Context, secretName, vaultAddress, vault
 	return creds, nil
 }
 
+func readDBSecretsFromAzureKeyVault(ctx context.Context, vaultUrl, secretName string) (*DatabaseCredentials, error) {
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("failed to obtain Azure credential", zap.Error(err))
+		return nil, err
+	}
+	client, err := azsecrets.NewClient(vaultUrl, cred, nil)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("failed to create Azure Key Vault client", zap.Error(err))
+		return nil, err
+	}
+	resp, err := client.GetSecret(ctx, secretName, "", nil)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("failed to get secret from Azure Key Vault", zap.Error(err))
+		return nil, err
+	}
+	creds := &DatabaseCredentials{}
+	if resp.Value == nil {
+		return nil, fmt.Errorf("secret value is nil in Azure Key Vault response")
+	}
+	err = json.Unmarshal([]byte(*resp.Value), creds)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("failed to unmarshal Azure Key Vault secret value", zap.Error(err))
+		return nil, err
+	}
+	return creds, nil
+}
+
 func ReadDBSecrets(ctx context.Context, secretName, region string) (*DatabaseCredentials, error) {
 	data, err := aws.ReadSecretByName(secretName, region)
 	if err != nil {
@@ -215,6 +264,10 @@ func ReadDBSecrets(ctx context.Context, secretName, region string) (*DatabaseCre
 // buildMysqlConnectString - returns connect string and masked connect string(for logging) for a mysql db to be used by
 // sqlx.Connect() or sql.Open() using values in config (eg OS env variables)
 func buildMysqlConnectString(c configuration.ConfigReader) (string, string) {
+	sslmode := c.GetString(configs.DBSSLMode)
+	if sslmode == "" {
+		sslmode = "disable"
+	}
 	connectString := buildDBConnectStringWith(
 		c.GetString(configs.DBUsername),
 		c.GetString(configs.DBPassword),
@@ -222,6 +275,7 @@ func buildMysqlConnectString(c configuration.ConfigReader) (string, string) {
 		c.GetString(configs.DBPort),
 		c.GetString(configs.DBDatabase),
 		"30",
+		sslmode,
 	)
 	maskedConnectString := buildDBConnectStringWith(
 		c.GetString(configs.DBUsername),
@@ -230,20 +284,25 @@ func buildMysqlConnectString(c configuration.ConfigReader) (string, string) {
 		c.GetString(configs.DBPort),
 		c.GetString(configs.DBDatabase),
 		"30",
+		sslmode,
 	)
 	return connectString, maskedConnectString
 }
 
-// buildMysqlConnectString - returns connect string for a mysql db to be used by sqlx.Connect() or
-// sql.Open() using passed parameters
-func buildDBConnectStringWith(dbUsername, dbPassword, dbHost, dbPort, dbName string, dbTimeout string) string {
-	dsn := "host=%s user=%s password=%s dbname=%s port=%s sslmode=disable connect_timeout=%s"
+// buildDBConnectStringWith returns a postgres DSN for sql.Open/gorm using the given parameters.
+// sslmode: disable, require, verify-ca, or verify-full; use "disable" for no TLS.
+func buildDBConnectStringWith(dbUsername, dbPassword, dbHost, dbPort, dbName, dbTimeout, sslmode string) string {
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+	dsn := "host=%s user=%s password=%s dbname=%s port=%s sslmode=%s connect_timeout=%s"
 	return fmt.Sprintf(dsn,
 		dbHost,
 		dbUsername,
 		dbPassword,
 		dbName,
 		dbPort,
+		sslmode,
 		dbTimeout,
 	)
 }

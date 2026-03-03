@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/go-logging/logger"
@@ -19,6 +20,8 @@ var awsTokenEndpoint = "/latest/api/token"
 var headerTokenGenKey = "X-aws-ec2-metadata-token-ttl-seconds"
 var headerTokenGenValue = "21600"
 var headerAuthKey = "X-aws-ec2-metadata-token"
+
+const RequestTimeout = 2 * time.Second
 
 func GetAvailabilityZoneId(ctx context.Context) (string, error) {
 	resp, statusCode, err := getData(constants.EndpointAvailabilityZoneId)
@@ -61,7 +64,7 @@ func GetRegion(ctx context.Context) (string, error) {
 
 func getToken() (string, error) {
 	url := fmt.Sprintf("%s%s", awsMetaDataServer, awsTokenEndpoint)
-	client := &http.Client{}
+	client := &http.Client{Timeout: RequestTimeout}
 	req, err := http.NewRequest(http.MethodPut, url, nil)
 	if err != nil {
 		return "", err
@@ -87,7 +90,7 @@ func getData(endpoint string) (response string, statusCode int, err error) {
 		return "", 0, err
 	}
 	url := fmt.Sprintf("%s%s%s", awsMetaDataServer, awsMetaDataEndpoint, endpoint)
-	client := &http.Client{}
+	client := &http.Client{Timeout: RequestTimeout}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set(headerAuthKey, token)
 	if err != nil {

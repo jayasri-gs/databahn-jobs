@@ -270,3 +270,102 @@ func (c *Client) EvalScript(ctx context.Context, script string, keys []string, a
 	res := c.cli.EvalSha(ctx, script, keys, args...)
 	return res.Result()
 }
+
+func (c *Client) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {
+	res := c.cli.Eval(ctx, script, keys, args...)
+	return res.Result()
+}
+
+// Hash operations (HSET family)
+
+// HSet sets field in the hash stored at key to value
+func (c *Client) HSet(ctx context.Context, key, field string, value any) error {
+	cmd := c.cli.HSet(ctx, key, field, value)
+	_, err := cmd.Result()
+	return err
+}
+
+// HGet returns the value associated with field in the hash stored at key
+func (c *Client) HGet(ctx context.Context, key, field string) (string, error) {
+	cmd := c.cli.HGet(ctx, key, field)
+	return cmd.Result()
+}
+
+// HMSet sets multiple field-value pairs in the hash stored at key
+func (c *Client) HMSet(ctx context.Context, key string, values map[string]any) error {
+	cmd := c.cli.HMSet(ctx, key, values)
+	_, err := cmd.Result()
+	return err
+}
+
+// HMGet returns the values associated with the specified fields in the hash stored at key
+func (c *Client) HMGet(ctx context.Context, key string, fields ...string) ([]any, error) {
+	cmd := c.cli.HMGet(ctx, key, fields...)
+	return cmd.Result()
+}
+
+// HGetAll returns all fields and values of the hash stored at key
+func (c *Client) HGetAll(ctx context.Context, key string) (map[string]string, error) {
+	cmd := c.cli.HGetAll(ctx, key)
+	return cmd.Result()
+}
+
+// HExists returns whether field exists in the hash stored at key
+func (c *Client) HExists(ctx context.Context, key, field string) (bool, error) {
+	cmd := c.cli.HExists(ctx, key, field)
+	return cmd.Result()
+}
+
+// HDel removes the specified fields from the hash stored at key
+func (c *Client) HDel(ctx context.Context, key string, fields ...string) (int64, error) {
+	cmd := c.cli.HDel(ctx, key, fields...)
+	return cmd.Result()
+}
+
+// HLen returns the number of fields in the hash stored at key
+func (c *Client) HLen(ctx context.Context, key string) (int64, error) {
+	cmd := c.cli.HLen(ctx, key)
+	return cmd.Result()
+}
+
+// HKeys returns all field names in the hash stored at key
+func (c *Client) HKeys(ctx context.Context, key string) ([]string, error) {
+	cmd := c.cli.HKeys(ctx, key)
+	return cmd.Result()
+}
+
+// HVals returns all values in the hash stored at key
+func (c *Client) HVals(ctx context.Context, key string) ([]string, error) {
+	cmd := c.cli.HVals(ctx, key)
+	return cmd.Result()
+}
+
+// HIncrBy increments the number stored at field in the hash stored at key by increment
+func (c *Client) HIncrBy(ctx context.Context, key, field string, incr int64) (int64, error) {
+	cmd := c.cli.HIncrBy(ctx, key, field, incr)
+	return cmd.Result()
+}
+
+// HIncrByFloat increments the float value stored at field in the hash stored at key by increment
+func (c *Client) HIncrByFloat(ctx context.Context, key, field string, incr float64) (float64, error) {
+	cmd := c.cli.HIncrByFloat(ctx, key, field, incr)
+	return cmd.Result()
+}
+
+// HSetNX sets field in the hash stored at key to value, only if field does not yet exist
+func (c *Client) HSetNX(ctx context.Context, key, field string, value any) (bool, error) {
+	cmd := c.cli.HSetNX(ctx, key, field, value)
+	return cmd.Result()
+}
+
+// LRange returns the specified elements of the list stored at key
+func (c *Client) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	cmd := c.cli.LRange(ctx, key, start, stop)
+	return cmd.Result()
+}
+
+// LIndex returns the element at index in the list stored at key
+func (c *Client) LIndex(ctx context.Context, key string, index int64) (string, error) {
+	cmd := c.cli.LIndex(ctx, key, index)
+	return cmd.Result()
+}

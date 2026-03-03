@@ -20,6 +20,7 @@ var (
 	CloudSourcePullFailure           = functionalityTypeEnum{value: "cloud_source_pull_failure"}
 	Suppression                      = functionalityTypeEnum{value: "suppression"}
 	ConfigurationProcessingFailure   = functionalityTypeEnum{value: "configuration_processing_failure"}
+	ConfigurationNotFoundFailure     = functionalityTypeEnum{value: "configuration_not_found_failure"}
 	DataForwardingFailure            = functionalityTypeEnum{value: "data_forwarding_failure"}
 	CheckpointUpdateFailure          = functionalityTypeEnum{value: "checkpoint_update_failure"}
 	CheckpointParsingFailure         = functionalityTypeEnum{value: "checkpoint_parsing_failure"}
