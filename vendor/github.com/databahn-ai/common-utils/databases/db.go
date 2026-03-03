@@ -127,6 +127,9 @@ func (c *Connection) ConnectWithSecrets(ctx context.Context, useTablePrefix bool
 	}
 
 	c.Credentials = *dbSecrets
+	if c.SSLMode == "" {
+		c.SSLMode = appConfig.GetString(configuration.DatabaseSSLMode)
+	}
 	return c.Connect(ctx, useTablePrefix)
 }
 
