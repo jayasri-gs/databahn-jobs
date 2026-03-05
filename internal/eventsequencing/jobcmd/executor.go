@@ -67,7 +67,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore, sst *repl
 			fileName := mst.GetProcessList()[i]
 			metaValue := mst.GetMetaMap()[fileName]
 			logger.GetLogger().Info("spawning thread :", zap.String("traceId", inputReq.RequestId), zap.Int("thread", i), zap.String("FileName : ", fileName))
-			err, status := dbaws.ObjectStoreFileDownloader(inputReq, i, mst, fileName, model.MetaDataValue(metaValue))
+			status, err := dbaws.ObjectStoreFileDownloader(inputReq, i, mst, fileName, model.MetaDataValue(metaValue))
 			if err != nil {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
@@ -109,5 +109,5 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, reqId
 func updateInputMsg(input *model.Message) {
 	input.BucketName = objstore.GetBucket(objstore.BucketEvents)
 	input.BucketPrefix = "sequence"
-	input.AccessKeyID = config.GetAppConfiguration().GetString(configuration.ObjectS3Region)
+	input.Region = config.GetAppConfiguration().GetString(configuration.ObjectS3Region)
 }

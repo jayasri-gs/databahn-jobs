@@ -70,12 +70,12 @@ func downloadFile(ctx context.Context, input model.Message, fileName string, mst
 	return nil
 }
 
-func ObjectStoreFileDownloader(input model.Message, threadId int, mst *replaymanager.MetaDataStore, fileName string, metaValue model.MetaDataValue) (error, string) {
+func ObjectStoreFileDownloader(input model.Message, threadId int, mst *replaymanager.MetaDataStore, fileName string, metaValue model.MetaDataValue) (string, error) {
 	if metaValue.Retry >= constants.MaxRetry {
 		logger.GetLogger().Info(fmt.Sprintf("max retries exceeded skipping file {%s}", fileName),
 			zap.String("traceId", input.RequestId),
 			zap.Int("thread", threadId))
-		return errors.New("max retries exceeded"), ""
+		return "", errors.New("max retries exceeded")
 	}
 	if metaValue.Status != constants.StatusDownloaded {
 		logger.GetLogger().Info(fmt.Sprintf("file is not downloaded trying to download {%s}", fileName),
@@ -89,7 +89,7 @@ func ObjectStoreFileDownloader(input model.Message, threadId int, mst *replayman
 				zap.String("filename", fileName),
 				zap.String("traceId", input.RequestId),
 				zap.Int("thread", threadId))
-			return err, constants.StatusDownloadFailed
+			return "", err
 		}
 		mst.UpdateMetaData(fileName, constants.StatusDownloaded, 0, 0, 0, 0, "")
 
@@ -102,7 +102,7 @@ func ObjectStoreFileDownloader(input model.Message, threadId int, mst *replayman
 			zap.Int("thread", threadId))
 	}
 
-	return nil, ""
+	return "", nil
 }
 
 func DeleteFileFromObjectStore(input model.Message, mst *replaymanager.MetaDataStore, fileName string) error {

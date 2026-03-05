@@ -46,7 +46,7 @@ func uploadFile(ctx context.Context, filePath string, bucketName string, objectK
 	return objstore.GetClient().Put(ctx, bucketName, objectKey, data)
 }
 func getPresignedUrl(bucketName string, objectKey string) (string, error) {
-	downloadLink, err := objstore.GetClient().GetPresignedURL(context.Background(), objstore.GetBucket(objstore.BucketArtifacts), objectKey, time.Hour*168)
+	downloadLink, err := objstore.GetClient().GetPresignedURL(context.Background(), bucketName, objectKey, time.Hour*168)
 	if err != nil {
 		return "", err
 	}
