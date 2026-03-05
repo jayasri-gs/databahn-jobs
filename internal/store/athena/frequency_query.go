@@ -1,6 +1,7 @@
 package athena
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -11,13 +12,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/aws/aws-sdk-go-v2/service/athena/types"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	commonAws "github.com/databahn-ai/common-utils/aws"
-	"github.com/databahn-ai/common-utils/configuration"
 	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/store/objstore"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -303,9 +302,9 @@ func getStringValue(datum types.Datum) string {
 	return *datum.VarCharValue
 }
 
-// DownloadResultsFromS3 is an alternative method that downloads results directly from S3
-// This can be faster for large result sets
-func DownloadResultsFromS3(ctx context.Context, executionId string) ([]FrequencyAggregation, error) {
+// DownloadResultsFromObjectStore is an alternative method that downloads results directly from the object store.
+// This can be faster for large result sets.
+func DownloadResultsFromObjectStore(ctx context.Context, executionId string) ([]FrequencyAggregation, error) {
 	athenaClient, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Athena client: %w", err)
@@ -337,27 +336,12 @@ func DownloadResultsFromS3(ctx context.Context, executionId string) ([]Frequency
 	bucket := parts[0]
 	key := parts[1]
 
-	// Download from S3
-	region := appConfig.GetAppConfiguration().GetString(configuration.Region)
-	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	data, err := objstore.GetClient().Get(ctx, bucket, key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, fmt.Errorf("failed to download results from object store: %w", err)
 	}
 
-	s3Client := s3.NewFromConfig(awsCfg)
-	getObjectInput := &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	}
-
-	getObjectOutput, err := s3Client.GetObject(ctx, getObjectInput)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download results from S3: %w", err)
-	}
-	defer getObjectOutput.Body.Close()
-
-	// Parse CSV
-	reader := csv.NewReader(getObjectOutput.Body)
+	reader := csv.NewReader(bytes.NewReader(data))
 	records, err := reader.ReadAll()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV: %w", err)

@@ -10,6 +10,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
+	"github.com/databahn-ai/databahn-jobs/internal/store/objstore"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -23,6 +24,10 @@ func main() {
 	logger.GetLoggerWithContext(ctx).Debug("starting job with parameters", zap.Reflect("input", input))
 	if *job != common.DATA_REPLAY {
 		config.GetAppConfiguration()
+		err := objstore.Connect(ctx, config.GetAppConfiguration())
+		if err != nil {
+			logger.GetLogger().Fatal("error while connecting to object store", zap.Error(err))
+		}
 	} else {
 		config.GetDataReplayConfiguration()
 	}

@@ -3,19 +3,18 @@ package replaymanager
 import (
 	"context"
 	"encoding/json"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/constants"
-	model2 "github.com/databahn-ai/databahn-jobs/internal/eventsequencing/model"
-	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
-	"github.com/databahn-ai/go-logging/logger"
-	"go.uber.org/zap"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/constants"
+	model2 "github.com/databahn-ai/databahn-jobs/internal/eventsequencing/model"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
+	"github.com/databahn-ai/databahn-jobs/internal/store/objstore"
+	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
 )
 
 func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore) (error, bool, int) {
@@ -152,37 +151,20 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 }
 
 func ListFilesInBucket(inputMsg *model.Message) error {
-
 	traceId := inputMsg.RequestId
 
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(inputMsg.Region))
+	objects, err := objstore.GetClient().List(context.TODO(), inputMsg.BucketName, inputMsg.BucketPrefix)
 	if err != nil {
-		logger.GetLogger().Info("failed to load Config", zap.Error(err), zap.String("raceId", traceId))
+		logger.GetLogger().Info("unable to list objects in bucket", zap.Error(err), zap.String("traceId", traceId))
 		return err
-	}
-	s3Client := s3.NewFromConfig(cfg)
-	input := &s3.ListObjectsV2Input{
-		Bucket: aws.String(inputMsg.BucketName),
-		Prefix: aws.String(inputMsg.BucketPrefix),
-	}
-
-	resp, err := s3Client.ListObjectsV2(context.TODO(), input)
-	if err != nil {
-		logger.GetLogger().Info("Unable to create aws connection", zap.Error(err), zap.String("raceId", traceId))
-		return err
-
 	}
 
 	var files []string
-	for _, item := range resp.Contents {
-
-		logger.GetLogger().Debug("file found", zap.String("file", *item.Key), zap.String("raceId", traceId))
-
-		if strings.HasSuffix(*item.Key, ".gz") {
-			files = append(files, *item.Key)
+	for _, item := range objects {
+		logger.GetLogger().Debug("file found", zap.String("file", item.Key), zap.String("traceId", traceId))
+		if strings.HasSuffix(item.Key, ".gz") {
+			files = append(files, item.Key)
 		}
-
 	}
 	inputMsg.FileName = files
 

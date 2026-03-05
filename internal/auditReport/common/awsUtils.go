@@ -3,19 +3,18 @@ package common
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/common-utils/aws"
-	"github.com/databahn-ai/common-utils/configuration"
+	"os"
+	"time"
+
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/consts"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/store/s3_store"
+	"github.com/databahn-ai/databahn-jobs/internal/store/objstore"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
-	"time"
 )
 
-func UploadFileToS3AndUpdateInDb(ctx context.Context, file *os.File, req models.AuditReport, bucketName string, objectKey string) error {
+func UploadFileToObjectStoreAndUpdateInDb(ctx context.Context, file *os.File, req models.AuditReport, bucketName string, objectKey string) error {
 	// upload the file to s3
 	err := uploadFile(ctx, file.Name(), bucketName, objectKey)
 	if err != nil {
@@ -39,32 +38,23 @@ func UploadFileToS3AndUpdateInDb(ctx context.Context, file *os.File, req models.
 	return err
 }
 func uploadFile(ctx context.Context, filePath string, bucketName string, objectKey string) error {
-
-	// Open the file
-	file, err := os.Open(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
-	err = s3_store.GetClient().UploadFile(bucketName, objectKey, file)
-	if err != nil {
-		return err
-	}
-	return nil
+	return objstore.GetClient().Put(ctx, bucketName, objectKey, data)
 }
 func getPresignedUrl(bucketName string, objectKey string) (string, error) {
-	downloadLink, err := aws.CreatePresignedLink(bucketName, objectKey, time.Hour*168)
+	downloadLink, err := objstore.GetClient().GetPresignedURL(context.Background(), objstore.GetBucket(objstore.BucketArtifacts), objectKey, time.Hour*168)
 	if err != nil {
 		return "", err
 	}
-	return downloadLink.URL, nil
+	return downloadLink, nil
 }
 
 func GetBucketNameAndObjectKey(requestId string) (string, string) {
-	//region := config.GetAppConfiguration().GetString(configuration.Region)
-	//bucketName := "galaxy-databahn-report-bucket"
-	bucketName := config.GetAppConfiguration().GetString(configuration.ArtifactsS3Bucket)
+	bucketName := objstore.GetBucket(objstore.BucketArtifacts)
 	timestamp := time.Now().UTC()
 	objectKey := fmt.Sprintf("audit-reports/%d/%02d/%02d/%02d/%s.csv", timestamp.Year(), timestamp.Month(), timestamp.Day(), timestamp.Hour(), requestId)
 

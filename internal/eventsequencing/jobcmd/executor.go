@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/constants"
@@ -14,6 +15,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/replaymanager"
 	"github.com/databahn-ai/databahn-jobs/internal/eventsequencing/source/dbaws"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
+	"github.com/databahn-ai/databahn-jobs/internal/store/objstore"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -65,7 +67,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore, sst *repl
 			fileName := mst.GetProcessList()[i]
 			metaValue := mst.GetMetaMap()[fileName]
 			logger.GetLogger().Info("spawning thread :", zap.String("traceId", inputReq.RequestId), zap.Int("thread", i), zap.String("FileName : ", fileName))
-			err, status := dbaws.S3FileDownloader(inputReq, i, mst, fileName, model.MetaDataValue(metaValue))
+			err, status := dbaws.ObjectStoreFileDownloader(inputReq, i, mst, fileName, model.MetaDataValue(metaValue))
 			if err != nil {
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
@@ -75,7 +77,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore, sst *repl
 				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
 				return
 			}
-			err = dbaws.DeleteFileFromS3(inputReq, mst, fileName)
+			err = dbaws.DeleteFileFromObjectStore(inputReq, mst, fileName)
 			if err != nil {
 				mst.UpdateMetaData(mst.GetProcessList()[i], constants.StatusDeleteFailed, 0, 0, 0, 0, err.Error())
 				return
@@ -105,8 +107,7 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, reqId
 }
 
 func updateInputMsg(input *model.Message) {
-	input.BucketName = config.GetAppConfiguration().GetString(constants.SequenceBucket)
+	input.BucketName = objstore.GetBucket(objstore.BucketEvents)
 	input.BucketPrefix = "sequence"
-	input.Region = config.GetAppConfiguration().GetString("s3.events.region")
-
+	input.AccessKeyID = config.GetAppConfiguration().GetString(configuration.ObjectS3Region)
 }
