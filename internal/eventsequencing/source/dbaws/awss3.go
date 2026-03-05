@@ -89,7 +89,7 @@ func ObjectStoreFileDownloader(input model.Message, threadId int, mst *replayman
 				zap.String("filename", fileName),
 				zap.String("traceId", input.RequestId),
 				zap.Int("thread", threadId))
-			return "", err
+			return constants.StatusDownloadFailed, err
 		}
 		mst.UpdateMetaData(fileName, constants.StatusDownloaded, 0, 0, 0, 0, "")
 
