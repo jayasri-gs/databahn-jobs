@@ -89,23 +89,29 @@ func isLetter(ch rune) bool {
 	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || ch >= utf8.RuneSelf && unicode.IsLetter(ch)
 }
 
-// insightParquetFields returns ordered (parquet column name, parquet tag) for dynamic schema:
+// insightParquetField holds parquet column info; key is "key1".."key5" for attribute columns, empty for fixed.
+type insightParquetField struct {
+	name, tag string
+	key       string // doc key for attribute columns: "key1".."key5"
+}
+
+// insightParquetFields returns ordered (parquet column name, tag, doc key) for dynamic schema:
 // id, source_id, source_name, timestamp, count, then attribute columns from attMap (key1..key5).
-// Parquet column names match S3 JSON (attribute names from attMap).
-func insightParquetFields(attMap map[string]string) []struct{ name, tag string } {
-	out := []struct{ name, tag string }{
-		{colId, "name=id, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true"},
-		{colSourceId, "name=source_id, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true"},
-		{colSourceName, "name=source_name, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true"},
-		{colTimestamp, "name=timestamp, type=INT64, omitstats=true"},
-		{colCount, "name=count, type=INT64, omitstats=true"},
+// Parquet column names match S3 JSON (attribute names from attMap). Skipped keys are omitted.
+func insightParquetFields(attMap map[string]string) []insightParquetField {
+	out := []insightParquetField{
+		{colId, "name=id, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true", ""},
+		{colSourceId, "name=source_id, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true", ""},
+		{colSourceName, "name=source_name, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true", ""},
+		{colTimestamp, "name=timestamp, type=INT64, omitstats=true", ""},
+		{colCount, "name=count, type=INT64, omitstats=true", ""},
 	}
 	for _, k := range []string{"key1", "key2", "key3", "key4", "key5"} {
 		if attrName, ok := attMap[k]; ok && attrName != "" {
-			// Parquet column name = attribute name (same as S3 JSON key)
-			out = append(out, struct{ name, tag string }{
-				attrName,
-				fmt.Sprintf("name=%s, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true", attrName),
+			out = append(out, insightParquetField{
+				name: attrName,
+				tag:  fmt.Sprintf("name=%s, type=BYTE_ARRAY, convertedtype=UTF8, omitstats=true", attrName),
+				key:  k,
 			})
 		}
 	}
@@ -113,15 +119,20 @@ func insightParquetFields(attMap map[string]string) []struct{ name, tag string }
 }
 
 // createDynamicInsightStructType builds a struct type at runtime with columns matching S3 JSON (id, source_id, source_name, timestamp, count + attMap attribute names).
-func createDynamicInsightStructType(attMap map[string]string) (reflect.Type, []string, error) {
+// orderedKeys is the doc key for each attribute column ("key1".."key5"), same length as names minus 5; used for key-based row mapping.
+func createDynamicInsightStructType(attMap map[string]string) (reflect.Type, []string, []string, error) {
 	fields := insightParquetFields(attMap)
 	if len(fields) == 0 {
-		return nil, nil, fmt.Errorf("no parquet fields")
+		return nil, nil, nil, fmt.Errorf("no parquet fields")
 	}
 	names := make([]string, 0, len(fields))
+	orderedKeys := make([]string, 0, len(fields)-5)
 	reflectFields := make([]reflect.StructField, 0, len(fields))
 	for _, f := range fields {
 		names = append(names, f.name)
+		if f.key != "" {
+			orderedKeys = append(orderedKeys, f.key)
+		}
 		var goType reflect.Type
 		if f.name == colTimestamp || f.name == colCount {
 			goType = reflect.TypeOf(int64(0))
@@ -138,11 +149,30 @@ func createDynamicInsightStructType(attMap map[string]string) (reflect.Type, []s
 			Tag:  reflect.StructTag(fmt.Sprintf(`parquet:"%s"`, f.tag)),
 		})
 	}
-	return reflect.StructOf(reflectFields), names, nil
+	return reflect.StructOf(reflectFields), names, orderedKeys, nil
 }
 
-// docToDynamicRowFixed builds row when we know orderedNames: first 5 are fixed, rest are key1..key5 in order.
-func docToDynamicRowFixed(doc Doc, sourceIdToNameMap map[string]string, orderedNames []string, dynamicType reflect.Type) (interface{}, error) {
+// docKeyValue returns the Doc field value for the given key ("key1".."key5"); same mapping as SearchMap.
+func docKeyValue(doc Doc, key string) string {
+	switch key {
+	case "key1":
+		return doc.Key1
+	case "key2":
+		return doc.Key2
+	case "key3":
+		return doc.Key3
+	case "key4":
+		return doc.Key4
+	case "key5":
+		return doc.Key5
+	default:
+		return ""
+	}
+}
+
+// docToDynamicRowFixed builds row when we know orderedNames (first 5 fixed) and orderedKeys (doc key per attribute column).
+// Uses key-based lookup for attribute columns so skipped keys (key2, key4, etc.) do not misalign data.
+func docToDynamicRowFixed(doc Doc, sourceIdToNameMap map[string]string, orderedNames []string, orderedKeys []string, dynamicType reflect.Type) (interface{}, error) {
 	sourceName := "unknown_source_name"
 	if n, ok := sourceIdToNameMap[doc.SourceId]; ok {
 		sourceName = n
@@ -167,10 +197,10 @@ func docToDynamicRowFixed(doc Doc, sourceIdToNameMap map[string]string, orderedN
 				v = ""
 			}
 		} else {
-			// Attribute columns (key1..key5) after the 5 fixed; use position, not colName.
-			if i-5 < 5 {
-				vals := []string{doc.Key1, doc.Key2, doc.Key3, doc.Key4, doc.Key5}
-				v = vals[i-5]
+			// Attribute columns: use key-based lookup so skipped keys don't misalign columns.
+			attrIdx := i - 5
+			if attrIdx < len(orderedKeys) {
+				v = docKeyValue(doc, orderedKeys[attrIdx])
 			} else {
 				v = ""
 			}
@@ -208,7 +238,7 @@ func WriteDocsToParquetFile(filePath string, docs []Doc, sourceIdToNameMap, attM
 	}
 	defer pFile.Close()
 
-	dynamicType, orderedNames, err := createDynamicInsightStructType(attMap)
+	dynamicType, orderedNames, orderedKeys, err := createDynamicInsightStructType(attMap)
 	if err != nil {
 		return err
 	}
@@ -218,7 +248,7 @@ func WriteDocsToParquetFile(filePath string, docs []Doc, sourceIdToNameMap, attM
 		return err
 	}
 	for i := range docs {
-		row, err := docToDynamicRowFixed(docs[i], sourceIdToNameMap, orderedNames, dynamicType)
+		row, err := docToDynamicRowFixed(docs[i], sourceIdToNameMap, orderedNames, orderedKeys, dynamicType)
 		if err != nil {
 			return err
 		}
