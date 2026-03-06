@@ -58,6 +58,10 @@ func calculateReductionPercentage(incoming, outgoing string) (string, error) {
 		return "", fmt.Errorf("error parsing outgoing value: %w", err)
 	}
 
+	if incomingFloat == 0 {
+		return "0.00", nil
+	}
+
 	reductionPercentage := math.Max(0, ((incomingFloat-outgoingFloat)/incomingFloat)*100)
 	return fmt.Sprintf("%.2f", reductionPercentage), nil
 }
