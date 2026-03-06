@@ -36,7 +36,19 @@ func (vw *ViperWrapper) GetStringOrDefault(key string, def string) string {
 func (vw *ViperWrapper) GetBool(key string) bool {
 	return vw.vpr.GetBool(key)
 }
+func (vw *ViperWrapper) GetBoolOrDefault(key string, def bool) bool {
+	if !vw.vpr.IsSet(key) {
+		return def
+	}
+	return vw.vpr.GetBool(key)
+}
 func (vw *ViperWrapper) GetInt(key string) int {
+	return vw.vpr.GetInt(key)
+}
+func (vw *ViperWrapper) GetIntOrDefault(key string, def int) int {
+	if !vw.vpr.IsSet(key) {
+		return def
+	}
 	return vw.vpr.GetInt(key)
 }
 func (vw *ViperWrapper) GetStringMap(key string) map[string]interface{} {

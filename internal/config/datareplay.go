@@ -33,8 +33,16 @@ func (drc *DataReplayConfig) GetBool(key string) bool {
 	return false
 }
 
+func (drc *DataReplayConfig) GetBoolOrDefault(key string, defaultVal bool) bool {
+	return defaultVal
+}
+
 func (drc *DataReplayConfig) GetInt(key string) int {
 	return 0
+}
+
+func (drc *DataReplayConfig) GetIntOrDefault(key string, defaultVal int) int {
+	return defaultVal
 }
 
 func (drc *DataReplayConfig) GetStringMap(key string) map[string]any {

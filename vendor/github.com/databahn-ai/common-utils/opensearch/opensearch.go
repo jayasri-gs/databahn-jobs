@@ -1,13 +1,17 @@
 package opensearch
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	azsecrets "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/vault"
@@ -97,54 +101,126 @@ func readOsDetails(config configuration.ConfigReader) (*Credentials, error) {
 		logger.GetLogger().Info("No secret backend configured. selecting default")
 		secretBackend = configuration.SecretBackendAWS
 	}
-	var creds Credentials
+
 	switch secretBackend {
 	case configuration.SecretBackendAWS:
-		region := config.GetString(configuration.Region)
-		data, err := aws.ReadSecretByName(secretName, region)
-		if err != nil {
-			logger.GetLogger().Error("error while reading secret", zap.Error(err))
-			return nil, err
-		}
-		err = json.Unmarshal([]byte(*data.SecretString), &creds)
-		if err != nil {
-			return nil, err
-		}
+		return readOsDetailsFromAWS(config, secretName)
 	case configuration.SecretBackendVault:
-		vaultAddress := config.GetString(configuration.VaultAddress)
-		vaultToken := config.GetString(configuration.VaultToken)
-		if vaultAddress == "" || vaultToken == "" {
-			logger.GetLogger().Error("vault address or token is empty")
-			return nil, errors.New("vault address or token is empty")
-		}
-		data, err := vault.ReadSecrets(vaultAddress, vaultToken, secretName)
-		if err != nil {
-			logger.GetLogger().Error("error while reading secret from vault", zap.Error(err))
-			return nil, err
-		}
-		if username, ok := data["open_search.username"].(string); ok {
-			creds.OpenSearchUsername = username
-		} else {
-			return nil, errors.New("username is missing or not a string in secret data")
-		}
-
-		if password, ok := data["open_search.password"].(string); ok {
-			creds.OpenSearchPassword = password
-		} else {
-			return nil, errors.New("password is missing or not a string in secret data")
-		}
-
-		if osUrl, ok := data["open_search.url"].(string); ok {
-			creds.OpenSearchUrl = osUrl
-		} else {
-			return nil, errors.New("url is missing or not a string in secret data")
-		}
-
-		if index, ok := data["open_search.statisticsIndexName"].(string); ok {
-			creds.OpenSearchStatisticsIndexName = index
-		} else {
-			return nil, errors.New("statistics index name is missing or not a string in secret data")
-		}
+		return readOsDetailsFromVault(config, secretName)
+	case configuration.SecretBackendAzure:
+		return readOsDetailsFromAzure(config, secretName)
+	default:
+		return nil, errors.New("unsupported secret backend: " + secretBackend)
 	}
+}
+
+func readOsDetailsFromAWS(config configuration.ConfigReader, secretName string) (*Credentials, error) {
+	region := config.GetString(configuration.Region)
+	data, err := aws.ReadSecretByName(secretName, region)
+	if err != nil {
+		logger.GetLogger().Error("error while reading secret", zap.Error(err))
+		return nil, err
+	}
+	var creds Credentials
+	err = json.Unmarshal([]byte(*data.SecretString), &creds)
+	if err != nil {
+		return nil, err
+	}
+	return &creds, nil
+}
+
+func readOsDetailsFromVault(config configuration.ConfigReader, secretName string) (*Credentials, error) {
+	vaultAddress := config.GetString(configuration.VaultAddress)
+	vaultToken := config.GetString(configuration.VaultToken)
+	if vaultAddress == "" || vaultToken == "" {
+		logger.GetLogger().Error("vault address or token is empty")
+		return nil, errors.New("vault address or token is empty")
+	}
+	data, err := vault.ReadSecrets(vaultAddress, vaultToken, secretName)
+	if err != nil {
+		logger.GetLogger().Error("error while reading secret from vault", zap.Error(err))
+		return nil, err
+	}
+	return parseOpenSearchCredentialsFromMap(data)
+}
+
+func readOsDetailsFromAzure(config configuration.ConfigReader, secretName string) (*Credentials, error) {
+	vaultUrl := config.GetString(configuration.AzureInfraKeyVaultUrl)
+	if vaultUrl == "" {
+		logger.GetLogger().Error("azure key vault url is empty")
+		return nil, fmt.Errorf("missing config value %s", configuration.AzureInfraKeyVaultUrl)
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		logger.GetLogger().Error("failed to obtain Azure credential", zap.Error(err))
+		return nil, err
+	}
+	client, err := azsecrets.NewClient(vaultUrl, cred, nil)
+	if err != nil {
+		logger.GetLogger().Error("failed to create Azure Key Vault client", zap.Error(err))
+		return nil, err
+	}
+	resp, err := client.GetSecret(context.Background(), secretName, "", nil)
+	if err != nil {
+		logger.GetLogger().Error("failed to get secret from Azure Key Vault", zap.Error(err))
+		return nil, err
+	}
+	if resp.Value == nil {
+		return nil, errors.New("secret value is nil in Azure Key Vault response")
+	}
+	var secretMap map[string]interface{}
+	err = json.Unmarshal([]byte(*resp.Value), &secretMap)
+	if err != nil {
+		logger.GetLogger().Error("failed to unmarshal Azure Key Vault secret value", zap.Error(err))
+		return nil, err
+	}
+	return parseOpenSearchCredentialsFromMap(secretMap)
+}
+
+func parseOpenSearchCredentialsFromMap(data map[string]interface{}) (*Credentials, error) {
+	var creds Credentials
+	if username, ok := data["open_search.username"].(string); ok {
+		creds.OpenSearchUsername = username
+	} else if username, ok := data["opensearch_username"].(string); ok {
+		creds.OpenSearchUsername = username
+	} else {
+		return nil, errors.New("username is missing or not a string in secret data")
+	}
+
+	if password, ok := data["open_search.password"].(string); ok {
+		creds.OpenSearchPassword = password
+	} else if password, ok := data["opensearch_password"].(string); ok {
+		creds.OpenSearchPassword = password
+	} else {
+		return nil, errors.New("password is missing or not a string in secret data")
+	}
+
+	if osUrl, ok := data["open_search.url"].(string); ok {
+		creds.OpenSearchUrl = osUrl
+	} else if osUrl, ok := data["opensearch_url"].(string); ok {
+		creds.OpenSearchUrl = osUrl
+	} else {
+		return nil, errors.New("url is missing or not a string in secret data")
+	}
+
+	if index, ok := data["open_search.statisticsIndexName"].(string); ok {
+		creds.OpenSearchStatisticsIndexName = index
+	} else if index, ok := data["opensearch_statisticsIndexName"].(string); ok {
+		creds.OpenSearchStatisticsIndexName = index
+	} else {
+		return nil, errors.New("statistics index name is missing or not a string in secret data")
+	}
+
+	if v, ok := data["open_search.enable_ssl"].(bool); ok {
+		creds.OpenSearchEnableSsl = v
+	} else if v, ok := data["opensearch_enable_ssl"].(bool); ok {
+		creds.OpenSearchEnableSsl = v
+	} else if v, ok := data["open_search.enable_ssl"].(string); ok {
+		b, _ := strconv.ParseBool(v)
+		creds.OpenSearchEnableSsl = b
+	} else if v, ok := data["opensearch_enable_ssl"].(string); ok {
+		b, _ := strconv.ParseBool(v)
+		creds.OpenSearchEnableSsl = b
+	} // else leave as default false
 	return &creds, nil
 }

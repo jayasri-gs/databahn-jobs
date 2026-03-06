@@ -16,11 +16,13 @@ const (
 	SecretBackend      = "secret.backend"
 	SecretBackendAWS   = "aws"
 	SecretBackendVault = "vault"
+	SecretBackendAzure = "azure"
 
 	DatabaseName       = "database.database"
 	DatabaseSchema     = "database.schema"
 	DatabaseHost       = "database.host"
 	DatabasePort       = "database.port"
+	DatabaseSSLMode    = "database.ssl_mode"
 	DataBaseSecretName = "database.secret_name"
 
 	VaultAddress = "vault.address"
@@ -37,12 +39,14 @@ const (
 
 	OAuthClientCredentialsSecretName = configs.OAuthClientCredentialsSecretName
 
-	OpenTelemetryCollectorUrl     = "urls.optl_collector"
-	OpenTelemetryCollectorGrpcUrl = "urls.optl_collector_grpc"
-	RedisUrl                      = "urls.redis"
-	GatewayUrl                    = "urls.gateway"
-	ControlPlaneBaseUrl           = "urls.control_plane_base_url"
-	KsqlDbUrl                     = configs.KSqlDbUrl
+	OpenTelemetryCollectorUrl           = "urls.optl_collector"
+	OpenTelemetryCollectorGrpcUrl       = "urls.optl_collector_grpc"
+	OpenTelemetryVectorCollectorUrl     = "urls.optl_collector_vector"
+	OpenTelemetryVectorCollectorGrpcUrl = "urls.optl_collector_grpc_vector"
+	RedisUrl                            = "urls.redis"
+	GatewayUrl                          = "urls.gateway"
+	ControlPlaneBaseUrl                 = "urls.control_plane_base_url"
+	KsqlDbUrl                           = configs.KSqlDbUrl
 	// DataBahnApiUrl used to get the api url from app config
 	DataBahnApiUrl      = "urls.databahn_api"
 	DataBahnAppUrl      = "urls.databahn_app"
@@ -71,4 +75,31 @@ const (
 	FileServerUserName           = "file_server.username"
 	FileServerPassword           = "file_server.password"
 	FileServerUrl                = "file_server.url"
+
+	KafkaConsumerCount   = "kafka.consumer.count"
+	MaxProcessingWorkers = "max_processing_workers"
+	BufferSize           = "buffer_size"
+
+	// Global destination configuration for unparsed topics
+	GlobalDestUnparsedMaxS3Topics        = "globalDestination.unparsed.max_s3_topics"
+	GlobalDestUnparsedMaxAzureblobTopics = "globalDestination.unparsed.max_azure_blob_topics"
+	GlobalDestUnparsedMaxSnowflakeTopics = "globalDestination.unparsed.max_snowflake_topics"
+
+	AzureInfraKeyVaultUrl    = "azure.secrets.infra.url"
+	AzureCustomerKeyVaultUrl = "azure.secrets.customer.url"
+
+	// Object storage configuration
+	ObjectBackend              = "object.backend"
+	ObjectEventCollection      = "object.events.collection"
+	ObjectArtifactCollection   = "object.artifacts.collection"
+	ObjectS3Region             = "object.s3.region"
+	ObjectS3Endpoint           = "object.s3.endpoint"
+	ObjectS3AccessKey          = "object.s3.access_key"
+	ObjectS3SecretKey          = "object.s3.secret_key"
+	ObjectS3ForcePathStyle     = "object.s3.force_path_style"
+	ObjectBlobAccountName      = "object.blob.account_name"
+	ObjectBlobAccountKey       = "object.blob.account_key"
+	ObjectBlobConnectionString = "object.blob.connection_string"
+
+	SearchSecretNameKey = "search.secret_name"
 )
