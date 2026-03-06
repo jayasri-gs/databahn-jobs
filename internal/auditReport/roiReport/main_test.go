@@ -161,13 +161,13 @@ func TestWriteRows_ColumnOrder(t *testing.T) {
 	)
 
 	assertRowValues(t, records[1], []string{
-		"SRC_NAME",    // col 0: Source
-		"DEST_NAME",   // col 1: Destination
-		"5000",        // col 2: Incoming Data (events - existing)
-		"2500",        // col 3: Outgoing Data (events - existing)
-		"50.00",       // col 4: Reduction percentage (events - existing)
-		"1.00 GB",     // col 5: Incoming Data (Bytes) (new, humanized)
-		"512.00 MB",   // col 6: Outgoing Data (Bytes) (new, humanized)
-		"50.00",       // col 7: Data Reduction % (new)
+		"SRC_NAME",  // col 0: Source
+		"DEST_NAME", // col 1: Destination
+		"5000",      // col 2: Incoming Data (events - existing)
+		"2500",      // col 3: Outgoing Data (events - existing)
+		"50.00",     // col 4: Reduction percentage (events - existing)
+		"1.00 GB",   // col 5: Incoming Data (Bytes) (new, humanized)
+		"512.00 MB", // col 6: Outgoing Data (Bytes) (new, humanized)
+		"50.00",     // col 7: Data Reduction % (new)
 	})
 }
