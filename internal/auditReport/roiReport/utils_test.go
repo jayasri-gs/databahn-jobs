@@ -99,3 +99,33 @@ func TestCalculateReductionPercentage(t *testing.T) {
 		})
 	}
 }
+
+func TestHumanizeBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "zero", input: "0", expected: "0 B"},
+		{name: "bytes", input: "512", expected: "512.00 B"},
+		{name: "1 KB", input: "1024", expected: "1.00 KB"},
+		{name: "fractional KB", input: "1536", expected: "1.50 KB"},
+		{name: "1 MB", input: "1048576", expected: "1.00 MB"},
+		{name: "512 MB", input: "536870912", expected: "512.00 MB"},
+		{name: "1 GB", input: "1073741824", expected: "1.00 GB"},
+		{name: "1 TB", input: "1099511627776", expected: "1.00 TB"},
+		{name: "1 PB", input: "1125899906842624", expected: "1.00 PB"},
+		{name: "empty string", input: "", expected: "0 B"},
+		{name: "invalid string", input: "abc", expected: "0 B"},
+		{name: "large realistic value", input: "5368709120", expected: "5.00 GB"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := humanizeBytes(tt.input)
+			if result != tt.expected {
+				t.Errorf("humanizeBytes(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

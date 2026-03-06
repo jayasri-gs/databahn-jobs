@@ -105,8 +105,8 @@ func writeRowsToFileForROIReport(queryResponse []Response, destinationIdsToName 
 			resp.IncomingEvents,
 			resp.OutgoingEvents,
 			resp.EventReductionPercentage,
-			resp.IncomingBytes,
-			resp.OutgoingBytes,
+			humanizeBytes(resp.IncomingBytes),
+			humanizeBytes(resp.OutgoingBytes),
 			resp.ByteReductionPercentage,
 		}
 		err := writer.Write(row)

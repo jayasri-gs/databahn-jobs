@@ -43,6 +43,21 @@ func fetchPaginatedAggregate(ctx context.Context, tenantId, query string, groupB
 	return allResponses, nil
 }
 
+func humanizeBytes(raw string) string {
+	bytes, err := strconv.ParseFloat(raw, 64)
+	if err != nil || bytes == 0 {
+		return "0 B"
+	}
+
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	i := 0
+	for bytes >= 1024 && i < len(units)-1 {
+		bytes /= 1024
+		i++
+	}
+	return fmt.Sprintf("%.2f %s", bytes, units[i])
+}
+
 func calculateReductionPercentage(incoming, outgoing string) (string, error) {
 	if incoming == "" {
 		return "0.00", nil

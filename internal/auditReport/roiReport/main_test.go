@@ -73,7 +73,7 @@ func TestWriteRows_SingleRowWithNames(t *testing.T) {
 		t.Fatalf("expected 2 records (header + 1 row), got %d", len(records))
 	}
 	assertRowValues(t, records[1], []string{
-		"Firewall-Logs", "Splunk-Prod", "10000", "6000", "40.00", "1048576", "524288", "50.00",
+		"Firewall-Logs", "Splunk-Prod", "10000", "6000", "40.00", "1.00 MB", "512.00 KB", "50.00",
 	})
 }
 
@@ -92,7 +92,7 @@ func TestWriteRows_FallbackToIDs(t *testing.T) {
 		t.Fatalf("expected 2 records, got %d", len(records))
 	}
 	assertRowValues(t, records[1], []string{
-		"src-unknown", "dest-unknown", "500", "250", "50.00", "2000", "1000", "50.00",
+		"src-unknown", "dest-unknown", "500", "250", "50.00", "1.95 KB", "1000.00 B", "50.00",
 	})
 }
 
@@ -153,21 +153,21 @@ func TestWriteRows_ColumnOrder(t *testing.T) {
 	records := writeTestCSV(t,
 		[]Response{{
 			LogSourceId: "src-1", DestinationId: "dest-1",
-			IncomingBytes: "BYTE_IN", OutgoingBytes: "BYTE_OUT", ByteReductionPercentage: "BYTE_RED",
-			IncomingEvents: "EVT_IN", OutgoingEvents: "EVT_OUT", EventReductionPercentage: "EVT_RED",
+			IncomingBytes: "1073741824", OutgoingBytes: "536870912", ByteReductionPercentage: "50.00",
+			IncomingEvents: "5000", OutgoingEvents: "2500", EventReductionPercentage: "50.00",
 		}},
 		map[string]string{"dest-1": "DEST_NAME"},
 		map[string]string{"src-1": "SRC_NAME"},
 	)
 
 	assertRowValues(t, records[1], []string{
-		"SRC_NAME",  // col 0: Source
-		"DEST_NAME", // col 1: Destination
-		"EVT_IN",    // col 2: Incoming Data (events - existing)
-		"EVT_OUT",   // col 3: Outgoing Data (events - existing)
-		"EVT_RED",   // col 4: Reduction percentage (events - existing)
-		"BYTE_IN",   // col 5: Incoming Data (Bytes) (new)
-		"BYTE_OUT",  // col 6: Outgoing Data (Bytes) (new)
-		"BYTE_RED",  // col 7: Data Reduction % (new)
+		"SRC_NAME",    // col 0: Source
+		"DEST_NAME",   // col 1: Destination
+		"5000",        // col 2: Incoming Data (events - existing)
+		"2500",        // col 3: Outgoing Data (events - existing)
+		"50.00",       // col 4: Reduction percentage (events - existing)
+		"1.00 GB",     // col 5: Incoming Data (Bytes) (new, humanized)
+		"512.00 MB",   // col 6: Outgoing Data (Bytes) (new, humanized)
+		"50.00",       // col 7: Data Reduction % (new)
 	})
 }
