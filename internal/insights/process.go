@@ -14,7 +14,6 @@ import (
 
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
-	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	osstore "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
@@ -182,7 +181,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	page := 0
 	count := 0
 	var after *After = nil
-	searchBackend := appConfig.GetAppConfiguration().GetString(SearchBackendKey)
+	searchBackend := config.GetAppConfiguration().GetString(SearchBackendKey)
 	useParquetForUpload := searchBackend == SearchBackendSynapse
 	var allDocsForParquet []Doc // used only when useParquetForUpload
 
