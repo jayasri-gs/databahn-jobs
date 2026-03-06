@@ -50,9 +50,9 @@ func TestCalculateReductionPercentage(t *testing.T) {
 		},
 		{
 			name:     "fractional values",
-			incoming: "1000.5",
-			outgoing: "300.15",
-			expected: "70.00",
+			incoming: "1000",
+			outgoing: "333.5",
+			expected: "66.65",
 		},
 		{
 			name:     "very small reduction",
