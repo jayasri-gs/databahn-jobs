@@ -150,20 +150,25 @@ func docToDynamicRowFixed(doc Doc, sourceIdToNameMap map[string]string, orderedN
 	row := reflect.New(dynamicType).Elem()
 	for i, colName := range orderedNames {
 		var v interface{}
-		switch colName {
-		case colId:
-			v = doc.Id
-		case colSourceId:
-			v = doc.SourceId
-		case colSourceName:
-			v = sourceName
-		case colTimestamp:
-			v = doc.Timestamp
-		case colCount:
-			v = int64(doc.Count)
-		default:
-			// Attribute columns come after the 5 fixed; order is key1, key2, key3, key4, key5
-			if i >= 5 && i-5 < 5 {
+		if i < 5 {
+			// Fixed columns by position; attribute names must not override these.
+			switch colName {
+			case colId:
+				v = doc.Id
+			case colSourceId:
+				v = doc.SourceId
+			case colSourceName:
+				v = sourceName
+			case colTimestamp:
+				v = doc.Timestamp
+			case colCount:
+				v = int64(doc.Count)
+			default:
+				v = ""
+			}
+		} else {
+			// Attribute columns (key1..key5) after the 5 fixed; use position, not colName.
+			if i-5 < 5 {
 				vals := []string{doc.Key1, doc.Key2, doc.Key3, doc.Key4, doc.Key5}
 				v = vals[i-5]
 			} else {
