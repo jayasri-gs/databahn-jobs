@@ -48,8 +48,11 @@ func writeTestCSV(t *testing.T, responses []Response, destMap, sourceMap map[str
 
 func assertRowValues(t *testing.T, row []string, expected []string) {
 	t.Helper()
+	if len(row) != len(expected) {
+		t.Fatalf("row has %d columns, want %d", len(row), len(expected))
+	}
 	for i, val := range expected {
-		if i < len(row) && row[i] != val {
+		if row[i] != val {
 			t.Errorf("column[%d] = %q, want %q", i, row[i], val)
 		}
 	}

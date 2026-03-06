@@ -156,16 +156,8 @@ func getAggStatsForLogSourceToDestinationPaginated(ctx context.Context, startTim
 		return nil, err
 	}
 
-	outgoingBytesMap := make(map[sourceDestKey]string)
-	allKeys := make(map[sourceDestKey]struct{})
-	for _, resp := range outgoingBytesResp {
-		key := sourceDestKey{
-			logSourceId:   resp.Key["tags.db_event_source_id.keyword"].(string),
-			destinationId: resp.Key["tags.destination_id.keyword"].(string),
-		}
-		outgoingBytesMap[key] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
-		allKeys[key] = struct{}{}
-	}
+	seen := make(map[sourceDestKey]struct{})
+	var orderedKeys []sourceDestKey
 
 	outgoingEventsMap := make(map[sourceDestKey]string)
 	for _, resp := range outgoingEventsResp {
@@ -174,18 +166,40 @@ func getAggStatsForLogSourceToDestinationPaginated(ctx context.Context, startTim
 			destinationId: resp.Key["tags.destination_id.keyword"].(string),
 		}
 		outgoingEventsMap[key] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
-		allKeys[key] = struct{}{}
+		if _, exists := seen[key]; !exists {
+			seen[key] = struct{}{}
+			orderedKeys = append(orderedKeys, key)
+		}
+	}
+
+	outgoingBytesMap := make(map[sourceDestKey]string)
+	for _, resp := range outgoingBytesResp {
+		key := sourceDestKey{
+			logSourceId:   resp.Key["tags.db_event_source_id.keyword"].(string),
+			destinationId: resp.Key["tags.destination_id.keyword"].(string),
+		}
+		outgoingBytesMap[key] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+		if _, exists := seen[key]; !exists {
+			seen[key] = struct{}{}
+			orderedKeys = append(orderedKeys, key)
+		}
 	}
 
 	var queryResponse []Response
-	for key := range allKeys {
+	for _, key := range orderedKeys {
 		incomingBytes := incomingBytesMap[key.logSourceId]
+		if incomingBytes == "" {
+			incomingBytes = "0"
+		}
 		outgoingBytes := outgoingBytesMap[key]
 		if outgoingBytes == "" {
 			outgoingBytes = "0"
 		}
 
 		incomingEvents := incomingEventsMap[key.logSourceId]
+		if incomingEvents == "" {
+			incomingEvents = "0"
+		}
 		outgoingEvents := outgoingEventsMap[key]
 		if outgoingEvents == "" {
 			outgoingEvents = "0"
