@@ -183,7 +183,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	var after *After = nil
 	searchBackend := config.GetAppConfiguration().GetString(SearchBackendKey)
 	useParquetForUpload := searchBackend == SearchBackendSynapse
-	var allDocsForParquet []Doc // used only when useParquetForUpload
+	var streamParquet *StreamingParquetWriter
 
 	var s3File *os.File
 	if !useParquetForUpload {
@@ -305,7 +305,17 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 
 		hasData = true
 		if useParquetForUpload {
-			allDocsForParquet = append(allDocsForParquet, docs...)
+			if streamParquet == nil {
+				parquetPath := getSearchFileName(index, SearchFileExtParquet)
+				streamParquet, err = OpenStreamingParquetWriter(parquetPath, sourceIdToNameMap, attMap)
+				if err != nil {
+					return err
+				}
+			}
+			err = streamParquet.WriteDocs(docs)
+			if err != nil {
+				return err
+			}
 		} else {
 			err = writeToSearchFile(s3File, docs, attMap, sourceIdToNameMap)
 			if err != nil {
@@ -322,10 +332,9 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		}
 	}
 	if hasData {
-		if useParquetForUpload {
-			parquetPath := getSearchFileName(index, SearchFileExtParquet)
-			err = WriteDocsToParquetFile(parquetPath, allDocsForParquet, sourceIdToNameMap, attMap)
-			if err != nil {
+		if useParquetForUpload && streamParquet != nil {
+			parquetPath := streamParquet.FilePath
+			if err = streamParquet.Close(); err != nil {
 				return err
 			}
 			defer os.Remove(parquetPath)

@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/xitongsys/parquet-go-source/local"
+	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
 )
 
@@ -19,6 +20,19 @@ const (
 	colTimestamp  = "timestamp"
 	colCount      = "count"
 )
+
+// StreamingParquetWriter writes docs to a parquet file in batches so only one batch is held in memory
+// (same memory profile as the JSON path, which writes per batch). Call OpenStreamingParquetWriter,
+// then WriteDocs for each batch, then Close.
+type StreamingParquetWriter struct {
+	FilePath          string // path passed to OpenStreamingParquetWriter, for upload after Close
+	pFile             source.ParquetFile
+	pw                *writer.ParquetWriter
+	dynamicType       reflect.Type
+	orderedNames      []string
+	orderedKeys       []string
+	sourceIdToNameMap map[string]string
+}
 
 // sanitizeFieldName converts any field name into a valid Go identifier (same as azure-blob-parquet-dispenser).
 // Returns empty string if field should be skipped. Parquet column name is set via the struct tag.
@@ -229,32 +243,75 @@ func WriteDocsToParquetFile(filePath string, docs []Doc, sourceIdToNameMap, attM
 	if len(docs) == 0 {
 		return nil
 	}
+	sw, err := OpenStreamingParquetWriter(filePath, sourceIdToNameMap, attMap)
+	if err != nil {
+		return err
+	}
+	defer sw.Close()
+	return sw.WriteDocs(docs)
+}
+
+// OpenStreamingParquetWriter creates a parquet file and returns a writer that accepts batches of docs.
+// Call WriteDocs for each batch and Close when done. This avoids holding all docs in memory.
+func OpenStreamingParquetWriter(filePath string, sourceIdToNameMap, attMap map[string]string) (*StreamingParquetWriter, error) {
 	if attMap == nil {
 		attMap = make(map[string]string)
 	}
 	pFile, err := local.NewLocalFileWriter(filePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer pFile.Close()
-
 	dynamicType, orderedNames, orderedKeys, err := createDynamicInsightStructType(attMap)
 	if err != nil {
-		return err
+		pFile.Close()
+		return nil, err
 	}
 	instance := reflect.New(dynamicType).Interface()
 	pw, err := writer.NewParquetWriter(pFile, instance, 4)
 	if err != nil {
-		return err
+		pFile.Close()
+		return nil, err
 	}
+	return &StreamingParquetWriter{
+		FilePath:          filePath,
+		pFile:             pFile,
+		pw:                pw,
+		dynamicType:       dynamicType,
+		orderedNames:      orderedNames,
+		orderedKeys:       orderedKeys,
+		sourceIdToNameMap: sourceIdToNameMap,
+	}, nil
+}
+
+// WriteDocs writes a batch of docs to the parquet file. Can be called multiple times before Close.
+func (sw *StreamingParquetWriter) WriteDocs(docs []Doc) error {
 	for i := range docs {
-		row, err := docToDynamicRowFixed(docs[i], sourceIdToNameMap, orderedNames, orderedKeys, dynamicType)
+		row, err := docToDynamicRowFixed(docs[i], sw.sourceIdToNameMap, sw.orderedNames, sw.orderedKeys, sw.dynamicType)
 		if err != nil {
 			return err
 		}
-		if err := pw.Write(row); err != nil {
+		if err := sw.pw.Write(row); err != nil {
 			return err
 		}
 	}
-	return pw.WriteStop()
+	return nil
+}
+
+// Close flushes the parquet footer and closes the file. Must be called when done.
+func (sw *StreamingParquetWriter) Close() error {
+	if sw.pw != nil {
+		if err := sw.pw.WriteStop(); err != nil {
+			if sw.pFile != nil {
+				sw.pFile.Close()
+			}
+			return err
+		}
+		sw.pw = nil
+	}
+	if sw.pFile != nil {
+		err := sw.pFile.Close()
+		sw.pFile = nil
+		return err
+	}
+	return nil
 }
