@@ -100,4 +100,6 @@ const (
 	ObjectBlobAccountName      = "object.blob.account_name"
 	ObjectBlobAccountKey       = "object.blob.account_key"
 	ObjectBlobConnectionString = "object.blob.connection_string"
+
+	SearchSecretNameKey = "search.secret_name"
 )
