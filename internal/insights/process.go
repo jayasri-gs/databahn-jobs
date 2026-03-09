@@ -27,6 +27,18 @@ import (
 // Default cardinality threshold for tracking unique event keys
 const DefaultCardinalityThreshold = 360000
 
+// Search backend config key and values
+const (
+	SearchBackendKey     = "search.backend"
+	SearchBackendSynapse = "synapse"
+)
+
+// Search output file extensions
+const (
+	SearchFileExtTxt     = ".txt"
+	SearchFileExtParquet = ".parquet"
+)
+
 // checkIndexCardinalityAndAlert checks cardinality for a single index and generates alerts if needed
 func checkIndexCardinalityAndAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount, cardinalityThreshold int) error {
 	var insightRuleName string
@@ -169,10 +181,18 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	page := 0
 	count := 0
 	var after *After = nil
-	s3FileName := getS3FileName(index)
-	s3File, err := os.OpenFile(s3FileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
+	searchBackend := config.GetAppConfiguration().GetString(SearchBackendKey)
+	useParquetForUpload := searchBackend == SearchBackendSynapse
+	var streamParquet *StreamingParquetWriter
+
+	var s3File *os.File
+	if !useParquetForUpload {
+		s3FileName := getSearchFileName(index, SearchFileExtTxt)
+		var err error
+		s3File, err = os.OpenFile(s3FileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
 	}
 	attMap, err := getAttributes(index)
 	if err != nil {
@@ -284,21 +304,49 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		}
 
 		hasData = true
-		err = writeToSearchFile(s3File, docs, attMap, sourceIdToNameMap)
-		if err != nil {
-			return err
+		if useParquetForUpload {
+			if streamParquet == nil {
+				parquetPath := getSearchFileName(index, SearchFileExtParquet)
+				streamParquet, err = OpenStreamingParquetWriter(parquetPath, sourceIdToNameMap, attMap)
+				if err != nil {
+					return err
+				}
+			}
+			err = streamParquet.WriteDocs(docs)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = writeToSearchFile(s3File, docs, attMap, sourceIdToNameMap)
+			if err != nil {
+				return err
+			}
 		}
 
 		logger.GetLogger().Debug("processed documents", zap.String("index", indexName), zap.Int("page", page), zap.Int("count", len(docs)))
 	}
-	err = s3File.Close()
-	if err != nil {
-		return err
-	}
-	if hasData {
-		err = uploadFileToS3ForSearch(ctx, &index, s3File.Name())
+	if s3File != nil {
+		err = s3File.Close()
 		if err != nil {
 			return err
+		}
+	}
+	if hasData {
+		if useParquetForUpload && streamParquet != nil {
+			parquetPath := streamParquet.FilePath
+			if err = streamParquet.Close(); err != nil {
+				return err
+			}
+			defer os.Remove(parquetPath)
+			err = uploadAggregatedInsightFile(ctx, &index, parquetPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = uploadAggregatedInsightFile(ctx, &index, s3File.Name())
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -316,7 +364,6 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	indexUniqueKeys = nil
 
 	return nil
-
 }
 
 func isValidJSON(data []byte) bool {

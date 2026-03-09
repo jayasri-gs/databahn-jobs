@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	logging "github.com/databahn-ai/go-logging/logger"
@@ -121,20 +122,50 @@ func (b *blobBackend) Get(ctx context.Context, container, key string) ([]byte, e
 	return buf.Bytes(), nil
 }
 
-func (b *blobBackend) Put(ctx context.Context, container, key string, data []byte) error {
-	_, err := b.client.UploadBuffer(ctx, container, key, data, &azblob.UploadBufferOptions{})
+func (b *blobBackend) Put(ctx context.Context, container, key string, data []byte, opts ...*PutOptions) error {
+	uploadOpts := b.blobPutOptions(opts)
+	_, err := b.client.UploadBuffer(ctx, container, key, data, uploadOpts)
 	if err != nil {
 		return fmt.Errorf("blob upload: %w", err)
 	}
 	return nil
 }
 
-func (b *blobBackend) PutStream(ctx context.Context, container, key string, reader io.Reader) error {
-	_, err := b.client.UploadStream(ctx, container, key, reader, &azblob.UploadStreamOptions{})
+func (b *blobBackend) PutStream(ctx context.Context, container, key string, reader io.Reader, opts ...*PutOptions) error {
+	uploadOpts := b.blobPutStreamOptions(opts)
+	_, err := b.client.UploadStream(ctx, container, key, reader, uploadOpts)
 	if err != nil {
 		return fmt.Errorf("blob upload stream: %w", err)
 	}
 	return nil
+}
+
+func (b *blobBackend) blobPutOptions(opts []*PutOptions) *azblob.UploadBufferOptions {
+	if len(opts) == 0 || opts[0] == nil {
+		return &azblob.UploadBufferOptions{}
+	}
+	return &azblob.UploadBufferOptions{HTTPHeaders: blobPutHTTPHeaders(opts[0])}
+}
+
+func (b *blobBackend) blobPutStreamOptions(opts []*PutOptions) *azblob.UploadStreamOptions {
+	if len(opts) == 0 || opts[0] == nil {
+		return &azblob.UploadStreamOptions{}
+	}
+	return &azblob.UploadStreamOptions{HTTPHeaders: blobPutHTTPHeaders(opts[0])}
+}
+
+func blobPutHTTPHeaders(o *PutOptions) *blob.HTTPHeaders {
+	if o == nil || (o.ContentType == "" && o.ContentEncoding == "") {
+		return nil
+	}
+	h := &blob.HTTPHeaders{}
+	if o.ContentType != "" {
+		h.BlobContentType = &o.ContentType
+	}
+	if o.ContentEncoding != "" {
+		h.BlobContentEncoding = &o.ContentEncoding
+	}
+	return h
 }
 
 func (b *blobBackend) Post(ctx context.Context, container, key string, data []byte) error {

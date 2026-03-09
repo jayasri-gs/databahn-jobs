@@ -41,7 +41,7 @@ func (m *MockStore) Get(ctx context.Context, container, key string) ([]byte, err
 	return result, nil
 }
 
-func (m *MockStore) Put(ctx context.Context, container, key string, data []byte) error {
+func (m *MockStore) Put(ctx context.Context, container, key string, data []byte, opts ...*PutOptions) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -52,12 +52,12 @@ func (m *MockStore) Put(ctx context.Context, container, key string, data []byte)
 	return nil
 }
 
-func (m *MockStore) PutStream(ctx context.Context, container, key string, reader io.Reader) error {
+func (m *MockStore) PutStream(ctx context.Context, container, key string, reader io.Reader, opts ...*PutOptions) error {
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return fmt.Errorf("failed to read from reader: %w", err)
 	}
-	return m.Put(ctx, container, key, data)
+	return m.Put(ctx, container, key, data, opts...)
 }
 
 func (m *MockStore) Post(ctx context.Context, container, key string, data []byte) error {

@@ -494,7 +494,7 @@ func upload(ctx context.Context, index Index, s3File *os.File, writer *gzip.Writ
 		return err
 	}
 	objectKey := fmt.Sprintf("stats_backup/tenant_id=%s/year=%d/week=%d/%s", index.Tenant, index.Year, index.Week, fileBaseName)
-	err = util.UploadGzipFileToS3(ctx, objectKey, s3File.Name())
+	err = util.UploadGzipFileToObjectStore(ctx, objectKey, s3File.Name())
 	if err != nil {
 		return err
 	}

@@ -81,24 +81,42 @@ func (s *s3Backend) Get(ctx context.Context, container, key string) ([]byte, err
 	return buf.Bytes(), nil
 }
 
-func (s *s3Backend) Put(ctx context.Context, container, key string, data []byte) error {
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+func (s *s3Backend) Put(ctx context.Context, container, key string, data []byte, opts ...*PutOptions) error {
+	input := &s3.PutObjectInput{
 		Bucket: aws.String(container),
 		Key:    aws.String(key),
 		Body:   bytes.NewReader(data),
-	})
+	}
+	if len(opts) > 0 && opts[0] != nil {
+		if opts[0].ContentType != "" {
+			input.ContentType = aws.String(opts[0].ContentType)
+		}
+		if opts[0].ContentEncoding != "" {
+			input.ContentEncoding = aws.String(opts[0].ContentEncoding)
+		}
+	}
+	_, err := s.client.PutObject(ctx, input)
 	if err != nil {
 		return fmt.Errorf("s3 put object: %w", err)
 	}
 	return nil
 }
 
-func (s *s3Backend) PutStream(ctx context.Context, container, key string, reader io.Reader) error {
-	_, err := s.transferManager.UploadObject(ctx, &transfermanager.UploadObjectInput{
+func (s *s3Backend) PutStream(ctx context.Context, container, key string, reader io.Reader, opts ...*PutOptions) error {
+	input := &transfermanager.UploadObjectInput{
 		Bucket: aws.String(container),
 		Key:    aws.String(key),
 		Body:   reader,
-	})
+	}
+	if len(opts) > 0 && opts[0] != nil {
+		if opts[0].ContentType != "" {
+			input.ContentType = aws.String(opts[0].ContentType)
+		}
+		if opts[0].ContentEncoding != "" {
+			input.ContentEncoding = aws.String(opts[0].ContentEncoding)
+		}
+	}
+	_, err := s.transferManager.UploadObject(ctx, input)
 	if err != nil {
 		return fmt.Errorf("s3 upload stream: %w", err)
 	}

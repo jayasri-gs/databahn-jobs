@@ -18,6 +18,13 @@ type ObjectInfo struct {
 	LastModified time.Time
 }
 
+// PutOptions holds optional metadata for Put and PutStream (e.g. ContentType, ContentEncoding).
+// Pass nil or omit to use backend defaults.
+type PutOptions struct {
+	ContentType     string // e.g. "text/plain"
+	ContentEncoding string // e.g. "gzip"
+}
+
 // ObjectStore defines the interface for object storage operations.
 // It supports S3 and Azure Blob Storage as backends.
 type ObjectStore interface {
@@ -27,11 +34,13 @@ type ObjectStore interface {
 	Get(ctx context.Context, container, key string) ([]byte, error)
 
 	// Put uploads or overwrites an object in the store.
-	Put(ctx context.Context, container, key string, data []byte) error
+	// opts is optional; use PutOptions to set ContentType, ContentEncoding, etc.
+	Put(ctx context.Context, container, key string, data []byte, opts ...*PutOptions) error
 
 	// PutStream uploads or overwrites an object from an io.Reader.
 	// Use this for large files to avoid loading entire content into memory.
-	PutStream(ctx context.Context, container, key string, reader io.Reader) error
+	// opts is optional; use PutOptions to set ContentType, ContentEncoding, etc.
+	PutStream(ctx context.Context, container, key string, reader io.Reader, opts ...*PutOptions) error
 
 	// Post creates a new object or appends to an existing one.
 	// For S3: same as Put (create/overwrite).
