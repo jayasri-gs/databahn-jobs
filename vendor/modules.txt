@@ -334,7 +334,7 @@ github.com/cespare/xxhash/v2
 ## explicit; go 1.21
 github.com/confluentinc/confluent-kafka-go/v2/kafka
 github.com/confluentinc/confluent-kafka-go/v2/kafka/librdkafka_vendor
-# github.com/databahn-ai/common-utils v0.248.0 => /Users/avadhutpisal/databahn/code/common-utils
+# github.com/databahn-ai/common-utils v0.249.0
 ## explicit; go 1.24.2
 github.com/databahn-ai/common-utils/ack
 github.com/databahn-ai/common-utils/alert
@@ -724,4 +724,3 @@ gorm.io/gorm/utils
 # moul.io/zapgorm2 v1.3.0
 ## explicit; go 1.15
 moul.io/zapgorm2
-# github.com/databahn-ai/common-utils => /Users/avadhutpisal/databahn/code/common-utils
