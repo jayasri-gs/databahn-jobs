@@ -38,12 +38,13 @@ func UploadFileToObjectStoreAndUpdateInDb(ctx context.Context, file *os.File, re
 	return err
 }
 func uploadFile(ctx context.Context, filePath string, bucketName string, objectKey string) error {
-	data, err := os.ReadFile(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 
-	return objstore.GetClient().Put(ctx, bucketName, objectKey, data)
+	return objstore.GetClient().PutStream(ctx, bucketName, objectKey, file)
 }
 func getPresignedUrl(bucketName string, objectKey string) (string, error) {
 	downloadLink, err := objstore.GetClient().GetPresignedURL(context.Background(), bucketName, objectKey, time.Hour*168)
