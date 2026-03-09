@@ -295,7 +295,7 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 
 	// upload file
 	bucketName, objectKey := auditCommon.GetBucketNameAndObjectKey(req.Name + "_" + strconv.Itoa(int(time.Now().Unix())))
-	err = auditCommon.UploadFileToS3AndUpdateInDb(ctx, file, req, bucketName, objectKey)
+	err = auditCommon.UploadFileToObjectStoreAndUpdateInDb(ctx, file, req, bucketName, objectKey)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while uploading file to s3", zap.Error(err))
 		errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
