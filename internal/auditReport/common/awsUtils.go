@@ -24,6 +24,10 @@ func UploadFileToObjectStoreAndUpdateInDb(ctx context.Context, file *os.File, re
 
 	// get pre-signed link for the uploaded file
 	downloadLink, err := getPresignedUrl(bucketName, objectKey)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while getting presigned url", zap.Error(err))
+		return err
+	}
 	err = os.Remove(file.Name())
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while deleting temp file", zap.Error(err))
