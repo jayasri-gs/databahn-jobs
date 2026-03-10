@@ -32,17 +32,19 @@ func QueryFrequencyData(ctx context.Context, tenantId string, startDate, endDate
 	var results []athena.FrequencyAggregation
 	for rows.Next() {
 		var key1, key2, sourceId string
-		var dayEndTimestamp int64
+		var year, month, date int
 		var count float64
-		if err := rows.Scan(&key1, &key2, &sourceId, &dayEndTimestamp, &count); err != nil {
+		if err := rows.Scan(&key1, &key2, &sourceId, &year, &month, &date, &count); err != nil {
 			logger.GetLogger().Warn("skipping row on scan error", zap.Error(err))
 			continue
 		}
+		// Compute end-of-day epoch ms in Go to avoid Synapse distributed-mode restrictions on DATETIME2/DATEDIFF_BIG.
+		dayEnd := time.Date(year, time.Month(month), date, 23, 59, 59, 999*int(time.Millisecond), time.UTC)
 		results = append(results, athena.FrequencyAggregation{
 			Key1:            key1,
 			Key2:            key2,
 			SourceId:        sourceId,
-			DayEndTimestamp: dayEndTimestamp,
+			DayEndTimestamp: dayEnd.UnixMilli(),
 			Count:           count,
 		})
 	}
@@ -57,7 +59,9 @@ func QueryFrequencyData(ctx context.Context, tenantId string, startDate, endDate
 	return results, nil
 }
 
-// buildFrequencyQuery returns a T-SQL query that matches the Athena frequency query shape:
+// buildFrequencyQuery returns a T-SQL query that returns key1, key2, source_id, year, month, date, total_count.
+// day_end_timestamp is computed in Go from (year, month, date) to avoid Synapse serverless "not supported in
+// distributed processing mode" errors from DATETIME2/DATEDIFF_BIG.
 func buildFrequencyQuery(tenantId string, startDate, endDate time.Time) string {
 	tenantIdUnderscore := strings.ReplaceAll(tenantId, "-", "_")
 	database := fmt.Sprintf("databahn_tenant_%s", tenantIdUnderscore)
@@ -70,7 +74,9 @@ func buildFrequencyQuery(tenantId string, startDate, endDate time.Time) string {
 			sourcehostname AS key1,
 			'' AS key2,
 			source_id,
-			DATEDIFF_BIG(ms, '1970-01-01', CAST(CONCAT(RIGHT('0000' + CAST(year AS VARCHAR), 4), '-', RIGHT('00' + CAST(month AS VARCHAR), 2), '-', RIGHT('00' + CAST(date AS VARCHAR), 2), ' 23:59:59.999') AS DATETIME2)) AS day_end_timestamp,
+			CAST(year AS INT) AS year,
+			CAST(month AS INT) AS month,
+			CAST(date AS INT) AS date,
 			SUM([count]) AS total_count
 		FROM [%s].[dbo].[%s]
 		WHERE CAST(CONCAT(RIGHT('0000' + CAST(year AS VARCHAR), 4), RIGHT('00' + CAST(month AS VARCHAR), 2), RIGHT('00' + CAST(date AS VARCHAR), 2)) AS INTEGER) BETWEEN %d AND %d
