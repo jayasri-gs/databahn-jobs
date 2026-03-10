@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - release/**
-      - db-25183
 
 jobs:
   build-service:
