@@ -58,27 +58,23 @@ func QueryFrequencyData(ctx context.Context, tenantId string, startDate, endDate
 }
 
 // buildFrequencyQuery returns a T-SQL query that matches the Athena frequency query shape:
-// key1 (sourcehostname), key2 (”), source_id, day_end_timestamp (ms since epoch), total_count.
-// Assumes table has columns: sourcehostname, source_id, year, month, date, count.
 func buildFrequencyQuery(tenantId string, startDate, endDate time.Time) string {
 	tenantIdUnderscore := strings.ReplaceAll(tenantId, "-", "_")
 	database := fmt.Sprintf("databahn_tenant_%s", tenantIdUnderscore)
 	table := fmt.Sprintf("tenant_%s_sourcehostname", tenantIdUnderscore)
-	startStr := startDate.Format("2006-01-02")
-	endStr := endDate.Format("2006-01-02")
+	startYYYYMMDD := startDate.Year()*10000 + int(startDate.Month())*100 + startDate.Day()
+	endYYYYMMDD := endDate.Year()*10000 + int(endDate.Month())*100 + endDate.Day()
 
-	// T-SQL: day end as milliseconds since epoch for 23:59:59.999 on (year, month, date).
 	return fmt.Sprintf(`
 		SELECT 
 			sourcehostname AS key1,
 			'' AS key2,
 			source_id,
-			DATEDIFF_BIG(ms, '1970-01-01', DATETIME2FROMPARTS(CAST(year AS INT), CAST(month AS INT), CAST(date AS INT), 23, 59, 59, 999, 3)) AS day_end_timestamp,
+			DATEDIFF_BIG(ms, '1970-01-01', CAST(CONCAT(RIGHT('0000' + CAST(year AS VARCHAR), 4), '-', RIGHT('00' + CAST(month AS VARCHAR), 2), '-', RIGHT('00' + CAST(date AS VARCHAR), 2), ' 23:59:59.999') AS DATETIME2)) AS day_end_timestamp,
 			SUM([count]) AS total_count
 		FROM [%s].[dbo].[%s]
-		WHERE CONVERT(VARCHAR(10), DATEFROMPARTS(CAST(year AS INT), CAST(month AS INT), CAST(date AS INT)), 23)
-			BETWEEN '%s' AND '%s'
+		WHERE CAST(CONCAT(RIGHT('0000' + CAST(year AS VARCHAR), 4), RIGHT('00' + CAST(month AS VARCHAR), 2), RIGHT('00' + CAST(date AS VARCHAR), 2)) AS INTEGER) BETWEEN %d AND %d
 		GROUP BY sourcehostname, source_id, year, month, date
 		ORDER BY sourcehostname, source_id, year, month, date
-	`, database, table, startStr, endStr)
+	`, database, table, startYYYYMMDD, endYYYYMMDD)
 }
