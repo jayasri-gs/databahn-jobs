@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/common"
+	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/store/athena"
 	os "github.com/databahn-ai/databahn-jobs/internal/store/os"
+	"github.com/databahn-ai/databahn-jobs/internal/store/synapse"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
@@ -145,23 +147,40 @@ func calculateNoiseOfDevices(ctx context.Context, client *opensearch.Client, ten
 	endDate := time.UnixMilli(beforeTime)
 	startDate := time.Now().Add(-1 * time.Hour * 24 * NOISE_DAYS_TO_CONSIDER)
 
-	logger.GetLogger().Info("calculating device inventory noise for tenant using Athena",
-		zap.String("tenant_id", tenantId),
-		zap.String("start_date", startDate.Format("2006-01-02")),
-		zap.String("end_date", endDate.Format("2006-01-02")),
-		zap.Int("days_to_consider", NOISE_DAYS_TO_CONSIDER))
-
-	// Query frequency data from S3 via Athena
-	aggregates, err := athena.QueryFrequencyData(ctx, tenantId, startDate, endDate)
-	if err != nil {
-		logger.GetLogger().Error("failed to query frequency data from Athena",
-			zap.String("tenant_id", tenantId), zap.Error(err))
-		return err
+	searchBackend := appConfig.GetAppConfiguration().GetString(SearchBackendKey)
+	var aggregates []athena.FrequencyAggregation
+	var err error
+	if IsSynapseBackend(searchBackend) {
+		logger.GetLogger().Info("calculating device inventory noise for tenant using Azure Synapse",
+			zap.String("tenant_id", tenantId),
+			zap.String("start_date", startDate.Format("2006-01-02")),
+			zap.String("end_date", endDate.Format("2006-01-02")),
+			zap.Int("days_to_consider", NOISE_DAYS_TO_CONSIDER))
+		aggregates, err = synapse.QueryFrequencyData(ctx, tenantId, startDate, endDate)
+		if err != nil {
+			logger.GetLogger().Error("failed to query frequency data from Synapse",
+				zap.String("tenant_id", tenantId), zap.Error(err))
+			return err
+		}
+		logger.GetLogger().Info("received frequency aggregations from Synapse",
+			zap.String("tenant_id", tenantId),
+			zap.Int("total_records", len(aggregates)))
+	} else {
+		logger.GetLogger().Info("calculating device inventory noise for tenant using Athena",
+			zap.String("tenant_id", tenantId),
+			zap.String("start_date", startDate.Format("2006-01-02")),
+			zap.String("end_date", endDate.Format("2006-01-02")),
+			zap.Int("days_to_consider", NOISE_DAYS_TO_CONSIDER))
+		aggregates, err = athena.QueryFrequencyData(ctx, tenantId, startDate, endDate)
+		if err != nil {
+			logger.GetLogger().Error("failed to query frequency data from Athena",
+				zap.String("tenant_id", tenantId), zap.Error(err))
+			return err
+		}
+		logger.GetLogger().Info("received frequency aggregations from Athena",
+			zap.String("tenant_id", tenantId),
+			zap.Int("total_records", len(aggregates)))
 	}
-
-	logger.GetLogger().Info("received frequency aggregations from Athena",
-		zap.String("tenant_id", tenantId),
-		zap.Int("total_records", len(aggregates)))
 
 	// Process aggregates - group by device (key1, key2, source_id)
 	var key1, key2, sourceId string

@@ -120,6 +120,20 @@ func readSearchSecretRaw(ctx context.Context, cfg configuration.ConfigReader, se
 	}
 }
 
+// GetAzureSearchSynapseCreds reads the search secret and returns Synapse SQL username and password from the Azure secret payload.
+// Use when search.backend is "azure" or "synapse" for insight health frequency queries. Server and database come from config (search.synapse_server, search.synapse_database).
+func GetAzureSearchSynapseCreds(ctx context.Context, cfg configuration.ConfigReader, secretName string) (user, password string, err error) {
+	raw, err := readSearchSecretRaw(ctx, cfg, secretName)
+	if err != nil {
+		return "", "", err
+	}
+	var payload azureSearchSecretPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", "", fmt.Errorf("unmarshal Azure search secret: %w", err)
+	}
+	return payload.Search.Synapse.SQLUsername, payload.Search.Synapse.SQLPassword, nil
+}
+
 // ReadSearchObjectStoreSecret reads the search secret using secret.backend and unmarshals into the concrete type for object.backend.
 // objectBackend is "s3" or "blob". For "s3" returns AwsSearchSecret; for "blob" returns the blob part of the Azure secret.
 // Exactly one of s3Secret and blobSecret will be non-nil on success.

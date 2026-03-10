@@ -21,6 +21,7 @@ require (
 	github.com/databahn-ai/go-logging v0.24.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/uuid v1.6.0
+	github.com/microsoft/go-mssqldb v1.7.2
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	github.com/twmb/murmur3 v1.1.8
@@ -79,6 +80,8 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
+	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect

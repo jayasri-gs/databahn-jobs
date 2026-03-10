@@ -27,11 +27,16 @@ import (
 // Default cardinality threshold for tracking unique event keys
 const DefaultCardinalityThreshold = 360000
 
-// Search backend config key and values
+// Search backend config key and values. "synapse" denotes the Synapse backend.
 const (
 	SearchBackendKey     = "search.backend"
 	SearchBackendSynapse = "synapse"
 )
+
+// IsSynapseBackend returns true when search.backend is Synapse.
+func IsSynapseBackend(backend string) bool {
+	return backend == SearchBackendSynapse
+}
 
 // Search output file extensions
 const (
@@ -182,7 +187,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	count := 0
 	var after *After = nil
 	searchBackend := config.GetAppConfiguration().GetString(SearchBackendKey)
-	useParquetForUpload := searchBackend == SearchBackendSynapse
+	useParquetForUpload := IsSynapseBackend(searchBackend)
 	var streamParquet *StreamingParquetWriter
 
 	var s3File *os.File
