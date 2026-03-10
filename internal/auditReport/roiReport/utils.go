@@ -9,6 +9,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	logging "github.com/databahn-ai/go-logging/logger"
+	"github.com/dustin/go-humanize"
 	"go.uber.org/zap"
 )
 
@@ -48,14 +49,7 @@ func humanizeBytes(raw string) string {
 	if err != nil || bytes == 0 {
 		return "0 B"
 	}
-
-	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
-	i := 0
-	for bytes >= 1024 && i < len(units)-1 {
-		bytes /= 1024
-		i++
-	}
-	return fmt.Sprintf("%.2f %s", bytes, units[i])
+	return humanize.IBytes(uint64(bytes))
 }
 
 func calculateReductionPercentage(incoming, outgoing string) (string, error) {

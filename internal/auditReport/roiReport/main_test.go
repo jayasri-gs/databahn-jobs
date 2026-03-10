@@ -9,7 +9,7 @@ import (
 var csvHeaders = []string{
 	"Source", "Destination",
 	"Incoming Data", "Outgoing Data", "Reduction percentage",
-	"Incoming Data (Bytes)", "Outgoing Data (Bytes)", "Data Reduction %",
+	"Incoming Size", "Outgoing Size", "Size Reduction Percentage",
 }
 
 const expectedColumnCount = 8
@@ -73,7 +73,7 @@ func TestWriteRows_SingleRowWithNames(t *testing.T) {
 		t.Fatalf("expected 2 records (header + 1 row), got %d", len(records))
 	}
 	assertRowValues(t, records[1], []string{
-		"Firewall-Logs", "Splunk-Prod", "10000", "6000", "40.00", "1.00 MB", "512.00 KB", "50.00",
+		"Firewall-Logs", "Splunk-Prod", "10000", "6000", "40.00", "1.0 MiB", "512 KiB", "50.00",
 	})
 }
 
@@ -92,7 +92,7 @@ func TestWriteRows_FallbackToIDs(t *testing.T) {
 		t.Fatalf("expected 2 records, got %d", len(records))
 	}
 	assertRowValues(t, records[1], []string{
-		"src-unknown", "dest-unknown", "500", "250", "50.00", "1.95 KB", "1000.00 B", "50.00",
+		"src-unknown", "dest-unknown", "500", "250", "50.00", "2.0 KiB", "1000 B", "50.00",
 	})
 }
 
@@ -166,8 +166,8 @@ func TestWriteRows_ColumnOrder(t *testing.T) {
 		"5000",      // col 2: Incoming Data (events - existing)
 		"2500",      // col 3: Outgoing Data (events - existing)
 		"50.00",     // col 4: Reduction percentage (events - existing)
-		"1.00 GB",   // col 5: Incoming Data (Bytes) (new, humanized)
-		"512.00 MB", // col 6: Outgoing Data (Bytes) (new, humanized)
-		"50.00",     // col 7: Data Reduction % (new)
+		"1.0 GiB",   // col 5: Incoming Size
+		"512 MiB",   // col 6: Outgoing Size
+		"50.00",     // col 7: Size Reduction Percentage
 	})
 }
