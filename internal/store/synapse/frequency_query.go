@@ -67,16 +67,16 @@ func buildFrequencyQuery(tenantId string, startDate, endDate time.Time) string {
 	startStr := startDate.Format("2006-01-02")
 	endStr := endDate.Format("2006-01-02")
 
-	// T-SQL: day end as milliseconds since epoch for 23:59:59.999 on (year, month, date)
+	// T-SQL: day end as milliseconds since epoch for 23:59:59.999 on (year, month, date).
 	return fmt.Sprintf(`
 		SELECT 
 			sourcehostname AS key1,
 			'' AS key2,
 			source_id,
-			DATEDIFF_BIG(ms, '1970-01-01', DATETIME2FROMPARTS(year, month, date, 23, 59, 59, 999, 3)) AS day_end_timestamp,
+			DATEDIFF_BIG(ms, '1970-01-01', DATETIME2FROMPARTS(CAST(year AS INT), CAST(month AS INT), CAST(date AS INT), 23, 59, 59, 999, 3)) AS day_end_timestamp,
 			SUM([count]) AS total_count
 		FROM [%s].[dbo].[%s]
-		WHERE CONCAT(CAST(year AS VARCHAR), '-', FORMAT(month, '00'), '-', FORMAT(date, '00'))
+		WHERE CONVERT(VARCHAR(10), DATEFROMPARTS(CAST(year AS INT), CAST(month AS INT), CAST(date AS INT)), 23)
 			BETWEEN '%s' AND '%s'
 		GROUP BY sourcehostname, source_id, year, month, date
 		ORDER BY sourcehostname, source_id, year, month, date
