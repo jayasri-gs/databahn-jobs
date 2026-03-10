@@ -90,7 +90,7 @@ func getIncomingBytesBySource(ctx context.Context, startTime, endTime, tenantId 
 
 	result := make(map[string]string)
 	for _, resp := range allResponses {
-		result[resp.Key["tags.db_event_source_id.keyword"].(string)] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+		result[resp.Key["tags.db_event_source_id.keyword"].(string)] = fmt.Sprintf("%.0f", resp.Values["sum_value"].(float64))
 	}
 	return result, nil
 }
@@ -110,7 +110,7 @@ func getIncomingEventsBySource(ctx context.Context, startTime, endTime, tenantId
 
 	result := make(map[string]string)
 	for _, resp := range allResponses {
-		result[resp.Key["tags.db_event_source_id.keyword"].(string)] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+		result[resp.Key["tags.db_event_source_id.keyword"].(string)] = fmt.Sprintf("%.0f", resp.Values["sum_value"].(float64))
 	}
 	return result, nil
 }
@@ -174,7 +174,7 @@ func getAggStatsForLogSourceToDestinationPaginated(ctx context.Context, startTim
 			logSourceId:   resp.Key["tags.db_event_source_id.keyword"].(string),
 			destinationId: resp.Key["tags.destination_id.keyword"].(string),
 		}
-		outgoingEventsMap[key] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+		outgoingEventsMap[key] = fmt.Sprintf("%.0f", resp.Values["sum_value"].(float64))
 		if _, exists := seen[key]; !exists {
 			seen[key] = struct{}{}
 			orderedKeys = append(orderedKeys, key)
@@ -187,7 +187,7 @@ func getAggStatsForLogSourceToDestinationPaginated(ctx context.Context, startTim
 			logSourceId:   resp.Key["tags.db_event_source_id.keyword"].(string),
 			destinationId: resp.Key["tags.destination_id.keyword"].(string),
 		}
-		outgoingBytesMap[key] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+		outgoingBytesMap[key] = fmt.Sprintf("%.0f", resp.Values["sum_value"].(float64))
 		if _, exists := seen[key]; !exists {
 			seen[key] = struct{}{}
 			orderedKeys = append(orderedKeys, key)
