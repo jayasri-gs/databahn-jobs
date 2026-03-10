@@ -46,7 +46,7 @@ func fetchPaginatedAggregate(ctx context.Context, tenantId, query string, groupB
 
 func humanizeBytes(raw string) string {
 	bytes, err := strconv.ParseFloat(raw, 64)
-	if err != nil || bytes == 0 {
+	if err != nil || bytes <= 0 {
 		return "0 B"
 	}
 	return humanize.IBytes(uint64(bytes))

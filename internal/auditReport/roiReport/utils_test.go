@@ -117,6 +117,7 @@ func TestHumanizeBytes(t *testing.T) {
 		{name: "1 PiB", input: "1125899906842624", expected: "1.0 PiB"},
 		{name: "empty string", input: "", expected: "0 B"},
 		{name: "invalid string", input: "abc", expected: "0 B"},
+		{name: "negative value", input: "-1024", expected: "0 B"},
 		{name: "large realistic value", input: "5368709120", expected: "5.0 GiB"},
 	}
 
