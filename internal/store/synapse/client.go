@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 
 	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
@@ -18,6 +19,9 @@ const (
 	configSynapseWorkspace = "search.synapse.workspace"
 	configSynapseDatabase  = "search.synapse.database"
 	configSearchSecret     = "search.secret_name"
+
+	// synapseServerlessSuffix is appended to workspace name to form the serverless SQL endpoint (e.g. myworkspace -> myworkspace-ondemand.sql.azuresynapse.net).
+	synapseServerlessSuffix = "-ondemand.sql.azuresynapse.net"
 )
 
 var (
@@ -37,8 +41,8 @@ func GetDB(ctx context.Context) (*sql.DB, error) {
 			logger.GetLogger().Error("Synapse workspace not configured", zap.String("config_key", configSynapseWorkspace))
 			return
 		}
-		// workspace is the server host (e.g. myworkspace-ondemand.sql.azuresynapse.net)
-		server := workspace
+		server := strings.TrimSuffix(workspace, "/") + synapseServerlessSuffix
+
 		database := cfg.GetString(configSynapseDatabase)
 		if database == "" {
 			database = "master"
@@ -83,6 +87,8 @@ func buildConnString(server, database, user, password string) string {
 	query.Set("database", database)
 	query.Set("encrypt", "true")
 	query.Set("TrustServerCertificate", "false")
+	query.Set("hostNameInCertificate", "*.database.windows.net")
+	query.Set("connection timeout", "30")
 	u := &url.URL{
 		Scheme:   "sqlserver",
 		User:     url.UserPassword(user, password),
