@@ -48,7 +48,8 @@ func loadSearchObjectStore(ctx context.Context) error {
 	cfg := appConfig.GetAppConfiguration()
 	backend := cfg.GetString(configuration.ObjectBackend)
 
-	if backend == objectstore.BackendS3 {
+	switch backend {
+	case objectstore.BackendS3:
 		awsSecret, err := loadS3Secret(ctx)
 		if err != nil {
 			return fmt.Errorf("loading S3 secret: %w", err)
@@ -67,9 +68,7 @@ func loadSearchObjectStore(ctx context.Context) error {
 		searchObjectStoreClient = store
 		searchObjectStoreCollection = awsSecret.Bucket
 		return nil
-	}
-
-	if backend == objectstore.BackendBlob {
+	case objectstore.BackendBlob:
 		accountName := cfg.GetString(searchBlobAccountNameKey)
 		container := cfg.GetString(searchBucketKey)
 
@@ -79,10 +78,11 @@ func loadSearchObjectStore(ctx context.Context) error {
 		}
 		searchObjectStoreClient = store
 		searchObjectStoreCollection = container
-
 		return nil
+	default:
+		return fmt.Errorf("unsupported object backend %q for search object store; supported: %q, %q",
+			backend, objectstore.BackendS3, objectstore.BackendBlob)
 	}
-	return nil
 }
 
 func getSearchObjectStore(ctx context.Context) (objectstore.ObjectStore, string, error) {
