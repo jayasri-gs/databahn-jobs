@@ -59,4 +59,8 @@ type ObjectStore interface {
 	// For S3: uses presigned GetObject URL.
 	// For Azure Blob: generates a SAS URL with read permission.
 	GetPresignedURL(ctx context.Context, container, key string, expiry time.Duration) (string, error)
+
+	// DeleteBatch removes multiple objects from the store in a single operation.
+	// Implementations handle internal batching (S3: up to 1000/request, Azure Blob: up to 256/request).
+	DeleteBatch(ctx context.Context, container string, keys []string) error
 }

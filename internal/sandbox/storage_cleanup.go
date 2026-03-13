@@ -287,7 +287,7 @@ func groupObjectsByHourFolder(ctx context.Context, objects []objectstore.ObjectI
 	return hourFolders
 }
 
-// deleteExpiredHourFolders deletes all objects in the given expired hour folders.
+// deleteExpiredHourFolders deletes all objects in the given expired hour folders using batch delete.
 func deleteExpiredHourFolders(ctx context.Context, store objectstore.ObjectStore, collection string, hourFolders map[string]*hourFolderInfo) int {
 	totalDeleted := 0
 
@@ -295,22 +295,18 @@ func deleteExpiredHourFolders(ctx context.Context, store objectstore.ObjectStore
 		if info == nil {
 			continue
 		}
-		deleted := 0
-		for _, key := range info.keys {
-			if err := store.Delete(ctx, collection, key); err != nil {
-				logger.GetLoggerWithContext(ctx).Error("error deleting object",
-					zap.String("hour_folder", hourFolder),
-					zap.String("key", key),
-					zap.Error(err))
-				continue
-			}
-			deleted++
+		if err := store.DeleteBatch(ctx, collection, info.keys); err != nil {
+			logger.GetLoggerWithContext(ctx).Error("error batch deleting hour folder",
+				zap.String("hour_folder", hourFolder),
+				zap.Int("key_count", len(info.keys)),
+				zap.Error(err))
+			continue
 		}
-		totalDeleted += deleted
+		totalDeleted += len(info.keys)
 		logger.GetLoggerWithContext(ctx).Info("deleted hour folder",
 			zap.String("hour_folder", hourFolder),
 			zap.Time("folder_time", info.folderTime),
-			zap.Int("objects_deleted", deleted))
+			zap.Int("objects_deleted", len(info.keys)))
 	}
 
 	return totalDeleted

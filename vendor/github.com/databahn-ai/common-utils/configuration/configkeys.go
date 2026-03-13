@@ -44,6 +44,7 @@ const (
 	OpenTelemetryVectorCollectorUrl     = "urls.optl_collector_vector"
 	OpenTelemetryVectorCollectorGrpcUrl = "urls.optl_collector_grpc_vector"
 	RedisUrl                            = "urls.redis"
+	RedisSamplingUrl                    = "urls.redis_sampling"
 	GatewayUrl                          = "urls.gateway"
 	ControlPlaneBaseUrl                 = "urls.control_plane_base_url"
 	KsqlDbUrl                           = configs.KSqlDbUrl

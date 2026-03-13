@@ -122,3 +122,12 @@ func (m *MockStore) GetPresignedURL(ctx context.Context, container, key string, 
 
 	return fmt.Sprintf("https://mock.storage/%s/%s?expiry=%s", container, key, expiry), nil
 }
+
+func (m *MockStore) DeleteBatch(ctx context.Context, container string, keys []string) error {
+	for _, key := range keys {
+		if err := m.Delete(ctx, container, key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
