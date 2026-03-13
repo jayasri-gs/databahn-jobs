@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -270,4 +271,53 @@ func (b *blobBackend) getUserDelegationSASURL(ctx context.Context, container, ke
 // to is a helper to get a pointer to a value
 func to[T any](v T) *T {
 	return &v
+}
+
+func (b *blobBackend) DeleteBatch(ctx context.Context, containerName string, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	const maxBatchSize = 256
+	containerClient := b.client.ServiceClient().NewContainerClient(containerName)
+
+	for i := 0; i < len(keys); i += maxBatchSize {
+		end := i + maxBatchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+		batch := keys[i:end]
+
+		bb, err := containerClient.NewBatchBuilder()
+		if err != nil {
+			return fmt.Errorf("blob create batch builder: %w", err)
+		}
+
+		for _, key := range batch {
+			if err := bb.Delete(key, nil); err != nil {
+				return fmt.Errorf("blob batch add delete for key %s: %w", key, err)
+			}
+		}
+
+		resp, err := containerClient.SubmitBatch(ctx, bb, nil)
+		if err != nil {
+			return fmt.Errorf("blob submit batch delete: %w", err)
+		}
+
+		// Check for individual sub-request failures
+		var errs []string
+		for _, r := range resp.Responses {
+			if r.Error != nil {
+				blobName := ""
+				if r.BlobName != nil {
+					blobName = *r.BlobName
+				}
+				errs = append(errs, fmt.Sprintf("key=%s: %s", blobName, r.Error.Error()))
+			}
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("blob batch delete partial failure: %s", strings.Join(errs, "; "))
+		}
+	}
+	return nil
 }

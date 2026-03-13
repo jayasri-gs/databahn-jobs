@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -174,4 +176,44 @@ func (s *s3Backend) GetPresignedURL(ctx context.Context, container, key string, 
 		return "", fmt.Errorf("s3 presign get object: %w", err)
 	}
 	return result.URL, nil
+}
+
+func (s *s3Backend) DeleteBatch(ctx context.Context, container string, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	const maxBatchSize = 1000
+	for i := 0; i < len(keys); i += maxBatchSize {
+		end := i + maxBatchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+		batch := keys[i:end]
+
+		identifiers := make([]types.ObjectIdentifier, len(batch))
+		for j, key := range batch {
+			identifiers[j] = types.ObjectIdentifier{Key: aws.String(key)}
+		}
+
+		output, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(container),
+			Delete: &types.Delete{
+				Objects: identifiers,
+				Quiet:   aws.Bool(true),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("s3 batch delete: %w", err)
+		}
+
+		if len(output.Errors) > 0 {
+			msgs := make([]string, 0, len(output.Errors))
+			for _, e := range output.Errors {
+				msgs = append(msgs, fmt.Sprintf("key=%s: %s", aws.ToString(e.Key), aws.ToString(e.Message)))
+			}
+			return fmt.Errorf("s3 batch delete partial failure: %s", strings.Join(msgs, "; "))
+		}
+	}
+	return nil
 }

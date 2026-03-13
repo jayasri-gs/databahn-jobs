@@ -183,6 +183,8 @@ github.com/cpuguy83/dockercfg v0.3.2 h1:DlJTyZGBDlXqUZ2Dk2Q3xHs/FtnooJJVaad2S9GK
 github.com/cpuguy83/dockercfg v0.3.2/go.mod h1:sugsbF4//dDlL/i+S+rtpIWp+5h0BHJHfjj5/jFyUJc=
 github.com/databahn-ai/common-utils v0.249.0 h1:sK2YTkCLk6xiHqkNrdL6JwW3l0gi6yEmTlqD/mPX++8=
 github.com/databahn-ai/common-utils v0.249.0/go.mod h1:v/GXRKqocv4AlJ6ZP/p0oe504wtK20aGY+nUv+bddmw=
+github.com/databahn-ai/common-utils v0.252.0 h1:nC7ZMYvGcohUzLnl4ZRnFc7r3j8ovaBW8Ediya/ntNE=
+github.com/databahn-ai/common-utils v0.252.0/go.mod h1:v/GXRKqocv4AlJ6ZP/p0oe504wtK20aGY+nUv+bddmw=
 github.com/databahn-ai/db-models v0.240.0 h1:oxgiPLQSefvd2PulY1bn8dpvsT44CV7M4cwv+vInAd0=
 github.com/databahn-ai/db-models v0.240.0/go.mod h1:0jOMGOSPgtM5p9dBcQoTQ018ZmZF0kDdfEb6E+OL8lY=
 github.com/databahn-ai/go-logging v0.24.0 h1:hmbJyv1lQPmf8qg2bGOpZtug4i+1CPvYDC2HvPJ0q0U=
