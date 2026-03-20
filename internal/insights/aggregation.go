@@ -49,8 +49,13 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 
 	logger.GetLogger().Info("calculated indices to process", zap.Int("index_count", len(indicesToProcess)), zap.Time("before", window))
 
+	skipTenants := getSkipTenants()
 	var indicesByTenant = make(map[string][]IndexMetadata)
 	for _, index := range indicesToProcess {
+		if skipTenants[index.TenantId] {
+			logger.GetLogger().Info("skipping tenant", zap.String("tenant_id", index.TenantId), zap.String("index", INSIGHTS_STAGING_INDEX_PREFIX+index.String()))
+			continue
+		}
 		indicesByTenant[index.TenantId] = append(indicesByTenant[index.TenantId], index)
 	}
 	var logSources []source.Source
@@ -114,4 +119,19 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 
 func skipIndexTimeCheck() bool {
 	return utils.GetEnvOrDefault("INSIGHTS_AGG_SKIP_INDEX_TIME_CHECK", "false") != "false"
+}
+
+func getSkipTenants() map[string]bool {
+	val := utils.GetEnvOrDefault("INSIGHTS_AGG_SKIP_TENANTS", "")
+	result := make(map[string]bool)
+	if val == "" {
+		return result
+	}
+	for _, tenant := range strings.Split(val, ",") {
+		t := strings.TrimSpace(tenant)
+		if t != "" {
+			result[t] = true
+		}
+	}
+	return result
 }
