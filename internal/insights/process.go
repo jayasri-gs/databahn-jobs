@@ -180,8 +180,6 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	}
 	hasData := false
 
-	// Track unique event keys for this entire index
-	indexUniqueKeys := make(map[string]bool)
 	var indexDataPlaneId string
 	for {
 		sourceKey1 := createSource("key1")
@@ -192,7 +190,7 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		sourceSourceId := createSource("source_id")
 		sourceDataPlaneId := createSource("data_plane_id")
 		request := Request{}
-		request.Aggs.GroupBy.Composite.Size = INSIGHTS_READ_BATCH
+		request.Aggs.GroupBy.Composite.Size = getInsightsReadBatch()
 		request.Aggs.GroupBy.Composite.After = after
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey1)
 		request.Aggs.GroupBy.Composite.Sources = append(request.Aggs.GroupBy.Composite.Sources, sourceKey2)
@@ -267,9 +265,6 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc.Timestamp = time.Now().UnixMilli()
 			docs = append(docs, doc)
 
-			// Collect unique event key for cardinality tracking
-			indexUniqueKeys[doc.Id] = true
-
 			// Capture data plane ID from first document (should be same for entire index)
 			if indexDataPlaneId == "" {
 				indexDataPlaneId = doc.DataPlaneId
@@ -304,16 +299,12 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 
 	logger.GetLogger().Info("processed all documents", zap.String("index", indexName), zap.Int("total_count", count))
 
-	// Check cardinality for this index and generate alert if needed
-	uniqueKeyCount := len(indexUniqueKeys)
-	err = checkIndexCardinalityAndAlert(ctx, index, indexDataPlaneId, uniqueKeyCount, cardinalityThreshold)
+	// Use count (total composite aggregation buckets) as unique key count since
+	// each bucket represents a unique (key1..key5, source_id) combination
+	err = checkIndexCardinalityAndAlert(ctx, index, indexDataPlaneId, count, cardinalityThreshold)
 	if err != nil {
 		logger.GetLogger().Error("failed to check index cardinality", zap.Error(err), zap.String("index", indexName))
-		// Don't fail the aggregation process for alert failures
 	}
-
-	// Clean up cache after index processing
-	indexUniqueKeys = nil
 
 	return nil
 

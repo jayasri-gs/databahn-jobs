@@ -1,16 +1,15 @@
 package util
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/databahn-ai/common-utils/aws"
 	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
-	"io"
-	"os"
 )
 
 type AwsSearchSecret struct {
@@ -64,21 +63,15 @@ func UploadFileToS3(ctx context.Context, objectKey, filePath string) error {
 	if err != nil {
 		return err
 	}
-	buffer, err := io.ReadAll(file)
-	if err != nil {
-		return err
-	}
+	defer file.Close()
 
 	s3PutObject := s3.PutObjectInput{
 		Bucket: aws.String(awsSecret.Bucket),
 		Key:    aws.String(objectKey),
-		Body:   bytes.NewReader(buffer),
+		Body:   file,
 	}
 	_, err = client.PutObject(ctx, &s3PutObject)
-	if err != nil {
-		return err
-	}
-	return file.Close()
+	return err
 }
 
 func UploadGzipFileToS3(ctx context.Context, objectKey, filePath string) error {
@@ -90,21 +83,15 @@ func UploadGzipFileToS3(ctx context.Context, objectKey, filePath string) error {
 	if err != nil {
 		return err
 	}
-	buffer, err := io.ReadAll(file)
-	if err != nil {
-		return err
-	}
+	defer file.Close()
 
 	s3PutObject := s3.PutObjectInput{
 		Bucket:          aws.String(awsSecret.Bucket),
 		Key:             aws.String(objectKey),
-		Body:            bytes.NewReader(buffer),
+		Body:            file,
 		ContentEncoding: aws.String("gzip"),
 		ContentType:     aws.String("text/plain"),
 	}
 	_, err = client.PutObject(ctx, &s3PutObject)
-	if err != nil {
-		return err
-	}
-	return file.Close()
+	return err
 }

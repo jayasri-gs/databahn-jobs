@@ -480,7 +480,7 @@ func markDevicesSilent(ctx context.Context, client *opensearch.Client, tenantId 
 	var after []any
 	silentDevicesCount := 0
 	for {
-		data, newAfter, err := os.SearchPaginated(ctx, client, sightIndexName, query, INSIGHTS_READ_BATCH, after, sort)
+		data, newAfter, err := os.SearchPaginated(ctx, client, sightIndexName, query, getInsightsReadBatch(), after, sort)
 		if err != nil {
 			logger.GetLogger().Error("failed to paginate through device inventory sights", zap.String("index", sightIndexName), zap.String("tenant", tenantId), zap.Error(err))
 			return err
@@ -559,7 +559,7 @@ func markDevicesUnSilent(ctx context.Context, client *opensearch.Client, tenantI
 	var after []any
 	unSilentCount := 0
 	for {
-		data, newAfter, err := os.SearchPaginated(ctx, client, sightIndexName, query, INSIGHTS_READ_BATCH, after, sort)
+		data, newAfter, err := os.SearchPaginated(ctx, client, sightIndexName, query, getInsightsReadBatch(), after, sort)
 		if err != nil {
 			logger.GetLogger().Error("failed to paginate through device inventory sights", zap.String("index", sightIndexName), zap.String("tenant", tenantId), zap.Error(err))
 			return err
