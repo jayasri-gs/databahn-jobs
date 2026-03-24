@@ -1,4 +1,4 @@
-'name: Tag Master
+name: Tag Master
 
 on:
   push:
