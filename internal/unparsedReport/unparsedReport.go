@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
+	cn "github.com/databahn-ai/common-utils/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
-	cp_jobs "github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs"
-	osstore "github.com/databahn-ai/databahn-jobs/internal/store/os"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	cp_jobs "github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs"
 	awsemail "github.com/databahn-ai/databahn-jobs/internal/healthchecker/aws"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/notification"
+	osstore "github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
@@ -63,6 +63,14 @@ func SendUnparsedEventsReport(ctx context.Context) common.JobResult {
 
 	logging.GetLoggerWithContext(ctx).Info("Starting unparsed events report generation")
 
+	notificationMgr, err := notification.NewNotificationManager(ctx)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("Failed to initialize notification manager", zap.Error(err))
+		jobErrors = append(jobErrors, common.JobError{Message: fmt.Sprintf("failed to initialize notification manager: %v", err)})
+		return common.NewJobResultFromErrors(jobErrors)
+	}
+	defer notificationMgr.Close(ctx)
+
 	tenants, err := tenant.GetTenants(ctx, db)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Failed to get tenants from database", zap.Error(err))
@@ -72,15 +80,12 @@ func SendUnparsedEventsReport(ctx context.Context) common.JobResult {
 
 	logging.GetLoggerWithContext(ctx).Info("Found tenants", zap.Int("count", len(tenants)))
 
-	// Set time range for the last 24 hours
 	endTime := time.Now().UTC()
 	startTimeRange := endTime.Add(-24 * time.Hour)
 
-	// Create streamer for memory-efficient processing
 	streamer := NewReportStreamer(ctx, db, startTimeRange, endTime)
 
-	// Process tenants in batches to control memory usage
-	batchSize := 5 // Process 5 tenants at a time
+	batchSize := 5
 	for i := 0; i < len(tenants); i += batchSize {
 		end := i + batchSize
 		if end > len(tenants) {
@@ -93,14 +98,12 @@ func SendUnparsedEventsReport(ctx context.Context) common.JobResult {
 			continue
 		}
 
-		// Log progress
 		logging.GetLoggerWithContext(ctx).Info("Processed tenant batch",
 			zap.Int("batchStart", i),
 			zap.Int("batchEnd", end),
 			zap.Int("totalTenants", len(tenants)))
 	}
 
-	// Finalize the report
 	processingTime := time.Since(startTime)
 
 	logging.GetLoggerWithContext(ctx).Info("Unparsed events report data collected successfully",
@@ -108,11 +111,9 @@ func SendUnparsedEventsReport(ctx context.Context) common.JobResult {
 		zap.Int("sourcesWithUnparsedEvents", streamer.totalSources),
 		zap.Duration("processingTime", processingTime))
 
-	// Create complete HTML body for email
 	completeHTML := createCompleteHTML(streamer.emailBuilder.String(), streamer.tenantCount, streamer.totalSources, processingTime)
 
-	// Send email with streamed data
-	err = sendUnparsedEventsReportEmail(ctx, completeHTML)
+	err = sendUnparsedEventsReportEmail(ctx, notificationMgr, completeHTML)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("Failed to send email report", zap.Error(err))
 		jobErrors = append(jobErrors, common.JobError{Message: fmt.Sprintf("failed to send email report: %v", err)})
@@ -407,11 +408,9 @@ func getSourcesByIds(db *gorm.DB, sourceIds []string) ([]source.Source, error) {
 	return sources, nil
 }
 
-func sendUnparsedEventsReportEmail(ctx context.Context, emailBody string) error {
-	// Get email recipients from configuration
+func sendUnparsedEventsReportEmail(ctx context.Context, notificationMgr *notification.NotificationManager, emailBody string) error {
 	emailConfig := config.GetAppConfiguration().GetString(awsemail.UnparsedReport)
 
-	// Parse comma-separated email addresses
 	emailTo := parseEmailRecipients(emailConfig)
 
 	if len(emailTo) == 0 {
@@ -419,25 +418,25 @@ func sendUnparsedEventsReportEmail(ctx context.Context, emailBody string) error 
 		return fmt.Errorf("no email recipients configured")
 	}
 
-	logging.GetLoggerWithContext(ctx).Info("Sending email to recipients",
+	logging.GetLoggerWithContext(ctx).Info("Publishing email notification to kafka",
 		zap.Strings("recipients", emailTo),
 		zap.Int("count", len(emailTo)))
 
-	emailNotification := awsemail.EmailNotification{
-		Recipients: &awsemail.Recipient{
+	emailRequest := cn.EmailNotificationRequest{
+		Recipients: &cn.EmailRecipients{
 			To: emailTo,
 		},
-		Body:    aws.String(emailBody),
-		Subject: aws.String("DataBahn Unparsed Events Alert Report - All Tenants"),
+		Body:    emailBody,
+		Subject: "DataBahn Unparsed Events Alert Report - All Tenants",
 	}
 
-	err := awsemail.SendEmail(ctx, emailNotification)
+	err := notificationMgr.SendEmailNotification(emailRequest)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("Failed to send email", zap.Error(err))
+		logging.GetLoggerWithContext(ctx).Error("Failed to publish email notification to kafka", zap.Error(err))
 		return err
 	}
 
-	logging.GetLoggerWithContext(ctx).Info("Unparsed events report email sent successfully to all recipients")
+	logging.GetLoggerWithContext(ctx).Info("Unparsed events report email notification published to kafka successfully")
 	return nil
 }
 
