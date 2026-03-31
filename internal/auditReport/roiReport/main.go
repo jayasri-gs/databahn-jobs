@@ -5,11 +5,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os"
+
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/common"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
 )
 
 func WriteROIReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
@@ -74,7 +75,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, start
 		return err
 	}
 
-	headers := []string{"Source", "Destination", "Incoming Data ", "Outgoing Data", "Reduction percentage"}
+	headers := []string{"Source", "Destination", "Incoming Data", "Outgoing Data", "Reduction percentage", "Incoming Size", "Outgoing Size", "Size reduction percentage"}
 	writer = csv.NewWriter(file)
 	err = writer.Write(headers)
 	if err != nil {
@@ -102,9 +103,12 @@ func writeRowsToFileForROIReport(queryResponse []Response, destinationIdsToName 
 		row := []string{
 			sourceName,
 			destinationName,
-			resp.Incoming,
-			resp.Outgoing,
-			resp.ReductionPercentage,
+			resp.IncomingEvents,
+			resp.OutgoingEvents,
+			resp.EventReductionPercentage,
+			humanizeBytes(resp.IncomingBytes),
+			humanizeBytes(resp.OutgoingBytes),
+			resp.ByteReductionPercentage,
 		}
 		err := writer.Write(row)
 		if err != nil {
