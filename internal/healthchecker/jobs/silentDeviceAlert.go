@@ -182,50 +182,38 @@ func ProcessSilentDevices(ctx context.Context) common.JobResult {
 	}
 }
 func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string, sources []string) ([]Device, error) {
-	// Return a sample silent device for local testing
-	return []Device{
-		{
-			Hostname:   "test-host-001.example.com",
-			MinTime:    time.Now().UTC().Add(-30 * 24 * time.Hour).UnixMilli(),
-			MaxTime:    time.Now().UTC().Add(-3 * 24 * time.Hour).UnixMilli(),
-			SourceID:   sources[0],
-			TenantId:   tenantId,
-			TenantName: tenantName,
-		},
-	}, nil
+	// Build the query using getQueryFromFilters
+	query, err := getQueryFromFilters(sources, tenantId)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("error while building query", zap.Error(err))
+		return nil, err
+	}
 
-	// // Build the query using getQueryFromFilters
-	// query, err := getQueryFromFilters(sources, tenantId)
-	// if err != nil {
-	// 	logging.GetLoggerWithContext(ctx).Error("error while building query", zap.Error(err))
-	// 	return nil, err
-	// }
-	//
-	// logging.GetLoggerWithContext(ctx).Info("query built", zap.String("query", query))
-	//
-	// var searchAfter []any
-	// pageSize := 100
-	// index := "db_insights_sights_sourcehostname_" + tenantId
-	//
-	// var allSilentDevices []Device
-	// for {
-	// 	silentDevices, newSearchAfter, err := getSilentDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
-	// 	if err != nil {
-	// 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
-	// 		return nil, err
-	// 	}
-	//
-	// 	allSilentDevices = append(allSilentDevices, silentDevices...)
-	//
-	// 	if len(silentDevices) == 0 || newSearchAfter == nil {
-	// 		break
-	// 	}
-	// 	searchAfter = newSearchAfter
-	// }
-	//
-	// logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Any("silentDevices", allSilentDevices))
-	//
-	// return allSilentDevices, nil
+	logging.GetLoggerWithContext(ctx).Info("query built", zap.String("query", query))
+
+	var searchAfter []any
+	pageSize := 100
+	index := "db_insights_sights_sourcehostname_" + tenantId
+
+	var allSilentDevices []Device
+	for {
+		silentDevices, newSearchAfter, err := getSilentDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
+			return nil, err
+		}
+
+		allSilentDevices = append(allSilentDevices, silentDevices...)
+
+		if len(silentDevices) == 0 || newSearchAfter == nil {
+			break
+		}
+		searchAfter = newSearchAfter
+	}
+
+	logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Any("silentDevices", allSilentDevices))
+
+	return allSilentDevices, nil
 }
 
 func getQueryFromFilters(sources []string, tenantId string) (string, error) {
