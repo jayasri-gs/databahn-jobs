@@ -9,9 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/databahn-ai/common-utils/aws"
+	cn "github.com/databahn-ai/common-utils/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/notification"
 	awsemail "github.com/databahn-ai/databahn-jobs/internal/healthchecker/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/source"
@@ -116,6 +117,16 @@ func getSilentDevices(ctx context.Context, client *opensearch.Client, index stri
 
 func ProcessSilentDevices(ctx context.Context) common.JobResult {
 	var jobErrors []common.JobError
+
+	notificationMgr, err := notification.NewNotificationManager(ctx)
+	if err != nil {
+		errorMsg := fmt.Sprintf("error initializing notification manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logging.GetLoggerWithContext(ctx).Error("error initializing notification manager", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
+	defer notificationMgr.Close(ctx)
+
 	tenants, err := tenant.GetTenants(ctx, config.GetDB())
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while getting tenants: %v", err)
@@ -155,7 +166,7 @@ func ProcessSilentDevices(ctx context.Context) common.JobResult {
 			continue
 		}
 
-		if err := sendAlertsForSilentDevices(ctx, silentDevices, logSourceIds, tenantId); err != nil {
+		if err := sendAlertsForSilentDevices(ctx, notificationMgr, silentDevices, logSourceIds, tenantId); err != nil {
 			errorMsg := fmt.Sprintf("failed to send alerts for silent devices for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
 			logging.GetLoggerWithContext(ctx).Error("error sending alerts for silent devices", zap.Error(err), zap.String("tenantId", tenantId))
@@ -171,39 +182,50 @@ func ProcessSilentDevices(ctx context.Context) common.JobResult {
 	}
 }
 func FetchSilentDevices(ctx context.Context, tenantId string, tenantName string, sources []string) ([]Device, error) {
+	// Return a sample silent device for local testing
+	return []Device{
+		{
+			Hostname:   "test-host-001.example.com",
+			MinTime:    time.Now().UTC().Add(-30 * 24 * time.Hour).UnixMilli(),
+			MaxTime:    time.Now().UTC().Add(-3 * 24 * time.Hour).UnixMilli(),
+			SourceID:   sources[0],
+			TenantId:   tenantId,
+			TenantName: tenantName,
+		},
+	}, nil
 
-	// Build the query using getQueryFromFilters
-	query, err := getQueryFromFilters(sources, tenantId)
-	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error while building query", zap.Error(err))
-		return nil, err
-	}
-
-	logging.GetLoggerWithContext(ctx).Info("query built", zap.String("query", query))
-
-	var searchAfter []any
-	pageSize := 100
-	index := "db_insights_sights_sourcehostname_" + tenantId
-
-	var allSilentDevices []Device
-	for {
-		silentDevices, newSearchAfter, err := getSilentDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
-		if err != nil {
-			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
-			return nil, err
-		}
-
-		allSilentDevices = append(allSilentDevices, silentDevices...)
-
-		if len(silentDevices) == 0 || newSearchAfter == nil {
-			break
-		}
-		searchAfter = newSearchAfter
-	}
-
-	logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Any("silentDevices", allSilentDevices))
-
-	return allSilentDevices, nil
+	// // Build the query using getQueryFromFilters
+	// query, err := getQueryFromFilters(sources, tenantId)
+	// if err != nil {
+	// 	logging.GetLoggerWithContext(ctx).Error("error while building query", zap.Error(err))
+	// 	return nil, err
+	// }
+	//
+	// logging.GetLoggerWithContext(ctx).Info("query built", zap.String("query", query))
+	//
+	// var searchAfter []any
+	// pageSize := 100
+	// index := "db_insights_sights_sourcehostname_" + tenantId
+	//
+	// var allSilentDevices []Device
+	// for {
+	// 	silentDevices, newSearchAfter, err := getSilentDevices(ctx, os.GetClient(), index, query, pageSize, searchAfter, tenantName)
+	// 	if err != nil {
+	// 		logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index))
+	// 		return nil, err
+	// 	}
+	//
+	// 	allSilentDevices = append(allSilentDevices, silentDevices...)
+	//
+	// 	if len(silentDevices) == 0 || newSearchAfter == nil {
+	// 		break
+	// 	}
+	// 	searchAfter = newSearchAfter
+	// }
+	//
+	// logging.GetLoggerWithContext(ctx).Info("silent devices fetched", zap.Any("silentDevices", allSilentDevices))
+	//
+	// return allSilentDevices, nil
 }
 
 func getQueryFromFilters(sources []string, tenantId string) (string, error) {
@@ -225,7 +247,7 @@ func getQueryFromFilters(sources []string, tenantId string) (string, error) {
 	return q, nil
 }
 
-func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, logSourceIds map[string][]string, tenantId string) error {
+func sendAlertsForSilentDevices(ctx context.Context, notificationMgr *notification.NotificationManager, silentDevices []Device, logSourceIds map[string][]string, tenantId string) error {
 	sourceNames, err := GetSourceNames(ctx, config.GetDB(), logSourceIds[tenantId])
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error fetching source names", zap.Error(err))
@@ -246,7 +268,6 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 		GroupedDevices:  groupDevicesBySource(silentDevices),
 	}
 
-	// Register the calculateDuration function
 	tmpl, err := template.New("emailTemplate").Funcs(template.FuncMap{
 		"calculateDuration": func(maxTime int64) string {
 			currentTime := time.Now().UTC().UnixMilli()
@@ -271,21 +292,21 @@ func sendAlertsForSilentDevices(ctx context.Context, silentDevices []Device, log
 	}
 
 	emailTo := []string{config.GetAppConfiguration().GetString(awsemail.OPSGini)}
-	emailNotification := awsemail.EmailNotification{
-		Recipients: &awsemail.Recipient{
+	emailRequest := cn.EmailNotificationRequest{
+		Recipients: &cn.EmailRecipients{
 			To: emailTo,
 		},
-		Body:    aws.String(body.String()),
-		Subject: aws.String(emailData.Title),
+		Body:    body.String(),
+		Subject: emailData.Title,
 	}
 
-	err = awsemail.SendEmail(ctx, emailNotification)
+	err = notificationMgr.SendEmailNotification(emailRequest)
 	if err != nil {
-		logging.GetLoggerWithContext(ctx).Error("error sending notification", zap.Error(err))
+		logging.GetLoggerWithContext(ctx).Error("error publishing email notification to kafka", zap.Error(err))
 		return err
 	}
 
-	logging.GetLoggerWithContext(ctx).Info("sent notification for tenant", zap.String("tenantId", tenantId))
+	logging.GetLoggerWithContext(ctx).Info("published email notification to kafka for tenant", zap.String("tenantId", tenantId))
 	return nil
 }
 
