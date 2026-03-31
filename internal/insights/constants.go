@@ -1,9 +1,11 @@
 package insights
 
+import "github.com/databahn-ai/common-utils/utils"
+
 const INSIGHTS_INTERVAL_MINUTES = 60
 const INSIGHTS_STAGING_INDEX_PREFIX = "db_staging_insights_"
-const INSIGHTS_READ_BATCH = 500
 const INSIGHTS_STORE_INDEX_PREFIX = "db_insights_"
+const defaultInsightsReadBatch = 500
 
 // app names should not have underscores
 const APP_TYPE_SOURCEHOSTNAME = "sourcehostname"
@@ -26,3 +28,7 @@ const NOISE_DAYS_TO_CONSIDER = 30
 
 const STATUS_ERROR = "error"
 const STATUS_SUCCESS = "success"
+
+func getInsightsReadBatch() int {
+	return utils.GetEnvInt("INSIGHTS_READ_BATCH", defaultInsightsReadBatch)
+}

@@ -1,0 +1,21 @@
+# ---------------------------------------------------------------------------
+# Copy this file into YOUR repo at: .github/workflows/reverse-merge.yaml
+# (or any name you like, e.g. reverse-merge.yaml)
+#
+# This workflow runs in YOUR repo and calls the shared reverse-merge logic
+# from databahn-ai/ci-github-workflows. The merge (master -> release/*)
+# runs in your repository's context.
+# ---------------------------------------------------------------------------
+
+name: Reverse Merge (call shared workflow)
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+jobs:
+  reverse-merge:
+    uses: databahn-ai/ci-github-workflows/.github/workflows/reverse-merge.yaml@master
