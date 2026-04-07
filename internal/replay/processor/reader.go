@@ -108,6 +108,22 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			}
 			defer parquetScanner.Close()
 			scanner = parquetScanner
+		} else if strings.HasSuffix(strings.ToLower(fileName), ".gz") {
+			logger.GetLogger().Info("auto-detected gzip compression from Azure Blob filename",
+				zap.String("fileName", fileName),
+				zap.String("traceId", reqId))
+			gzipReader, err := gzip.NewReader(file)
+			if err != nil {
+				logger.GetLogger().Error("failed to create gzip reader for Azure Blob file", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+				return err, constants.StatusFailed
+			}
+			defer func(gzipReader *gzip.Reader) {
+				err := gzipReader.Close()
+				if err != nil {
+					logger.GetLogger().Error("Error while closing gzip reader", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
+				}
+			}(gzipReader)
+			scanner = bufio.NewScanner(gzipReader)
 		} else {
 			scanner = bufio.NewScanner(file)
 		}
