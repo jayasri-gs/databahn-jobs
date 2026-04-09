@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
@@ -25,10 +26,9 @@ func downloadFileFromAzureBlob(input model.Message, fileName string, mst *replay
 
 	logger.GetLogger().Info("blob params", zap.String("azure_blob_container", input.AdditionalConfig["azure_blob_container"]), zap.String("fullPath", fullPath), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
 
-	connString := input.AdditionalConfig["azure_blob_storage_account_connection_string"]
 	containerName := input.AdditionalConfig["azure_blob_container"]
 
-	client, err := getNewAzureClient(connString)
+	client, err := getAzureBlobClient(input.AdditionalConfig)
 	if err != nil {
 		logger.GetLogger().Error("couldn't create Azure Blob client", zap.Error(err))
 		return err
@@ -74,14 +74,38 @@ func downloadFileFromAzureBlob(input model.Message, fileName string, mst *replay
 	return nil
 }
 
-// getNewAzureClient loggers done
-func getNewAzureClient(connectionString string) (*azblob.Client, error) {
-	client, err := azblob.NewClientFromConnectionString(connectionString, nil)
+func getAzureBlobClient(config map[string]string) (*azblob.Client, error) {
+	authType := config["azure_blob_auth_type"]
 
-	if err != nil {
-		logger.GetLogger().Error("couldn't create Azure Blob client", zap.String("connectionString", connectionString), zap.Error(err))
-		return nil, err
+	if authType == "AUTH_USER_DELEGATED_SAS_KEY" || authType == "AUTH_SERVICE_PRINCIPAL" {
+		accountName := config["azure_blob_storage_account_name"]
+		tenantId := config["azure_blob_tenant_id"]
+		clientId := config["azure_blob_client_id"]
+		clientSecret := config["azure_blob_client_secret"]
+
+		if accountName == "" || tenantId == "" || clientId == "" || clientSecret == "" {
+			return nil, fmt.Errorf("missing required Azure Blob credentials for %s authentication", authType)
+		}
+
+		logger.GetLogger().Info("creating Azure Blob client with credential-based auth",
+			zap.String("authType", authType),
+			zap.String("accountName", accountName))
+
+		cred, err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+
+		endpoint := fmt.Sprintf("https://%s.blob.core.windows.net", accountName)
+		return azblob.NewClient(endpoint, cred, nil)
+
+	} else {
+		connString := config["azure_blob_storage_account_connection_string"]
+		if connString == "" {
+			return nil, fmt.Errorf("azure blob connection string is empty")
+		}
+
+		logger.GetLogger().Info("creating Azure Blob client with connection string auth")
+		return azblob.NewClientFromConnectionString(connString, nil)
 	}
-
-	return client, nil
 }
