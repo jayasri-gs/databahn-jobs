@@ -3,6 +3,9 @@ package logsource
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	logging "github.com/databahn-ai/go-logging/logger"
@@ -80,4 +83,41 @@ func getAggStatsForLogSourceToDestinationPaginated(ctx context.Context, startTim
 		lsIdToDestinaionStatsMap[lsId][destId] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
 	}
 	return lsIdToDestinaionStatsMap, nil
+}
+
+// formatEventCountReadable abbreviates non-negative event counts for CSV (e.g. 259.38K, 1.5M).
+// K/M/B use two decimal places on the scaled value, then trailing zeros are trimmed (e.g. 1.10B -> 1.1B).
+// Empty or non-numeric input returns empty or the original string.
+func formatEventCountReadable(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	n, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return raw
+	}
+	if n < 0 {
+		return raw
+	}
+	if n < 1000 {
+		if n == float64(int64(n)) {
+			return strconv.FormatInt(int64(n), 10)
+		}
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", n), "0"), ".")
+	}
+
+	var scaled float64
+	var suffix string
+	switch {
+	case n < 1_000_000:
+		scaled, suffix = n/1000, "K"
+	case n < 1_000_000_000:
+		scaled, suffix = n/1_000_000, "M"
+	default:
+		scaled, suffix = n/1_000_000_000, "B"
+	}
+	out := fmt.Sprintf("%.2f", scaled)
+	out = strings.TrimRight(strings.TrimRight(out, "0"), ".")
+	return out + suffix
 }
