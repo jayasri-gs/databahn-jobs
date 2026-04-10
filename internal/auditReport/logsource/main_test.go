@@ -43,8 +43,8 @@ func TestFormatEventCountReadable(t *testing.T) {
 
 func TestLogSourceReportExtraHeaderColumns(t *testing.T) {
 	want := []string{
-		"ingestion_stats", "ingestion_stats_formatted",
-		"destination_stats", "destination_stats_formatted",
+		"ingestion_stats", "destination_stats",
+		"ingestion_stats_formatted", "destination_stats_formatted",
 	}
 	if !slices.Equal(logSourceReportExtraHeaderColumns, want) {
 		t.Fatalf("logSourceReportExtraHeaderColumns = %v, want %v", logSourceReportExtraHeaderColumns, want)
@@ -76,18 +76,19 @@ func TestAppendLogSourceStatColumns(t *testing.T) {
 	if row[1] != "259380" {
 		t.Errorf("ingestion_stats = %q", row[1])
 	}
-	if row[2] != "259.38K" {
-		t.Errorf("ingestion_stats_formatted = %q, want 259.38K", row[2])
-	}
 
 	// Map iteration order is undefined; compare destination columns as sorted lines.
-	rawLines := strings.Split(row[3], "\n")
+	rawLines := strings.Split(row[2], "\n")
 	gotRaw := slices.Clone(rawLines)
 	slices.Sort(gotRaw)
 	wantRaw := []string{"Dest A: 1000", "Dest B: 1500000"}
 	slices.Sort(wantRaw)
 	if !slices.Equal(gotRaw, wantRaw) {
 		t.Errorf("destination_stats lines\ngot:  %v\nwant: %v", gotRaw, wantRaw)
+	}
+
+	if row[3] != "259.38K" {
+		t.Errorf("ingestion_stats_formatted = %q, want 259.38K", row[3])
 	}
 
 	fmtLines := strings.Split(row[4], "\n")
@@ -148,8 +149,8 @@ func TestLogSourceReportCSV_dummyRoundTrip(t *testing.T) {
 		lsID,
 		"dummy-source-name",
 		"259380",
-		"259.38K",
 		"Dest A: 1000",
+		"259.38K",
 		"Dest A: 1K",
 	}
 	if !slices.Equal(got, want) {
@@ -183,8 +184,11 @@ func TestLogSourceReportCSV_multilineDestinationField(t *testing.T) {
 	if len(records) != 2 {
 		t.Fatalf("got %d records", len(records))
 	}
-	raw := records[1][4]
+	raw := records[1][3]
 	fmt := records[1][5]
+	if records[1][4] != "100" {
+		t.Errorf("ingestion_stats_formatted = %q, want 100", records[1][4])
+	}
 	rawLines := strings.Split(raw, "\n")
 	slices.Sort(rawLines)
 	wantRaw := []string{"A: 10", "B: 20"}
@@ -207,10 +211,9 @@ func TestAppendLogSourceStatColumns_emptyIngestion(t *testing.T) {
 	if len(row) != 4 {
 		t.Fatalf("len = %d, want 4", len(row))
 	}
-	if row[0] != "" || row[1] != "" {
-		t.Errorf("empty ingestion: got %q, %q", row[0], row[1])
-	}
-	if row[2] != "" || row[3] != "" {
-		t.Errorf("empty destination: got %q, %q", row[2], row[3])
+	for i, name := range []string{"ingestion_stats", "destination_stats", "ingestion_stats_formatted", "destination_stats_formatted"} {
+		if row[i] != "" {
+			t.Errorf("%s: got %q, want empty", name, row[i])
+		}
 	}
 }

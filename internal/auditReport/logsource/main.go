@@ -17,9 +17,10 @@ import (
 )
 
 // logSourceReportExtraHeaderColumns are appended after SQL result columns (order must match appendLogSourceStatColumns).
+// Raw stats first; formatted columns last.
 var logSourceReportExtraHeaderColumns = []string{
-	"ingestion_stats", "ingestion_stats_formatted",
-	"destination_stats", "destination_stats_formatted",
+	"ingestion_stats", "destination_stats",
+	"ingestion_stats_formatted", "destination_stats_formatted",
 }
 
 func WriteLogSourceReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
@@ -199,12 +200,12 @@ func writeRowsToFileForLogSource(columns []string, rows *sql.Rows, logsourceIdsT
 	return fetchedRowsCount, nil
 }
 
-// appendLogSourceStatColumns appends ingestion_stats, ingestion_stats_formatted, destination_stats, destination_stats_formatted.
+// appendLogSourceStatColumns appends ingestion_stats, destination_stats, then ingestion_stats_formatted, destination_stats_formatted.
 func appendLogSourceStatColumns(row []string, lsId string, ingestion map[string]string, destBySource map[string]map[string]string, destIdToName map[string]string) []string {
 	raw := ingestion[lsId]
-	row = append(row, raw,
+	destRaw := getDestinationStatsString(destBySource, lsId, destIdToName)
+	row = append(row, raw, destRaw,
 		formatEventCountReadable(raw),
-		getDestinationStatsString(destBySource, lsId, destIdToName),
 		getDestinationStatsFormattedString(destBySource, lsId, destIdToName),
 	)
 	return row
