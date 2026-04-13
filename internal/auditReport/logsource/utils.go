@@ -92,10 +92,44 @@ func getAggStorageBytesReceivedPerSource(ctx context.Context, startTime, endTime
 	return compositeSumByLogSourceID(ctx, startTime, endTime, tenantId, q)
 }
 
-// getAggDispenserBytesDeliveredPerSource sums dispenser/total_bytes_delivered per log source (matches backend output / delivered bytes).
-func getAggDispenserBytesDeliveredPerSource(ctx context.Context, startTime, endTime, tenantId string) (map[string]string, error) {
+// getAggDispenserBytesDeliveredPerSourceAndDestination sums dispenser/total_bytes_delivered per log source and destination
+// (same grouping as destination event counts; avoids one cumulative total across all destinations).
+func getAggDispenserBytesDeliveredPerSourceAndDestination(ctx context.Context, startTime, endTime, tenantId string) (map[string]map[string]string, error) {
+	logging.GetLoggerWithContext(ctx).Info("Fetching dispenser byte stats per destination for log sources", zap.String("startTime", startTime), zap.String("endTime", endTime))
 	q := `tags.component_name: "dispenser" AND name: "total_bytes_delivered"`
-	return compositeSumByLogSourceID(ctx, startTime, endTime, tenantId, q)
+	query := statistics.AddDateRange(q, startTime, endTime)
+	groupBy := []string{"tags.db_event_source_id.keyword", "tags.destination_id.keyword"}
+	aggregations := []os.AggregationFunction{
+		{Name: "sum_value", Function: "sum", Field: "counter.value"},
+	}
+
+	var allResponses []os.AggResponse
+	var after map[string]any
+
+	for {
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatisticsIndexAlias(tenantId)+"*", query, groupBy, aggregations, after)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while querying dispenser byte stats", zap.Error(err))
+			return nil, err
+		}
+
+		allResponses = append(allResponses, responses...)
+
+		if nextAfter == nil {
+			break
+		}
+		after = nextAfter
+	}
+	out := make(map[string]map[string]string)
+	for _, resp := range allResponses {
+		lsID := resp.Key["tags.db_event_source_id.keyword"].(string)
+		destID := resp.Key["tags.destination_id.keyword"].(string)
+		if _, exists := out[lsID]; !exists {
+			out[lsID] = make(map[string]string)
+		}
+		out[lsID][destID] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+	}
+	return out, nil
 }
 
 func compositeSumByLogSourceID(ctx context.Context, startTime, endTime, tenantId, baseQuery string) (map[string]string, error) {
