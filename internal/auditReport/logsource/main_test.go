@@ -89,9 +89,14 @@ func TestAppendLogSourceStatColumns(t *testing.T) {
 		"dest-uuid-2": "Dest B",
 	}
 	storageBytes := map[string]string{lsID: "813854050"}
-	dispenserBytes := map[string]string{lsID: "65138600"}
+	dispenserBytesByDest := map[string]map[string]string{
+		lsID: {
+			"dest-uuid-1": "65138600",
+			"dest-uuid-2": "326158498",
+		},
+	}
 
-	row := appendLogSourceStatColumns([]string{"prefix"}, lsID, ingestion, destBySource, destNames, storageBytes, dispenserBytes)
+	row := appendLogSourceStatColumns([]string{"prefix"}, lsID, ingestion, destBySource, destNames, storageBytes, dispenserBytesByDest)
 
 	if len(row) != 7 {
 		t.Fatalf("len(row) = %d, want 7 (prefix + 6 stat columns)", len(row))
@@ -127,8 +132,13 @@ func TestAppendLogSourceStatColumns(t *testing.T) {
 	if row[5] != "776.15 MB" {
 		t.Errorf("events_size_collected = %q, want 776.15 MB", row[5])
 	}
-	if row[6] != "62.12 MB" {
-		t.Errorf("events_size_delivered = %q, want 62.12 MB", row[6])
+	deliveredLines := strings.Split(row[6], "\n")
+	gotDel := slices.Clone(deliveredLines)
+	slices.Sort(gotDel)
+	wantDel := []string{"Dest A: 62.12 MB", "Dest B: 311.05 MB"}
+	slices.Sort(wantDel)
+	if !slices.Equal(gotDel, wantDel) {
+		t.Errorf("events_size_delivered lines\ngot:  %v\nwant: %v", gotDel, wantDel)
 	}
 }
 
@@ -140,13 +150,15 @@ func TestLogSourceReportCSV_dummyRoundTrip(t *testing.T) {
 	}
 	destNames := map[string]string{"dest-one": "Dest A"}
 	storageBytes := map[string]string{lsID: "813854050"}
-	dispenserBytes := map[string]string{lsID: "65138600"}
+	dispenserBytesByDest := map[string]map[string]string{
+		lsID: {"dest-one": "65138600"},
+	}
 
 	sqlCols := []string{"id", "name"}
 	header := append(slices.Clone(sqlCols), logSourceReportExtraHeaderColumns...)
 
 	row := []string{lsID, "dummy-source-name"}
-	row = appendLogSourceStatColumns(row, lsID, ingestion, destBySource, destNames, storageBytes, dispenserBytes)
+	row = appendLogSourceStatColumns(row, lsID, ingestion, destBySource, destNames, storageBytes, dispenserBytesByDest)
 
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
@@ -183,7 +195,7 @@ func TestLogSourceReportCSV_dummyRoundTrip(t *testing.T) {
 		"Dest A: 1000",
 		"Dest A: 1K",
 		"776.15 MB",
-		"62.12 MB",
+		"Dest A: 62.12 MB",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("data row mismatch\ngot:  %v\nwant: %v", got, want)

@@ -68,7 +68,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query,
 		logging.GetLoggerWithContext(ctx).Error("error while querying storage byte stats", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return err
 	}
-	dispenserBytesBySource, err := getAggDispenserBytesDeliveredPerSource(ctx, startTime, endTime, req.TenantId)
+	dispenserBytesBySourceAndDest, err := getAggDispenserBytesDeliveredPerSourceAndDestination(ctx, startTime, endTime, req.TenantId)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("error while querying dispenser byte stats", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 		return err
@@ -96,7 +96,7 @@ func getReportAndWriteToFile(ctx context.Context, req models.AuditReport, query,
 				return err
 			}
 		}
-		fetchedRowsCount, err := writeRowsToFileForLogSource(columns, rows, logsourceIdsToIngestionStats, logsourceIdsToDestinationStats, destinationIdToNameMap, storageBytesBySource, dispenserBytesBySource, writer)
+		fetchedRowsCount, err := writeRowsToFileForLogSource(columns, rows, logsourceIdsToIngestionStats, logsourceIdsToDestinationStats, destinationIdToNameMap, storageBytesBySource, dispenserBytesBySourceAndDest, writer)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while writing rows to the file", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
@@ -170,7 +170,7 @@ func getQueryForLogSourceData(ctx context.Context, req models.AuditReport) (stri
 	logging.GetLoggerWithContext(ctx).Info("query for logsource data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, startTime, endTime, nil
 }
-func writeRowsToFileForLogSource(columns []string, rows *sql.Rows, logsourceIdsToIngestionStats map[string]string, logsourceIdsToDestinationStats map[string]map[string]string, destinationIdToName map[string]string, storageBytesBySource map[string]string, dispenserBytesBySource map[string]string, writer *csv.Writer) (int, error) {
+func writeRowsToFileForLogSource(columns []string, rows *sql.Rows, logsourceIdsToIngestionStats map[string]string, logsourceIdsToDestinationStats map[string]map[string]string, destinationIdToName map[string]string, storageBytesBySource map[string]string, dispenserBytesBySourceAndDest map[string]map[string]string, writer *csv.Writer) (int, error) {
 
 	fetchedRowsCount := 0
 	values := make([]interface{}, len(columns))
@@ -196,7 +196,7 @@ func writeRowsToFileForLogSource(columns []string, rows *sql.Rows, logsourceIdsT
 			columnValue = string(*col.(*sql.RawBytes))
 			row = append(row, columnValue)
 		}
-		row = appendLogSourceStatColumns(row, lsId, logsourceIdsToIngestionStats, logsourceIdsToDestinationStats, destinationIdToName, storageBytesBySource, dispenserBytesBySource)
+		row = appendLogSourceStatColumns(row, lsId, logsourceIdsToIngestionStats, logsourceIdsToDestinationStats, destinationIdToName, storageBytesBySource, dispenserBytesBySourceAndDest)
 		err := writer.Write(row)
 		if err != nil {
 			logging.GetLoggerWithContext(context.Background()).Error("error while writing row to the file", zap.Error(err))
@@ -212,7 +212,7 @@ func writeRowsToFileForLogSource(columns []string, rows *sql.Rows, logsourceIdsT
 }
 
 // appendLogSourceStatColumns appends *_count, *_count_display, destination *_count*, then events_size_*.
-func appendLogSourceStatColumns(row []string, lsId string, ingestion map[string]string, destBySource map[string]map[string]string, destIdToName map[string]string, storageBytesBySource map[string]string, dispenserBytesBySource map[string]string) []string {
+func appendLogSourceStatColumns(row []string, lsId string, ingestion map[string]string, destBySource map[string]map[string]string, destIdToName map[string]string, storageBytesBySource map[string]string, dispenserBytesBySourceAndDest map[string]map[string]string) []string {
 	raw := ingestion[lsId]
 	destRaw := getDestinationStatsString(destBySource, lsId, destIdToName)
 	row = append(row, raw,
@@ -220,7 +220,7 @@ func appendLogSourceStatColumns(row []string, lsId string, ingestion map[string]
 		destRaw,
 		getDestinationStatsFormattedString(destBySource, lsId, destIdToName),
 		bytesToReadableString(storageBytesBySource[lsId]),
-		bytesToReadableString(dispenserBytesBySource[lsId]),
+		getDestinationDispenserBytesFormattedString(dispenserBytesBySourceAndDest, lsId, destIdToName),
 	)
 	return row
 }
@@ -245,6 +245,22 @@ func getDestinationStatsFormattedString(logsourceIdsToDestinationStats map[strin
 		var lines []string
 		for destId, value := range destStats {
 			formatted := formatEventCountReadable(value)
+			if name, exists := destinationIdToName[destId]; exists {
+				lines = append(lines, fmt.Sprintf("%s: %s", name, formatted))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s: %s", destId, formatted))
+			}
+		}
+		return strings.Join(lines, "\n")
+	}
+	return ""
+}
+
+func getDestinationDispenserBytesFormattedString(dispenserBytesBySourceAndDest map[string]map[string]string, logSourceId string, destinationIdToName map[string]string) string {
+	if destBytes, ok := dispenserBytesBySourceAndDest[logSourceId]; ok {
+		var lines []string
+		for destId, value := range destBytes {
+			formatted := bytesToReadableString(value)
 			if name, exists := destinationIdToName[destId]; exists {
 				lines = append(lines, fmt.Sprintf("%s: %s", name, formatted))
 			} else {
