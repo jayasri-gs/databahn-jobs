@@ -37,7 +37,8 @@ func AddDateRange(q, startTime, endTime string) string {
 		return q
 	}
 
-	dateRangeQuery := fmt.Sprintf("%s:[%d TO %d]", ES_TIME_FIELD, start, end)
+	// Upper bound exclusive ([start TO end}), aligned with backend-service statistics API.
+	dateRangeQuery := fmt.Sprintf("%s:[%d TO %d}", ES_TIME_FIELD, start, end)
 	if q == "" {
 		return dateRangeQuery
 	} else {
