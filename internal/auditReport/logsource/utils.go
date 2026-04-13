@@ -3,6 +3,7 @@ package logsource
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -83,6 +84,77 @@ func getAggStatsForLogSourceToDestinationPaginated(ctx context.Context, startTim
 		lsIdToDestinaionStatsMap[lsId][destId] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
 	}
 	return lsIdToDestinaionStatsMap, nil
+}
+
+// getAggStorageBytesReceivedPerSource sums storage/total_data_received per log source (matches backend LogSourceImpl incoming data).
+func getAggStorageBytesReceivedPerSource(ctx context.Context, startTime, endTime, tenantId string) (map[string]string, error) {
+	q := `tags.component_name: "storage" AND name: "total_data_received"`
+	return compositeSumByLogSourceID(ctx, startTime, endTime, tenantId, q)
+}
+
+// getAggDispenserBytesDeliveredPerSource sums dispenser/total_bytes_delivered per log source (matches backend output / delivered bytes).
+func getAggDispenserBytesDeliveredPerSource(ctx context.Context, startTime, endTime, tenantId string) (map[string]string, error) {
+	q := `tags.component_name: "dispenser" AND name: "total_bytes_delivered"`
+	return compositeSumByLogSourceID(ctx, startTime, endTime, tenantId, q)
+}
+
+func compositeSumByLogSourceID(ctx context.Context, startTime, endTime, tenantId, baseQuery string) (map[string]string, error) {
+	logging.GetLoggerWithContext(ctx).Info("Fetching byte sum per log source", zap.String("startTime", startTime), zap.String("endTime", endTime))
+	query := statistics.AddDateRange(baseQuery, startTime, endTime)
+	groupBy := []string{"tags.db_event_source_id.keyword"}
+	aggregations := []os.AggregationFunction{
+		{Name: "sum_value", Function: "sum", Field: "counter.value"},
+	}
+
+	var allResponses []os.AggResponse
+	var after map[string]any
+
+	for {
+		responses, nextAfter, err := os.CompositePaginatedAggregate(ctx, os.GetClient(), 200, os.StatisticsIndexAlias(tenantId)+"*", query, groupBy, aggregations, after)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while querying statistics for bytes", zap.Error(err))
+			return nil, err
+		}
+		allResponses = append(allResponses, responses...)
+		if nextAfter == nil {
+			break
+		}
+		after = nextAfter
+	}
+	out := make(map[string]string)
+	for _, resp := range allResponses {
+		lsID := resp.Key["tags.db_event_source_id.keyword"].(string)
+		out[lsID] = fmt.Sprintf("%v", resp.Values["sum_value"].(float64))
+	}
+	return out, nil
+}
+
+// bytesToReadableString formats byte totals with adaptive 1024^n units and two decimals (e.g. 776.15 MB), matching UI-style display.
+func bytesToReadableString(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	b, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return raw
+	}
+	if b < 0 {
+		return raw
+	}
+	units := []string{"B", "KB", "MB", "GB", "TB"}
+	if b < 1024 {
+		return fmt.Sprintf("%.0f B", b)
+	}
+	exp := int(math.Log(b) / math.Log(1024))
+	if exp < 0 {
+		exp = 0
+	}
+	if exp >= len(units) {
+		exp = len(units) - 1
+	}
+	val := b / math.Pow(1024, float64(exp))
+	return fmt.Sprintf("%.2f %s", val, units[exp])
 }
 
 // formatEventCountReadable abbreviates non-negative event counts for CSV (e.g. 259.38K, 1.5M).

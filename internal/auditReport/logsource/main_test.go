@@ -41,10 +41,34 @@ func TestFormatEventCountReadable(t *testing.T) {
 	}
 }
 
+// bytesToReadableString matches backend-service ByteConvertor (adaptive 1024^n, two decimals).
+func TestBytesToReadableString(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"100", "100 B"},
+		{"813854050", "776.15 MB"},
+		{"65138600", "62.12 MB"},
+		{"326158498", "311.05 MB"},
+		{"not-a-number", "not-a-number"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got := bytesToReadableString(tt.in)
+			if got != tt.want {
+				t.Errorf("bytesToReadableString(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLogSourceReportExtraHeaderColumns(t *testing.T) {
 	want := []string{
-		"ingestion_stats", "destination_stats",
-		"ingestion_stats_formatted", "destination_stats_formatted",
+		"events_collected_count", "events_collected_count_display",
+		"destination_events_forwarded_count", "destination_events_forwarded_count_display",
+		"events_size_collected", "events_size_delivered",
 	}
 	if !slices.Equal(logSourceReportExtraHeaderColumns, want) {
 		t.Fatalf("logSourceReportExtraHeaderColumns = %v, want %v", logSourceReportExtraHeaderColumns, want)
@@ -64,31 +88,31 @@ func TestAppendLogSourceStatColumns(t *testing.T) {
 		"dest-uuid-1": "Dest A",
 		"dest-uuid-2": "Dest B",
 	}
+	storageBytes := map[string]string{lsID: "813854050"}
+	dispenserBytes := map[string]string{lsID: "65138600"}
 
-	row := appendLogSourceStatColumns([]string{"prefix"}, lsID, ingestion, destBySource, destNames)
+	row := appendLogSourceStatColumns([]string{"prefix"}, lsID, ingestion, destBySource, destNames, storageBytes, dispenserBytes)
 
-	if len(row) != 5 {
-		t.Fatalf("len(row) = %d, want 5 (prefix + 4 stat columns)", len(row))
+	if len(row) != 7 {
+		t.Fatalf("len(row) = %d, want 7 (prefix + 6 stat columns)", len(row))
 	}
 	if row[0] != "prefix" {
 		t.Errorf("row[0] = %q, want prefix", row[0])
 	}
 	if row[1] != "259380" {
-		t.Errorf("ingestion_stats = %q", row[1])
+		t.Errorf("events_collected_count = %q", row[1])
+	}
+	if row[2] != "259.38K" {
+		t.Errorf("events_collected_count_display = %q, want 259.38K", row[2])
 	}
 
-	// Map iteration order is undefined; compare destination columns as sorted lines.
-	rawLines := strings.Split(row[2], "\n")
+	rawLines := strings.Split(row[3], "\n")
 	gotRaw := slices.Clone(rawLines)
 	slices.Sort(gotRaw)
 	wantRaw := []string{"Dest A: 1000", "Dest B: 1500000"}
 	slices.Sort(wantRaw)
 	if !slices.Equal(gotRaw, wantRaw) {
-		t.Errorf("destination_stats lines\ngot:  %v\nwant: %v", gotRaw, wantRaw)
-	}
-
-	if row[3] != "259.38K" {
-		t.Errorf("ingestion_stats_formatted = %q, want 259.38K", row[3])
+		t.Errorf("destination_events_forwarded_count lines\ngot:  %v\nwant: %v", gotRaw, wantRaw)
 	}
 
 	fmtLines := strings.Split(row[4], "\n")
@@ -97,12 +121,17 @@ func TestAppendLogSourceStatColumns(t *testing.T) {
 	wantFmt := []string{"Dest A: 1K", "Dest B: 1.5M"}
 	slices.Sort(wantFmt)
 	if !slices.Equal(gotFmt, wantFmt) {
-		t.Errorf("destination_stats_formatted lines\ngot:  %v\nwant: %v", gotFmt, wantFmt)
+		t.Errorf("destination_events_forwarded_count_display lines\ngot:  %v\nwant: %v", gotFmt, wantFmt)
+	}
+
+	if row[5] != "776.15 MB" {
+		t.Errorf("events_size_collected = %q, want 776.15 MB", row[5])
+	}
+	if row[6] != "62.12 MB" {
+		t.Errorf("events_size_delivered = %q, want 62.12 MB", row[6])
 	}
 }
 
-// TestLogSourceReportCSV_dummyRoundTrip writes a minimal CSV (no DB/OpenSearch) using the same
-// header list and appendLogSourceStatColumns as production, then reads it back to verify shape and values.
 func TestLogSourceReportCSV_dummyRoundTrip(t *testing.T) {
 	lsID := "118aca7c-048d-4c62-98ee-0fad6bafeb20"
 	ingestion := map[string]string{lsID: "259380"}
@@ -110,12 +139,14 @@ func TestLogSourceReportCSV_dummyRoundTrip(t *testing.T) {
 		lsID: {"dest-one": "1000"},
 	}
 	destNames := map[string]string{"dest-one": "Dest A"}
+	storageBytes := map[string]string{lsID: "813854050"}
+	dispenserBytes := map[string]string{lsID: "65138600"}
 
 	sqlCols := []string{"id", "name"}
 	header := append(slices.Clone(sqlCols), logSourceReportExtraHeaderColumns...)
 
 	row := []string{lsID, "dummy-source-name"}
-	row = appendLogSourceStatColumns(row, lsID, ingestion, destBySource, destNames)
+	row = appendLogSourceStatColumns(row, lsID, ingestion, destBySource, destNames, storageBytes, dispenserBytes)
 
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
@@ -130,7 +161,6 @@ func TestLogSourceReportCSV_dummyRoundTrip(t *testing.T) {
 		t.Fatalf("writer: %v", err)
 	}
 
-	// Run with: go test ./internal/auditReport/logsource/... -run TestLogSourceReportCSV_dummyRoundTrip -v
 	t.Logf("CSV written (same shape as report file):\n%s", buf.String())
 
 	r := csv.NewReader(strings.NewReader(buf.String()))
@@ -149,16 +179,17 @@ func TestLogSourceReportCSV_dummyRoundTrip(t *testing.T) {
 		lsID,
 		"dummy-source-name",
 		"259380",
-		"Dest A: 1000",
 		"259.38K",
+		"Dest A: 1000",
 		"Dest A: 1K",
+		"776.15 MB",
+		"62.12 MB",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("data row mismatch\ngot:  %v\nwant: %v", got, want)
 	}
 }
 
-// TestLogSourceReportCSV_multilineDestinationField ensures csv.Writer/Reader preserve newline-separated destination lines in one cell.
 func TestLogSourceReportCSV_multilineDestinationField(t *testing.T) {
 	lsID := "118aca7c-048d-4c62-98ee-0fad6bafeb20"
 	ingestion := map[string]string{lsID: "100"}
@@ -168,7 +199,7 @@ func TestLogSourceReportCSV_multilineDestinationField(t *testing.T) {
 	destNames := map[string]string{"a": "A", "b": "B"}
 
 	row := []string{lsID, "x"}
-	row = appendLogSourceStatColumns(row, lsID, ingestion, destBySource, destNames)
+	row = appendLogSourceStatColumns(row, lsID, ingestion, destBySource, destNames, nil, nil)
 
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
@@ -184,34 +215,45 @@ func TestLogSourceReportCSV_multilineDestinationField(t *testing.T) {
 	if len(records) != 2 {
 		t.Fatalf("got %d records", len(records))
 	}
-	raw := records[1][3]
-	fmt := records[1][5]
-	if records[1][4] != "100" {
-		t.Errorf("ingestion_stats_formatted = %q, want 100", records[1][4])
+	if records[1][2] != "100" {
+		t.Errorf("events_collected_count = %q, want 100", records[1][2])
+	}
+	if records[1][3] != "100" {
+		t.Errorf("events_collected_count_display = %q, want 100", records[1][3])
+	}
+	raw := records[1][4]
+	fmtCol := records[1][5]
+	if records[1][6] != "" || records[1][7] != "" {
+		t.Errorf("expected empty size columns, got %q %q", records[1][6], records[1][7])
 	}
 	rawLines := strings.Split(raw, "\n")
 	slices.Sort(rawLines)
 	wantRaw := []string{"A: 10", "B: 20"}
 	slices.Sort(wantRaw)
 	if !slices.Equal(rawLines, wantRaw) {
-		t.Errorf("destination_stats raw: %v", rawLines)
+		t.Errorf("destination_events_forwarded_count raw: %v", rawLines)
 	}
-	fmtLines := strings.Split(fmt, "\n")
+	fmtLines := strings.Split(fmtCol, "\n")
 	slices.Sort(fmtLines)
 	wantFmt := []string{"A: 10", "B: 20"}
 	slices.Sort(wantFmt)
 	if !slices.Equal(fmtLines, wantFmt) {
-		t.Errorf("destination_stats formatted: %v", fmtLines)
+		t.Errorf("destination_events_forwarded_count_display: %v", fmtLines)
 	}
 }
 
 func TestAppendLogSourceStatColumns_emptyIngestion(t *testing.T) {
 	lsID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	row := appendLogSourceStatColumns(nil, lsID, map[string]string{}, map[string]map[string]string{}, nil)
-	if len(row) != 4 {
-		t.Fatalf("len = %d, want 4", len(row))
+	row := appendLogSourceStatColumns(nil, lsID, map[string]string{}, map[string]map[string]string{}, nil, nil, nil)
+	if len(row) != 6 {
+		t.Fatalf("len = %d, want 6", len(row))
 	}
-	for i, name := range []string{"ingestion_stats", "destination_stats", "ingestion_stats_formatted", "destination_stats_formatted"} {
+	names := []string{
+		"events_collected_count", "events_collected_count_display",
+		"destination_events_forwarded_count", "destination_events_forwarded_count_display",
+		"events_size_collected", "events_size_delivered",
+	}
+	for i, name := range names {
 		if row[i] != "" {
 			t.Errorf("%s: got %q, want empty", name, row[i])
 		}
