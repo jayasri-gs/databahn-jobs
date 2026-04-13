@@ -66,8 +66,8 @@ func TestBytesToReadableString(t *testing.T) {
 
 func TestLogSourceReportExtraHeaderColumns(t *testing.T) {
 	want := []string{
-		"events_collected_count", "events_collected_count_display",
-		"destination_events_forwarded_count", "destination_events_forwarded_count_display",
+		"events_collected_count", "events_collected",
+		"destination_events_forwarded_count", "destination_events_forwarded",
 		"events_size_collected", "events_size_delivered",
 	}
 	if !slices.Equal(logSourceReportExtraHeaderColumns, want) {
@@ -108,7 +108,7 @@ func TestAppendLogSourceStatColumns(t *testing.T) {
 		t.Errorf("events_collected_count = %q", row[1])
 	}
 	if row[2] != "259.38K" {
-		t.Errorf("events_collected_count_display = %q, want 259.38K", row[2])
+		t.Errorf("events_collected = %q, want 259.38K", row[2])
 	}
 
 	rawLines := strings.Split(row[3], "\n")
@@ -126,7 +126,7 @@ func TestAppendLogSourceStatColumns(t *testing.T) {
 	wantFmt := []string{"Dest A: 1K", "Dest B: 1.5M"}
 	slices.Sort(wantFmt)
 	if !slices.Equal(gotFmt, wantFmt) {
-		t.Errorf("destination_events_forwarded_count_display lines\ngot:  %v\nwant: %v", gotFmt, wantFmt)
+		t.Errorf("destination_events_forwarded lines\ngot:  %v\nwant: %v", gotFmt, wantFmt)
 	}
 
 	if row[5] != "776.15 MB" {
@@ -231,7 +231,7 @@ func TestLogSourceReportCSV_multilineDestinationField(t *testing.T) {
 		t.Errorf("events_collected_count = %q, want 100", records[1][2])
 	}
 	if records[1][3] != "100" {
-		t.Errorf("events_collected_count_display = %q, want 100", records[1][3])
+		t.Errorf("events_collected = %q, want 100", records[1][3])
 	}
 	raw := records[1][4]
 	fmtCol := records[1][5]
@@ -250,7 +250,7 @@ func TestLogSourceReportCSV_multilineDestinationField(t *testing.T) {
 	wantFmt := []string{"A: 10", "B: 20"}
 	slices.Sort(wantFmt)
 	if !slices.Equal(fmtLines, wantFmt) {
-		t.Errorf("destination_events_forwarded_count_display: %v", fmtLines)
+		t.Errorf("destination_events_forwarded: %v", fmtLines)
 	}
 }
 
@@ -261,8 +261,8 @@ func TestAppendLogSourceStatColumns_emptyIngestion(t *testing.T) {
 		t.Fatalf("len = %d, want 6", len(row))
 	}
 	names := []string{
-		"events_collected_count", "events_collected_count_display",
-		"destination_events_forwarded_count", "destination_events_forwarded_count_display",
+		"events_collected_count", "events_collected",
+		"destination_events_forwarded_count", "destination_events_forwarded",
 		"events_size_collected", "events_size_delivered",
 	}
 	for i, name := range names {

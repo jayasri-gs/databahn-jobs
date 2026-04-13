@@ -17,10 +17,10 @@ import (
 )
 
 // logSourceReportExtraHeaderColumns are appended after SQL result columns (order must match appendLogSourceStatColumns).
-// Ingestion counts + display, destination counts + display, then byte volumes.
+// Raw counts (*_count), formatted lines (events_collected, destination_events_forwarded), then byte volumes.
 var logSourceReportExtraHeaderColumns = []string{
-	"events_collected_count", "events_collected_count_display",
-	"destination_events_forwarded_count", "destination_events_forwarded_count_display",
+	"events_collected_count", "events_collected",
+	"destination_events_forwarded_count", "destination_events_forwarded",
 	"events_size_collected", "events_size_delivered",
 }
 
@@ -211,7 +211,7 @@ func writeRowsToFileForLogSource(columns []string, rows *sql.Rows, logsourceIdsT
 	return fetchedRowsCount, nil
 }
 
-// appendLogSourceStatColumns appends *_count, *_count_display, destination *_count*, then events_size_*.
+// appendLogSourceStatColumns appends *_count, formatted events_collected/destination_events_forwarded, then events_size_*.
 func appendLogSourceStatColumns(row []string, lsId string, ingestion map[string]string, destBySource map[string]map[string]string, destIdToName map[string]string, storageBytesBySource map[string]string, dispenserBytesBySourceAndDest map[string]map[string]string) []string {
 	raw := ingestion[lsId]
 	destRaw := getDestinationStatsString(destBySource, lsId, destIdToName)
