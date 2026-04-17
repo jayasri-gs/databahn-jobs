@@ -27,7 +27,11 @@ type destinationRow struct {
 	ID            uuid.UUID `gorm:"column:id"`
 	TenantID      uuid.UUID `gorm:"column:tenant_id"`
 	Configuration string    `gorm:"column:configuration"`
-	SecretID      *string   `gorm:"column:secret_id"`
+}
+
+type destinationConfigWrapper struct {
+	SecretID      string            `json:"secretId"`
+	Configuration map[string]string `json:"configuration"`
 }
 
 type destinationConfig struct {
@@ -186,30 +190,42 @@ func getDestinationConfig(ctx context.Context, destID, tenantID uuid.UUID) (*des
 
 	var dest destinationRow
 	err := db.WithContext(ctx).Raw(
-		"SELECT id, tenant_id, configuration, secret_id FROM destination WHERE id = ? LIMIT 1",
+		"SELECT id, tenant_id, configuration FROM destination WHERE id = ? LIMIT 1",
 		destID,
 	).Scan(&dest).Error
 	if err != nil {
 		return nil, fmt.Errorf("destination not found: %w", err)
 	}
 
-	var cfg destinationConfig
-	if dest.Configuration != "" {
-		if err := json.Unmarshal([]byte(dest.Configuration), &cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse destination configuration: %w", err)
-		}
+	if dest.Configuration == "" {
+		return nil, fmt.Errorf("destination configuration is empty for %s", destID)
 	}
 
-	if dest.SecretID != nil && *dest.SecretID != "" {
+	var wrapper destinationConfigWrapper
+	if err := json.Unmarshal([]byte(dest.Configuration), &wrapper); err != nil {
+		return nil, fmt.Errorf("failed to parse destination configuration: %w", err)
+	}
+
+	cfg := &destinationConfig{
+		AuthType:    wrapper.Configuration["auth_type"],
+		AccessKeyID: wrapper.Configuration["access_key_id"],
+		SecretKey:   wrapper.Configuration["secret_access_key"],
+		RoleArn:     wrapper.Configuration["role_arn"],
+		ExternalID:  wrapper.Configuration["external_id"],
+		Region:      wrapper.Configuration["region"],
+		Bucket:      wrapper.Configuration["bucket"],
+	}
+
+	if wrapper.SecretID != "" {
 		secretIdsByTenant := map[string][]string{
-			tenantID.String(): {*dest.SecretID},
+			tenantID.String(): {wrapper.SecretID},
 		}
 		secrets, err := changeflag.LoadSecrets(appConfig.GetAppConfiguration(), secretIdsByTenant)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load secrets: %w", err)
 		}
 		for _, secret := range secrets {
-			if secretMap, ok := secret.Secrets[*dest.SecretID]; ok {
+			if secretMap, ok := secret.Secrets[wrapper.SecretID]; ok {
 				for k, v := range secretMap {
 					switch k {
 					case "access_key_id":
@@ -223,13 +239,13 @@ func getDestinationConfig(ctx context.Context, destID, tenantID uuid.UUID) (*des
 					}
 				}
 			}
-			if errMsg, ok := secret.Errors[*dest.SecretID]; ok {
+			if errMsg, ok := secret.Errors[wrapper.SecretID]; ok {
 				return nil, fmt.Errorf("secret resolution failed: %s", errMsg)
 			}
 		}
 	}
 
-	return &cfg, nil
+	return cfg, nil
 }
 
 func createCustomerAthenaClient(ctx context.Context, cfg *destinationConfig) (*athena.Client, error) {
