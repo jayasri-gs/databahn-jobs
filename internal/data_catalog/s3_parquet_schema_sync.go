@@ -110,7 +110,7 @@ func ApplyS3ParquetCatalogToAthena(ctx context.Context) common.JobResult {
 func processS3ParquetGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fields []catalogField) error {
 	db := appConfig.GetDB()
 
-	// Look up data store for this destination
+	// Look up data-store for this destination
 	var storeIDStr string
 	err := db.WithContext(ctx).Raw(
 		"SELECT id FROM search_data_store WHERE destination_id = ? AND type = 'DATABAHN_DESTINATION' LIMIT 1",
