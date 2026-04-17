@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 
-	changeflag "github.com/databahn-ai/db-models/changeflag"
+	dbaws "github.com/databahn-ai/common-utils/aws"
 
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/go-logging/logger"
@@ -217,30 +217,36 @@ func getDestinationConfig(ctx context.Context, destID, tenantID uuid.UUID) (*des
 	}
 
 	if wrapper.SecretID != "" {
-		secretIdsByTenant := map[string][]string{
-			tenantID.String(): {wrapper.SecretID},
+		var backendSecretID string
+		err := db.WithContext(ctx).Raw(
+			"SELECT backend_secret_id FROM secrets WHERE id = ? LIMIT 1",
+			wrapper.SecretID,
+		).Scan(&backendSecretID).Error
+		if err != nil || backendSecretID == "" {
+			return nil, fmt.Errorf("failed to look up backend_secret_id for secret %s: %v", wrapper.SecretID, err)
 		}
-		secrets, err := changeflag.LoadSecrets(appConfig.GetAppConfiguration(), secretIdsByTenant)
+
+		secretOutput, err := dbaws.ReadSecretByName(backendSecretID, appConfig.GetAppConfiguration().GetString("region"))
 		if err != nil {
-			return nil, fmt.Errorf("failed to load secrets: %w", err)
+			return nil, fmt.Errorf("failed to read secret from AWS Secrets Manager: %w", err)
 		}
-		for _, secret := range secrets {
-			if secretMap, ok := secret.Secrets[wrapper.SecretID]; ok {
-				for k, v := range secretMap {
-					switch k {
-					case "access_key_id":
-						cfg.AccessKeyID = v
-					case "secret_access_key":
-						cfg.SecretKey = v
-					case "role_arn":
-						cfg.RoleArn = v
-					case "external_id":
-						cfg.ExternalID = v
-					}
-				}
+
+		if secretOutput.SecretString != nil {
+			var secretMap map[string]string
+			if err := json.Unmarshal([]byte(*secretOutput.SecretString), &secretMap); err != nil {
+				return nil, fmt.Errorf("failed to parse secret value: %w", err)
 			}
-			if errMsg, ok := secret.Errors[wrapper.SecretID]; ok {
-				return nil, fmt.Errorf("secret resolution failed: %s", errMsg)
+			for k, v := range secretMap {
+				switch k {
+				case "access_key_id":
+					cfg.AccessKeyID = v
+				case "secret_access_key":
+					cfg.SecretKey = v
+				case "role_arn":
+					cfg.RoleArn = v
+				case "external_id":
+					cfg.ExternalID = v
+				}
 			}
 		}
 	}
