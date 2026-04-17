@@ -166,20 +166,37 @@ func processS3ParquetGroup(ctx context.Context, destID, sourceID, tenantID uuid.
 		zap.String("database", database),
 		zap.String("table", tableName),
 		zap.String("region", destConfig.Region),
-		zap.Int("columns", len(colDefs)))
+		zap.String("outputLocation", outputLocation),
+		zap.Int("columns", len(colDefs)),
+		zap.String("query", query))
 
 	athenaClient, err := createCustomerAthenaClient(ctx, destConfig)
 	if err != nil {
+		logger.GetLoggerWithContext(ctx).Error("failed to create customer Athena client",
+			zap.String("destination_id", destID.String()),
+			zap.String("auth_type", destConfig.AuthType),
+			zap.String("region", destConfig.Region),
+			zap.Error(err))
 		return fmt.Errorf("failed to create customer Athena client for %s: %w", destID, err)
 	}
+	logger.GetLoggerWithContext(ctx).Info("customer Athena client created",
+		zap.String("destination_id", destID.String()),
+		zap.String("auth_type", destConfig.AuthType),
+		zap.String("region", destConfig.Region))
 
 	if err := runDDLWithClient(ctx, athenaClient, query, outputLocation); err != nil {
+		logger.GetLoggerWithContext(ctx).Error("ALTER TABLE failed",
+			zap.String("database", database),
+			zap.String("table", tableName),
+			zap.String("query", query),
+			zap.Error(err))
 		return fmt.Errorf("ALTER TABLE failed for %s.%s: %w", database, tableName, err)
 	}
 
-	logger.GetLoggerWithContext(ctx).Info("successfully applied s3 parquet catalog fields to customer Athena",
+	logger.GetLoggerWithContext(ctx).Info("ALTER TABLE succeeded — s3 parquet catalog fields applied",
 		zap.String("database", database),
 		zap.String("table", tableName),
+		zap.String("destination_id", destID.String()),
 		zap.Int("fields_added", len(colDefs)))
 
 	return nil
