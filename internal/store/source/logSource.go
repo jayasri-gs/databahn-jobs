@@ -100,3 +100,88 @@ func ReadSourcesPaginated(db *gorm.DB, tenantId uuid.UUID, page, pageSize int, s
 
 	return sources, result.Error
 }
+
+type SourceFleetInfo struct {
+	FleetId   string
+	FleetName string
+}
+
+type SourceAgentInfo struct {
+	AgentId   string
+	AgentName string
+}
+
+// GetFleetsBySourceIDs returns a map of source ID -> list of fleet info for the given source IDs.
+// The relationship is: log_source -> source_connector_mapping -> connector -> fleet
+func GetFleetsBySourceIDs(db *gorm.DB, sourceIDs []uuid.UUID) (map[string][]SourceFleetInfo, error) {
+	if len(sourceIDs) == 0 {
+		return make(map[string][]SourceFleetInfo), nil
+	}
+
+	type row struct {
+		SourceId  string `gorm:"column:source_id"`
+		FleetId   string `gorm:"column:fleet_id"`
+		FleetName string `gorm:"column:fleet_name"`
+	}
+
+	var rows []row
+	err := db.Raw(`
+		SELECT DISTINCT scm.source_id::text AS source_id, f.id::text AS fleet_id, f.name AS fleet_name
+		FROM source_connector_mapping scm
+		JOIN connector c ON scm.connector_id = c.id
+		JOIN fleet f ON c.fleet_id = f.id
+		WHERE scm.source_id IN ?
+	`, sourceIDs).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("error getting fleets for sources: %w", err)
+	}
+
+	result := make(map[string][]SourceFleetInfo)
+	for _, r := range rows {
+		result[r.SourceId] = append(result[r.SourceId], SourceFleetInfo{
+			FleetId:   r.FleetId,
+			FleetName: r.FleetName,
+		})
+	}
+	return result, nil
+}
+
+// GetAgentsBySourceIDs returns a map of source ID -> list of agent info for the given source IDs.
+// The relationship is: log_source -> collection_profile_log_source_mapping -> collection_profile
+//
+//	-> collection_profile_tag_mapping -> tag -> agent_tag_mapping -> agent_node
+func GetAgentsBySourceIDs(db *gorm.DB, sourceIDs []uuid.UUID) (map[string][]SourceAgentInfo, error) {
+	if len(sourceIDs) == 0 {
+		return make(map[string][]SourceAgentInfo), nil
+	}
+
+	type row struct {
+		SourceId  string `gorm:"column:source_id"`
+		AgentId   string `gorm:"column:agent_id"`
+		AgentName string `gorm:"column:agent_name"`
+	}
+
+	var rows []row
+	err := db.Raw(`
+		SELECT DISTINCT cplsm.log_source_id::text AS source_id, a.id::text AS agent_id, a.name AS agent_name
+		FROM collection_profile_log_source_mapping cplsm
+		JOIN collection_profile cp ON cplsm.collection_profile_id = cp.id
+		JOIN collection_profile_tag_mapping cptm ON cp.id = cptm.collection_profile_id
+		JOIN agent_tag_mapping atm ON cptm.tag_id = atm.tag_id
+		JOIN agent_node a ON atm.agent_id = a.id
+		WHERE cplsm.log_source_id IN ?
+		AND a.status IN ('ACTIVE', 'ERRORED')
+	`, sourceIDs).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("error getting agents for sources: %w", err)
+	}
+
+	result := make(map[string][]SourceAgentInfo)
+	for _, r := range rows {
+		result[r.SourceId] = append(result[r.SourceId], SourceAgentInfo{
+			AgentId:   r.AgentId,
+			AgentName: r.AgentName,
+		})
+	}
+	return result, nil
+}

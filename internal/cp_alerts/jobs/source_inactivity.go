@@ -98,7 +98,23 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			return common.NewJobResultFromErrors(jobErrors)
 		}
 
-		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime)
+		sourceFleetLastEventTimes, err := getSourceFleetLastEventTimes(tenantId, ctx, osClient)
+		if err != nil {
+			errorMsg := fmt.Sprintf("error getting source-fleet event times for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error getting source-fleet event times", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
+		}
+
+		sourceAgentLastEventTimes, err := getSourceAgentLastEventTimes(tenantId, ctx, osClient)
+		if err != nil {
+			errorMsg := fmt.Sprintf("error getting source-agent event times for tenant %s: %v", tenantId, err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLogger().Error("error getting source-agent event times", zap.Error(err), zap.String("tenantId", tenantId))
+			return common.NewJobResultFromErrors(jobErrors)
+		}
+
+		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime, sourceFleetLastEventTimes, sourceAgentLastEventTimes)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error finding inactive sources for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -202,7 +218,17 @@ func sendInAppAlerts(sourcesToAlert []*model.InActiveSource, alertsManager *aler
 	return nil
 }
 
-func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime map[string]time.Time) ([]*model.InActiveSource, []*source.Source, error) {
+// sourceFleetKey returns a composite key for (sourceId, fleetId) lookups
+func sourceFleetKey(sourceId, fleetId string) string {
+	return sourceId + "|" + fleetId
+}
+
+// sourceAgentKey returns a composite key for (sourceId, agentId) lookups
+func sourceAgentKey(sourceId, agentId string) string {
+	return sourceId + "|" + agentId
+}
+
+func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime map[string]time.Time, sourceFleetLastEventTimes map[string]time.Time, sourceAgentLastEventTimes map[string]time.Time) ([]*model.InActiveSource, []*source.Source, error) {
 	var sourcesToAlert []*model.InActiveSource
 	var activeSources []*source.Source
 
@@ -232,43 +258,133 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 			alertConfigsBySourceId[alertConfig.EntityID] = alertConfig
 		}
 
+		// For FLEET-scoped sources, fetch fleet associations
+		var fleetScopedSourceIds []uuid.UUID
+		for _, s := range sources {
+			if s.Scope == "FLEET" {
+				fleetScopedSourceIds = append(fleetScopedSourceIds, s.ID)
+			}
+		}
+		sourceToFleets := make(map[string][]source.SourceFleetInfo)
+		if len(fleetScopedSourceIds) > 0 {
+			sourceToFleets, err = source.GetFleetsBySourceIDs(db, fleetScopedSourceIds)
+			if err != nil {
+				logger.GetLogger().Error("error while getting fleet associations for sources", zap.Error(err), zap.String("tenantId", tenantUuid.String()))
+				return nil, nil, err
+			}
+		}
+
+		// For AGENT-scoped sources, fetch agent associations
+		var agentScopedSourceIds []uuid.UUID
+		for _, s := range sources {
+			if s.Scope == "AGENT" {
+				agentScopedSourceIds = append(agentScopedSourceIds, s.ID)
+			}
+		}
+		sourceToAgents := make(map[string][]source.SourceAgentInfo)
+		if len(agentScopedSourceIds) > 0 {
+			sourceToAgents, err = source.GetAgentsBySourceIDs(db, agentScopedSourceIds)
+			if err != nil {
+				logger.GetLogger().Error("error while getting agent associations for sources", zap.Error(err), zap.String("tenantId", tenantUuid.String()))
+				return nil, nil, err
+			}
+		}
+
 		for _, s := range sources {
 			sourceId := s.ID.String()
+			tenantId := tenantUuid.String()
 
-			lastEventTime, ok := sourceIdToLastEventTime[sourceId]
-			if !ok {
-				logger.GetLogger().Warn("no last event time found for source, ignoring", zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
-				continue
-			}
 			alertConfig, ok := alertConfigsBySourceId[s.ID]
 			var alertDuration time.Duration
 			if ok {
-				configuredDuration, errr, skip := getAlertDuration(alertConfig, sourceId, tenantUuid.String())
+				configuredDuration, errr, skip := getAlertDuration(alertConfig, sourceId, tenantId)
 				if errr != nil {
-					logger.GetLogger().Error("error while getting alert duration, ignoring", zap.Error(errr), zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
+					logger.GetLogger().Error("error while getting alert duration, ignoring", zap.Error(errr), zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
 					continue
 				}
 				if skip {
-					logger.GetLogger().Warn("alert config is disabled, skipping", zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
+					logger.GetLogger().Warn("alert config is disabled, skipping", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
 					continue
 				}
 				alertDuration = configuredDuration
 			} else {
-				logger.GetLogger().Warn("no alert config found for source, defaulting", zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()))
+				logger.GetLogger().Warn("no alert config found for source, defaulting", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
 				alertDuration = defaultAlertDuration30Min
 			}
-			now := time.Now().UTC()
-			if now.Sub(lastEventTime) > alertDuration {
-				logger.GetLogger().Info("source received data more than alert duration ago, eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
-				if lastEventTime.Before(now.Add(-defaultRequiredEventsInLastSevenDays)) {
-					logger.GetLogger().Info("source received data older than 7 days, not eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
+
+			fleets := sourceToFleets[sourceId]
+			agents := sourceToAgents[sourceId]
+			if s.Scope == "FLEET" && len(fleets) > 1 {
+				logger.GetLogger().Info("multi-fleet source detected, checking per-fleet inactivity", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("fleetCount", len(fleets)))
+				allFleetsActive := true
+				for _, fi := range fleets {
+					key := sourceFleetKey(sourceId, fi.FleetId)
+					fleetLastEventTime, found := sourceFleetLastEventTimes[key]
+					if !found {
+						fleetLastEventTime = s.UpdatedAt.UTC()
+					}
+					now := time.Now().UTC()
+					if now.Sub(fleetLastEventTime) > alertDuration {
+						if fleetLastEventTime.Before(now.Add(-defaultRequiredEventsInLastSevenDays)) {
+							logger.GetLogger().Info("multi-fleet source fleet data older than 7 days, skipping", zap.String("sourceId", sourceId), zap.String("fleetId", fi.FleetId), zap.String("tenantId", tenantId))
+							continue
+						}
+						logger.GetLogger().Info("multi-fleet source inactive on fleet, eligible for alert", zap.String("sourceId", sourceId), zap.String("fleetId", fi.FleetId), zap.String("fleetName", fi.FleetName), zap.String("tenantId", tenantId), zap.Time("lastEventTime", fleetLastEventTime))
+						ias := model.NewInActiveSourceWithFleet(&s, fleetLastEventTime, alertDuration, fi.FleetId, fi.FleetName)
+						sourcesToAlert = append(sourcesToAlert, ias)
+						allFleetsActive = false
+					} else {
+						logger.GetLogger().Debug("multi-fleet source active on fleet", zap.String("sourceId", sourceId), zap.String("fleetId", fi.FleetId), zap.String("tenantId", tenantId))
+					}
+				}
+				if allFleetsActive {
+					activeSources = append(activeSources, &s)
+				}
+			} else if s.Scope == "AGENT" && len(agents) > 1 {
+				logger.GetLogger().Info("multi-agent source detected, checking per-agent inactivity", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("agentCount", len(agents)))
+				allAgentsActive := true
+				for _, ai := range agents {
+					key := sourceAgentKey(sourceId, ai.AgentId)
+					agentLastEventTime, found := sourceAgentLastEventTimes[key]
+					if !found {
+						agentLastEventTime = s.UpdatedAt.UTC()
+					}
+					now := time.Now().UTC()
+					if now.Sub(agentLastEventTime) > alertDuration {
+						if agentLastEventTime.Before(now.Add(-defaultRequiredEventsInLastSevenDays)) {
+							logger.GetLogger().Info("multi-agent source agent data older than 7 days, skipping", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("tenantId", tenantId))
+							continue
+						}
+						logger.GetLogger().Info("multi-agent source inactive on agent, eligible for alert", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("agentName", ai.AgentName), zap.String("tenantId", tenantId), zap.Time("lastEventTime", agentLastEventTime))
+						ias := model.NewInActiveSourceWithAgent(&s, agentLastEventTime, alertDuration, ai.AgentId, ai.AgentName)
+						sourcesToAlert = append(sourcesToAlert, ias)
+						allAgentsActive = false
+					} else {
+						logger.GetLogger().Debug("multi-agent source active on agent", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("tenantId", tenantId))
+					}
+				}
+				if allAgentsActive {
+					activeSources = append(activeSources, &s)
+				}
+			} else {
+				lastEventTime, found := sourceIdToLastEventTime[sourceId]
+				if !found {
+					logger.GetLogger().Warn("no last event time found for source, ignoring", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
 					continue
 				}
-				ias := model.NewInActiveSource(&s, lastEventTime, alertDuration)
-				sourcesToAlert = append(sourcesToAlert, ias)
-			} else {
-				logger.GetLogger().Info("source received data within alert duration, not eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantUuid.String()), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
-				activeSources = append(activeSources, &s)
+				now := time.Now().UTC()
+				if now.Sub(lastEventTime) > alertDuration {
+					logger.GetLogger().Info("source received data more than alert duration ago, eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
+					if lastEventTime.Before(now.Add(-defaultRequiredEventsInLastSevenDays)) {
+						logger.GetLogger().Info("source received data older than 7 days, not eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
+						continue
+					}
+					ias := model.NewInActiveSource(&s, lastEventTime, alertDuration)
+					sourcesToAlert = append(sourcesToAlert, ias)
+				} else {
+					logger.GetLogger().Info("source received data within alert duration, not eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
+					activeSources = append(activeSources, &s)
+				}
 			}
 		}
 		sourceDbPage += 1
@@ -313,6 +429,86 @@ func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *
 	return sourceIdToLastEventTime, nil
 }
 
+// getSourceFleetLastEventTimes returns last event times keyed by "sourceId|fleetId"
+// by aggregating on both db_event_source_id and db_fleet_id dimensions in OpenSearch.
+func getSourceFleetLastEventTimes(tenantId string, ctx context.Context, osClient *opensearch.Client) (map[string]time.Time, error) {
+	statsAlias := os.StatisticsIndexAlias(tenantId)
+	aggFunc := os.AggregationFunction{
+		Function: "max",
+		Field:    "tags.db_ts_win",
+		Name:     "last_event_time",
+	}
+	result := make(map[string]time.Time)
+	var after map[string]any = nil
+	q := `tags.component_name: "ingestion" AND name: "total_events_delivered"`
+	for {
+		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, osClient, 100, statsAlias, q,
+			[]string{"tags.db_event_source_id.keyword", "tags.db_fleet_id.keyword"},
+			[]os.AggregationFunction{aggFunc}, after)
+		if err != nil {
+			logger.GetLogger().Error("error while getting source-fleet last event times from opensearch", zap.Error(err))
+			return nil, err
+		}
+		if len(responses) == 0 {
+			break
+		}
+		for _, response := range responses {
+			sourceId := response.Key["tags.db_event_source_id.keyword"].(string)
+			fleetId := response.Key["tags.db_fleet_id.keyword"].(string)
+			if fleetId == "" {
+				continue
+			}
+			lastEventMillis := int64(response.Values["last_event_time"].(float64))
+			lastEventTime := time.UnixMilli(lastEventMillis).UTC()
+			result[sourceFleetKey(sourceId, fleetId)] = lastEventTime
+		}
+		after = newAfter
+	}
+	logger.GetLoggerWithContext(ctx).Debug("fetched source-fleet last event times", zap.Int("entries", len(result)))
+	return result, nil
+}
+
+// getSourceAgentLastEventTimes returns last event times keyed by "sourceId|agentId"
+// by aggregating on both db_event_source_id and db_agent_id dimensions in the agent-ingestion metrics.
+// Agent metrics live in the shared "db_statistics_agent" index (not per-tenant), so the query
+// must include a tenant filter.
+func getSourceAgentLastEventTimes(tenantId string, ctx context.Context, osClient *opensearch.Client) (map[string]time.Time, error) {
+	const agentStatsIndex = "db_statistics_agent"
+	aggFunc := os.AggregationFunction{
+		Function: "max",
+		Field:    "tags.db_ts_win",
+		Name:     "last_event_time",
+	}
+	result := make(map[string]time.Time)
+	var after map[string]any = nil
+	q := fmt.Sprintf(`tags.db_tenant_id: %q AND tags.component_name: "agent-ingestion" AND name: "total_data_received"`, tenantId)
+	for {
+		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, osClient, 100, agentStatsIndex, q,
+			[]string{"tags.db_event_source_id.keyword", "tags.db_agent_id.keyword"},
+			[]os.AggregationFunction{aggFunc}, after)
+		if err != nil {
+			logger.GetLogger().Error("error while getting source-agent last event times from opensearch", zap.Error(err))
+			return nil, err
+		}
+		if len(responses) == 0 {
+			break
+		}
+		for _, response := range responses {
+			sourceId := response.Key["tags.db_event_source_id.keyword"].(string)
+			agentId := response.Key["tags.db_agent_id.keyword"].(string)
+			if agentId == "" {
+				continue
+			}
+			lastEventMillis := int64(response.Values["last_event_time"].(float64))
+			lastEventTime := time.UnixMilli(lastEventMillis).UTC()
+			result[sourceAgentKey(sourceId, agentId)] = lastEventTime
+		}
+		after = newAfter
+	}
+	logger.GetLoggerWithContext(ctx).Debug("fetched source-agent last event times", zap.Int("entries", len(result)))
+	return result, nil
+}
+
 func getAlertDuration(alertConfig entities.EntityAlertsConfig, sourceId, tenantId string) (time.Duration, error, bool) {
 	dbConfig := alertConfig.Config
 	if dbConfig == nil {
@@ -341,6 +537,15 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 	title := fmt.Sprintf(constants.IngestionCheckerFunctionalityTitle, ias.InactivityDurationStr())
 	message := fmt.Sprintf(constants.IngestionCheckerFunctionalityMessage, ias.AlertConfigDurationStr(),
 		util.HumanReadableTimeWithZone(ias.CheckedAt), util.HumanReadableTimeWithZone(ias.LastEventTime))
+	if ias.IsFleetScoped() {
+		message = fmt.Sprintf("This source is configured to be alerted on not receiving data in last %s for fleet '%s'. As of '%s' last event from this fleet was received at '%s'.",
+			ias.AlertConfigDurationStr(), ias.FleetName,
+			util.HumanReadableTimeWithZone(ias.CheckedAt), util.HumanReadableTimeWithZone(ias.LastEventTime))
+	} else if ias.IsAgentScoped() {
+		message = fmt.Sprintf("This source is configured to be alerted on not receiving data in last %s for agent '%s'. As of '%s' last event from this agent was received at '%s'.",
+			ias.AlertConfigDurationStr(), ias.AgentName,
+			util.HumanReadableTimeWithZone(ias.CheckedAt), util.HumanReadableTimeWithZone(ias.LastEventTime))
+	}
 	functionality := alerts_async.LogSource
 	if ias.Source.Scope == "CLOUD" {
 		functionality = alerts_async.CloudLogSource
