@@ -90,7 +90,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 
 		logger.GetLogger().Info("checking for inactive sources", zap.String("tenantId", tenantId))
 
-		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(tenantId, ctx, osClient, sources)
+		sourceIdToLastEventTime, err := getSourceIdToLastEventTime(ctx, tenantId, osClient, sources)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error getting source event times for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -330,7 +330,8 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 							continue
 						}
 						logger.GetLogger().Info("multi-fleet source inactive on fleet, eligible for alert", zap.String("sourceId", sourceId), zap.String("fleetId", fi.FleetId), zap.String("fleetName", fi.FleetName), zap.String("tenantId", tenantId), zap.Time("lastEventTime", fleetLastEventTime))
-						ias := model.NewInActiveSourceWithFleet(&s, fleetLastEventTime, alertDuration, fi.FleetId, fi.FleetName)
+						src := s
+						ias := model.NewInActiveSourceWithFleet(&src, fleetLastEventTime, alertDuration, fi.FleetId, fi.FleetName)
 						sourcesToAlert = append(sourcesToAlert, ias)
 						allFleetsActive = false
 					} else {
@@ -357,7 +358,8 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 							continue
 						}
 						logger.GetLogger().Info("multi-agent source inactive on agent, eligible for alert", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("agentName", ai.AgentName), zap.String("tenantId", tenantId), zap.Time("lastEventTime", agentLastEventTime))
-						ias := model.NewInActiveSourceWithAgent(&s, agentLastEventTime, alertDuration, ai.AgentId, ai.AgentName)
+						src := s
+						ias := model.NewInActiveSourceWithAgent(&src, agentLastEventTime, alertDuration, ai.AgentId, ai.AgentName)
 						sourcesToAlert = append(sourcesToAlert, ias)
 						allAgentsActive = false
 					} else {
@@ -381,7 +383,8 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 						logger.GetLogger().Info("source received data older than 7 days, not eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
 						continue
 					}
-					ias := model.NewInActiveSource(&s, lastEventTime, alertDuration)
+					src := s
+					ias := model.NewInActiveSource(&src, lastEventTime, alertDuration)
 					sourcesToAlert = append(sourcesToAlert, ias)
 				} else {
 					logger.GetLogger().Info("source received data within alert duration, not eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
@@ -395,7 +398,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 	return sourcesToAlert, activeSources, nil
 }
 
-func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *opensearch.Client, sources []source.Source) (map[string]time.Time, error) {
+func getSourceIdToLastEventTime(ctx context.Context, tenantId string, osClient *opensearch.Client, sources []source.Source) (map[string]time.Time, error) {
 	statsAlias := os.StatisticsIndexAlias(tenantId)
 	aggFunc := os.AggregationFunction{
 		Function: "max",
@@ -415,9 +418,12 @@ func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *
 			break
 		}
 		for _, response := range responses {
-			sourceId := response.Key["tags.db_event_source_id.keyword"].(string)
-			lastEventMillis := int64(response.Values["last_event_time"].(float64))
-			lastEventTime := time.UnixMilli(lastEventMillis).UTC()
+			sourceId, ok1 := response.Key["tags.db_event_source_id.keyword"].(string)
+			lastEventVal, ok2 := response.Values["last_event_time"].(float64)
+			if !ok1 || !ok2 {
+				continue
+			}
+			lastEventTime := time.UnixMilli(int64(lastEventVal)).UTC()
 			sourceIdToLastEventTime[sourceId] = lastEventTime
 		}
 		after = newAfter
