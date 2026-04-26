@@ -29,6 +29,7 @@ func (ias InActiveSource) GetDataPlaneId() string {
 func (ias InActiveSource) GetTenantId() string {
 	return ias.Source.TenantID.String()
 }
+
 // GetSecondaryEntityId implements alerts_async.AlertEntity. It is copied onto alert.SecondaryEntityId
 // and folded into the stable alert id hash when non-empty (see db-models/alerts_async buildId).
 // Per-fleet / per-agent inactivity rows set this so distinct alerts can exist for the same source;
