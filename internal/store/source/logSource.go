@@ -128,8 +128,8 @@ func GetFleetsBySourceIDs(db *gorm.DB, sourceIDs []uuid.UUID) (map[string][]Sour
 	err := db.Raw(`
 		SELECT DISTINCT scm.source_id::text AS source_id, f.id::text AS fleet_id, f.name AS fleet_name
 		FROM source_connector_mapping scm
-		JOIN connector c ON scm.connector_id = c.id
-		JOIN fleet f ON c.fleet_id = f.id
+		JOIN connector c ON scm.connector_id = c.id AND scm.tenant_id = c.tenant_id
+		JOIN fleet f ON c.fleet_id = f.id AND c.tenant_id = f.tenant_id
 		WHERE scm.source_id IN ?
 	`, sourceIDs).Scan(&rows).Error
 	if err != nil {
@@ -165,10 +165,10 @@ func GetAgentsBySourceIDs(db *gorm.DB, sourceIDs []uuid.UUID) (map[string][]Sour
 	err := db.Raw(`
 		SELECT DISTINCT cplsm.log_source_id::text AS source_id, a.id::text AS agent_id, a.name AS agent_name
 		FROM collection_profile_log_source_mapping cplsm
-		JOIN collection_profile cp ON cplsm.collection_profile_id = cp.id
-		JOIN collection_profile_tag_mapping cptm ON cp.id = cptm.collection_profile_id
-		JOIN agent_tag_mapping atm ON cptm.tag_id = atm.tag_id
-		JOIN agent_node a ON atm.agent_id = a.id
+		JOIN collection_profile cp ON cplsm.collection_profile_id = cp.id AND cplsm.tenant_id = cp.tenant_id
+		JOIN collection_profile_tag_mapping cptm ON cp.id = cptm.collection_profile_id AND cp.tenant_id = cptm.tenant_id
+		JOIN agent_tag_mapping atm ON cptm.tag_id = atm.tag_id AND cptm.tenant_id = atm.tenant_id
+		JOIN agent_node a ON atm.agent_id = a.id AND atm.tenant_id = a.tenant_id
 		WHERE cplsm.log_source_id IN ?
 		AND a.status IN ('ACTIVE', 'ERRORED')
 	`, sourceIDs).Scan(&rows).Error

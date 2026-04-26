@@ -98,7 +98,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			return common.NewJobResultFromErrors(jobErrors)
 		}
 
-		sourceFleetLastEventTimes, err := getSourceFleetLastEventTimes(tenantId, ctx, osClient)
+		sourceFleetLastEventTimes, err := getSourceFleetLastEventTimes(ctx, tenantId, osClient)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error getting source-fleet event times for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -106,7 +106,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			return common.NewJobResultFromErrors(jobErrors)
 		}
 
-		sourceAgentLastEventTimes, err := getSourceAgentLastEventTimes(tenantId, ctx, osClient)
+		sourceAgentLastEventTimes, err := getSourceAgentLastEventTimes(ctx, tenantId, osClient)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error getting source-agent event times for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -228,7 +228,7 @@ func sourceAgentKey(sourceId, agentId string) string {
 	return sourceId + "|" + agentId
 }
 
-func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime map[string]time.Time, sourceFleetLastEventTimes map[string]time.Time, sourceAgentLastEventTimes map[string]time.Time) ([]*model.InActiveSource, []*source.Source, error) {
+func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime, sourceFleetLastEventTimes, sourceAgentLastEventTimes map[string]time.Time) ([]*model.InActiveSource, []*source.Source, error) {
 	var sourcesToAlert []*model.InActiveSource
 	var activeSources []*source.Source
 
@@ -338,7 +338,8 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 					}
 				}
 				if allFleetsActive {
-					activeSources = append(activeSources, &s)
+					src := s
+					activeSources = append(activeSources, &src)
 				}
 			} else if s.Scope == "AGENT" && len(agents) > 1 {
 				logger.GetLogger().Info("multi-agent source detected, checking per-agent inactivity", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("agentCount", len(agents)))
@@ -364,7 +365,8 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 					}
 				}
 				if allAgentsActive {
-					activeSources = append(activeSources, &s)
+					src := s
+					activeSources = append(activeSources, &src)
 				}
 			} else {
 				lastEventTime, found := sourceIdToLastEventTime[sourceId]
@@ -383,7 +385,8 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 					sourcesToAlert = append(sourcesToAlert, ias)
 				} else {
 					logger.GetLogger().Info("source received data within alert duration, not eligible for alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Duration("alertDuration", alertDuration), zap.Time("lastEventTime", lastEventTime))
-					activeSources = append(activeSources, &s)
+					src := s
+					activeSources = append(activeSources, &src)
 				}
 			}
 		}
@@ -431,7 +434,7 @@ func getSourceIdToLastEventTime(tenantId string, ctx context.Context, osClient *
 
 // getSourceFleetLastEventTimes returns last event times keyed by "sourceId|fleetId"
 // by aggregating on both db_event_source_id and db_fleet_id dimensions in OpenSearch.
-func getSourceFleetLastEventTimes(tenantId string, ctx context.Context, osClient *opensearch.Client) (map[string]time.Time, error) {
+func getSourceFleetLastEventTimes(ctx context.Context, tenantId string, osClient *opensearch.Client) (map[string]time.Time, error) {
 	statsAlias := os.StatisticsIndexAlias(tenantId)
 	aggFunc := os.AggregationFunction{
 		Function: "max",
@@ -453,13 +456,13 @@ func getSourceFleetLastEventTimes(tenantId string, ctx context.Context, osClient
 			break
 		}
 		for _, response := range responses {
-			sourceId := response.Key["tags.db_event_source_id.keyword"].(string)
-			fleetId := response.Key["tags.db_fleet_id.keyword"].(string)
-			if fleetId == "" {
+			sourceId, ok1 := response.Key["tags.db_event_source_id.keyword"].(string)
+			fleetId, ok2 := response.Key["tags.db_fleet_id.keyword"].(string)
+			lastEventVal, ok3 := response.Values["last_event_time"].(float64)
+			if !ok1 || !ok2 || !ok3 || fleetId == "" {
 				continue
 			}
-			lastEventMillis := int64(response.Values["last_event_time"].(float64))
-			lastEventTime := time.UnixMilli(lastEventMillis).UTC()
+			lastEventTime := time.UnixMilli(int64(lastEventVal)).UTC()
 			result[sourceFleetKey(sourceId, fleetId)] = lastEventTime
 		}
 		after = newAfter
@@ -472,7 +475,7 @@ func getSourceFleetLastEventTimes(tenantId string, ctx context.Context, osClient
 // by aggregating on both db_event_source_id and db_agent_id dimensions in the agent-ingestion metrics.
 // Agent metrics live in the shared "db_statistics_agent" index (not per-tenant), so the query
 // must include a tenant filter.
-func getSourceAgentLastEventTimes(tenantId string, ctx context.Context, osClient *opensearch.Client) (map[string]time.Time, error) {
+func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient *opensearch.Client) (map[string]time.Time, error) {
 	const agentStatsIndex = "db_statistics_agent"
 	aggFunc := os.AggregationFunction{
 		Function: "max",
@@ -494,13 +497,13 @@ func getSourceAgentLastEventTimes(tenantId string, ctx context.Context, osClient
 			break
 		}
 		for _, response := range responses {
-			sourceId := response.Key["tags.db_event_source_id.keyword"].(string)
-			agentId := response.Key["tags.db_agent_id.keyword"].(string)
-			if agentId == "" {
+			sourceId, ok1 := response.Key["tags.db_event_source_id.keyword"].(string)
+			agentId, ok2 := response.Key["tags.db_agent_id.keyword"].(string)
+			lastEventVal, ok3 := response.Values["last_event_time"].(float64)
+			if !ok1 || !ok2 || !ok3 || agentId == "" {
 				continue
 			}
-			lastEventMillis := int64(response.Values["last_event_time"].(float64))
-			lastEventTime := time.UnixMilli(lastEventMillis).UTC()
+			lastEventTime := time.UnixMilli(int64(lastEventVal)).UTC()
 			result[sourceAgentKey(sourceId, agentId)] = lastEventTime
 		}
 		after = newAfter
