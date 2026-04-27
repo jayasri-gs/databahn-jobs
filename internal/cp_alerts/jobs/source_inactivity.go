@@ -418,12 +418,15 @@ func getSourceIdToLastEventTime(ctx context.Context, tenantId string, osClient *
 			break
 		}
 		for _, response := range responses {
-			sourceId, ok1 := response.Key["tags.db_event_source_id.keyword"].(string)
-			lastEventVal, ok2 := response.Values["last_event_time"].(float64)
+			sourceId, ok1 := aggKeyString(response.Key, "tags.db_event_source_id.keyword")
+			lastEventVal, ok2 := aggValueFloat64(response.Values, "last_event_time")
 			if !ok1 || !ok2 {
 				continue
 			}
-			lastEventTime := time.UnixMilli(int64(lastEventVal)).UTC()
+			lastEventTime, ok3 := unixMilliUTCFromFloat64(lastEventVal)
+			if !ok3 {
+				continue
+			}
 			sourceIdToLastEventTime[sourceId] = lastEventTime
 		}
 		after = newAfter
@@ -462,13 +465,16 @@ func getSourceFleetLastEventTimes(ctx context.Context, tenantId string, osClient
 			break
 		}
 		for _, response := range responses {
-			sourceId, ok1 := response.Key["tags.db_event_source_id.keyword"].(string)
-			fleetId, ok2 := response.Key["tags.db_fleet_id.keyword"].(string)
-			lastEventVal, ok3 := response.Values["last_event_time"].(float64)
+			sourceId, ok1 := aggKeyString(response.Key, "tags.db_event_source_id.keyword")
+			fleetId, ok2 := aggKeyString(response.Key, "tags.db_fleet_id.keyword")
+			lastEventVal, ok3 := aggValueFloat64(response.Values, "last_event_time")
 			if !ok1 || !ok2 || !ok3 || fleetId == "" {
 				continue
 			}
-			lastEventTime := time.UnixMilli(int64(lastEventVal)).UTC()
+			lastEventTime, ok4 := unixMilliUTCFromFloat64(lastEventVal)
+			if !ok4 {
+				continue
+			}
 			result[sourceFleetKey(sourceId, fleetId)] = lastEventTime
 		}
 		after = newAfter
@@ -503,13 +509,16 @@ func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient
 			break
 		}
 		for _, response := range responses {
-			sourceId, ok1 := response.Key["tags.db_event_source_id.keyword"].(string)
-			agentId, ok2 := response.Key["tags.db_agent_id.keyword"].(string)
-			lastEventVal, ok3 := response.Values["last_event_time"].(float64)
+			sourceId, ok1 := aggKeyString(response.Key, "tags.db_event_source_id.keyword")
+			agentId, ok2 := aggKeyString(response.Key, "tags.db_agent_id.keyword")
+			lastEventVal, ok3 := aggValueFloat64(response.Values, "last_event_time")
 			if !ok1 || !ok2 || !ok3 || agentId == "" {
 				continue
 			}
-			lastEventTime := time.UnixMilli(int64(lastEventVal)).UTC()
+			lastEventTime, ok4 := unixMilliUTCFromFloat64(lastEventVal)
+			if !ok4 {
+				continue
+			}
 			result[sourceAgentKey(sourceId, agentId)] = lastEventTime
 		}
 		after = newAfter
