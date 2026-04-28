@@ -114,6 +114,13 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			return common.NewJobResultFromErrors(jobErrors)
 		}
 
+		logger.GetLogger().Info("opensearch lookup summary for tenant",
+			zap.String("tenantId", tenantId),
+			zap.Int("sourceLastEventEntries", len(sourceIdToLastEventTime)),
+			zap.Int("sourceFleetLastEventEntries", len(sourceFleetLastEventTimes)),
+			zap.Int("sourceAgentLastEventEntries", len(sourceAgentLastEventTimes)),
+		)
+
 		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime, sourceFleetLastEventTimes, sourceAgentLastEventTimes)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error finding inactive sources for tenant %s: %v", tenantId, err)
@@ -121,6 +128,12 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			logger.GetLogger().Error("error finding inactive sources", zap.Error(err), zap.String("tenantId", tenantId))
 			return common.NewJobResultFromErrors(jobErrors)
 		}
+
+		logger.GetLogger().Info("inactivity evaluation complete",
+			zap.String("tenantId", tenantId),
+			zap.Int("sourcesToAlert", len(sourcesToAlert)),
+			zap.Int("activeSources", len(activeSources)),
+		)
 
 		if len(sourcesToAlert) == 0 {
 			logger.GetLogger().Info("no sources to alert for tenant", zap.String("tenantId", tenantId))
@@ -272,6 +285,11 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 				logger.GetLogger().Error("error while getting fleet associations for sources", zap.Error(err), zap.String("tenantId", tenantUuid.String()))
 				return nil, nil, err
 			}
+			logger.GetLogger().Info("fleet associations fetched",
+				zap.String("tenantId", tenantUuid.String()),
+				zap.Int("fleetScopedSources", len(fleetScopedSourceIds)),
+				zap.Int("sourcesWithFleets", len(sourceToFleets)),
+			)
 		}
 
 		// For AGENT-scoped sources, fetch agent associations
@@ -288,6 +306,11 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 				logger.GetLogger().Error("error while getting agent associations for sources", zap.Error(err), zap.String("tenantId", tenantUuid.String()))
 				return nil, nil, err
 			}
+			logger.GetLogger().Info("agent associations fetched",
+				zap.String("tenantId", tenantUuid.String()),
+				zap.Int("agentScopedSources", len(agentScopedSourceIds)),
+				zap.Int("sourcesWithAgents", len(sourceToAgents)),
+			)
 		}
 
 		for _, s := range sources {
@@ -314,6 +337,13 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 
 			fleets := sourceToFleets[sourceId]
 			agents := sourceToAgents[sourceId]
+			logger.GetLogger().Debug("source evaluation",
+				zap.String("sourceId", sourceId),
+				zap.String("scope", s.Scope),
+				zap.Int("fleetCount", len(fleets)),
+				zap.Int("agentCount", len(agents)),
+				zap.Duration("alertDuration", alertDuration),
+			)
 			if s.Scope == "FLEET" && len(fleets) > 1 {
 				logger.GetLogger().Info("multi-fleet source detected, checking per-fleet inactivity", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("fleetCount", len(fleets)))
 				allFleetsActive := true
