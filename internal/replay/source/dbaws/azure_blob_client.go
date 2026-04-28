@@ -16,6 +16,11 @@ import (
 // GetAzureBlobClient builds an azblob.Client from replay AdditionalConfig key/value pairs.
 func GetAzureBlobClient(config map[string]string) (*azblob.Client, error) {
 	authType := config["azure_blob_auth_type"]
+	// Legacy configs may omit azure_blob_auth_type when only a connection string is set.
+	if authType == "" && config["azure_blob_storage_account_connection_string"] != "" {
+		logger.GetLogger().Info("Auth type not set in config, using default auth type as fallback")
+		authType = "AUTH_CONNECTION_STRING"
+	}
 
 	switch authType {
 	case "AUTH_CONNECTION_STRING":
