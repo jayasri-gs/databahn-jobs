@@ -323,6 +323,7 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 			if s.Scope == "FLEET" && len(fleets) > 1 {
 				logger.GetLogger().Info("multi-fleet source detected, checking per-fleet inactivity", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("fleetCount", len(fleets)))
 				allFleetsActive := true
+				atLeastOneFleetActive := false
 				for _, fi := range fleets {
 					key := sourceFleetKey(sourceId, fi.FleetId)
 					fleetLastEventTime, found := sourceFleetLastEventTimes[key]
@@ -342,15 +343,22 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 						allFleetsActive = false
 					} else {
 						logger.GetLogger().Debug("multi-fleet source active on fleet", zap.String("sourceId", sourceId), zap.String("fleetId", fi.FleetId), zap.String("tenantId", tenantId))
+						atLeastOneFleetActive = true
 					}
 				}
-				if allFleetsActive {
+				// Only dismiss existing alerts if at least one fleet confirmed active within the window.
+				// If every fleet was 7-day skipped, leave existing alerts untouched.
+				if allFleetsActive && atLeastOneFleetActive {
 					src := s
 					activeSources = append(activeSources, &src)
 				}
+			} else if s.Scope == "AGENT" && len(agents) == 0 {
+				logger.GetLogger().Info("agent-scoped source has no active/errored agents in DB, skipping", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
+				continue
 			} else if s.Scope == "AGENT" && len(agents) > 1 {
 				logger.GetLogger().Info("multi-agent source detected, checking per-agent inactivity", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("agentCount", len(agents)))
 				allAgentsActive := true
+				atLeastOneAgentActive := false
 				for _, ai := range agents {
 					key := sourceAgentKey(sourceId, ai.AgentId)
 					agentLastEventTime, found := sourceAgentLastEventTimes[key]
@@ -370,9 +378,12 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 						allAgentsActive = false
 					} else {
 						logger.GetLogger().Debug("multi-agent source active on agent", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("tenantId", tenantId))
+						atLeastOneAgentActive = true
 					}
 				}
-				if allAgentsActive {
+				// Only dismiss existing alerts if at least one agent confirmed active within the window.
+				// If every agent was 7-day skipped, leave existing alerts untouched.
+				if allAgentsActive && atLeastOneAgentActive {
 					src := s
 					activeSources = append(activeSources, &src)
 				}
