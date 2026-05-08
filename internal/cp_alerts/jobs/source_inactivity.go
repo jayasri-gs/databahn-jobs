@@ -384,9 +384,26 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 					agentLastEventTime, found := sourceAgentLastEventTimes[key]
 					if !found {
 						agentLastEventTime = s.UpdatedAt.UTC()
+						logger.GetLogger().Info("no last event time in opensearch for agent, using source updatedAt",
+							zap.String("sourceId", sourceId),
+							zap.String("agentId", ai.AgentId),
+							zap.String("agentName", ai.AgentName),
+							zap.Time("fallbackTime", agentLastEventTime))
 					}
 					now := time.Now().UTC()
-					if now.Sub(agentLastEventTime) > alertDuration {
+					inactiveDuration := now.Sub(agentLastEventTime)
+					isInactive := inactiveDuration > alertDuration
+
+					logger.GetLogger().Info("agent inactivity check",
+						zap.String("sourceId", sourceId),
+						zap.String("agentId", ai.AgentId),
+						zap.String("agentName", ai.AgentName),
+						zap.Time("lastEventTime", agentLastEventTime),
+						zap.Duration("inactiveDuration", inactiveDuration),
+						zap.Duration("alertDuration", alertDuration),
+						zap.Bool("isInactive", isInactive))
+
+					if isInactive {
 						allAgentsActive = false
 						// Always track for DB (even if 7-day skipped)
 						allInactiveAgents = append(allInactiveAgents, AgentUnhealthySourceInfo{
@@ -585,7 +602,7 @@ func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient
 		}
 		after = newAfter
 	}
-	logger.GetLoggerWithContext(ctx).Debug("fetched source-agent last event times", zap.Int("entries", len(result)))
+	logger.GetLoggerWithContext(ctx).Info("fetched source-agent last event times", zap.Int("entries", len(result)))
 	return result, nil
 }
 
@@ -626,6 +643,14 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 		grouped := FormatGroupedAgentsList(ias.GroupedInactiveAgents)
 		deepLink := BuildAgentListDeepLink(ias.Source.Name)
 		message = FormatGroupedAgentsMessage(grouped, deepLink)
+		
+		logger.GetLogger().Info("building grouped agent alert",
+			zap.String("sourceId", ias.Source.ID.String()),
+			zap.String("sourceName", ias.Source.Name),
+			zap.Int("totalInactiveAgents", grouped.TotalCount),
+			zap.Int("displayedAgents", len(grouped.DisplayEntries)),
+			zap.String("deepLink", deepLink),
+			zap.String("title", title))
 		
 		// Only add action with link if deep link is present
 		if deepLink != "" {

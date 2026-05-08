@@ -63,7 +63,7 @@ func (t *AgentUnhealthySourceTracker) AddUnhealthyAgents(
 // Clears existing entries for all processed sources (including healthy ones) before inserting new ones.
 func (t *AgentUnhealthySourceTracker) SaveToDatabase(db *gorm.DB, tenantId string) error {
 	if len(t.processedSourceIds) == 0 {
-		logger.GetLogger().Debug("no agent-scoped sources processed, skipping db update")
+		logger.GetLogger().Info("no agent-scoped sources processed, skipping db update")
 		return nil
 	}
 
