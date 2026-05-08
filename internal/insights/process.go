@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -158,7 +157,7 @@ func createSource(key string) Source {
 	return source
 }
 
-func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata, sourceIdToNameMap map[string]string) error {
+func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexMetadata, sourceIdToNameMap map[string]string, insightsWriter InsightsWriter) error {
 	// Load cardinality threshold from environment variable
 	cardinalityThreshold := utils.GetEnvInt("INSIGHTS_CARDINALITY_THRESHOLD", DefaultCardinalityThreshold)
 
@@ -169,15 +168,14 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	page := 0
 	count := 0
 	var after *After = nil
-	s3FileName := getS3FileName(index)
-	s3File, err := os.OpenFile(s3FileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
 	attMap, err := getAttributes(index)
 	if err != nil {
 		return err
 	}
+	if err = insightsWriter.Init(&index, attMap); err != nil {
+		return err
+	}
+	defer insightsWriter.Cleanup()
 	hasData := false
 
 	var indexDataPlaneId string
@@ -279,19 +277,15 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		}
 
 		hasData = true
-		err = writeToSearchFile(s3File, docs, attMap, sourceIdToNameMap)
+		err = insightsWriter.WriteDocs(docs, attMap, sourceIdToNameMap)
 		if err != nil {
 			return err
 		}
 
 		logger.GetLogger().Debug("processed documents", zap.String("index", indexName), zap.Int("page", page), zap.Int("count", len(docs)))
 	}
-	err = s3File.Close()
-	if err != nil {
-		return err
-	}
 	if hasData {
-		err = uploadFileToS3ForSearch(ctx, &index, s3File.Name())
+		err = insightsWriter.Upload(ctx)
 		if err != nil {
 			return err
 		}
