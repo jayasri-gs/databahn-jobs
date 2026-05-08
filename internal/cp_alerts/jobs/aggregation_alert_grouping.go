@@ -46,9 +46,13 @@ func FormatGroupedAgentsList(agents []model.InactiveAgentInfo) GroupedAgents {
 // BuildAgentListDeepLink creates URL to agent list filtered by source name.
 // Returns empty string if app URL not configured.
 func BuildAgentListDeepLink(sourceName string) string {
-	baseURL := config.GetAppConfiguration().GetString(configuration.DataBahnAppUrl)
+	baseURL := strings.TrimSpace(config.GetAppConfiguration().GetString(configuration.DataBahnAppUrl))
 	if baseURL == "" {
 		return ""
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + strings.TrimPrefix(baseURL, "/")
 	}
 
 	queryParam := url.QueryEscape(sourceName)
