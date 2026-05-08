@@ -634,16 +634,15 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 	var title string
 	message := ""
 	action := "Please check log source, fleet, connector etc of the source and devices sending data to the source."
-	
+
 	if ias.IsGroupedAgentAlert {
-		// Generic title for grouped agent alerts (no specific agent/fleet details)
-		title = fmt.Sprintf("Log Source Inactivity Alert: No data received for %s",
-			ias.InactivityDurationStr())
-		
 		grouped := FormatGroupedAgentsList(ias.GroupedInactiveAgents)
+		title = fmt.Sprintf(
+			"Log Source '%s' Inactivity Alert: %d agent(s), no data for more than %s",
+			ias.Source.Name, grouped.TotalCount, ias.AlertConfigDurationStr())
 		deepLink := BuildAgentListDeepLink(ias.Source.Name)
 		message = FormatGroupedAgentsMessage(grouped, deepLink)
-		
+
 		logger.GetLogger().Info("building grouped agent alert",
 			zap.String("sourceId", ias.Source.ID.String()),
 			zap.String("sourceName", ias.Source.Name),
@@ -651,7 +650,7 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 			zap.Int("displayedAgents", len(grouped.DisplayEntries)),
 			zap.String("deepLink", deepLink),
 			zap.String("title", title))
-		
+
 		// Only add action with link if deep link is present
 		if deepLink != "" {
 			action = fmt.Sprintf("View all affected agents: %s", deepLink)
@@ -668,7 +667,7 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 		message = fmt.Sprintf(constants.IngestionCheckerFunctionalityMessage, ias.AlertConfigDurationStr(),
 			util.HumanReadableTimeWithZone(ias.CheckedAt), util.HumanReadableTimeWithZone(ias.LastEventTime))
 	}
-	
+
 	functionality := alerts_async.LogSource
 	if ias.Source.Scope == "CLOUD" {
 		functionality = alerts_async.CloudLogSource
