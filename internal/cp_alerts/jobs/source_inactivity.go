@@ -653,7 +653,7 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 
 		// Only add action with link if deep link is present
 		if deepLink != "" {
-			action = fmt.Sprintf("View all affected agents: %s", deepLink)
+			action = fmt.Sprintf("Open this URL in a browser to view all affected agents: %s", deepLink)
 		}
 	} else if ias.IsFleetScoped() {
 		title = fmt.Sprintf("Log Source '%s' Inactivity Alert for Fleet '%s': No data received for %s",

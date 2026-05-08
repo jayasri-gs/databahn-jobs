@@ -79,7 +79,7 @@ func FormatGroupedAgentsMessage(grouped GroupedAgents, deepLink string) string {
 
 	if deepLink != "" {
 		message += fmt.Sprintf(
-			" Click to view and manage all affected agents: %s",
+			" Open this URL in a browser to view all affected agents: %s",
 			deepLink)
 	}
 
