@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/databahn-ai/go-logging/logger"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -79,17 +80,20 @@ func (t *AgentUnhealthySourceTracker) SaveToDatabase(db *gorm.DB, tenantId strin
 	}
 
 	// Insert new entries only for sources with unhealthy agents
+	now := time.Now().UTC()
 	for sourceId, sourceData := range t.sourceUnhealthyAgents {
 		for _, agentInfo := range sourceData.UnhealthyAgents {
 			if err := db.
 				Table("agent_silent_sources").
 				Create(map[string]interface{}{
+					"id":                      uuid.NewString(),
 					"tenant_id":               tenantId,
 					"agent_id":                agentInfo.AgentId,
 					"source_id":               sourceId,
 					"source_name":             sourceData.SourceName,
 					"last_inactive_timestamp": agentInfo.LastEventTime.UnixMilli(),
-					"created_at":              "NOW()",
+					"created_at":              now,
+					"updated_at":              now,
 				}).
 				Error; err != nil {
 				logger.GetLogger().Error("error inserting silent source to db",
