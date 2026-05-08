@@ -82,6 +82,9 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 		tenantUuid := t.Id
 		tenantId := tenantUuid.String()
 
+		// Create a fresh tracker for each tenant
+		agentUnhealthyTracker := NewAgentUnhealthySourceTracker()
+
 		sources, err := getAllLogSourcesOfTenant(db, tenantUuid)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error while getting all log sources of tenant %s: %v", tenantId, err)
@@ -120,7 +123,7 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 			return common.NewJobResultFromErrors(jobErrors)
 		}
 
-		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime, sourceFleetLastEventTimes, sourceAgentLastEventTimes)
+		sourcesToAlert, activeSources, err := findInactiveAndActiveSources(db, tenantUuid, sourceIdToLastEventTime, sourceFleetLastEventTimes, sourceAgentLastEventTimes, agentUnhealthyTracker)
 		if err != nil {
 			errorMsg := fmt.Sprintf("error finding inactive sources for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -195,6 +198,11 @@ func AlertForNoEventsFromSources(ctx context.Context) common.JobResult {
 				return common.NewJobResultFromErrors(jobErrors)
 			}
 		}
+
+		// Save agent unhealthy sources to database for this tenant
+		if err := agentUnhealthyTracker.SaveToDatabase(db, tenantId); err != nil {
+			logger.GetLogger().Error("error saving agent unhealthy sources to db", zap.Error(err), zap.String("tenantId", tenantId))
+		}
 	}
 
 	if len(jobErrors) == 0 {
@@ -234,7 +242,7 @@ func sourceAgentKey(sourceId, agentId string) string {
 	return sourceId + "|" + agentId
 }
 
-func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime, sourceFleetLastEventTimes, sourceAgentLastEventTimes map[string]time.Time) ([]*model.InActiveSource, []*source.Source, error) {
+func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToLastEventTime, sourceFleetLastEventTimes, sourceAgentLastEventTimes map[string]time.Time, agentUnhealthyTracker *AgentUnhealthySourceTracker) ([]*model.InActiveSource, []*source.Source, error) {
 	var sourcesToAlert []*model.InActiveSource
 	var activeSources []*source.Source
 
@@ -354,11 +362,23 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 				}
 			} else if s.Scope == "AGENT" && len(agents) == 0 {
 				logger.GetLogger().Info("agent-scoped source has no active/errored agents in DB, skipping", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
+				// Still mark as processed to clear any stale DB entries
+				agentUnhealthyTracker.MarkSourceProcessed(sourceId)
 				continue
-			} else if s.Scope == "AGENT" && len(agents) > 1 {
-				logger.GetLogger().Info("multi-agent source detected, checking per-agent inactivity", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("agentCount", len(agents)))
+			} else if s.Scope == "AGENT" && len(agents) >= 1 {
+				// Handle all agent-scoped sources (single or multiple agents) with grouped alert
+				logger.GetLogger().Info("agent-scoped source detected, checking per-agent inactivity", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("agentCount", len(agents)))
+
+				// Mark source as processed for DB cleanup
+				agentUnhealthyTracker.MarkSourceProcessed(sourceId)
+
+				// Agents that are inactive and eligible for alert (not 7-day skipped)
+				inactiveAgentsForAlert := []model.InactiveAgentInfo{}
+				// All inactive agents including 7-day skipped (for DB tracking)
+				allInactiveAgents := []AgentUnhealthySourceInfo{}
+				earliestTime := time.Now().UTC()
 				allAgentsActive := true
-				atLeastOneAgentActive := false
+
 				for _, ai := range agents {
 					key := sourceAgentKey(sourceId, ai.AgentId)
 					agentLastEventTime, found := sourceAgentLastEventTimes[key]
@@ -367,23 +387,48 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 					}
 					now := time.Now().UTC()
 					if now.Sub(agentLastEventTime) > alertDuration {
+						allAgentsActive = false
+						// Always track for DB (even if 7-day skipped)
+						allInactiveAgents = append(allInactiveAgents, AgentUnhealthySourceInfo{
+							AgentId:       ai.AgentId,
+							AgentName:     ai.AgentName,
+							LastEventTime: agentLastEventTime,
+						})
+
 						if agentLastEventTime.Before(now.Add(-defaultRequiredEventsInLastSevenDays)) {
-							logger.GetLogger().Info("multi-agent source agent data older than 7 days, skipping", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("tenantId", tenantId))
+							logger.GetLogger().Info("agent-scoped source agent data older than 7 days, skipping alert but tracking in DB", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("tenantId", tenantId))
 							continue
 						}
-						logger.GetLogger().Info("multi-agent source inactive on agent, eligible for alert", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("agentName", ai.AgentName), zap.String("tenantId", tenantId), zap.Time("lastEventTime", agentLastEventTime))
-						src := s
-						ias := model.NewInActiveSourceWithAgent(&src, agentLastEventTime, alertDuration, ai.AgentId, ai.AgentName)
-						sourcesToAlert = append(sourcesToAlert, ias)
-						allAgentsActive = false
-					} else {
-						logger.GetLogger().Debug("multi-agent source active on agent", zap.String("sourceId", sourceId), zap.String("agentId", ai.AgentId), zap.String("tenantId", tenantId))
-						atLeastOneAgentActive = true
+						// Eligible for alert
+						inactiveAgentsForAlert = append(inactiveAgentsForAlert, model.InactiveAgentInfo{
+							AgentId:       ai.AgentId,
+							AgentName:     ai.AgentName,
+							LastEventTime: agentLastEventTime,
+						})
+						if agentLastEventTime.Before(earliestTime) {
+							earliestTime = agentLastEventTime
+						}
 					}
 				}
-				// Only dismiss existing alerts if at least one agent confirmed active within the window.
-				// If every agent was 7-day skipped, leave existing alerts untouched.
-				if allAgentsActive && atLeastOneAgentActive {
+
+				// Track all unhealthy agents in DB (including 7-day skipped)
+				if len(allInactiveAgents) > 0 {
+					agentUnhealthyTracker.AddUnhealthyAgents(sourceId, s.Name, allInactiveAgents)
+				}
+
+				// Create grouped alert only for agents eligible for alerting
+				if len(inactiveAgentsForAlert) > 0 {
+					logger.GetLogger().Info("agent-scoped source has inactive agents, creating grouped alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId), zap.Int("inactiveCount", len(inactiveAgentsForAlert)))
+
+					src := s
+					ias := model.NewInActiveSourceWithGroupedAgents(
+						&src, earliestTime, alertDuration, inactiveAgentsForAlert)
+					sourcesToAlert = append(sourcesToAlert, ias)
+				}
+
+				// If all agents are active, mark source for alert dismissal
+				if allAgentsActive {
+					logger.GetLogger().Info("agent-scoped source all agents active, marking for alert dismissal", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
 					src := s
 					activeSources = append(activeSources, &src)
 				}
@@ -569,18 +614,36 @@ func getAlertDuration(alertConfig entities.EntityAlertsConfig, sourceId, tenantI
 }
 
 func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
-	title := fmt.Sprintf(constants.IngestionCheckerFunctionalityTitle, ias.InactivityDurationStr())
-	message := fmt.Sprintf(constants.IngestionCheckerFunctionalityMessage, ias.AlertConfigDurationStr(),
-		util.HumanReadableTimeWithZone(ias.CheckedAt), util.HumanReadableTimeWithZone(ias.LastEventTime))
-	if ias.IsFleetScoped() {
+	var title string
+	message := ""
+	action := "Please check log source, fleet, connector etc of the source and devices sending data to the source."
+	
+	if ias.IsGroupedAgentAlert {
+		// Generic title for grouped agent alerts (no specific agent/fleet details)
+		title = fmt.Sprintf("Log Source Inactivity Alert: No data received for %s",
+			ias.InactivityDurationStr())
+		
+		grouped := FormatGroupedAgentsList(ias.GroupedInactiveAgents)
+		deepLink := BuildAgentListDeepLink(ias.Source.Name)
+		message = FormatGroupedAgentsMessage(grouped, deepLink)
+		
+		// Only add action with link if deep link is present
+		if deepLink != "" {
+			action = fmt.Sprintf("View all affected agents: %s", deepLink)
+		}
+	} else if ias.IsFleetScoped() {
+		title = fmt.Sprintf("Log Source '%s' Inactivity Alert for Fleet '%s': No data received for %s",
+			ias.Source.Name, ias.FleetName, ias.InactivityDurationStr())
 		message = fmt.Sprintf("This source is configured to be alerted on not receiving data in last %s for fleet '%s'. As of '%s' last event from this fleet was received at '%s'.",
 			ias.AlertConfigDurationStr(), ias.FleetName,
 			util.HumanReadableTimeWithZone(ias.CheckedAt), util.HumanReadableTimeWithZone(ias.LastEventTime))
-	} else if ias.IsAgentScoped() {
-		message = fmt.Sprintf("This source is configured to be alerted on not receiving data in last %s for agent '%s'. As of '%s' last event from this agent was received at '%s'.",
-			ias.AlertConfigDurationStr(), ias.AgentName,
+	} else {
+		title = fmt.Sprintf("Log Source '%s' Inactivity Alert: No data received for %s",
+			ias.Source.Name, ias.InactivityDurationStr())
+		message = fmt.Sprintf(constants.IngestionCheckerFunctionalityMessage, ias.AlertConfigDurationStr(),
 			util.HumanReadableTimeWithZone(ias.CheckedAt), util.HumanReadableTimeWithZone(ias.LastEventTime))
 	}
+	
 	functionality := alerts_async.LogSource
 	if ias.Source.Scope == "CLOUD" {
 		functionality = alerts_async.CloudLogSource
@@ -592,7 +655,7 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
 		alerts_async.WithErrorCode(alerts_async.DNDW10001, ""),
-		alerts_async.WithAction("Please check log source, fleet, connector etc of the source and devices sending data to the source."),
+		alerts_async.WithAction(action),
 	)
 }
 

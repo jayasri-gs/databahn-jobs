@@ -6,15 +6,22 @@ import (
 	"time"
 )
 
-type InActiveSource struct {
-	Source        *source.Source
-	LastEventTime time.Time
-	AlertDuration time.Duration
-	CheckedAt     time.Time
-	FleetId       string
-	FleetName     string
+// InactiveAgentInfo holds agent info with last event time for grouped alerts
+type InactiveAgentInfo struct {
 	AgentId       string
 	AgentName     string
+	LastEventTime time.Time
+}
+
+type InActiveSource struct {
+	Source                    *source.Source
+	LastEventTime             time.Time
+	AlertDuration             time.Duration
+	CheckedAt                 time.Time
+	FleetId                   string
+	FleetName                 string
+	GroupedInactiveAgents     []InactiveAgentInfo // for grouped agent alerts with last event times
+	IsGroupedAgentAlert       bool                // indicates this is a grouped alert
 }
 
 func (ias InActiveSource) GetEntityId() string {
@@ -32,25 +39,17 @@ func (ias InActiveSource) GetTenantId() string {
 
 // GetSecondaryEntityId implements alerts_async.AlertEntity. It is copied onto alert.SecondaryEntityId
 // and folded into the stable alert id hash when non-empty (see db-models/alerts_async buildId).
-// Per-fleet / per-agent inactivity rows set this so distinct alerts can exist for the same source;
-// CLOUD and other scopes, or single-fleet / single-agent rows, leave it empty.
+// Per-fleet inactivity rows set this so distinct alerts can exist for the same source per fleet.
+// AGENT-scoped sources use grouped alerts (one per source), so secondary entity ID is empty.
 func (ias InActiveSource) GetSecondaryEntityId() string {
-	switch ias.Source.Scope {
-	case "FLEET":
+	if ias.Source.Scope == "FLEET" {
 		return ias.FleetId
-	case "AGENT":
-		return ias.AgentId
-	default:
-		return ""
 	}
+	return ""
 }
 
 func (ias InActiveSource) IsFleetScoped() bool {
 	return ias.FleetId != ""
-}
-
-func (ias InActiveSource) IsAgentScoped() bool {
-	return ias.AgentId != ""
 }
 
 func (ias InActiveSource) InactivityDurationStr() string {
@@ -82,13 +81,17 @@ func NewInActiveSourceWithFleet(source *source.Source, lastEventTime time.Time, 
 	}
 }
 
-func NewInActiveSourceWithAgent(source *source.Source, lastEventTime time.Time, alertDuration time.Duration, agentId, agentName string) *InActiveSource {
+func NewInActiveSourceWithGroupedAgents(
+	source *source.Source,
+	lastEventTime time.Time,
+	alertDuration time.Duration,
+	inactiveAgents []InactiveAgentInfo) *InActiveSource {
 	return &InActiveSource{
-		Source:        source,
-		LastEventTime: lastEventTime,
-		AlertDuration: alertDuration,
-		CheckedAt:     time.Now().UTC(),
-		AgentId:       agentId,
-		AgentName:     agentName,
+		Source:                source,
+		LastEventTime:         lastEventTime,
+		AlertDuration:         alertDuration,
+		CheckedAt:             time.Now().UTC(),
+		GroupedInactiveAgents: inactiveAgents,
+		IsGroupedAgentAlert:   true,
 	}
 }
