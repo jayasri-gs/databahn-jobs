@@ -61,22 +61,22 @@ func (t *AgentUnhealthySourceTracker) AddUnhealthyAgents(
 }
 
 // SaveToDatabase inserts agent_silent_sources table entries for a tenant.
-// Clears existing entries for all processed sources (including healthy ones) before inserting new ones.
+// Clears ALL existing entries for the tenant before inserting new ones (full refresh).
+// This ensures deleted/disabled sources don't leave orphaned rows.
 func (t *AgentUnhealthySourceTracker) SaveToDatabase(db *gorm.DB, tenantId string) error {
-	if len(t.processedSourceIds) == 0 {
-		logger.GetLogger().Info("no agent-scoped sources processed, skipping db update")
-		return nil
+	// Always clear tenant's entries first (even if no sources processed, to clean up deleted/disabled sources)
+	if err := db.
+		Table("agent_silent_sources").
+		Where("tenant_id = ?", tenantId).
+		Delete(nil).
+		Error; err != nil {
+		logger.GetLogger().Error("error deleting old silent sources for tenant", zap.Error(err), zap.String("tenantId", tenantId))
+		return err
 	}
 
-	// Delete old entries for ALL processed sources (including healthy ones to clear stale data)
-	for sourceId := range t.processedSourceIds {
-		if err := db.
-			Table("agent_silent_sources").
-			Where("tenant_id = ? AND source_id = ?", tenantId, sourceId).
-			Delete(nil).
-			Error; err != nil {
-			logger.GetLogger().Error("error deleting old silent sources from db", zap.Error(err), zap.String("sourceId", sourceId))
-		}
+	if len(t.sourceUnhealthyAgents) == 0 {
+		logger.GetLogger().Info("no unhealthy agent-scoped sources, cleared stale entries only", zap.String("tenantId", tenantId))
+		return nil
 	}
 
 	// Insert new entries only for sources with unhealthy agents
