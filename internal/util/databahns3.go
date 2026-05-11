@@ -74,6 +74,27 @@ func UploadFileToS3(ctx context.Context, objectKey, filePath string) error {
 	return err
 }
 
+func UploadFileToS3Parquet(ctx context.Context, objectKey, filePath string) error {
+	client, err := _getSearchS3Client(ctx)
+	if err != nil {
+		return err
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	parquetBucket := awsSecret.Bucket + "-parquet"
+	s3PutObject := s3.PutObjectInput{
+		Bucket: aws.String(parquetBucket),
+		Key:    aws.String(objectKey),
+		Body:   file,
+	}
+	_, err = client.PutObject(ctx, &s3PutObject)
+	return err
+}
+
 func UploadGzipFileToS3(ctx context.Context, objectKey, filePath string) error {
 	client, err := _getSearchS3Client(ctx)
 	if err != nil {

@@ -50,6 +50,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	logger.GetLogger().Info("calculated indices to process", zap.Int("index_count", len(indicesToProcess)), zap.Time("before", window))
 
 	skipTenants := getSkipTenants()
+	parquetTenants := getParquetTenants()
 	var indicesByTenant = make(map[string][]IndexMetadata)
 	for _, index := range indicesToProcess {
 		if skipTenants[index.TenantId] {
@@ -82,7 +83,13 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 				wg.Done()
 			}()
 			for _, indexMetadata := range indexMetadatas {
-				err := aggregateInsights(ctx, os.GetClient(), indexMetadata, sourceIdToNameMap)
+				var w InsightsWriter
+				if parquetTenants[tenantId] {
+					w = &ParquetWriter{}
+				} else {
+					w = &JSONLWriter{}
+				}
+				err := aggregateInsights(ctx, os.GetClient(), indexMetadata, sourceIdToNameMap, w)
 				indexName := INSIGHTS_STAGING_INDEX_PREFIX + indexMetadata.String()
 				if err != nil {
 					errorsMutex.Lock()
@@ -119,6 +126,21 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 
 func skipIndexTimeCheck() bool {
 	return utils.GetEnvOrDefault("INSIGHTS_AGG_SKIP_INDEX_TIME_CHECK", "false") != "false"
+}
+
+func getParquetTenants() map[string]bool {
+	val := utils.GetEnvOrDefault("INSIGHTS_PARQUET_TENANTS", "")
+	result := make(map[string]bool)
+	if val == "" {
+		return result
+	}
+	for _, tenant := range strings.Split(val, ",") {
+		t := strings.TrimSpace(tenant)
+		if t != "" {
+			result[t] = true
+		}
+	}
+	return result
 }
 
 func getSkipTenants() map[string]bool {
