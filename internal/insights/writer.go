@@ -177,7 +177,7 @@ func (w *ParquetWriter) Upload(ctx context.Context) error {
 	w.fwClosed = true
 	objectKey := fmt.Sprintf("tenant_id=%s/insight_rule_id=%s/year=%04d/month=%02d/date=%02d/%s",
 		w.index.TenantId, w.index.Type, w.index.Year, w.index.Month, w.index.Day, filepath.Base(w.filePath))
-	return util.UploadFileToS3(ctx, objectKey, w.filePath)
+	return util.UploadFileToS3Parquet(ctx, objectKey, w.filePath)
 }
 
 func (w *ParquetWriter) Cleanup() {
