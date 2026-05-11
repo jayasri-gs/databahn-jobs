@@ -637,23 +637,24 @@ func buildAlert(ias model.InActiveSource) (*alerts_async.Alert, error) {
 
 	if ias.IsGroupedAgentAlert {
 		grouped := FormatGroupedAgentsList(ias.GroupedInactiveAgents)
+		silentSourceID := ias.Source.ID.String()
 		title = fmt.Sprintf(
 			"Log Source '%s' Inactivity Alert: %d agent(s), no data for more than %s",
 			ias.Source.Name, grouped.TotalCount, ias.AlertConfigDurationStr())
-		deepLink := BuildAgentListDeepLink(ias.Source.Name)
-		message = FormatGroupedAgentsMessage(grouped, deepLink)
+		deepLink := BuildAgentListDeepLink(silentSourceID)
+		message = FormatGroupedAgentsMessage(grouped, deepLink, ias.Source.Name)
 
 		logger.GetLogger().Info("building grouped agent alert",
-			zap.String("sourceId", ias.Source.ID.String()),
+			zap.String("sourceId", silentSourceID),
 			zap.String("sourceName", ias.Source.Name),
 			zap.Int("totalInactiveAgents", grouped.TotalCount),
 			zap.Int("displayedAgents", len(grouped.DisplayEntries)),
 			zap.String("deepLink", deepLink),
 			zap.String("title", title))
 
-		// Only add action with link if deep link is present
 		if deepLink != "" {
-			action = fmt.Sprintf("Open this URL in a browser to view all affected agents: %s", deepLink)
+			action = fmt.Sprintf(
+				"Open this URL in a browser to view all affected agents: %s", deepLink)
 		}
 	} else if ias.IsFleetScoped() {
 		title = fmt.Sprintf("Log Source '%s' Inactivity Alert for Fleet '%s': No data received for %s",

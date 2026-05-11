@@ -45,9 +45,12 @@ func FormatGroupedAgentsList(agents []model.InactiveAgentInfo) GroupedAgents {
 	}
 }
 
-// BuildAgentListDeepLink creates URL to agent list filtered by source name.
-// Returns empty string if app URL not configured.
-func BuildAgentListDeepLink(sourceName string) string {
+// BuildAgentListDeepLink creates URL to agent list filtered by silent source id only.
+// Returns empty string if app URL not configured or silentSourceID is empty.
+func BuildAgentListDeepLink(silentSourceID string) string {
+	if strings.TrimSpace(silentSourceID) == "" {
+		return ""
+	}
 	baseURL := strings.TrimSpace(config.GetAppConfiguration().GetString(configuration.DataBahnAppUrl))
 	if baseURL == "" {
 		return ""
@@ -57,8 +60,9 @@ func BuildAgentListDeepLink(sourceName string) string {
 		baseURL = "https://" + strings.TrimPrefix(baseURL, "/")
 	}
 
-	queryParam := url.QueryEscape(sourceName)
-	return baseURL + "/agent?silentSourceName=" + queryParam
+	q := url.Values{}
+	q.Set("silentSourceId", strings.TrimSpace(silentSourceID))
+	return baseURL + "/agent?" + q.Encode()
 }
 
 // formatGroupedAlertLastSeen formats last-event time for grouped inactivity alert text only
@@ -70,8 +74,9 @@ func formatGroupedAlertLastSeen(t time.Time) string {
 }
 
 // FormatGroupedAgentsMessage creates alert message with agent names and their last event times.
-// If deepLink is empty, still includes agent list but no link.
-func FormatGroupedAgentsMessage(grouped GroupedAgents, deepLink string) string {
+// logSourceName identifies the log source in prose; deepLink (when non-empty) uses silentSourceId
+// in the query string.
+func FormatGroupedAgentsMessage(grouped GroupedAgents, deepLink string, logSourceName string) string {
 	var agentDetails []string
 	for _, entry := range grouped.DisplayEntries {
 		agentDetails = append(agentDetails, fmt.Sprintf("%s (last seen: %s)",
@@ -84,8 +89,8 @@ func FormatGroupedAgentsMessage(grouped GroupedAgents, deepLink string) string {
 	}
 
 	message := fmt.Sprintf(
-		"The following agents are not sending data: %s.",
-		agentList)
+		"For log source '%s', the following agents are not sending data: %s.",
+		logSourceName, agentList)
 
 	if deepLink != "" {
 		message += fmt.Sprintf(
