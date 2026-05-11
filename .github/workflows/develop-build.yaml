@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - develop
-      - feature/multi-fleet-source-inactivity
 
 jobs:
   develop:
