@@ -9,11 +9,13 @@ import (
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/model"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
 )
 
+// groupedAlertMaxAgentsInMessage is how many agents to list by name in grouped inactivity alerts.
+const groupedAlertMaxAgentsInMessage = 2
+
 type GroupedAgents struct {
-	DisplayEntries []AgentDisplayEntry // first 5 agents with last event time
+	DisplayEntries []AgentDisplayEntry // first N agents with last event time (see groupedAlertMaxAgentsInMessage)
 	TotalCount     int                 // total count of inactive agents
 }
 
@@ -22,9 +24,9 @@ type AgentDisplayEntry struct {
 	LastEventTime time.Time
 }
 
-// FormatGroupedAgentsList formats agents for display (first 5 with last event time + count of remaining)
+// FormatGroupedAgentsList formats agents for display (first groupedAlertMaxAgentsInMessage with last event time + count of remaining)
 func FormatGroupedAgentsList(agents []model.InactiveAgentInfo) GroupedAgents {
-	const maxDisplay = 5
+	maxDisplay := groupedAlertMaxAgentsInMessage
 
 	displayEntries := make([]AgentDisplayEntry, 0, maxDisplay)
 
@@ -59,18 +61,26 @@ func BuildAgentListDeepLink(sourceName string) string {
 	return baseURL + "/agent?silentSourceName=" + queryParam
 }
 
+// formatGroupedAlertLastSeen formats last-event time for grouped inactivity alert text only
+func formatGroupedAlertLastSeen(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
+	return t.In(time.UTC).Format("02 Jan 2006, 15:04 UTC")
+}
+
 // FormatGroupedAgentsMessage creates alert message with agent names and their last event times.
 // If deepLink is empty, still includes agent list but no link.
 func FormatGroupedAgentsMessage(grouped GroupedAgents, deepLink string) string {
 	var agentDetails []string
 	for _, entry := range grouped.DisplayEntries {
 		agentDetails = append(agentDetails, fmt.Sprintf("%s (last seen: %s)",
-			entry.AgentName, util.HumanReadableTimeWithZone(entry.LastEventTime)))
+			entry.AgentName, formatGroupedAlertLastSeen(entry.LastEventTime)))
 	}
 
 	agentList := strings.Join(agentDetails, ", ")
-	if grouped.TotalCount > 5 {
-		agentList += fmt.Sprintf(", and %d more", grouped.TotalCount-5)
+	if grouped.TotalCount > groupedAlertMaxAgentsInMessage {
+		agentList += fmt.Sprintf(", and %d more", grouped.TotalCount-groupedAlertMaxAgentsInMessage)
 	}
 
 	message := fmt.Sprintf(
