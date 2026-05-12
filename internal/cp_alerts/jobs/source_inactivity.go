@@ -568,6 +568,7 @@ func getSourceFleetLastEventTimes(ctx context.Context, tenantId string, osClient
 // must include a tenant filter.
 func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient *opensearch.Client) (map[string]time.Time, error) {
 	const agentStatsIndex = "db_statistics_agent"
+	srcField, agentField := "tags.db_event_source_id", "tags.db_agent_id"
 	aggFunc := os.AggregationFunction{
 		Function: "max",
 		Field:    "tags.db_ts_win",
@@ -578,7 +579,7 @@ func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient
 	q := fmt.Sprintf(`tags.db_tenant_id: %q AND tags.component_name: "agent-ingestion" AND name: "total_data_received"`, tenantId)
 	for {
 		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, osClient, 100, agentStatsIndex, q,
-			[]string{"tags.db_event_source_id.keyword", "tags.db_agent_id.keyword"},
+			[]string{srcField, agentField},
 			[]os.AggregationFunction{aggFunc}, after)
 		if err != nil {
 			logger.GetLogger().Error("error while getting source-agent last event times from opensearch", zap.Error(err))
@@ -588,8 +589,8 @@ func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient
 			break
 		}
 		for _, response := range responses {
-			sourceId, ok1 := aggKeyString(response.Key, "tags.db_event_source_id.keyword")
-			agentId, ok2 := aggKeyString(response.Key, "tags.db_agent_id.keyword")
+			sourceId, ok1 := aggKeyString(response.Key, srcField)
+			agentId, ok2 := aggKeyString(response.Key, agentField)
 			lastEventVal, ok3 := aggValueFloat64(response.Values, "last_event_time")
 			if !ok1 || !ok2 || !ok3 || agentId == "" {
 				continue
