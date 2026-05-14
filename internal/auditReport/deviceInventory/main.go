@@ -97,7 +97,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, start
 		return err
 	}
 	for {
-		res, newSearchAfter, err := opensearch.SearchPaginated(ctx, opensearch.GetClient(), index, query, pageSize, searchAfter, []opensearch.Sort{{Field: "updated_at", Order: "asc"}})
+		res, newSearchAfter, err := opensearch.SearchPaginated(ctx, opensearch.GetClient(), index, query, pageSize, searchAfter, []opensearch.Sort{{Field: "updated_at", Order: "asc"}, {Field: "id", Order: "asc"}})
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while querying to statistics store", zap.Error(err), zap.String("index", index), zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
