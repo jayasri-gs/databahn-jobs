@@ -570,6 +570,8 @@ func getSourceFleetLastEventTimes(ctx context.Context, tenantId string, osClient
 func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient *opensearch.Client) (map[string]time.Time, error) {
 	const agentStatsIndex = "db_statistics_agent"
 	pageSize := utils.GetEnvInt("SOURCE_AGENT_COMPOSITE_PAGE_SIZE", defaultCompositeAggPageSize)
+	logger.GetLoggerWithContext(ctx).Debug("source-agent composite aggregation page size",
+		zap.String("tenantId", tenantId), zap.Int("pageSize", pageSize))
 	srcField, agentField := "tags.db_event_source_id", "tags.db_agent_id"
 	aggFunc := os.AggregationFunction{
 		Function: "max",
