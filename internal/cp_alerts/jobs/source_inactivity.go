@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
@@ -24,6 +25,8 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+const defaultCompositeAggPageSize = 100
 
 /*
 AlertForNotEventsFromSources
@@ -564,10 +567,9 @@ func getSourceFleetLastEventTimes(ctx context.Context, tenantId string, osClient
 
 // getSourceAgentLastEventTimes returns last event times keyed by "sourceId|agentId"
 // by aggregating on both db_event_source_id and db_agent_id dimensions in the agent-ingestion metrics.
-// Agent metrics live in the shared "db_statistics_agent" index (not per-tenant), so the query
-// must include a tenant filter.
 func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient *opensearch.Client) (map[string]time.Time, error) {
 	const agentStatsIndex = "db_statistics_agent"
+	pageSize := utils.GetEnvInt("SOURCE_AGENT_COMPOSITE_PAGE_SIZE", defaultCompositeAggPageSize)
 	srcField, agentField := "tags.db_event_source_id", "tags.db_agent_id"
 	aggFunc := os.AggregationFunction{
 		Function: "max",
@@ -578,7 +580,7 @@ func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient
 	var after map[string]any = nil
 	q := fmt.Sprintf(`tags.db_tenant_id: %q AND tags.component_name: "agent-ingestion" AND name: "total_data_received"`, tenantId)
 	for {
-		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, osClient, 100, agentStatsIndex, q,
+		responses, newAfter, err := os.CompositePaginatedAggregate(ctx, osClient, pageSize, agentStatsIndex, q,
 			[]string{srcField, agentField},
 			[]os.AggregationFunction{aggFunc}, after)
 		if err != nil {
@@ -603,7 +605,7 @@ func getSourceAgentLastEventTimes(ctx context.Context, tenantId string, osClient
 		}
 		after = newAfter
 	}
-	logger.GetLoggerWithContext(ctx).Info("fetched source-agent last event times", zap.Int("entries", len(result)))
+	logger.GetLoggerWithContext(ctx).Debug("fetched source-agent last event times", zap.Int("entries", len(result)))
 	return result, nil
 }
 
