@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/go-logging/logger"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
+	"go.uber.org/zap"
 )
 
 type InsightsWriter interface {
@@ -85,6 +87,12 @@ func (w *ParquetWriter) Init(index *IndexMetadata, attMap map[string]string) err
 	w.index = index
 	w.filePath = os.TempDir() + "/" + index.String() + "_" + strconv.FormatInt(time.Now().UnixMilli(), 10) + ".parquet"
 
+	logger.GetLogger().Info("ParquetWriter.Init started",
+		zap.String("tenant_id", index.TenantId),
+		zap.String("index_type", index.Type),
+		zap.String("file_path", w.filePath),
+		zap.Int("attMap_size", len(attMap)))
+
 	var fields []reflect.StructField
 	w.keyIdx = make(map[string]int)
 	idx := 0
@@ -132,10 +140,21 @@ func (w *ParquetWriter) Init(index *IndexMetadata, attMap map[string]string) err
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
 	w.pw = pw
 
+	logger.GetLogger().Info("ParquetWriter.Init completed",
+		zap.String("tenant_id", w.index.TenantId),
+		zap.String("index_type", w.index.Type),
+		zap.String("file_path", w.filePath))
+
 	return nil
 }
 
 func (w *ParquetWriter) WriteDocs(docs []Doc, attMap map[string]string, sourceIdToNameMap map[string]string) error {
+	logger.GetLogger().Info("ParquetWriter.WriteDocs started",
+		zap.String("tenant_id", w.index.TenantId),
+		zap.String("index_type", w.index.Type),
+		zap.Int("doc_count", len(docs)),
+		zap.String("file_path", w.filePath))
+
 	for _, doc := range docs {
 		rowPtr := reflect.New(w.structType)
 		rowVal := rowPtr.Elem()
@@ -164,13 +183,28 @@ func (w *ParquetWriter) WriteDocs(docs []Doc, attMap map[string]string, sourceId
 		rowVal.Field(w.countIdx).Set(reflect.ValueOf(&count))
 
 		if err := w.pw.Write(rowPtr.Interface()); err != nil {
+			logger.GetLogger().Error("ParquetWriter.WriteDocs write error",
+				zap.String("tenant_id", w.index.TenantId),
+				zap.String("index_type", w.index.Type),
+				zap.Error(err))
 			return err
 		}
 	}
+
+	logger.GetLogger().Info("ParquetWriter.WriteDocs completed",
+		zap.String("tenant_id", w.index.TenantId),
+		zap.String("index_type", w.index.Type),
+		zap.Int("doc_count", len(docs)),
+		zap.String("file_path", w.filePath))
+
 	return nil
 }
 
 func (w *ParquetWriter) Upload(ctx context.Context) error {
+	logger.GetLogger().Info("ParquetWriter.Upload started",
+		zap.String("tenant_id", w.index.TenantId),
+		zap.String("index_type", w.index.Type),
+		zap.String("file_path", w.filePath))
 	if err := w.pw.WriteStop(); err != nil {
 		return err
 	}
@@ -180,15 +214,54 @@ func (w *ParquetWriter) Upload(ctx context.Context) error {
 	w.fwClosed = true
 	objectKey := fmt.Sprintf("tenant_id=%s/insight_rule_id=%s/year=%04d/month=%02d/date=%02d/%s",
 		w.index.TenantId, w.index.Type, w.index.Year, w.index.Month, w.index.Day, filepath.Base(w.filePath))
-	return util.UploadFileToS3Parquet(ctx, objectKey, w.filePath)
+
+	logger.GetLogger().Info("ParquetWriter.Upload uploading to S3",
+		zap.String("tenant_id", w.index.TenantId),
+		zap.String("index_type", w.index.Type),
+		zap.String("object_key", objectKey),
+		zap.String("file_path", w.filePath))
+
+	err := util.UploadFileToS3Parquet(ctx, objectKey, w.filePath)
+	if err != nil {
+		logger.GetLogger().Error("ParquetWriter.Upload failed",
+			zap.String("tenant_id", w.index.TenantId),
+			zap.String("index_type", w.index.Type),
+			zap.String("object_key", objectKey),
+			zap.Error(err))
+		return err
+	}
+
+	logger.GetLogger().Info("ParquetWriter.Upload completed",
+		zap.String("tenant_id", w.index.TenantId),
+		zap.String("index_type", w.index.Type),
+		zap.String("object_key", objectKey))
+
+	return nil
 }
 
 func (w *ParquetWriter) Cleanup() {
+	tenantId := ""
+	indexType := ""
+	if w.index != nil {
+		tenantId = w.index.TenantId
+		indexType = w.index.Type
+	}
+
+	logger.GetLogger().Info("ParquetWriter.Cleanup started",
+		zap.String("tenant_id", tenantId),
+		zap.String("index_type", indexType),
+		zap.String("file_path", w.filePath),
+		zap.Bool("fw_closed", w.fwClosed))
+
 	if !w.fwClosed && w.fw != nil {
 		w.fw.Close()
 	}
 	if w.filePath != "" {
 		os.Remove(w.filePath)
+		logger.GetLogger().Info("ParquetWriter.Cleanup file removed",
+			zap.String("tenant_id", tenantId),
+			zap.String("index_type", indexType),
+			zap.String("file_path", w.filePath))
 	}
 }
 
