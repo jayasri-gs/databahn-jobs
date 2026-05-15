@@ -161,18 +161,36 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 	// Load cardinality threshold from environment variable
 	cardinalityThreshold := utils.GetEnvInt("INSIGHTS_CARDINALITY_THRESHOLD", DefaultCardinalityThreshold)
 
-	logger.GetLogger().Info("Insights cardinality threshold configuration loaded",
+	indexName := INSIGHTS_STAGING_INDEX_PREFIX + index.String()
+
+	logger.GetLogger().Info("aggregateInsights started",
+		zap.String("tenant_id", index.TenantId),
+		zap.String("index_type", index.Type),
+		zap.String("index_name", indexName),
 		zap.Int("cardinality_threshold", cardinalityThreshold))
 
-	indexName := INSIGHTS_STAGING_INDEX_PREFIX + index.String()
 	page := 0
 	count := 0
 	var after *After = nil
 	attMap, err := getAttributes(index)
 	if err != nil {
+		logger.GetLogger().Error("aggregateInsights getAttributes failed",
+			zap.String("tenant_id", index.TenantId),
+			zap.String("index_type", index.Type),
+			zap.Error(err))
 		return err
 	}
+
+	logger.GetLogger().Info("aggregateInsights getAttributes success",
+		zap.String("tenant_id", index.TenantId),
+		zap.String("index_type", index.Type),
+		zap.Int("attMap_size", len(attMap)))
+
 	if err = insightsWriter.Init(&index, attMap); err != nil {
+		logger.GetLogger().Error("aggregateInsights writer Init failed",
+			zap.String("tenant_id", index.TenantId),
+			zap.String("index_type", index.Type),
+			zap.Error(err))
 		return err
 	}
 	defer insightsWriter.Cleanup()
@@ -201,10 +219,25 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		request.Aggs.GroupBy.Aggs.PageMnTime.Min.Field = "min_time"
 		request.Aggs.GroupBy.Aggs.PageMxTime.Max.Field = "max_time"
 
+		queryStart := time.Now()
 		resp, err := osstore.MakeSearchCall(ctx, indexName+"*", request, cli)
+		queryDuration := time.Since(queryStart)
+
 		if err != nil {
+			logger.GetLogger().Error("aggregateInsights OpenSearch query failed",
+				zap.String("tenant_id", index.TenantId),
+				zap.String("index_type", index.Type),
+				zap.Int("page", page),
+				zap.Duration("query_duration", queryDuration),
+				zap.Error(err))
 			return err
 		}
+
+		logger.GetLogger().Info("aggregateInsights OpenSearch query completed",
+			zap.String("tenant_id", index.TenantId),
+			zap.String("index_type", index.Type),
+			zap.Int("page", page),
+			zap.Duration("query_duration", queryDuration))
 		bodyContent, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
@@ -234,7 +267,11 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 		}
 
 		if len(response.Aggregations.GroupBy.Buckets) == 0 {
-			logger.GetLogger().Debug("no more documents to process", zap.String("index", indexName))
+			logger.GetLogger().Info("aggregateInsights pagination complete - no more buckets",
+				zap.String("tenant_id", index.TenantId),
+				zap.String("index_type", index.Type),
+				zap.Int("total_pages", page),
+				zap.Int("total_count", count))
 			break
 		}
 
@@ -282,16 +319,40 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			return err
 		}
 
-		logger.GetLogger().Debug("processed documents", zap.String("index", indexName), zap.Int("page", page), zap.Int("count", len(docs)))
-	}
-	if hasData {
-		err = insightsWriter.Upload(ctx)
-		if err != nil {
-			return err
-		}
+		logger.GetLogger().Info("aggregateInsights page processed",
+			zap.String("tenant_id", index.TenantId),
+			zap.String("index_type", index.Type),
+			zap.Int("page", page),
+			zap.Int("page_doc_count", len(docs)),
+			zap.Int("total_count", count))
 	}
 
-	logger.GetLogger().Info("processed all documents", zap.String("index", indexName), zap.Int("total_count", count))
+	if hasData {
+		logger.GetLogger().Info("aggregateInsights calling Upload",
+			zap.String("tenant_id", index.TenantId),
+			zap.String("index_type", index.Type),
+			zap.Int("total_count", count))
+
+		err = insightsWriter.Upload(ctx)
+		if err != nil {
+			logger.GetLogger().Error("aggregateInsights Upload failed",
+				zap.String("tenant_id", index.TenantId),
+				zap.String("index_type", index.Type),
+				zap.Error(err))
+			return err
+		}
+	} else {
+		logger.GetLogger().Info("aggregateInsights no data to upload (hasData=false)",
+			zap.String("tenant_id", index.TenantId),
+			zap.String("index_type", index.Type))
+	}
+
+	logger.GetLogger().Info("aggregateInsights completed successfully",
+		zap.String("tenant_id", index.TenantId),
+		zap.String("index_type", index.Type),
+		zap.String("index_name", indexName),
+		zap.Int("total_count", count),
+		zap.Bool("has_data", hasData))
 
 	// Use count (total composite aggregation buckets) as unique key count since
 	// each bucket represents a unique (key1..key5, source_id) combination
