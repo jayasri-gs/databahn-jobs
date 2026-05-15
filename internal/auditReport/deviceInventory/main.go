@@ -81,7 +81,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, start
 		sourceIdsToNames[source.ID.String()] = source.Name
 	}
 
-	headers := []string{"Hostname", "First Seen", "Last Seen", "Source Name", "Reputation"}
+	headers := []string{"Hostname", "FQDN", "First Seen", "Last Seen", "Source Name", "Reputation"}
 	writer = csv.NewWriter(file)
 	err = writer.Write(headers)
 	if err != nil {
@@ -128,10 +128,11 @@ func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInven
 		firstSeen := time.Unix(0, deviceInventory.MinTime*int64(time.Millisecond)).Format(time.RFC3339)
 		lastSeen := time.Unix(0, deviceInventory.MaxTime*int64(time.Millisecond)).Format(time.RFC3339)
 		sourceName := sourceIdsToNames[deviceInventory.SourceId]
+		fqdn := deviceInventory.Hostname // key1 from _source; Hostname may be replaced by key3 for display
 		if deviceInventory.SmallName != "" {
 			deviceInventory.Hostname = deviceInventory.SmallName
 		}
-		row := []string{deviceInventory.Hostname, firstSeen, lastSeen, sourceName, deviceInventory.Reputation}
+		row := []string{deviceInventory.Hostname, fqdn, firstSeen, lastSeen, sourceName, deviceInventory.Reputation}
 		err := writer.Write(row)
 		if err != nil {
 			logging.GetLogger().Error("error while writing row to the file", zap.Error(err))
