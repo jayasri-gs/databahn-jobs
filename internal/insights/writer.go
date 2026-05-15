@@ -174,6 +174,9 @@ func (w *ParquetWriter) Upload(ctx context.Context) error {
 	if err := w.pw.WriteStop(); err != nil {
 		return err
 	}
+	if err := w.fw.Close(); err != nil {
+		return err
+	}
 	w.fwClosed = true
 	objectKey := fmt.Sprintf("tenant_id=%s/insight_rule_id=%s/year=%04d/month=%02d/date=%02d/%s",
 		w.index.TenantId, w.index.Type, w.index.Year, w.index.Month, w.index.Day, filepath.Base(w.filePath))
