@@ -81,7 +81,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, start
 		sourceIdsToNames[source.ID.String()] = source.Name
 	}
 
-	headers := []string{"Hostname", "FQDN", "First Seen", "Last Seen", "Source Name", "Reputation"}
+	headers := []string{"Hostname", "First Seen", "Last Seen", "Source Name", "Reputation", "FQDN"}
 	writer = csv.NewWriter(file)
 	err = writer.Write(headers)
 	if err != nil {
@@ -132,7 +132,7 @@ func writeDeviceInventoryRowsToFile(deviceInventoryList []statistics.DeviceInven
 		if deviceInventory.SmallName != "" {
 			deviceInventory.Hostname = deviceInventory.SmallName
 		}
-		row := []string{deviceInventory.Hostname, fqdn, firstSeen, lastSeen, sourceName, deviceInventory.Reputation}
+		row := []string{deviceInventory.Hostname, firstSeen, lastSeen, sourceName, deviceInventory.Reputation, fqdn}
 		err := writer.Write(row)
 		if err != nil {
 			logging.GetLogger().Error("error while writing row to the file", zap.Error(err))
