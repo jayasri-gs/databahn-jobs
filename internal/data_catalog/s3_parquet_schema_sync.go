@@ -50,7 +50,7 @@ func ApplyS3ParquetCatalogToAthena(ctx context.Context) common.JobResult {
 
 	var fields []catalogField
 	err := db.WithContext(ctx).
-		Where("applied_on_search = ? AND dispenser_type = ?", false, "s3parquet").
+		Where("applied_on_search = ? AND dispenser_type = ?", false, "S3Parquet").
 		Find(&fields).Error
 	if err != nil {
 		return common.NewJobResultFromError(fmt.Errorf("failed to query data_catalog for s3parquet: %w", err))
