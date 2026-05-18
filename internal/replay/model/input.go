@@ -19,6 +19,7 @@ type Message struct {
 	FleetId           string            `json:"fleetId"`
 	ConnectId         string            `json:"connectId"`
 	AckId             string            `json:"ackId"`
+	Concurrency       int               `json:"concurrency"`
 	SourceName        string            `json:"sourceName"`
 	DataStore         string            `json:"dataStore"`
 	AdditionalConfig  map[string]string `json:"additionalConfig"`

@@ -65,7 +65,14 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 		}
 		return
 	}
-	parallelCtrChan := make(chan struct{}, constants.Concurrency)
+	concurrency := inputReq.Concurrency
+	if concurrency <= 0 {
+		concurrency = constants.Concurrency
+	}
+	logger.GetLogger().Info("replay file concurrency configuration",
+		zap.Int("requestedConcurrency", inputReq.Concurrency),
+		zap.Int("effectiveConcurrency", concurrency))
+	parallelCtrChan := make(chan struct{}, concurrency)
 	wg.Add(totalFiles)
 	logger.GetLogger().Info("wait group count is", zap.Int("totalFiles", totalFiles))
 	for i := 0; i < totalFiles; i++ {
