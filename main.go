@@ -9,6 +9,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/cmd"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
@@ -56,6 +57,7 @@ func ReadInputData() model.Message {
 	flag.StringVar(&sampleMessage.DataStore, "dataStore", "", "data store type")
 	flag.StringVar(&sampleMessage.SourceName, "sourceName", "", "source name")
 	flag.StringVar(&sampleMessage.ReplayType, "replayType", "", "data replay type")
+	flag.IntVar(&sampleMessage.Concurrency, "concurrency", constants.Concurrency, "replay file worker concurrency")
 
 	additionalConfigString := flag.String("additionalConfig", "", "additional config")
 	additionalHeadersString := flag.String("additionalHeaders", "", "additional config")
