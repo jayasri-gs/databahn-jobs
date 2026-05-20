@@ -1,8 +1,0 @@
-.git
-.github
-.gitignore
-.idea
-.vscode
-*.md
-!README.md
-.DS_Store
