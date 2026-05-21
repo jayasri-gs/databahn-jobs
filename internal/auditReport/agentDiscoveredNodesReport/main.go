@@ -80,7 +80,7 @@ func writePagedDataToFile(ctx context.Context, req models.AuditReport, query str
 	offset := 0
 
 	for {
-		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "adn.updated_at, adn.id")
+		rows, columns, err := common.GetRowsAndColumnsByQueryWithJoins(query, pageSize, offset, "adn.id")
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching data from agent_discovered_nodes table", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 			return err
