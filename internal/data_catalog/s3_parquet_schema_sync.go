@@ -240,7 +240,7 @@ func getDestinationConfig(ctx context.Context, destID, tenantID uuid.UUID) (*des
 			wrapper.SecretID,
 		).Scan(&backendSecretID).Error
 		if err != nil || backendSecretID == "" {
-			return nil, fmt.Errorf("failed to look up backend_secret_id for secret %s: %v", wrapper.SecretID, err)
+			return nil, fmt.Errorf("failed to look up backend_secret_id: secret reference not found or inaccessible (destination=%s, tenant=%s, bucket=%s)", destID, dest.TenantID, cfg.Bucket)
 		}
 
 		secretOutput, err := dbaws.ReadSecretByName(backendSecretID, appConfig.GetAppConfiguration().GetString("region"))
