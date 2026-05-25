@@ -83,13 +83,21 @@ func getClientWithUserDelegatedSAS(config map[string]string) (*azblob.Client, er
 	}
 
 	tokenExpiryDuration := userDelegatedSASTokenExpiryDuration()
-	startTime := time.Now().UTC()
-	expiryTime := startTime.Add(tokenExpiryDuration)
+	clockSkew := userDelegationSasClockSkew()
+	now := time.Now().UTC()
+	// Start slightly in the past so the first blob requests are not rejected when Azure
+	// Storage time trails this host (AuthenticationFailed: Current < Start).
+	keyStart := now.Add(-clockSkew)
+	keyExpiry := now.Add(tokenExpiryDuration)
 
-	logger.GetLogger().Info(fmt.Sprintf("User Delegation Key expiry duration: %v", tokenExpiryDuration))
+	logger.GetLogger().Info(fmt.Sprintf(
+		"User Delegation Key expiry duration: %v, clock skew: %v",
+		tokenExpiryDuration,
+		clockSkew,
+	))
 
-	startTimeStr := startTime.Format(time.RFC3339)
-	expiryTimeStr := expiryTime.Format(time.RFC3339)
+	startTimeStr := keyStart.Format(time.RFC3339)
+	expiryTimeStr := keyExpiry.Format(time.RFC3339)
 
 	keyInfo := service.KeyInfo{
 		Start:  &startTimeStr,
@@ -111,14 +119,11 @@ func getClientWithUserDelegatedSAS(config map[string]string) (*azblob.Client, er
 		Add:    false,
 	}
 
-	sasExpiryTime := time.Now().UTC().Add(tokenExpiryDuration)
-	logger.GetLogger().Info(fmt.Sprintf("SAS token expiry time: %s (duration: %v)", sasExpiryTime.Format(time.RFC3339), tokenExpiryDuration))
-
 	signatureValues := sas.BlobSignatureValues{
 		Version:       sas.Version,
 		Protocol:      sas.ProtocolHTTPS,
-		StartTime:     time.Now().UTC(),
-		ExpiryTime:    sasExpiryTime,
+		StartTime:     keyStart,
+		ExpiryTime:    keyExpiry,
 		Permissions:   permissions.String(),
 		ContainerName: containerName,
 	}
@@ -145,6 +150,18 @@ func userDelegatedSASTokenExpiryDuration() time.Duration {
 	const envKey = "USER_DELEGATED_SAS_TOKEN_EXPIRY_MINUTES"
 	const defaultMinutes = 1 * 24 * 60 // 1 day in minutes
 	minutes := utils.GetEnvInt(envKey, defaultMinutes)
+	return time.Duration(minutes) * time.Minute
+}
+
+// userDelegationSasClockSkew subtracts this duration from SAS / user-delegation key start times.
+// Matches backend-service ReplayListFileService (USER_DELEGATED_SAS_CLOCK_SKEW_MINUTES).
+func userDelegationSasClockSkew() time.Duration {
+	const envKey = "USER_DELEGATED_SAS_CLOCK_SKEW_MINUTES"
+	const defaultMinutes = 5
+	minutes := utils.GetEnvInt(envKey, defaultMinutes)
+	if minutes < 0 {
+		minutes = defaultMinutes
+	}
 	return time.Duration(minutes) * time.Minute
 }
 
