@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -30,8 +32,18 @@ type destinationRow struct {
 }
 
 type destinationConfigWrapper struct {
-	SecretID      string            `json:"secretId"`
-	Configuration map[string]string `json:"configuration"`
+	SecretID      string                 `json:"secretId"`
+	Configuration map[string]interface{} `json:"configuration"`
+}
+
+func (w *destinationConfigWrapper) getString(key string) string {
+	if v, ok := w.Configuration[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
 }
 
 type destinationConfig struct {
@@ -111,6 +123,15 @@ func ApplyS3ParquetCatalogToAthena(ctx context.Context) common.JobResult {
 	return common.NewJobResultSuccess()
 }
 
+var validSQLIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.]*$`)
+
+func quoteSQLIdentifier(name string) (string, error) {
+	if !validSQLIdentifier.MatchString(name) {
+		return "", fmt.Errorf("invalid SQL identifier: %q", name)
+	}
+	return "`" + name + "`", nil
+}
+
 func processS3ParquetGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fields []catalogField) error {
 	db := appConfig.GetDB()
 
@@ -156,11 +177,24 @@ func processS3ParquetGroup(ctx context.Context, destID, sourceID, tenantID uuid.
 	outputLocation := fmt.Sprintf("s3://%s/.databahn_out/", destConfig.Bucket)
 	database := databaseName(tenantID)
 
+	quotedDB, err := quoteSQLIdentifier(database)
+	if err != nil {
+		return fmt.Errorf("invalid database name: %w", err)
+	}
+	quotedTable, err := quoteSQLIdentifier(tableName)
+	if err != nil {
+		return fmt.Errorf("invalid table name: %w", err)
+	}
+
 	var colDefs []string
 	for _, f := range fields {
-		colDefs = append(colDefs, fmt.Sprintf("%s %s", f.Name, athenaType(f.FieldType)))
+		quotedCol, err := quoteSQLIdentifier(f.Name)
+		if err != nil {
+			return fmt.Errorf("invalid column name %q: %w", f.Name, err)
+		}
+		colDefs = append(colDefs, fmt.Sprintf("%s %s", quotedCol, athenaType(f.FieldType)))
 	}
-	query := fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMNS (%s)", database, tableName, strings.Join(colDefs, ", "))
+	query := fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMNS (%s)", quotedDB, quotedTable, strings.Join(colDefs, ", "))
 
 	logger.GetLoggerWithContext(ctx).Info("executing s3 parquet Athena ALTER TABLE",
 		zap.String("database", database),
@@ -207,8 +241,8 @@ func getDestinationConfig(ctx context.Context, destID, tenantID uuid.UUID) (*des
 
 	var dest destinationRow
 	err := db.WithContext(ctx).Raw(
-		"SELECT id, tenant_id, configuration FROM destination WHERE id = ? LIMIT 1",
-		destID,
+		"SELECT id, tenant_id, configuration FROM destination WHERE id = ? AND tenant_id = ? LIMIT 1",
+		destID, tenantID,
 	).Scan(&dest).Error
 	if err != nil {
 		return nil, fmt.Errorf("destination not found: %w", err)
@@ -224,13 +258,13 @@ func getDestinationConfig(ctx context.Context, destID, tenantID uuid.UUID) (*des
 	}
 
 	cfg := &destinationConfig{
-		AuthType:    wrapper.Configuration["auth_type"],
-		AccessKeyID: wrapper.Configuration["access_key_id"],
-		SecretKey:   wrapper.Configuration["secret_access_key"],
-		RoleArn:     wrapper.Configuration["role_arn"],
-		ExternalID:  wrapper.Configuration["external_id"],
-		Region:      wrapper.Configuration["region"],
-		Bucket:      wrapper.Configuration["bucket"],
+		AuthType:    wrapper.getString("auth_type"),
+		AccessKeyID: wrapper.getString("access_key_id"),
+		SecretKey:   wrapper.getString("secret_access_key"),
+		RoleArn:     wrapper.getString("role_arn"),
+		ExternalID:  wrapper.getString("external_id"),
+		Region:      wrapper.getString("region"),
+		Bucket:      wrapper.getString("bucket"),
 	}
 
 	// Fetch credentials from AWS Secrets Manager if a secret reference is configured.
@@ -333,6 +367,12 @@ func runDDLWithClient(ctx context.Context, client *athena.Client, query, outputL
 			return fmt.Errorf("query failed: %s", reason)
 		case types.QueryExecutionStateCancelled:
 			return fmt.Errorf("query was cancelled")
+		case types.QueryExecutionStateQueued, types.QueryExecutionStateRunning:
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+			}
 		}
 	}
 }
