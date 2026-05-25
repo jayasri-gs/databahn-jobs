@@ -115,6 +115,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = sandbox.CleanupSandboxStorage(ctx)
 	case common.DATABAHN_STORAGE_SCHEMA_SYNC:
 		result = data_catalog.ApplyDataCatalogToAthena(ctx)
+	case common.S3_PARQUET_SCHEMA_SYNC:
+		result = data_catalog.ApplyS3ParquetCatalogToAthena(ctx)
 
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
