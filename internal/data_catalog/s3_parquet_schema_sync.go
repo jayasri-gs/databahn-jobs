@@ -245,13 +245,13 @@ func getDestinationConfig(ctx context.Context, destID, tenantID uuid.UUID) (*des
 
 		secretOutput, err := dbaws.ReadSecretByName(backendSecretID, appConfig.GetAppConfiguration().GetString("region"))
 		if err != nil {
-			return nil, fmt.Errorf("failed to read secret from AWS Secrets Manager: %w", err)
+			return nil, fmt.Errorf("failed to read secret from AWS Secrets Manager (destination=%s, tenant=%s)", destID, dest.TenantID)
 		}
 
 		if secretOutput.SecretString != nil {
 			var secretMap map[string]string
 			if err := json.Unmarshal([]byte(*secretOutput.SecretString), &secretMap); err != nil {
-				return nil, fmt.Errorf("failed to parse secret value: %w", err)
+				return nil, fmt.Errorf("failed to parse secret value: malformed JSON (destination=%s, tenant=%s)", destID, dest.TenantID)
 			}
 			for k, v := range secretMap {
 				switch k {
