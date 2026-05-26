@@ -86,7 +86,7 @@ func (s *ParquetScanner) getRowData(forwardDataType string) (string, error) {
 		if err := s.reader.Read(&rows); err != nil {
 			return "", err
 		}
-		if rows[0].Rawevent == nil {
+		if len(rows) == 0 || rows[0] == nil || rows[0].Rawevent == nil {
 			return "", nil
 		}
 		return *rows[0].Rawevent, nil
@@ -96,7 +96,7 @@ func (s *ParquetScanner) getRowData(forwardDataType string) (string, error) {
 	if err := s.reader.Read(&rows); err != nil {
 		return "", err
 	}
-	if rows[0].Message == nil {
+	if len(rows) == 0 || rows[0] == nil || rows[0].Message == nil {
 		return "", nil
 	}
 	return *rows[0].Message, nil
