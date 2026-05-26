@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - release/**
-      - data_replay_fixes_priority_1/master
 
 jobs:
   build-service:
