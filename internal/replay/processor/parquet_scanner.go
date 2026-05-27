@@ -18,11 +18,11 @@ type ParquetScanner struct {
 }
 
 type ParsedParquetRow struct {
-	Rawevent string `parquet:"name=rawevent, type=BYTE_ARRAY, convertedtype=UTF8" json:"rawevent"`
+	Rawevent *string `parquet:"name=rawevent, type=BYTE_ARRAY, convertedtype=UTF8" json:"rawevent"`
 }
 
 type RawParquetRow struct {
-	Message string `json:"message" parquet:"name=message, type=BYTE_ARRAY,convertedtype=UTF8, encoding=PLAIN"`
+	Message *string `json:"message" parquet:"name=message, type=BYTE_ARRAY,convertedtype=UTF8, encoding=PLAIN"`
 }
 
 // NewParquetScanner creates a new scanner for parquet files
@@ -49,26 +49,35 @@ func getParquetReader(f *os.File, forwardDataType string) (*reader.ParquetReader
 	return reader.NewParquetReader(fr, new(RawParquetRow), 4)
 }
 
-// Scan advances the scanner to the next row
+// Scan advances the scanner to the next non-empty row.
 func (s *ParquetScanner) Scan() bool {
+	for s.Advance() {
+		if len(s.data) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// NumRows returns the total number of rows in the parquet file.
+func (s *ParquetScanner) NumRows() int64 {
+	return s.reader.GetNumRows()
+}
+
+// Advance moves to the next row, including rows with empty messages.
+func (s *ParquetScanner) Advance() bool {
 	if s.currentRow >= s.reader.GetNumRows() {
 		return false
 	}
 
-	// Create a slice to hold one row
 	rowData, err := s.getRowData(s.forwardDataType)
 	if err != nil {
 		s.err = err
 		return false
 	}
 	s.currentRow++
-
-	if rowData != "" {
-		s.data = []byte(rowData)
-		return true
-	}
-
-	return false
+	s.data = []byte(rowData)
+	return true
 }
 
 func (s *ParquetScanner) getRowData(forwardDataType string) (string, error) {
@@ -77,14 +86,20 @@ func (s *ParquetScanner) getRowData(forwardDataType string) (string, error) {
 		if err := s.reader.Read(&rows); err != nil {
 			return "", err
 		}
-		return rows[0].Rawevent, nil
+		if len(rows) == 0 || rows[0] == nil || rows[0].Rawevent == nil {
+			return "", nil
+		}
+		return *rows[0].Rawevent, nil
 	}
 
 	rows := make([]*RawParquetRow, 1)
 	if err := s.reader.Read(&rows); err != nil {
 		return "", err
 	}
-	return rows[0].Message, nil
+	if len(rows) == 0 || rows[0] == nil || rows[0].Message == nil {
+		return "", nil
+	}
+	return *rows[0].Message, nil
 }
 
 // Text returns the current row as a JSON string
