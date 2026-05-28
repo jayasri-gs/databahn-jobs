@@ -77,7 +77,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	for tenantId, tenantIndices := range indicesByTenant {
 		wg.Add(1)
 		parrCtrl <- struct{}{}
-		func(tenantId string, indexMetadatas []IndexMetadata) {
+		go func(tenantId string, indexMetadatas []IndexMetadata) {
 			defer func() {
 				<-parrCtrl
 				wg.Done()
@@ -105,7 +105,9 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 						errorsMutex.Unlock()
 						logger.GetLogger().Error("failed to delete index", zap.Error(err), zap.String("index", indexName))
 					} else {
+						errorsMutex.Lock()
 						successCount++
+						errorsMutex.Unlock()
 						logger.GetLogger().Info("successfully deleted index", zap.String("index", indexName))
 					}
 				}
