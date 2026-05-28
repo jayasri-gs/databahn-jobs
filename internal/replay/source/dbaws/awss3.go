@@ -211,18 +211,18 @@ func FileDownloader(input model.Message, threadId int, mst *replaymanager.MetaDa
 			s3Client, err := getOrCreateS3Connection(input)
 			if err != nil {
 				logger.GetLogger().Error("error: while creating aws session  ", zap.Error(err), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
-				return err, constants.StatusDownloadFailed
+				return err, constants.StatusFailed
 			}
 			err = downloadFileFromS3(s3Client, input, fileName, mst, threadId)
 			if err != nil {
 				logger.GetLogger().Error(" error while downloading file from s3  ", zap.Error(err), zap.String("filename", fileName), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
-				return err, constants.StatusDownloadFailed
+				return err, constants.StatusFailed
 			}
 		case constants.AZURE_BLOB_STORAGE_TYPE:
 			err := downloadFileFromAzureBlob(input, fileName, mst, threadId)
 			if err != nil {
 				logger.GetLogger().Error(" error while downloading file from azure blob  ", zap.Error(err), zap.String("filename", fileName), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
-				return err, constants.StatusDownloadFailed
+				return err, constants.StatusFailed
 			}
 		default:
 			logger.GetLogger().Error("error: invalid job type ", zap.String("jobType", input.DataStore), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))

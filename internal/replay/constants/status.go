@@ -9,6 +9,5 @@ const StatusYetToProcess = "YET_TO_PROCESS"
 
 const StatusProcessing = "PROCESSING"
 const StatusDownloaded = "DOWNLOAD"
-const StatusDownloadFailed = "DOWNLOAD_FAILED"
 
 const Global string = "GLOBAL"
