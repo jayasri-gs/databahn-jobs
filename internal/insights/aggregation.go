@@ -23,15 +23,15 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	lastWindowTime := time.Now().Add(-time.Minute * INSIGHTS_INTERVAL_MINUTES)
 	lastTime, _ := util.FindWindow(lastWindowTime, time.Minute*INSIGHTS_INTERVAL_MINUTES)
 
-	indexNames, err := os.CatIndices(ctx, os.GetClient())
+	indexSizes, err := os.CatIndicesWithSize(ctx, os.GetClient())
 	if err != nil {
 		errors = append(errors, JobError{Message: fmt.Sprintf("failed to get indices: %v", err)})
 		return NewJobResultFromErrors(errors)
 	}
 	var allInsightsIndices []string
-	for _, index := range indexNames {
-		if strings.HasPrefix(index, INSIGHTS_STAGING_INDEX_PREFIX) {
-			allInsightsIndices = append(allInsightsIndices, index)
+	for indexName := range indexSizes {
+		if strings.HasPrefix(indexName, INSIGHTS_STAGING_INDEX_PREFIX) {
+			allInsightsIndices = append(allInsightsIndices, indexName)
 		}
 	}
 	indices := parseIndices(allInsightsIndices)
@@ -45,6 +45,14 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 		if skipIndexTimeCheck() || index.IsBefore(window) {
 			indicesToProcess = append(indicesToProcess, index)
 		}
+	}
+
+	if sortByIndexSize() {
+		sort.Slice(indicesToProcess, func(i, j int) bool {
+			iSize := indexSizes[INSIGHTS_STAGING_INDEX_PREFIX+indicesToProcess[i].String()]
+			jSize := indexSizes[INSIGHTS_STAGING_INDEX_PREFIX+indicesToProcess[j].String()]
+			return iSize < jSize
+		})
 	}
 
 	logger.GetLogger().Info("calculated indices to process", zap.Int("index_count", len(indicesToProcess)), zap.Time("before", window))
@@ -128,6 +136,10 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 
 func skipIndexTimeCheck() bool {
 	return utils.GetEnvOrDefault("INSIGHTS_AGG_SKIP_INDEX_TIME_CHECK", "false") != "false"
+}
+
+func sortByIndexSize() bool {
+	return utils.GetEnvOrDefault("INSIGHTS_AGG_SORT_BY_INDEX_SIZE", "false") != "false"
 }
 
 func getParquetTenants() map[string]bool {

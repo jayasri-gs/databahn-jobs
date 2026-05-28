@@ -47,6 +47,34 @@ func CatIndices(ctx context.Context, client *opensearch.Client) ([]string, error
 	return indexNames, nil
 }
 
+func CatIndicesWithSize(ctx context.Context, client *opensearch.Client) (map[string]int64, error) {
+	response, err := client.Cat.Indices(
+		client.Cat.Indices.WithH("index", "pri.store.size"),
+		client.Cat.Indices.WithBytes("b"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if response.IsError() {
+		msg := fmt.Sprintf("[%d] Status from OpenSearch body: %s", response.StatusCode, response.String())
+		return nil, errors.New(msg)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		msg := fmt.Sprintf("[%d] Error reading response body: %s", response.StatusCode, err.Error())
+		return nil, errors.New(msg)
+	}
+	result := make(map[string]int64)
+	for _, row := range strings.Split(string(body), "\n") {
+		fields := strings.Fields(row)
+		if len(fields) >= 2 {
+			size, _ := strconv.ParseInt(fields[1], 10, 64)
+			result[fields[0]] = size
+		}
+	}
+	return result, nil
+}
+
 func UpdateAliases(client *opensearch.Client, alias, from, to string) error {
 	aliasActions := `
 	{
