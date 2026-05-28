@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,15 +24,15 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	lastWindowTime := time.Now().Add(-time.Minute * INSIGHTS_INTERVAL_MINUTES)
 	lastTime, _ := util.FindWindow(lastWindowTime, time.Minute*INSIGHTS_INTERVAL_MINUTES)
 
-	indexNames, err := os.CatIndices(ctx, os.GetClient())
+	indexSizes, err := os.CatIndicesWithSize(ctx, os.GetClient())
 	if err != nil {
 		errors = append(errors, JobError{Message: fmt.Sprintf("failed to get indices: %v", err)})
 		return NewJobResultFromErrors(errors)
 	}
 	var allInsightsIndices []string
-	for _, index := range indexNames {
-		if strings.HasPrefix(index, INSIGHTS_STAGING_INDEX_PREFIX) {
-			allInsightsIndices = append(allInsightsIndices, index)
+	for indexName := range indexSizes {
+		if strings.HasPrefix(indexName, INSIGHTS_STAGING_INDEX_PREFIX) {
+			allInsightsIndices = append(allInsightsIndices, indexName)
 		}
 	}
 	indices := parseIndices(allInsightsIndices)
@@ -44,6 +45,18 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	for _, index := range indices {
 		if skipIndexTimeCheck() || index.IsBefore(window) {
 			indicesToProcess = append(indicesToProcess, index)
+		}
+	}
+
+	if sortByIndexSize() {
+		sort.Slice(indicesToProcess, func(i, j int) bool {
+			iSize := indexSizes[INSIGHTS_STAGING_INDEX_PREFIX+indicesToProcess[i].String()]
+			jSize := indexSizes[INSIGHTS_STAGING_INDEX_PREFIX+indicesToProcess[j].String()]
+			return iSize < jSize
+		})
+		for rank, idx := range indicesToProcess {
+			indexName := INSIGHTS_STAGING_INDEX_PREFIX + idx.String()
+			logger.GetLogger().Info("sorted index order", zap.Int("rank", rank+1), zap.String("index", indexName), zap.Int64("size_bytes", indexSizes[indexName]))
 		}
 	}
 
@@ -70,6 +83,7 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 		sourceIdToNameMap[logSource.ID.String()] = logSource.Name
 	}
 	parrCtrl := make(chan struct{}, parallelism)
+	indexParrCtrl := make(chan struct{}, getIndexParallelism())
 	successCount := 0
 	var wg sync.WaitGroup
 	var errorsMutex sync.Mutex
@@ -82,36 +96,46 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 				<-parrCtrl
 				wg.Done()
 			}()
+			var indexWg sync.WaitGroup
 			for _, indexMetadata := range indexMetadatas {
-				var w InsightsWriter
-				if parquetTenants[tenantId] {
-					w = &ParquetWriter{}
-				} else {
-					w = &JSONLWriter{}
-				}
-				err := aggregateInsights(ctx, os.GetClient(), indexMetadata, sourceIdToNameMap, w)
-				indexName := INSIGHTS_STAGING_INDEX_PREFIX + indexMetadata.String()
-				if err != nil {
-					errorsMutex.Lock()
-					errors = append(errors, JobError{Message: fmt.Sprintf("failed to aggregate insights for index %s: %v", indexName, err)})
-					errorsMutex.Unlock()
-					logger.GetLogger().Error("failed to aggregate insights", zap.Error(err), zap.String("index", indexName))
-				} else {
-					logger.GetLogger().Info("successfully aggregated insights", zap.String("index", indexName))
-					err := os.DeleteIndex(ctx, os.GetClient(), indexName)
+				indexWg.Add(1)
+				indexParrCtrl <- struct{}{}
+				go func(indexMetadata IndexMetadata) {
+					defer func() {
+						<-indexParrCtrl
+						indexWg.Done()
+					}()
+					var w InsightsWriter
+					if parquetTenants[tenantId] {
+						w = &ParquetWriter{}
+					} else {
+						w = &JSONLWriter{}
+					}
+					err := aggregateInsights(ctx, os.GetClient(), indexMetadata, sourceIdToNameMap, w)
+					indexName := INSIGHTS_STAGING_INDEX_PREFIX + indexMetadata.String()
 					if err != nil {
 						errorsMutex.Lock()
-						errors = append(errors, JobError{Message: fmt.Sprintf("failed to delete index %s: %v", indexName, err)})
+						errors = append(errors, JobError{Message: fmt.Sprintf("failed to aggregate insights for index %s: %v", indexName, err)})
 						errorsMutex.Unlock()
-						logger.GetLogger().Error("failed to delete index", zap.Error(err), zap.String("index", indexName))
+						logger.GetLogger().Error("failed to aggregate insights", zap.Error(err), zap.String("index", indexName))
 					} else {
-						errorsMutex.Lock()
-						successCount++
-						errorsMutex.Unlock()
-						logger.GetLogger().Info("successfully deleted index", zap.String("index", indexName))
+						logger.GetLogger().Info("successfully aggregated insights", zap.String("index", indexName))
+						err := os.DeleteIndex(ctx, os.GetClient(), indexName)
+						if err != nil {
+							errorsMutex.Lock()
+							errors = append(errors, JobError{Message: fmt.Sprintf("failed to delete index %s: %v", indexName, err)})
+							errorsMutex.Unlock()
+							logger.GetLogger().Error("failed to delete index", zap.Error(err), zap.String("index", indexName))
+						} else {
+							errorsMutex.Lock()
+							successCount++
+							errorsMutex.Unlock()
+							logger.GetLogger().Info("successfully deleted index", zap.String("index", indexName))
+						}
 					}
-				}
+				}(indexMetadata)
 			}
+			indexWg.Wait()
 
 		}(tenantId, tenantIndices)
 	}
@@ -128,6 +152,19 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 
 func skipIndexTimeCheck() bool {
 	return utils.GetEnvOrDefault("INSIGHTS_AGG_SKIP_INDEX_TIME_CHECK", "false") != "false"
+}
+
+func sortByIndexSize() bool {
+	return utils.GetEnvOrDefault("INSIGHTS_AGG_SORT_BY_INDEX_SIZE", "false") != "false"
+}
+
+func getIndexParallelism() int {
+	val := utils.GetEnvOrDefault("INSIGHTS_AGG_INDEX_PARALLELISM", "1")
+	n, err := strconv.Atoi(val)
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }
 
 func getParquetTenants() map[string]bool {
