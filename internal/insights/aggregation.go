@@ -53,6 +53,10 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 			jSize := indexSizes[INSIGHTS_STAGING_INDEX_PREFIX+indicesToProcess[j].String()]
 			return iSize < jSize
 		})
+		for rank, idx := range indicesToProcess {
+			indexName := INSIGHTS_STAGING_INDEX_PREFIX + idx.String()
+			logger.GetLogger().Info("sorted index order", zap.Int("rank", rank+1), zap.String("index", indexName), zap.Int64("size_bytes", indexSizes[indexName]))
+		}
 	}
 
 	logger.GetLogger().Info("calculated indices to process", zap.Int("index_count", len(indicesToProcess)), zap.Time("before", window))
