@@ -184,7 +184,7 @@ func (mst *MetaDataStore) UpdateGlobalStatus() {
 
 	totalFiles := len(mst.metaMap) - 1
 
-	if failed == totalFiles {
+	if totalFiles > 0 && failed == totalFiles {
 		global.Status = constants.StatusFailed
 
 	} else if success == totalFiles {
