@@ -107,6 +107,15 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 				return err, constants.StatusFailed
 			}
 			defer parquetScanner.Close()
+			if parquetScanner.Salvaged() {
+				logger.GetLogger().Warn(
+					"processing truncated parquet via salvage reader",
+					zap.String("fileName", fileName),
+					zap.Int64("salvagedRows", parquetScanner.NumRows()),
+					zap.String("traceId", reqId),
+					zap.Int("thread ", threadId),
+				)
+			}
 			scanner = parquetScanner
 		} else if strings.HasSuffix(strings.ToLower(fileName), ".gz") {
 			logger.GetLogger().Info("auto-detected gzip compression from Azure Blob filename",
