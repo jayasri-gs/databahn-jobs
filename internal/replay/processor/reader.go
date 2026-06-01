@@ -61,7 +61,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	var producer = GetProducer(reqId, topic)
 	logger.GetLogger().Info("getting producer for topic", zap.String("topic", topic), zap.String("fileName", fileName),
 		zap.String("replayType", req.ReplayType))
-	if req.ReplayType == "UNDELIVERED" {
+	if matchReplayType(req.ReplayType, "UNDELIVERED") {
 		logger.GetLogger().Info("pipeline done and next", zap.String("pipeline_done", req.AdditionalHeaders[commConst.PipelineDone]),
 			zap.String("pipeline_next", req.AdditionalHeaders[commConst.PipelineNext]))
 	}
@@ -162,7 +162,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		}
 
 		// while reading from parquet file itself we consider forwardDataType
-		if (!isParquetFile && strings.EqualFold(forwardDataType, "parsed")) || (req.ReplayType != "CUSTOM") {
+		if (!isParquetFile && strings.EqualFold(forwardDataType, "parsed")) || !matchReplayType(req.ReplayType, "CUSTOM") {
 			line, err = getRawDataFromDataBahnParsedObject(line)
 			if err != nil {
 				return err, constants.StatusFailed
@@ -247,7 +247,7 @@ func GetHeader(request model.Message) []kafka.Header {
 	pipelineNext := ""
 	destinationId := ""
 	pipelineId := ""
-	if request.ReplayType == "UNDELIVERED" {
+	if matchReplayType(request.ReplayType, "UNDELIVERED") {
 		pipelineDone = request.AdditionalHeaders[commConst.PipelineDone]
 		pipelineNext = request.AdditionalHeaders[commConst.PipelineNext]
 		destinationId = request.AdditionalHeaders[commConst.DestinationId]

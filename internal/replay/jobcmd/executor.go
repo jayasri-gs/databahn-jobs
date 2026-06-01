@@ -43,7 +43,7 @@ func ExecuteReplayJob(input model.Message) common.JobResult {
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
-	processor.InitProducer(input.RequestId, input.DestinationTopic)
+	processor.InitProducer(input.RequestId, input.DestinationTopic, input.ReplayType)
 	go closeResources(ctx, mst, input)
 	start := time.Now()
 	Process(input, mst)
