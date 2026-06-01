@@ -25,8 +25,12 @@ import (
 	"go.uber.org/zap"
 )
 
-type DatabahnParsedData struct {
-	RawEvent string `json:"rawevent"`
+type databahnParsedLine struct {
+	RawEvent json.RawMessage `json:"rawevent"`
+}
+
+type databahnRawEventObject struct {
+	Msg string `json:"msg"`
 }
 
 type Scanner interface {
@@ -275,10 +279,25 @@ func GetHeader(request model.Message) []kafka.Header {
 }
 
 func getRawDataFromDataBahnParsedObject(line string) (string, error) {
-	var parsedData DatabahnParsedData
-	if err := json.Unmarshal([]byte(line), &parsedData); err != nil {
-		err = fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: %v", err)
-		return "", err
+	var parsedLine databahnParsedLine
+	if err := json.Unmarshal([]byte(line), &parsedLine); err != nil {
+		return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: %v", err)
 	}
-	return parsedData.RawEvent, nil
+	if len(parsedLine.RawEvent) == 0 {
+		return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: rawevent is missing or empty")
+	}
+
+	var raweventString string
+	if err := json.Unmarshal(parsedLine.RawEvent, &raweventString); err == nil {
+		return raweventString, nil
+	}
+
+	var raweventObject databahnRawEventObject
+	if err := json.Unmarshal(parsedLine.RawEvent, &raweventObject); err == nil && raweventObject.Msg != "" {
+		return raweventObject.Msg, nil
+	}
+
+	return "", fmt.Errorf(
+		"failed to unmarshal Parsed event to extract rawevent: rawevent must be a string or an object with msg",
+	)
 }
