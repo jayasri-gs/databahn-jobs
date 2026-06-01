@@ -49,6 +49,26 @@ func TestGetRawDataFromDataBahnParsedObject_ObjectWithoutMsg(t *testing.T) {
 	}
 }
 
+func TestGetRawDataFromDataBahnParsedObject_EmptyStringRawEvent(t *testing.T) {
+	_, err := getRawDataFromDataBahnParsedObject(`{"rawevent":""}`)
+	if err == nil {
+		t.Fatal("expected error for empty string rawevent")
+	}
+	if !strings.Contains(err.Error(), "rawevent is missing or empty") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetRawDataFromDataBahnParsedObject_NullRawEvent(t *testing.T) {
+	_, err := getRawDataFromDataBahnParsedObject(`{"rawevent":null}`)
+	if err == nil {
+		t.Fatal("expected error for null rawevent")
+	}
+	if !strings.Contains(err.Error(), "rawevent is missing or empty") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGetRawDataFromDataBahnParsedObject_InvalidJSON(t *testing.T) {
 	_, err := getRawDataFromDataBahnParsedObject(`not-json`)
 	if err == nil {

@@ -289,6 +289,9 @@ func getRawDataFromDataBahnParsedObject(line string) (string, error) {
 
 	var raweventString string
 	if err := json.Unmarshal(parsedLine.RawEvent, &raweventString); err == nil {
+		if raweventString == "" {
+			return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: rawevent is missing or empty")
+		}
 		return raweventString, nil
 	}
 
