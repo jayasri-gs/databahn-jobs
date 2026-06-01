@@ -42,7 +42,6 @@ func SalvageParquetFile(data []byte) ([]string, error) {
 	}
 	defer dctx.Close()
 
-	seen := make(map[string]struct{})
 	var out []string
 
 	for off := 0; off+len(zstdFrameMagic) < len(data); off++ {
@@ -55,10 +54,6 @@ func SalvageParquetFile(data []byte) ([]string, error) {
 			continue
 		}
 		for _, msg := range extractPlainUTF8Messages(decompressed) {
-			if _, ok := seen[msg]; ok {
-				continue
-			}
-			seen[msg] = struct{}{}
 			out = append(out, msg)
 		}
 	}

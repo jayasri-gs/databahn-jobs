@@ -55,6 +55,13 @@ func NewParquetScanner(f *os.File, forwardDataType string) (*ParquetScanner, err
 	if salvErr != nil {
 		return nil, fmt.Errorf("truncated parquet %s: %w (salvage: %v)", f.Name(), err, salvErr)
 	}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf(
+			"truncated parquet %s: %w (salvage: no rows recovered)",
+			f.Name(),
+			err,
+		)
+	}
 
 	logger.GetLogger().Warn(
 		"parquet file missing footer; replaying salvaged rows only",
