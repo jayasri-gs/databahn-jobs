@@ -3,15 +3,16 @@ package replaymanager
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
-	"path/filepath"
-	"sync"
-	"time"
 )
 
 type MetaDataStore struct {
@@ -166,7 +167,6 @@ func (mst *MetaDataStore) UpdateGlobalStatus() {
 	logger.GetLogger().Info("CleanUp Invoked.")
 	success := 0
 	failed := 0
-	partial := 0
 	for key, data := range mst.metaMap {
 
 		if key == constants.Global {
@@ -174,27 +174,26 @@ func (mst *MetaDataStore) UpdateGlobalStatus() {
 		}
 
 		switch data.Status {
-
 		case constants.StatusCompleted:
 			success++
 		case constants.StatusFailed:
 			failed++
-		case constants.StatusDownloadFailed, constants.CompletedWithError, constants.StatusDownloaded:
-			partial++
 		}
 	}
 	global := mst.metaMap[constants.Global]
 
 	totalFiles := len(mst.metaMap) - 1
 
-	if (failed == (totalFiles)) || (success == 0 && failed == 0 && partial > 0) {
+	if totalFiles > 0 && failed == totalFiles {
 		global.Status = constants.StatusFailed
 
-	} else if success == (totalFiles) {
+	} else if success == totalFiles {
 		global.Status = constants.StatusCompleted
 
-	} else if success > 0 && (failed > 0 || partial > 0) {
+	} else if failed+success == totalFiles {
 		global.Status = constants.CompletedWithError
+	} else {
+		global.Status = constants.StatusInProgress
 	}
 
 	global.Time = time.Now()

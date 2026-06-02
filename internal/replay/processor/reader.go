@@ -25,8 +25,12 @@ import (
 	"go.uber.org/zap"
 )
 
-type DatabahnParsedData struct {
-	RawEvent string `json:"rawevent"`
+type databahnParsedLine struct {
+	RawEvent json.RawMessage `json:"rawevent"`
+}
+
+type databahnRawEventObject struct {
+	Msg string `json:"msg"`
 }
 
 type Scanner interface {
@@ -61,7 +65,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	var producer = GetProducer(reqId, topic)
 	logger.GetLogger().Info("getting producer for topic", zap.String("topic", topic), zap.String("fileName", fileName),
 		zap.String("replayType", req.ReplayType))
-	if req.ReplayType == "UNDELIVERED" {
+	if matchReplayType(req.ReplayType, "UNDELIVERED") {
 		logger.GetLogger().Info("pipeline done and next", zap.String("pipeline_done", req.AdditionalHeaders[commConst.PipelineDone]),
 			zap.String("pipeline_next", req.AdditionalHeaders[commConst.PipelineNext]))
 	}
@@ -107,6 +111,15 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 				return err, constants.StatusFailed
 			}
 			defer parquetScanner.Close()
+			if parquetScanner.Salvaged() {
+				logger.GetLogger().Warn(
+					"processing truncated parquet via salvage reader",
+					zap.String("fileName", fileName),
+					zap.Int64("salvagedRows", parquetScanner.NumRows()),
+					zap.String("traceId", reqId),
+					zap.Int("thread ", threadId),
+				)
+			}
 			scanner = parquetScanner
 		} else if strings.HasSuffix(strings.ToLower(fileName), ".gz") {
 			logger.GetLogger().Info("auto-detected gzip compression from Azure Blob filename",
@@ -153,7 +166,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		}
 
 		// while reading from parquet file itself we consider forwardDataType
-		if (!isParquetFile && strings.EqualFold(forwardDataType, "parsed")) || (req.ReplayType != "CUSTOM") {
+		if (!isParquetFile && strings.EqualFold(forwardDataType, "parsed")) || !matchReplayType(req.ReplayType, "CUSTOM") {
 			line, err = getRawDataFromDataBahnParsedObject(line)
 			if err != nil {
 				return err, constants.StatusFailed
@@ -238,7 +251,7 @@ func GetHeader(request model.Message) []kafka.Header {
 	pipelineNext := ""
 	destinationId := ""
 	pipelineId := ""
-	if request.ReplayType == "UNDELIVERED" {
+	if matchReplayType(request.ReplayType, "UNDELIVERED") {
 		pipelineDone = request.AdditionalHeaders[commConst.PipelineDone]
 		pipelineNext = request.AdditionalHeaders[commConst.PipelineNext]
 		destinationId = request.AdditionalHeaders[commConst.DestinationId]
@@ -266,10 +279,28 @@ func GetHeader(request model.Message) []kafka.Header {
 }
 
 func getRawDataFromDataBahnParsedObject(line string) (string, error) {
-	var parsedData DatabahnParsedData
-	if err := json.Unmarshal([]byte(line), &parsedData); err != nil {
-		err = fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: %v", err)
-		return "", err
+	var parsedLine databahnParsedLine
+	if err := json.Unmarshal([]byte(line), &parsedLine); err != nil {
+		return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: %v", err)
 	}
-	return parsedData.RawEvent, nil
+	if len(parsedLine.RawEvent) == 0 {
+		return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: rawevent is missing or empty")
+	}
+
+	var raweventString string
+	if err := json.Unmarshal(parsedLine.RawEvent, &raweventString); err == nil {
+		if raweventString == "" {
+			return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: rawevent is missing or empty")
+		}
+		return raweventString, nil
+	}
+
+	var raweventObject databahnRawEventObject
+	if err := json.Unmarshal(parsedLine.RawEvent, &raweventObject); err == nil && raweventObject.Msg != "" {
+		return raweventObject.Msg, nil
+	}
+
+	return "", fmt.Errorf(
+		"failed to unmarshal Parsed event to extract rawevent: rawevent must be a string or an object with msg",
+	)
 }
