@@ -135,7 +135,10 @@ func getOrCreateS3Connection(input model.Message) (*s3.Client, error) {
 func downloadFileFromS3(s3Client *s3.Client, input model.Message, fileName string, mst *replaymanager.MetaDataStore, threadId int) error {
 
 	logger.GetLogger().Info("download Started.")
-	metaMap := mst.GetMetaMap()[fileName]
+	metaMap, ok := mst.GetMetaData(fileName)
+	if !ok {
+		return fmt.Errorf("metadata not found for file %s", fileName)
+	}
 	fullPath := filepath.Join(metaMap.Prefix, fileName)
 
 	objectKey := fullPath
