@@ -25,8 +25,11 @@ type MetaDataStore struct {
 	metaFilePath string
 }
 
-func (mst *MetaDataStore) GetMetaMap() map[string]model.MetaDataValue {
-	return mst.metaMap
+func (mst *MetaDataStore) GetMetaData(key string) (model.MetaDataValue, bool) {
+	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
+	val, ok := mst.metaMap[key]
+	return val, ok
 }
 
 func (mst *MetaDataStore) GetProcessList() []string {
@@ -128,7 +131,9 @@ func (mst *MetaDataStore) AddToProcessList(value string) {
 
 }
 func (mst *MetaDataStore) GetValuesOfMap() []model.MetaDataValue {
-	metaMapValues := make([]model.MetaDataValue, 0, len(mst.GetMetaMap()))
+	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
+	metaMapValues := make([]model.MetaDataValue, 0, len(mst.metaMap))
 	for _, val := range mst.metaMap {
 		metaMapValues = append(metaMapValues, val)
 	}
@@ -136,39 +141,33 @@ func (mst *MetaDataStore) GetValuesOfMap() []model.MetaDataValue {
 }
 
 func (mst *MetaDataStore) Flush() {
+	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
 
 	if len(mst.metaMap) == 0 {
 		logger.GetLogger().Info(fmt.Sprintf(" Can not Write MetaData.json: with size 0 , Skipping Write"))
 		return
 	}
 
-	mst.Lock()
-
-	_, err := json.Marshal(mst.metaMap)
+	bytesData, err := json.Marshal(mst.metaMap)
 	if err != nil {
 		logger.GetLogger().Error(" Marshalling Error MetaData.json:  ", zap.Error(err))
 		return
 	}
 
-	bytesData, _ := json.Marshal(mst.metaMap)
-
-	mst.Unlock()
-
-	err = os.WriteFile(mst.metaFilePath, bytesData, 7777)
+	err = os.WriteFile(mst.metaFilePath, bytesData, 0777)
 	if err != nil {
 		logger.GetLogger().Error(" Error Writing MetaData.json:  ", zap.Error(err))
-		return
 	}
-
 }
 
 func (mst *MetaDataStore) UpdateGlobalStatus() {
-
 	logger.GetLogger().Info("CleanUp Invoked.")
+
+	mst.Mutex.Lock()
 	success := 0
 	failed := 0
 	for key, data := range mst.metaMap {
-
 		if key == constants.Global {
 			continue
 		}
@@ -186,10 +185,8 @@ func (mst *MetaDataStore) UpdateGlobalStatus() {
 
 	if totalFiles > 0 && failed == totalFiles {
 		global.Status = constants.StatusFailed
-
 	} else if success == totalFiles {
 		global.Status = constants.StatusCompleted
-
 	} else if failed+success == totalFiles {
 		global.Status = constants.CompletedWithError
 	} else {
@@ -198,8 +195,8 @@ func (mst *MetaDataStore) UpdateGlobalStatus() {
 
 	global.Time = time.Now()
 	mst.metaMap[constants.Global] = global
-	//key string, status string, offset int, retry int, fileSize int64, currentSize int64, errorMsg string
-	mst.UpdateMetaData(constants.Global, "", 0, 0, 0, 0, "")
+	mst.Mutex.Unlock()
+
+	mst.Flush()
 	logger.GetLogger().Info("CleanUp StatusCompleted.")
-	return
 }

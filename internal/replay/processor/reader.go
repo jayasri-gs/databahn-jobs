@@ -200,7 +200,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 func ProduceStatus(mst *replaymanager.MetaDataStore, inputReq model.Message) {
 
 	var statusList []ack.Status
-	for _, val := range mst.GetMetaMap() {
+	for _, val := range mst.GetValuesOfMap() {
 		filepath.Join(val.Prefix, val.FileName)
 
 		status := ack.Status{

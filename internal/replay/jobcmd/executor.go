@@ -89,7 +89,11 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 				<-parallelCtrChan
 			}(&wg)
 			fileName := mst.GetProcessList()[i]
-			metaValue := mst.GetMetaMap()[fileName]
+			metaValue, ok := mst.GetMetaData(fileName)
+			if !ok {
+				mst.UpdateMetaData(fileName, constants.StatusFailed, 0, 0, 0, 0, "metadata not found")
+				return
+			}
 			logger.GetLogger().Info("spawning thread :", zap.String("traceId", inputReq.RequestId), zap.Int("thread", i), zap.String("FileName : ", fileName))
 			err, status := dbaws.FileDownloader(inputReq, i, mst, fileName, metaValue)
 			if err != nil {
@@ -108,7 +112,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	wg.Wait()
 	throughPutController.Stop()
 	logger.GetLogger().Info("input message : ", zap.Reflect("Input data : ", inputReq))
-	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetMetaMap()))
+	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetValuesOfMap()))
 	logger.GetLogger().Info("Headers ", zap.Reflect("Headers ", processor.GetHeader(inputReq)))
 	processor.ProduceStatus(mst, inputReq)
 	logger.GetLogger().Info("threads jobs are completed ")
