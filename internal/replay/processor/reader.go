@@ -201,7 +201,9 @@ func ProduceStatus(mst *replaymanager.MetaDataStore, inputReq model.Message) {
 
 	var statusList []ack.Status
 	for _, val := range mst.GetMetaMap() {
-		filepath.Join(val.Prefix, val.FileName)
+		if val.FileName == constants.Global || val.Key == constants.Global {
+			continue
+		}
 
 		status := ack.Status{
 			FileName:    val.FileName,
