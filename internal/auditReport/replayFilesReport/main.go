@@ -147,7 +147,7 @@ func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query
 		if fetchedRowsCount < pageSize {
 			break
 		}
-		offset += pageSize + 1
+		offset += pageSize
 	}
 
 	return nil
