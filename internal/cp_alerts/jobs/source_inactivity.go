@@ -325,8 +325,8 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 				}
 				alertDuration = configuredDuration
 			} else {
-				logger.GetLogger().Warn("no alert config found for source, defaulting", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
-				alertDuration = defaultAlertDuration30Min
+				logger.GetLogger().Warn("no alert config found for source, skipping", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
+				continue
 			}
 
 			fleets := sourceToFleets[sourceId]
