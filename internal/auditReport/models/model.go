@@ -9,16 +9,17 @@ import (
 )
 
 type AuditReport struct {
-	Id                 uuid.UUID      `json:"id"`
-	Name               string         `json:"name"`
-	Description        string         `json:"description"`
-	ReportType         string         `json:"report_type"`
-	Status             string         `json:"status"`
-	TenantId           string         `json:"tenant_id"`
-	AuditReportFilter  datatypes.JSON `json:"audit_report_filter"`
-	DownloadLink       string         `json:"download_link"`
-	DownloadLinkExpiry string         `json:"download_link_expiry"`
-	Retries            int            `json:"retries"`
+	Id                  uuid.UUID      `json:"id"`
+	Name                string         `json:"name"`
+	Description         string         `json:"description"`
+	ReportType          string         `json:"report_type"`
+	Status              string         `json:"status"`
+	TenantId            string         `json:"tenant_id"`
+	AuditReportFilter   datatypes.JSON `json:"audit_report_filter"`
+	ReportConfiguration datatypes.JSON `json:"report_configuration"`
+	DownloadLink        string         `json:"download_link"`
+	DownloadLinkExpiry  string         `json:"download_link_expiry"`
+	Retries             int            `json:"retries"`
 }
 
 type FailedRequests struct {
