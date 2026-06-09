@@ -1,7 +1,7 @@
 package replaymanager
 
 import (
-	"encoding/json"
+	"fmt"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/go-logging/logger"
@@ -110,19 +110,25 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 			logger.GetLogger().Error(" error reading metaData.json:  ", zap.String("dir", mst.metaDir), zap.Error(errDir), zap.String("traceId", input.RequestId), zap.Int("thread ", -1))
 			return errDir, true, 1
 		}
-		errDir = json.Unmarshal(bytesData, &mst.metaMap)
+		errDir = mst.loadMetaMapFromJSON(bytesData)
 		if errDir != nil {
 			logger.GetLogger().Error(" error unmarshal metaData.json:  ", zap.String("dir", mst.metaDir), zap.Error(errDir), zap.String("traceId", input.RequestId), zap.Int("thread ", -1))
 			return errDir, true, 1
 		}
 
-		global := mst.metaMap[constants.Global]
+		global, ok := mst.GetMetaData(constants.Global)
+		if !ok {
+			logger.GetLogger().Error(" global metadata missing after resume", zap.String("traceId", input.RequestId))
+			return fmt.Errorf("global metadata missing in %s", mst.metaFilePath), true, 1
+		}
 		if global.Status == constants.StatusCompleted {
 			logger.GetLogger().Info("all files are processed , exiting", zap.String("traceId", input.RequestId), zap.Int("thread ", -1))
 			return nil, true, 0
 		}
-		for key, data := range mst.metaMap {
-			if key == "GLOBAL" {
+		metaSnapshot := mst.GetValuesOfMap()
+		for _, data := range metaSnapshot {
+			key := data.Key
+			if key == constants.Global {
 				logger.GetLogger().Debug("global key occurred")
 				continue
 			}
@@ -133,7 +139,7 @@ func PreProcessMetaData(input model.Message, jobName string, mst *MetaDataStore)
 		}
 	}
 	logger.GetLogger().Info("pre-processing completed.", zap.String("traceId", input.RequestId), zap.Int("thread ", -1))
-	if len(mst.processList) == 0 {
+	if len(mst.GetProcessList()) == 0 {
 		logger.GetLogger().Info("there are 0 files exist so Exiting...", zap.String("traceId", input.RequestId), zap.Int("thread ", -1))
 		mst.UpdateMetaData(constants.Global, constants.StatusCompleted, 0, 0, 0, 0, "")
 		return nil, true, 0
