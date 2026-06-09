@@ -33,8 +33,13 @@ func (mst *MetaDataStore) GetMetaData(key string) (model.MetaDataValue, bool) {
 }
 
 func (mst *MetaDataStore) GetProcessList() []string {
-	return mst.processList
+	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
+	out := make([]string, len(mst.processList))
+	copy(out, mst.processList)
+	return out
 }
+
 func (mst *MetaDataStore) GetPath(path string) string {
 
 	switch path {
@@ -72,18 +77,19 @@ func NewMetaStore(reqId string) (*MetaDataStore, error) {
 
 func (mst *MetaDataStore) AddMetaData(value model.MetaDataValue, key string) {
 	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
 	mst.metaMap[key] = value
-	mst.Mutex.Unlock()
 }
 
 func (mst *MetaDataStore) DeleteMetaData(key string) {
 	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
 	delete(mst.metaMap, key)
-	mst.Mutex.Unlock()
 }
 
 func (mst *MetaDataStore) UpdateMetaData(key string, status string, offset int, retry int, fileSize int64, currentSize int64, errorMsg string) {
 	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
 	data := mst.metaMap[key]
 	if offset != 0 {
 		data.Offset = offset
@@ -102,15 +108,14 @@ func (mst *MetaDataStore) UpdateMetaData(key string, status string, offset int, 
 	}
 	if currentSize != 0 {
 		data.CurrentSize = currentSize
-
 	}
 	mst.metaMap[key] = data
-	mst.Mutex.Unlock()
-	mst.Flush()
-
+	mst.flushLocked()
 }
+
 func (mst *MetaDataStore) TimeStampMetaData(key string, start bool, end bool) {
 	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
 	data := mst.metaMap[key]
 	if start {
 		data.Time = time.Now()
@@ -119,17 +124,15 @@ func (mst *MetaDataStore) TimeStampMetaData(key string, start bool, end bool) {
 		data.EndTime = time.Now()
 	}
 	mst.metaMap[key] = data
-	mst.Mutex.Unlock()
-	mst.Flush()
-
+	mst.flushLocked()
 }
 
 func (mst *MetaDataStore) AddToProcessList(value string) {
 	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
 	mst.processList = append(mst.processList, value)
-	mst.Mutex.Unlock()
-
 }
+
 func (mst *MetaDataStore) GetValuesOfMap() []model.MetaDataValue {
 	mst.Mutex.Lock()
 	defer mst.Mutex.Unlock()
@@ -140,10 +143,20 @@ func (mst *MetaDataStore) GetValuesOfMap() []model.MetaDataValue {
 	return metaMapValues
 }
 
+func (mst *MetaDataStore) loadMetaMapFromJSON(bytesData []byte) error {
+	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
+	return json.Unmarshal(bytesData, &mst.metaMap)
+}
+
 func (mst *MetaDataStore) Flush() {
 	mst.Mutex.Lock()
 	defer mst.Mutex.Unlock()
+	mst.flushLocked()
+}
 
+// flushLocked persists metaMap to disk. Caller must hold mst.Mutex.
+func (mst *MetaDataStore) flushLocked() {
 	if len(mst.metaMap) == 0 {
 		logger.GetLogger().Info(fmt.Sprintf(" Can not Write MetaData.json: with size 0 , Skipping Write"))
 		return
@@ -165,6 +178,7 @@ func (mst *MetaDataStore) UpdateGlobalStatus() {
 	logger.GetLogger().Info("CleanUp Invoked.")
 
 	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
 	success := 0
 	failed := 0
 	for key, data := range mst.metaMap {
@@ -195,8 +209,6 @@ func (mst *MetaDataStore) UpdateGlobalStatus() {
 
 	global.Time = time.Now()
 	mst.metaMap[constants.Global] = global
-	mst.Mutex.Unlock()
-
-	mst.Flush()
+	mst.flushLocked()
 	logger.GetLogger().Info("CleanUp StatusCompleted.")
 }
