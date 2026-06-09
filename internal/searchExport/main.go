@@ -105,7 +105,7 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 	}
 
 	if err := models.UpdateExportComplete(db, reportID, result.PresignedURL, result.Expiry); err != nil {
-		logging.GetLogger().Error("Failed to update completion status", zap.Error(err))
+		handleFailure(db, reportID, report.Retries, "Failed to update completion status: "+err.Error())
 		return
 	}
 

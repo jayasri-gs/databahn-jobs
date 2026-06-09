@@ -3,17 +3,13 @@ package pipeline
 import (
 	"bytes"
 	"context"
-	"encoding/csv"
 	"fmt"
-	"io"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/format"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/query"
-	"github.com/databahn-ai/databahn-jobs/internal/searchExport/segment"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/unload"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/upload"
 	logging "github.com/databahn-ai/go-logging/logger"
@@ -21,7 +17,7 @@ import (
 )
 
 type PipelineConfig struct {
-	TempDir          string
+	TempDir          string // used by unload reader to cache parquet files locally
 	MaxSegmentSizeMB int
 	PresignExpiry    time.Duration
 	LifecycleTag     string
@@ -151,99 +147,95 @@ func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur *unload.Reader, 
 	var parts []upload.PartInfo
 	partNum := 1
 
-	maxSegSizeMB := p.config.MaxSegmentSizeMB
-	if maxSegSizeMB == 0 {
-		maxSegSizeMB = 10
+	isExcel := p.request.Format == "xlsx" || p.request.Format == "excel"
+	maxSegBytes := int64(p.config.MaxSegmentSizeMB) * 1024 * 1024
+	if maxSegBytes == 0 {
+		maxSegBytes = 10 * 1024 * 1024
 	}
 
-	segMgr, err := segment.NewManager(p.reportID+"_unload", p.config.TempDir, maxSegSizeMB)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to create segment manager: %w", err)
-	}
-	defer segMgr.Cleanup()
-
-	var currentSeg *segment.SegmentWriter
+	var buf bytes.Buffer
+	var enc format.FormatEncoder
 	var columns []string
 
-	uploadSegment := func() error {
-		if currentSeg == nil {
-			return nil
-		}
-
-		segName := currentSeg.Name()
-		if err := currentSeg.Close(); err != nil {
-			return fmt.Errorf("failed to close segment: %w", err)
-		}
-
-		segPath := segMgr.GetSegmentPath(segName)
-		segData, err := os.ReadFile(segPath)
+	// Creates a fresh encoder writing into buf (re-writes header so it can be stripped on next flush).
+	newEncoder := func() error {
+		buf.Reset()
+		var err error
+		enc, err = format.NewEncoder(p.request.Format, &buf, p.request.Delimiter)
 		if err != nil {
-			return fmt.Errorf("failed to read segment: %w", err)
+			return err
 		}
-
-		if partNum > 1 && p.request.Format == "csv" {
-			segData, err = readSegmentWithoutHeader(segPath)
-			if err != nil {
-				return fmt.Errorf("failed to strip header: %w", err)
+		if columns != nil {
+			if err := enc.Init(columns); err != nil {
+				return err
 			}
+			return enc.WriteHeader()
 		}
-
-		if len(segData) == 0 {
-			currentSeg = nil
-			return nil
-		}
-
-		size := int64(len(segData))
-		part, err := p.uploader.UploadPart(ctx, partNum, bytes.NewReader(segData), size)
-		if err != nil {
-			return fmt.Errorf("failed to upload part %d: %w", partNum, err)
-		}
-
-		parts = append(parts, *part)
-		totalBytes += size
-		partNum++
-		currentSeg = nil
 		return nil
 	}
 
-	err = ur.StreamRows(ctx, files, func(row []interface{}) error {
-		if columns == nil {
-			columns = ur.Columns()
+	// Finalizes the current encoder, uploads buf as a multipart part, then resets for the next part.
+	// For Excel, intermediate flushes are skipped because the file must be written atomically.
+	flushPart := func(final bool) error {
+		if isExcel && !final {
+			return nil
 		}
-
-		if currentSeg == nil {
-			currentSeg, err = segMgr.NewSegmentWriter(columns)
-			if err != nil {
-				return fmt.Errorf("failed to create segment: %w", err)
+		if err := enc.Finalize(); err != nil {
+			return fmt.Errorf("failed to finalize encoder: %w", err)
+		}
+		data := buf.Bytes()
+		// Strip the CSV header row from every part after the first.
+		if p.request.Format == "csv" && partNum > 1 {
+			if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
+				data = data[idx+1:]
 			}
 		}
-
-		strRow := make([]string, len(row))
-		for i, v := range row {
-			strRow[i] = format.FormatValue(v)
+		if len(data) == 0 {
+			return nil
 		}
+		size := int64(len(data))
+		part, err := p.uploader.UploadPart(ctx, partNum, bytes.NewReader(data), size)
+		if err != nil {
+			return fmt.Errorf("failed to upload part %d: %w", partNum, err)
+		}
+		parts = append(parts, *part)
+		totalBytes += size
+		partNum++
+		if !final {
+			return newEncoder()
+		}
+		return nil
+	}
 
-		if err := currentSeg.WriteRow(strRow); err != nil {
+	if err := newEncoder(); err != nil {
+		return 0, 0, fmt.Errorf("failed to create encoder: %w", err)
+	}
+
+	err := ur.StreamRows(ctx, files, func(row []interface{}) error {
+		if columns == nil {
+			columns = ur.Columns()
+			if err := enc.Init(columns); err != nil {
+				return fmt.Errorf("failed to init encoder: %w", err)
+			}
+			if err := enc.WriteHeader(); err != nil {
+				return fmt.Errorf("failed to write header: %w", err)
+			}
+		}
+		if err := enc.WriteRow(row); err != nil {
 			return fmt.Errorf("failed to write row: %w", err)
 		}
 		totalRows++
-
-		if currentSeg.IsFull() {
-			if err := uploadSegment(); err != nil {
-				return err
-			}
+		if !isExcel && int64(buf.Len()) >= maxSegBytes {
+			return flushPart(false)
 		}
-
 		return nil
 	})
 	if err != nil {
 		return totalRows, 0, fmt.Errorf("failed to process Parquet: %w", err)
 	}
 
-	if currentSeg != nil {
-		if err := uploadSegment(); err != nil {
-			return totalRows, 0, err
-		}
+	if err := flushPart(true); err != nil {
+		return totalRows, 0, err
 	}
 
 	if len(parts) == 0 {
@@ -259,46 +251,6 @@ func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur *unload.Reader, 
 		zap.Int64("totalBytes", totalBytes))
 
 	return totalRows, totalBytes, nil
-}
-
-func readSegmentWithoutHeader(segPath string) ([]byte, error) {
-	file, err := os.Open(segPath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-
-	if _, err := reader.Read(); err != nil {
-		if err == io.EOF {
-			return []byte{}, nil
-		}
-		return nil, err
-	}
-
-	var buf bytes.Buffer
-	writer := csv.NewWriter(&buf)
-
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if err := writer.Write(record); err != nil {
-			return nil, err
-		}
-	}
-
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
 }
 
 func trimSuffix(s, suffix string) string {

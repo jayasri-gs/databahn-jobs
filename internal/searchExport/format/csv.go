@@ -3,6 +3,7 @@ package format
 import (
 	"encoding/csv"
 	"io"
+	"unicode/utf8"
 )
 
 type CSVEncoder struct {
@@ -14,8 +15,8 @@ func NewCSVEncoder(w io.Writer, delimiter string) *CSVEncoder {
 	writer := csv.NewWriter(w)
 
 	delimRune := ','
-	if len(delimiter) > 0 {
-		delimRune = rune(delimiter[0])
+	if r, size := utf8.DecodeRuneInString(delimiter); size > 0 && r != utf8.RuneError {
+		delimRune = r
 	}
 	writer.Comma = delimRune
 
