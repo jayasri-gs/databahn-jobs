@@ -25,6 +25,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/logsource"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/lookups"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/models"
+	"github.com/databahn-ai/databahn-jobs/internal/auditReport/replayFilesReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/roiReport"
 	"github.com/databahn-ai/databahn-jobs/internal/auditReport/volumeController"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
@@ -284,6 +285,14 @@ func fetchReport(ctx context.Context, req models.AuditReport, wg *sync.WaitGroup
 		err = contentStudioRules.WriteContentStudioRulesReportToFile(ctx, req, file)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching content studio rules report", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId), zap.String("report_type", req.ReportType))
+			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
+			reportProcessor.failedRequestChannel <- errRequest
+			return
+		}
+	case consts.REPLAY_FILES_REPORT:
+		err = replayFilesReport.WriteReplayFilesReportToFile(ctx, req, file)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while fetching replay files report", zap.Error(err), zap.String("request_id", req.Id.String()), zap.String("request_name", req.Name), zap.String("tenant_id", req.TenantId), zap.String("report_type", req.ReportType))
 			errRequest := models.NewFailedRequest(req.Id.String(), req.Name, req.TenantId, req.Retries+1, err.Error())
 			reportProcessor.failedRequestChannel <- errRequest
 			return
