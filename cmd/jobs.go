@@ -28,6 +28,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/sandbox"
+	"github.com/databahn-ai/databahn-jobs/internal/searchExport"
 	"github.com/databahn-ai/databahn-jobs/internal/stats"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -117,6 +118,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = data_catalog.ApplyDataCatalogToAthena(ctx)
 	case common.S3_PARQUET_SCHEMA_SYNC:
 		result = data_catalog.ApplyS3ParquetCatalogToAthena(ctx)
+	case common.SEARCH_EXPORT_PROCESSOR:
+		result = searchExport.GenerateSearchExport(ctx)
 
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
