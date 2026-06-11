@@ -6,8 +6,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/databahn-ai/common-utils/configuration"
+	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -53,6 +55,8 @@ func LoadSecrets(configReader configuration.ConfigReader, secretIdsByTenant map[
 		}
 	}
 
+	enablePanicOnSecretFetchError := utils.GetEnvOrDefault("ENABLE_PANIC_ON_CHANGE_FLAG_SECRET_FETCH_ERROR", "true") == "true"
+
 	searchRequests := batchSecretIds(secretIdsByTenant, 20)
 	var secrets []*Secrets
 	for _, request := range searchRequests {
@@ -64,9 +68,14 @@ func LoadSecrets(configReader configuration.ConfigReader, secretIdsByTenant map[
 			Errors:   make(map[string]string),
 		}
 		if err != nil {
-			errorMessage := err.Error()
-			for _, secretId := range request.SecretIds {
-				responseSecrets.Errors[secretId] = errorMessage
+			if enablePanicOnSecretFetchError {
+				logger.GetLogger().Panic("failed to fetch secrets", zap.Error(err))
+			} else {
+				logger.GetLogger().Error("failed to fetch secrets", zap.Error(err))
+				errorMessage := err.Error()
+				for _, secretId := range request.SecretIds {
+					responseSecrets.Errors[secretId] = errorMessage
+				}
 			}
 		} else {
 			for id, sec := range secResp.Secrets {
@@ -87,35 +96,74 @@ func loadRemoteSecrets(request secretsRequest) (*secretsResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	data := bytes.NewReader(requestBody)
-	req, err := http.NewRequest("POST", url, data)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
+
+	maxRetries := utils.GetEnvInt("MAX_RETRIES_ON_CHANGE_FLAG_SECRET_FETCH_ERROR", 3)
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		data := bytes.NewReader(requestBody)
+		req, err := http.NewRequest("POST", url, data)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			if attempt < maxRetries {
+				logger.GetLogger().Error("failed to fetch secrets, retrying",
+					zap.Int("attempt", attempt),
+					zap.Int("maxRetries", maxRetries),
+					zap.Error(err),
+					zap.String("tenantId", request.TenantId))
+				time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
+				continue
+			}
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			bodyBytes, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return nil, err
+			}
+			var secResp secretsResponse
+			err = json.Unmarshal(bodyBytes, &secResp)
+			if err != nil {
+				return nil, err
+			}
+			return &secResp, nil
+		}
+
+		// For non-OK status codes, retry on 5xx errors but not 4xx errors
+		if resp.StatusCode >= 500 && attempt < maxRetries {
+			errorResp, er := io.ReadAll(resp.Body)
+			if er == nil {
+				logger.GetLogger().Error("failed to fetch secrets, retrying",
+					zap.Int("attempt", attempt),
+					zap.Int("maxRetries", maxRetries),
+					zap.String("status", resp.Status),
+					zap.String("response", string(errorResp)),
+					zap.String("tenantId", request.TenantId))
+			}
+			resp.Body.Close()
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
+			continue
+		}
+
+		// For 4xx errors or final attempt, return error
 		errorResp, er := io.ReadAll(resp.Body)
 		if er == nil {
 			logger.GetLogger().Error("failed to fetch secrets", zap.String("status", resp.Status),
-				zap.String("response", string(errorResp)), zap.String("tenantId", string(requestBody)))
+				zap.String("response", string(errorResp)), zap.String("tenantId", request.TenantId))
 		}
+		resp.Body.Close()
 		return nil, errors.New("failed to fetch secrets with code " + resp.Status)
 	}
-	defer resp.Body.Close()
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var secResp secretsResponse
-	err = json.Unmarshal(bodyBytes, &secResp)
-	if err != nil {
-		return nil, err
-	}
-	return &secResp, nil
+
+	return nil, lastErr
 }
 
 func batchSecretIds(secretIdsByTenantId map[string][]string, batchSize int) []secretsRequest {

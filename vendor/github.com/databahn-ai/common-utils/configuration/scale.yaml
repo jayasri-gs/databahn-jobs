@@ -1,0 +1,5 @@
+statistics_service:
+  consumer_thread_count: 8
+  input_consumer_thread_count: 1
+  some_name: "some_value"
+  some_bool: true

@@ -3,10 +3,11 @@ package changeflag
 import (
 	"context"
 	"fmt"
-	"github.com/databahn-ai/db-models/alerts_async"
 	"math/rand"
 	"strings"
 	"time"
+
+	"github.com/databahn-ai/db-models/alerts_async"
 
 	"github.com/databahn-ai/common-utils/ack"
 	"github.com/databahn-ai/common-utils/constants"
@@ -24,6 +25,7 @@ type Acknowledgement struct {
 	Action       string `json:"action"`
 	EntityType   string `json:"entity_type"`
 	ErrorMessage string `json:"error_message,omitempty"`
+	IsPlayground bool   `json:"is_playground"`
 }
 
 func (a *Acknowledgement) IsSuccess() bool {
@@ -71,7 +73,7 @@ func mapEntityTypeToAlertFunctionality(entityType string) alerts_async.Functiona
 	}
 }
 
-func newAcknowledgement(ackStatus, requestId, entityType, entityId, entityName, tenantId, action string, errorMessage string) *Acknowledgement {
+func newAcknowledgement(ackStatus, requestId, entityType, entityId, entityName, tenantId, action string, errorMessage string, isPlayground bool) *Acknowledgement {
 	return &Acknowledgement{
 		RequestId:    requestId,
 		Status:       ackStatus,
@@ -81,22 +83,23 @@ func newAcknowledgement(ackStatus, requestId, entityType, entityId, entityName, 
 		Action:       action,
 		EntityType:   entityType,
 		ErrorMessage: errorMessage,
+		IsPlayground: isPlayground,
 	}
 }
-func SuccessAcknowledgement(requestId, entityType, entityId, entityName, tenantId, action string) *Acknowledgement {
-	return newAcknowledgement(ack.StatusSuccess, requestId, entityType, entityId, entityName, tenantId, action, "")
+func SuccessAcknowledgement(requestId, entityType, entityId, entityName, tenantId, action string, isPlayground bool) *Acknowledgement {
+	return newAcknowledgement(ack.StatusSuccess, requestId, entityType, entityId, entityName, tenantId, action, "", isPlayground)
 }
 
 func SuccessAcknowledgementFromChangeFlag(cf ChangeFlag) *Acknowledgement {
-	return SuccessAcknowledgement(cf.RequestId, cf.EntityType, cf.EntityId, cf.EntityName, cf.TenantId, cf.Action)
+	return SuccessAcknowledgement(cf.RequestId, cf.EntityType, cf.EntityId, cf.EntityName, cf.TenantId, cf.Action, cf.IsPlayground)
 }
 
-func ErrorAcknowledgement(requestId, entityType, entityId, entityName, tenantId, action, errorMessage string) *Acknowledgement {
-	return newAcknowledgement(ack.StatusFailure, requestId, entityType, entityId, entityName, tenantId, action, errorMessage)
+func ErrorAcknowledgement(requestId, entityType, entityId, entityName, tenantId, action, errorMessage string, isPlayground bool) *Acknowledgement {
+	return newAcknowledgement(ack.StatusFailure, requestId, entityType, entityId, entityName, tenantId, action, errorMessage, isPlayground)
 }
 
 func ErrorAcknowledgementFromChangeFlag(cf ChangeFlag, errorMessage string) *Acknowledgement {
-	return ErrorAcknowledgement(cf.RequestId, cf.EntityType, cf.EntityId, cf.EntityName, cf.TenantId, cf.Action, errorMessage)
+	return ErrorAcknowledgement(cf.RequestId, cf.EntityType, cf.EntityId, cf.EntityName, cf.TenantId, cf.Action, errorMessage, cf.IsPlayground)
 }
 
 func (t *Trigger) SendAcknowledgements(ctx context.Context, changeFlagAcks []Acknowledgement) {
@@ -110,12 +113,13 @@ func (t *Trigger) SendAcknowledgements(ctx context.Context, changeFlagAcks []Ack
 		if !ackExistsInCache(ctx, a, t.redisUrl) {
 			err := t.ackProducer.Produce(ctx, prepareAck(a), nil)
 			if err != nil {
-				logger.GetLogger().Error("failed to produce ack", zap.Error(err))
+				logger.GetLogger().Error("failed to produce ack", zap.Error(err), zap.Bool("isPlayground", a.IsPlayground))
 				// todo generate alert
 			} else {
 				setAckInCache(ctx, a, t.redisUrl)
 			}
-			if t.alertsManager != nil && (!a.IsSuccess()) {
+			// Don't send alerts for playground acknowledgements (they are for testing/simulation)
+			if t.alertsManager != nil && (!a.IsSuccess()) && (!a.IsPlayground) {
 				t.sendAlert(a)
 			}
 		} else {
@@ -138,14 +142,15 @@ func (t *Trigger) sendAlert(a Acknowledgement) {
 
 func prepareAck(changeFlagAck Acknowledgement) ack.Ack {
 	return ack.Ack{
-		Type:        constants.AckTypeChangeFlag,
-		EntityId:    changeFlagAck.EntityId,
-		RequestId:   changeFlagAck.RequestId,
-		TenantId:    changeFlagAck.TenantId,
-		Action:      changeFlagAck.Action,
-		EntityType:  changeFlagAck.EntityType,
-		Status:      changeFlagAck.Status,
-		Error:       changeFlagAck.ErrorMessage,
-		ServiceName: utils.GetEnvOrDefault(constants.ServiceName, ""),
+		Type:         constants.AckTypeChangeFlag,
+		EntityId:     changeFlagAck.EntityId,
+		RequestId:    changeFlagAck.RequestId,
+		TenantId:     changeFlagAck.TenantId,
+		Action:       changeFlagAck.Action,
+		EntityType:   changeFlagAck.EntityType,
+		Status:       changeFlagAck.Status,
+		Error:        changeFlagAck.ErrorMessage,
+		ServiceName:  utils.GetEnvOrDefault(constants.ServiceName, ""),
+		IsPlayground: changeFlagAck.IsPlayground,
 	}
 }

@@ -48,11 +48,41 @@ type UnparsedConfig struct {
 	CustomUnparsedAthenaConfiguration AthenaConfig `json:"customUnparsedAthenaConfiguration"`
 }
 
-// SandboxStorageConfig represents sandbox storage configuration
+// SandboxConfig represents sandbox storage configuration.
+// Backend determines the storage type: empty/"athena" for S3, "synapse" for Azure Blob.
 type SandboxConfig struct {
-	AWSConfiguration           AWSConfig    `json:"awsConfiguration"`
-	SandboxAthenaConfiguration AthenaConfig `json:"sandboxAthenaConfiguration"`
-	Enabled                    bool         `json:"enabled"`
+	Backend                     string        `json:"backend"`
+	AWSConfiguration            AWSConfig     `json:"awsConfiguration"`
+	AzureConfiguration          AzureConfig   `json:"azureConfiguration"`
+	SandboxAthenaConfiguration  AthenaConfig  `json:"sandboxAthenaConfiguration"`
+	SandboxSynapseConfiguration SynapseConfig `json:"sandboxSynapseConfiguration"`
+	Enabled                     bool          `json:"enabled"`
+}
+
+// AzureConfig represents Azure Blob Storage configuration
+type AzureConfig struct {
+	Container   string `json:"container"`
+	AccountName string `json:"accountName"`
+}
+
+// SynapseConfig represents Azure Synapse configuration
+type SynapseConfig struct {
+	Workspace       string `json:"workspace"`
+	SynapseDatabase string `json:"synapseDatabase"`
+	SynapseTable    string `json:"synapseTable"`
+}
+
+// IsBlobBackend returns true if this sandbox config uses Azure Blob storage.
+func (sc *SandboxConfig) IsBlobBackend() bool {
+	return sc.Backend == "synapse"
+}
+
+// CollectionName returns the storage collection name (S3 bucket or Azure Blob container).
+func (sc *SandboxConfig) CollectionName() string {
+	if sc.IsBlobBackend() {
+		return sc.AzureConfiguration.Container
+	}
+	return sc.AWSConfiguration.Bucket
 }
 
 // AWSConfig represents AWS S3 configuration
