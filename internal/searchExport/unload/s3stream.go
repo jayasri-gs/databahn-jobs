@@ -28,27 +28,6 @@ func (r *Reader) StreamToUploader(
 	var totalBytes int64
 	var totalRows int64
 
-	uploadPart := func(data []byte) error {
-		if len(data) == 0 {
-			return nil
-		}
-		size := int64(len(data))
-		part, err := uploader.UploadPart(ctx, partNum, bytes.NewReader(data), size)
-		if err != nil {
-			return fmt.Errorf("failed to upload part %d: %w", partNum, err)
-		}
-		parts = append(parts, *part)
-		totalBytes += size
-		partNum++
-		return nil
-	}
-
-	if len(header) > 0 {
-		if err := uploadPart(header); err != nil {
-			return 0, 0, err
-		}
-	}
-
 	for i, s3Path := range files {
 		if log != nil {
 			log.Info("Streaming UNLOAD file to export",
@@ -85,7 +64,14 @@ func (r *Reader) StreamToUploader(
 			size = *head.ContentLength
 		}
 
-		part, err := uploader.UploadPart(ctx, partNum, body, size)
+		// Prepend header to the first part so we don't upload a sub-5MB part (S3 multipart minimum).
+		partReader := io.Reader(body)
+		if i == 0 && len(header) > 0 {
+			partReader = io.MultiReader(bytes.NewReader(header), body)
+			size += int64(len(header))
+		}
+
+		part, err := uploader.UploadPart(ctx, partNum, partReader, size)
 		output.Body.Close()
 		if err != nil {
 			return totalRows, totalBytes, fmt.Errorf("failed to upload part %d: %w", partNum, err)
