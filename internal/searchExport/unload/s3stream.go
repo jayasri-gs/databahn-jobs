@@ -2,6 +2,7 @@ package unload
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -53,28 +54,24 @@ func (r *Reader) StreamToUploader(
 			return totalRows, totalBytes, fmt.Errorf("failed to get %s: %w", s3Path, err)
 		}
 
-		var fileBuf bytes.Buffer
-		body := io.TeeReader(output.Body, &fileBuf)
-		size := int64(0)
-		if output.ContentLength != nil {
-			size = *output.ContentLength
-		}
-
-		// Prepend header to the first part so we don't upload a sub-5MB part (S3 multipart minimum).
-		partReader := io.Reader(body)
-		if i == 0 && len(header) > 0 {
-			partReader = io.MultiReader(bytes.NewReader(header), body)
-			size += int64(len(header))
-		}
-
-		part, err := uploader.UploadPart(ctx, partNum, partReader, size)
+		fileData, err := readUnloadObject(output.Body, key)
 		output.Body.Close()
+		if err != nil {
+			return totalRows, totalBytes, fmt.Errorf("failed to read %s: %w", s3Path, err)
+		}
+
+		partData := fileData
+		if i == 0 && len(header) > 0 {
+			partData = append(append([]byte(nil), header...), fileData...)
+		}
+
+		part, err := uploader.UploadPart(ctx, partNum, bytes.NewReader(partData), int64(len(partData)))
 		if err != nil {
 			return totalRows, totalBytes, fmt.Errorf("failed to upload part %d: %w", partNum, err)
 		}
 		parts = append(parts, *part)
-		totalBytes += size
-		totalRows += countRecords(fileBuf.Bytes(), format, delimiter)
+		totalBytes += int64(len(partData))
+		totalRows += countRecords(fileData, format, delimiter)
 		partNum++
 	}
 
@@ -105,6 +102,23 @@ func BuildCSVHeader(columns []string, delimiter string) []byte {
 		data = append(data, '\n')
 	}
 	return data
+}
+
+// readUnloadObject returns decompressed UNLOAD payload. Athena UNLOAD writes gzip-compressed objects.
+func readUnloadObject(body io.Reader, key string) ([]byte, error) {
+	if strings.HasSuffix(strings.ToLower(key), ".gz") {
+		gr, err := gzip.NewReader(body)
+		if err != nil {
+			return nil, fmt.Errorf("gzip reader: %w", err)
+		}
+		defer gr.Close()
+		body = gr
+	}
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func countRecords(data []byte, format, delimiter string) int64 {
