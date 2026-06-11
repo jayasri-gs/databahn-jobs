@@ -16,6 +16,7 @@ type Database struct {
 	Port       string `json:"port"`
 	Database   string `json:"database"`
 	Schema     string `json:"schema"`
+	SSLMode    string `json:"ssl_mode"` // e.g. disable, require, verify-ca, verify-full. Empty means disable.
 }
 
 type OpenSearch struct {
@@ -168,6 +169,7 @@ func setConfig(config *viper.Viper, appConfig *AppConfig) {
 	config.SetDefault(DBHost, appConfig.Database.Host)
 	config.SetDefault(DBPort, appConfig.Database.Port)
 	config.SetDefault(DBSchema, appConfig.Database.Schema)
+	config.SetDefault(DBSSLMode, appConfig.Database.SSLMode)
 	config.SetDefault(OAuthClientCredentialsSecretName, appConfig.SecretNames.OAuthClientCredentials)
 	config.SetDefault(AuthenticationUrl, appConfig.Urls.AuthenticationUrl)
 }

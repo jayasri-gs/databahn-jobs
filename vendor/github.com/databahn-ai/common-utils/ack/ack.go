@@ -33,6 +33,7 @@ type Ack struct {
 	Status        string        `json:"status"`
 	Error         string        `json:"error,omitempty"`
 	Progress      string        `json:"progress,omitempty"`
+	IsPlayground  bool          `json:"is_playground,omitempty"`
 }
 
 type ReplayStatus struct {
