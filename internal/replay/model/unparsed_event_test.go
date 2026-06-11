@@ -52,11 +52,18 @@ func TestExtractUnparsedRawLog(t *testing.T) {
 			want:          wantSchemalessRawLog,
 		},
 		{
-			name:          "legacy_top_level_rawevent_string",
-			normalization: "any (simplified stored line)",
-			storedOn:      "top-level rawevent as plain string",
-			line:          `{"rawevent":"` + wantOutOfBoxNewRawLog + `"}`,
-			want:          wantOutOfBoxNewRawLog,
+			name:           "error_top_level_rawevent_string_not_global_unparsed_shape",
+			normalization:  "n/a (CUSTOM parsed backup shape)",
+			storedOn:       "top-level rawevent as plain string — not produced by global unparsed dispensers",
+			line:           `{"rawevent":"` + wantOutOfBoxNewRawLog + `"}`,
+			wantErrContain: "failed to unmarshal Unparsed event to extract rawevent",
+		},
+		{
+			name:          "Schemaless_msg_may_contain_logstash_literal_substring",
+			normalization: "Schemaless",
+			storedOn:      "flat JSON — msg field contains %{[event][message]} as text, not whole line",
+			line:          `{"error":"parse failed","metadata":{"db_log_type":"json"},"msg":"field ref %{[event][message]} in log","parser_name":"schemaless"}`,
+			want:          "field ref %{[event][message]} in log",
 		},
 		{
 			name:           "error_invalid_json",
@@ -77,14 +84,14 @@ func TestExtractUnparsedRawLog(t *testing.T) {
 			normalization:  "any",
 			storedOn:       "rawevent: null",
 			line:           `{"rawevent":null}`,
-			wantErrContain: "rawevent is missing or empty",
+			wantErrContain: "rawevent or msg is missing or empty",
 		},
 		{
-			name:           "error_empty_top_level_rawevent_string",
-			normalization:  "any",
-			storedOn:       "rawevent: \"\"",
+			name:           "error_top_level_rawevent_string",
+			normalization:  "n/a",
+			storedOn:       "rawevent: \"\" — string type, not object",
 			line:           `{"rawevent":""}`,
-			wantErrContain: "rawevent is missing or empty",
+			wantErrContain: "failed to unmarshal Unparsed event to extract rawevent",
 		},
 		{
 			name:           "error_custom_nested_rawevent_missing_payload",
@@ -106,13 +113,6 @@ func TestExtractUnparsedRawLog(t *testing.T) {
 			storedOn:       "rawevent is number not string/object",
 			line:           `{"rawevent":123}`,
 			wantErrContain: "failed to unmarshal Unparsed event to extract rawevent",
-		},
-		{
-			name:           "error_s3_dispenser_bad_logstash_literal",
-			normalization:  "Schemaless (broken S3 write pre-fix)",
-			storedOn:       "S3 line written as %{[event][message]} before destination.tpl fix",
-			line:           "%{[event][message]}",
-			wantErrContain: "invalid stored line from S3 dispenser",
 		},
 	}
 

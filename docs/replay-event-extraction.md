@@ -375,8 +375,8 @@ UNPARSED extraction lives in `internal/replay/model/unparsed_event.go` (not in t
 ```go
 // Types
 type UnparsedStoredLine struct {
-    RawEvent json.RawMessage `json:"rawevent"`
-    Message  string          `json:"msg"`
+    RawEvent *UnparsedNestedPayload `json:"rawevent"`
+    Message  string                 `json:"msg"`
 }
 type UnparsedNestedPayload struct {
     Msg      string `json:"msg"`
@@ -387,7 +387,7 @@ type UnparsedNestedPayload struct {
 func ExtractUnparsedRawLog(line string) (string, error)
 ```
 
-Extraction order matches [stored shape → replay extraction](#stored-shape--replay-extraction) below. Also rejects empty lines and bad S3 lines containing `%{[event][message]}`.
+Extraction order matches [stored shape → replay extraction](#stored-shape--replay-extraction) below. Also rejects empty lines and the exact bad S3 line `%{[event][message]}` (pre-fix Schemaless).
 
 ### Stored shape → replay extraction
 
@@ -400,21 +400,21 @@ Extraction order matches [stored shape → replay extraction](#stored-shape--rep
 
 ### Extraction order (`ExtractUnparsedRawLog`)
 
-1. If there is **no** top-level `rawevent` field → use top-level **`msg`** (Schemaless).
-2. If top-level `rawevent` is a **string** → use it directly.
-3. If top-level `rawevent` is an **object**:
+1. If top-level **`rawevent` is absent or null** → use top-level **`msg`** (Schemaless).
+2. If top-level **`rawevent` is an object**:
    - Try **`rawevent.msg`** first (Custom, old OutOfBox).
    - Else try **`rawevent.rawevent`** (new OutOfBox).
    - Fail if neither is present.
 
 `msg` is checked before nested `rawevent` so old OutOfBox and Custom records keep working after the OutOfBox structure change.
 
+> **Not supported on UNPARSED:** top-level `rawevent` as a plain string (`{"rawevent":"log line"}`). That shape is produced by **CUSTOM parsed** backups and is handled by `getRawDataFromDataBahnParsedObject`, not `ExtractUnparsedRawLog`.
+
 ```go
-// Schemaless: flat document
-if len(unparsedLine.RawEvent) == 0 {
-    return unparsedLine.Message, nil
+// Schemaless: flat document (RawEvent == nil)
+if stored.RawEvent == nil {
+    return stored.Message, nil
 }
-// Top-level rawevent string
 // Nested rawevent object: Msg first, then RawEvent
 ```
 
@@ -544,8 +544,9 @@ Jun 09 12:15:01 prod-web-01 sudo[8921]: session opened for user deploy(uid=1001)
 | `"parser_name": "schemaless"`, no top-level `rawevent` | Schemaless | `msg` |
 | `"parser_name": "on_error_decision"`, `rawevent.msg` | Custom or old OutOfBox | `rawevent.msg` |
 | `"parser_name": "on_error_decision"`, `rawevent.rawevent` (string) | New OutOfBox | `rawevent.rawevent` |
-| Top-level `rawevent` is a plain string | Legacy / simplified wrap | top-level `rawevent` |
 | Line is `%{[event][message]}` | Bad S3 schemaless file (pre-fix) | **Not replayable** — re-send events |
+
+> Top-level `rawevent` as a plain string (`{"rawevent":"..."}`) is a **CUSTOM parsed** backup shape, not global unparsed. Use `replay_type=CUSTOM` with `forward_data_type=parsed`.
 
 ---
 
@@ -560,6 +561,8 @@ Used for general data replay (parsed backups, raw archives, Parquet exports).
 | `forward_data_type = parsed` | Extract via `getRawDataFromDataBahnParsedObject` |
 
 ### Parsed backup — string `rawevent`
+
+Used with **`replay_type=CUSTOM`** and **`forward_data_type=parsed`** — not UNPARSED replay.
 
 ```json
 { "rawevent": "May 31 10:00:05 web01 sshd[2145]: Accepted publickey for ubuntu" }
@@ -603,8 +606,8 @@ No extraction. The full stored event JSON is published unchanged.
 | Invalid JSON | `failed to unmarshal Unparsed event to extract rawevent: ...` |
 | No `rawevent` and no `msg` | `rawevent or msg is missing or empty` |
 | Nested object missing both `msg` and `rawevent` | `nested msg or rawevent is missing or empty` |
-| Top-level `rawevent` is empty string | `rawevent is missing or empty` |
-| Line is `%{[event][message]}` or other non-JSON garbage | JSON unmarshal failure |
+| Top-level `rawevent` is a string (wrong type for UNPARSED) | `failed to unmarshal Unparsed event to extract rawevent: ...` |
+| Line is exactly `%{[event][message]}` | `invalid stored line from S3 dispenser (logstash field literal)` |
 
 A failed extraction fails the file (`StatusFailed`); the line is not published.
 
