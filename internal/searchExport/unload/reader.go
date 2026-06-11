@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -88,14 +89,22 @@ func (r *Reader) ListFiles(ctx context.Context, s3Prefix string) ([]string, erro
 			if obj.Key == nil {
 				continue
 			}
-			if strings.HasSuffix(*obj.Key, ".parquet") || strings.HasSuffix(*obj.Key, ".snappy.parquet") {
-				files = append(files, fmt.Sprintf("s3://%s/%s", bucket, *obj.Key))
+			key := *obj.Key
+			if strings.Contains(key, "manifest") {
+				continue
 			}
+			if obj.Size != nil && *obj.Size == 0 {
+				continue
+			}
+			if strings.HasSuffix(key, "/") {
+				continue
+			}
+			files = append(files, fmt.Sprintf("s3://%s/%s", bucket, key))
 		}
 	}
 
 	sort.Strings(files)
-	logging.GetLogger().Info("Found Parquet files", zap.Int("count", len(files)))
+	logging.GetLogger().Info("Found UNLOAD output files", zap.Int("count", len(files)))
 	return files, nil
 }
 
@@ -136,21 +145,31 @@ func (r *Reader) DownloadFile(ctx context.Context, s3Path string) (string, error
 
 func (r *Reader) StreamRows(ctx context.Context, files []string, callback func(row []interface{}) error) error {
 	for i, s3Path := range files {
-		logging.GetLogger().Info("Processing Parquet file",
+		logging.GetLogger().Info("Converting Parquet file to export format",
 			zap.Int("fileNumber", i+1),
 			zap.Int("totalFiles", len(files)))
 
+		downloadStart := time.Now()
 		localPath, err := r.DownloadFile(ctx, s3Path)
 		if err != nil {
 			return err
 		}
+		downloadDuration := time.Since(downloadStart)
 
+		processStart := time.Now()
 		processErr := r.processParquetFile(localPath, callback)
+		processDuration := time.Since(processStart)
 		os.Remove(localPath)
 
 		if processErr != nil {
 			return fmt.Errorf("failed to process %s: %w", s3Path, processErr)
 		}
+
+		logging.GetLogger().Info("Finished Parquet file conversion",
+			zap.Int("fileNumber", i+1),
+			zap.Int("totalFiles", len(files)),
+			zap.Duration("downloadDuration", downloadDuration),
+			zap.Duration("convertDuration", processDuration))
 	}
 
 	return nil
@@ -186,7 +205,7 @@ func (r *Reader) processParquetFile(localPath string, callback func(row []interf
 		}
 	}
 
-	batchSize := 1000
+	batchSize := 5000
 	for i := 0; i < numRows; i += batchSize {
 		remaining := numRows - i
 		if remaining > batchSize {

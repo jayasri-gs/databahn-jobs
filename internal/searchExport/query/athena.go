@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -90,15 +91,34 @@ func (e *AthenaExecutor) Connect(ctx context.Context) error {
 	return nil
 }
 
-func (e *AthenaExecutor) ExecuteUnload(ctx context.Context, query, database, s3OutputPath string) (*UnloadResult, error) {
-	unloadQuery := fmt.Sprintf(
-		"UNLOAD (%s) TO '%s' WITH (format = 'PARQUET', compression = 'SNAPPY')",
-		query, s3OutputPath,
-	)
+func buildUnloadSQL(query, s3OutputPath string, opts UnloadOptions) string {
+	switch opts.Format {
+	case "textfile":
+		delim := opts.Delimiter
+		if delim == "" {
+			delim = ","
+		}
+		return fmt.Sprintf(
+			"UNLOAD (%s) TO '%s' WITH (format = 'TEXTFILE', field_delimiter = '%s')",
+			query, s3OutputPath, strings.ReplaceAll(delim, "'", "''"),
+		)
+	case "json":
+		return fmt.Sprintf("UNLOAD (%s) TO '%s' WITH (format = 'JSON')", query, s3OutputPath)
+	default:
+		return fmt.Sprintf(
+			"UNLOAD (%s) TO '%s' WITH (format = 'PARQUET', compression = 'SNAPPY')",
+			query, s3OutputPath,
+		)
+	}
+}
+
+func (e *AthenaExecutor) ExecuteUnload(ctx context.Context, query, database, s3OutputPath string, opts UnloadOptions) (*UnloadResult, error) {
+	unloadQuery := buildUnloadSQL(query, s3OutputPath, opts)
 
 	e.log.Info("Executing UNLOAD query",
 		zap.String("database", database),
 		zap.String("outputPath", s3OutputPath),
+		zap.String("unloadFormat", opts.Format),
 		zap.String("sqlQuery", query))
 
 	startInput := &athena.StartQueryExecutionInput{
@@ -158,6 +178,8 @@ func (e *AthenaExecutor) ExecuteUnload(ctx context.Context, query, database, s3O
 
 func (e *AthenaExecutor) waitForCompletion(ctx context.Context, queryID string) error {
 	deadline := time.Now().Add(e.cfg.QueryTimeout)
+	started := time.Now()
+	lastLog := started
 
 	for {
 		if time.Now().After(deadline) {
@@ -172,13 +194,30 @@ func (e *AthenaExecutor) waitForCompletion(ctx context.Context, queryID string) 
 		}
 
 		state := output.QueryExecution.Status.State
-		e.log.Debug("Polling Athena query status",
-			zap.String("athenaQueryExecutionId", queryID),
-			zap.String("state", string(state)))
+		if time.Since(lastLog) >= 30*time.Second {
+			fields := []zap.Field{
+				zap.String("athenaQueryExecutionId", queryID),
+				zap.String("state", string(state)),
+				zap.Duration("elapsed", time.Since(started)),
+			}
+			if output.QueryExecution.Statistics != nil {
+				stats := output.QueryExecution.Statistics
+				if stats.EngineExecutionTimeInMillis != nil {
+					fields = append(fields, zap.Int64("engineMs", *stats.EngineExecutionTimeInMillis))
+				}
+				if stats.DataScannedInBytes != nil {
+					fields = append(fields, zap.Int64("bytesScanned", *stats.DataScannedInBytes))
+				}
+			}
+			e.log.Info("Athena query in progress", fields...)
+			lastLog = time.Now()
+		}
 
 		switch state {
 		case athenatypes.QueryExecutionStateSucceeded:
-			e.log.Info("Athena query succeeded", zap.String("athenaQueryExecutionId", queryID))
+			e.log.Info("Athena query succeeded",
+				zap.String("athenaQueryExecutionId", queryID),
+				zap.Duration("elapsed", time.Since(started)))
 			return nil
 		case athenatypes.QueryExecutionStateFailed:
 			reason := ""
@@ -190,8 +229,59 @@ func (e *AthenaExecutor) waitForCompletion(ctx context.Context, queryID string) 
 			return fmt.Errorf("query was cancelled")
 		}
 
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 	}
+}
+
+// GetQueryColumns runs a zero-row version of the query to read column names from result metadata.
+func (e *AthenaExecutor) GetQueryColumns(ctx context.Context, query, database string) ([]string, error) {
+	metaQuery := fmt.Sprintf("SELECT * FROM (%s) AS export_src LIMIT 0", query)
+
+	startInput := &athena.StartQueryExecutionInput{
+		QueryString: aws.String(metaQuery),
+		QueryExecutionContext: &athenatypes.QueryExecutionContext{
+			Database: aws.String(database),
+		},
+		WorkGroup: aws.String(e.cfg.Workgroup),
+	}
+	if e.cfg.OutputLocation != "" {
+		startInput.ResultConfiguration = &athenatypes.ResultConfiguration{
+			OutputLocation: aws.String(e.cfg.OutputLocation),
+		}
+	}
+
+	startOutput, err := e.client.StartQueryExecution(ctx, startInput)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start column metadata query: %w", err)
+	}
+
+	queryID := *startOutput.QueryExecutionId
+	if err := e.waitForCompletion(ctx, queryID); err != nil {
+		return nil, fmt.Errorf("column metadata query failed: %w", err)
+	}
+
+	resultOutput, err := e.client.GetQueryResults(ctx, &athena.GetQueryResultsInput{
+		QueryExecutionId: aws.String(queryID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get column metadata: %w", err)
+	}
+
+	if resultOutput.ResultSet == nil || resultOutput.ResultSet.ResultSetMetadata == nil {
+		return nil, nil
+	}
+
+	columns := make([]string, 0, len(resultOutput.ResultSet.ResultSetMetadata.ColumnInfo))
+	for _, col := range resultOutput.ResultSet.ResultSetMetadata.ColumnInfo {
+		if col.Name != nil {
+			columns = append(columns, *col.Name)
+		}
+	}
+	return columns, nil
 }
 
 func (e *AthenaExecutor) GetAWSConfig() interface{} {

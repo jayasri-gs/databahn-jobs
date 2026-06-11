@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/format"
@@ -75,9 +77,14 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult,
 	tempPath := fmt.Sprintf("unload_%s_%d/", p.reportID, time.Now().Unix())
 	tempS3Path := trimSuffix(athenaOutputLoc, "/") + "/" + tempPath
 
-	p.log.Info("Executing UNLOAD", zap.String("tempS3Path", tempS3Path))
+	unloadOpts := p.unloadOptions()
+	directUpload := p.useDirectUpload(unloadOpts)
+	p.log.Info("Executing UNLOAD",
+		zap.String("tempS3Path", tempS3Path),
+		zap.String("unloadFormat", unloadOpts.Format),
+		zap.Bool("directUpload", directUpload))
 
-	unloadResult, err := p.executor.ExecuteUnload(ctx, p.request.Query, p.request.Database, tempS3Path)
+	unloadResult, err := p.executor.ExecuteUnload(ctx, p.request.Query, p.request.Database, tempS3Path, unloadOpts)
 	if err != nil {
 		return nil, fmt.Errorf("UNLOAD failed: %w", err)
 	}
@@ -102,9 +109,10 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult,
 		return &PipelineResult{TotalRows: 0}, nil
 	}
 
+	exportFormat := normalizedFormat(p.request.Format)
 	ext := "csv"
 	contentType := "text/csv"
-	switch p.request.Format {
+	switch exportFormat {
 	case "json":
 		ext = "json"
 		contentType = "application/x-ndjson"
@@ -120,7 +128,16 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult,
 		return nil, fmt.Errorf("failed to init uploader: %w", err)
 	}
 
-	totalRows, totalBytes, err := p.processUnloadToFinal(ctx, unloadReader, outputFiles)
+	var totalRows, totalBytes int64
+	if directUpload {
+		totalRows, totalBytes, err = p.processUnloadDirect(ctx, unloadReader, outputFiles)
+	} else {
+		p.log.Warn("Using slow Parquet conversion path; CSV/JSON exports should use direct S3 streaming",
+			zap.String("format", p.request.Format),
+			zap.String("normalizedFormat", exportFormat),
+			zap.Int("fileCount", len(outputFiles)))
+		totalRows, totalBytes, err = p.processUnloadToFinal(ctx, unloadReader, outputFiles)
+	}
 	if err != nil {
 		p.uploader.Abort(ctx)
 		unloadReader.DeleteS3Files(ctx, outputFiles)
@@ -152,7 +169,8 @@ func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur *unload.Reader, 
 	var parts []upload.PartInfo
 	partNum := 1
 
-	isExcel := p.request.Format == "xlsx" || p.request.Format == "excel"
+	exportFormat := normalizedFormat(p.request.Format)
+	isExcel := exportFormat == "xlsx" || exportFormat == "excel"
 	maxSegBytes := int64(p.config.MaxSegmentSizeMB) * 1024 * 1024
 	if maxSegBytes == 0 {
 		maxSegBytes = 10 * 1024 * 1024
@@ -162,11 +180,10 @@ func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur *unload.Reader, 
 	var enc format.FormatEncoder
 	var columns []string
 
-	// Creates a fresh encoder writing into buf (re-writes header so it can be stripped on next flush).
 	newEncoder := func() error {
 		buf.Reset()
 		var err error
-		enc, err = format.NewEncoder(p.request.Format, &buf, p.request.Delimiter)
+		enc, err = format.NewEncoder(exportFormat, &buf, p.request.Delimiter)
 		if err != nil {
 			return err
 		}
@@ -179,8 +196,6 @@ func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur *unload.Reader, 
 		return nil
 	}
 
-	// Finalizes the current encoder, uploads buf as a multipart part, then resets for the next part.
-	// For Excel, intermediate flushes are skipped because the file must be written atomically.
 	flushPart := func(final bool) error {
 		if isExcel && !final {
 			return nil
@@ -189,8 +204,7 @@ func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur *unload.Reader, 
 			return fmt.Errorf("failed to finalize encoder: %w", err)
 		}
 		data := buf.Bytes()
-		// Strip the CSV header row from every part after the first.
-		if p.request.Format == "csv" && partNum > 1 {
+		if exportFormat == "csv" && partNum > 1 {
 			if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
 				data = data[idx+1:]
 			}
@@ -256,6 +270,65 @@ func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur *unload.Reader, 
 		zap.Int64("totalBytes", totalBytes))
 
 	return totalRows, totalBytes, nil
+}
+
+func normalizedFormat(format string) string {
+	f := strings.ToLower(strings.TrimSpace(format))
+	if f == "" {
+		return "csv"
+	}
+	return f
+}
+
+func (p *Pipeline) unloadOptions() query.UnloadOptions {
+	exportFormat := normalizedFormat(p.request.Format)
+	switch exportFormat {
+	case "json":
+		return query.UnloadOptions{Format: "json"}
+	case "csv":
+		delim := p.request.Delimiter
+		if delim == "" {
+			delim = ","
+		}
+		if utf8.RuneCountInString(delim) == 1 {
+			return query.UnloadOptions{Format: "textfile", Delimiter: delim}
+		}
+		p.log.Warn("CSV export falling back to Parquet UNLOAD due to multi-character delimiter",
+			zap.String("delimiter", delim))
+	case "xlsx", "excel":
+		// Excel requires local Parquet conversion.
+	default:
+		p.log.Warn("Unknown export format, using Parquet UNLOAD",
+			zap.String("format", p.request.Format))
+	}
+	return query.UnloadOptions{Format: "parquet"}
+}
+
+func (p *Pipeline) useDirectUpload(opts query.UnloadOptions) bool {
+	return opts.Format == "textfile" || opts.Format == "json"
+}
+
+func (p *Pipeline) processUnloadDirect(ctx context.Context, ur *unload.Reader, files []string) (int64, int64, error) {
+	var header []byte
+	if p.request.IncludeHeader && normalizedFormat(p.request.Format) == "csv" {
+		columns, err := p.executor.GetQueryColumns(ctx, p.request.Query, p.request.Database)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to get column names for header: %w", err)
+		}
+		if len(columns) > 0 {
+			delim := p.request.Delimiter
+			if delim == "" {
+				delim = ","
+			}
+			header = unload.BuildCSVHeader(columns, delim)
+		}
+	}
+
+	p.log.Info("Streaming UNLOAD output directly to export destination",
+		zap.Int("fileCount", len(files)),
+		zap.Bool("includeHeader", len(header) > 0))
+
+	return ur.StreamToUploader(ctx, p.uploader, files, header, p.log)
 }
 
 func trimSuffix(s, suffix string) string {
