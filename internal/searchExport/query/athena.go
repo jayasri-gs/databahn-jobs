@@ -8,8 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	athenatypes "github.com/aws/aws-sdk-go-v2/service/athena/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -19,8 +21,11 @@ type AthenaConfig struct {
 	Workgroup       string
 	OutputLocation  string
 	QueryTimeout    time.Duration
+	AuthType        string
 	AccessKeyID     string
 	SecretAccessKey string
+	RoleArn         string
+	ExternalID      string
 }
 
 type AthenaExecutor struct {
@@ -40,7 +45,20 @@ func (e *AthenaExecutor) Connect(ctx context.Context) error {
 	var opts []func(*awsconfig.LoadOptions) error
 	opts = append(opts, awsconfig.WithRegion(e.cfg.Region))
 
-	if e.cfg.AccessKeyID != "" && e.cfg.SecretAccessKey != "" {
+	if e.cfg.AuthType == "role_based" {
+		baseCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(e.cfg.Region))
+		if err != nil {
+			return fmt.Errorf("failed to load base AWS config: %w", err)
+		}
+		stsClient := sts.NewFromConfig(baseCfg)
+		opts = append(opts, awsconfig.WithCredentialsProvider(
+			stscreds.NewAssumeRoleProvider(stsClient, e.cfg.RoleArn, func(o *stscreds.AssumeRoleOptions) {
+				if e.cfg.ExternalID != "" {
+					o.ExternalID = aws.String(e.cfg.ExternalID)
+				}
+			}),
+		))
+	} else if e.cfg.AccessKeyID != "" && e.cfg.SecretAccessKey != "" {
 		opts = append(opts, awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(
 				e.cfg.AccessKeyID,

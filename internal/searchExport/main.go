@@ -12,7 +12,9 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/pipeline"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/query"
+	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	logging "github.com/databahn-ai/go-logging/logger"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -89,16 +91,37 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		return
 	}
 
-	destBucket, athenaConfig, err := getDestinationConfig(db, exportConfig.DestinationID, report.TenantID)
+	destID, err := uuid.Parse(exportConfig.DestinationID)
+	if err != nil {
+		handleFailure(db, reportID, report.Retries, "Invalid destinationId: "+err.Error())
+		return
+	}
+	tenantID, err := uuid.Parse(report.TenantID)
+	if err != nil {
+		handleFailure(db, reportID, report.Retries, "Invalid tenantId: "+err.Error())
+		return
+	}
+
+	s3Cfg, err := destination.LoadS3Config(ctx, db, destID, tenantID)
 	if err != nil {
 		handleFailure(db, reportID, report.Retries, "Failed to get destination: "+err.Error())
 		return
 	}
 
+	athenaConfig := query.AthenaConfig{
+		Region:          s3Cfg.Region,
+		Workgroup:       "primary",
+		OutputLocation:  s3Cfg.AthenaOutputLocation(),
+		AuthType:        s3Cfg.AuthType,
+		AccessKeyID:     s3Cfg.AccessKeyID,
+		SecretAccessKey: s3Cfg.SecretAccessKey,
+		RoleArn:         s3Cfg.RoleArn,
+		ExternalID:      s3Cfg.ExternalID,
+	}
 	executor := query.NewAthenaExecutor(athenaConfig)
 
 	p := pipeline.New(cfg, reportID, exportConfig, executor)
-	result, err := p.Run(ctx, destBucket)
+	result, err := p.Run(ctx, s3Cfg.Bucket)
 	if err != nil {
 		handleFailure(db, reportID, report.Retries, err.Error())
 		return
@@ -122,39 +145,4 @@ func handleFailure(db *gorm.DB, reportID string, retries int, errMsg string) {
 
 	newRetries := retries + 1
 	models.UpdateRequestStatusAndRetries(db, reportID, consts.FAILED, newRetries)
-}
-
-func getDestinationConfig(db *gorm.DB, destinationID string, tenantID string) (string, query.AthenaConfig, error) {
-	// Query destination from database
-	type Destination struct {
-		ID              string `gorm:"column:id"`
-		Name            string `gorm:"column:name"`
-		Bucket          string `gorm:"column:bucket"`
-		Region          string `gorm:"column:region"`
-		AccessKey       string `gorm:"column:access_key"`
-		SecretKey       string `gorm:"column:secret_key"`
-		OutputLocation  string `gorm:"column:output_location"`
-		AthenaWorkgroup string `gorm:"column:athena_workgroup"`
-	}
-
-	var dest Destination
-	err := db.Table("destination").
-		Where("id = ? AND tenant_id = ?", destinationID, tenantID).
-		First(&dest).Error
-	if err != nil {
-		return "", query.AthenaConfig{}, err
-	}
-
-	workgroup := dest.AthenaWorkgroup
-	if workgroup == "" {
-		workgroup = "primary"
-	}
-
-	return dest.Bucket, query.AthenaConfig{
-		Region:          dest.Region,
-		Workgroup:       workgroup,
-		OutputLocation:  dest.OutputLocation,
-		AccessKeyID:     dest.AccessKey,
-		SecretAccessKey: dest.SecretKey,
-	}, nil
 }
