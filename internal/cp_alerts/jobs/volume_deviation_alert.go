@@ -393,7 +393,7 @@ func (d *DailyVolumeDeviationIngestionSource) buildAlert(volumeIncr bool, volume
 	return alerts_async.NewAlert(
 		alerts_async.LogSource,
 		alerts_async.WithEntity(d),
-		alerts_async.WithCriticality(alerts_async.Warning),
+		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.DataRatioAlertChecker),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
@@ -551,7 +551,7 @@ func (d *DailyVolumeDeviationDeliveryDestination) buildAlert(volumeIncr bool, vo
 	return alerts_async.NewAlert(
 		alerts_async.Dispenser,
 		alerts_async.WithEntity(d),
-		alerts_async.WithCriticality(alerts_async.Warning),
+		alerts_async.WithCriticality(alerts_async.Critical),
 		alerts_async.WithFunctionalityType(alerts_async.DataRatioAlertChecker),
 		alerts_async.WithTitle(title),
 		alerts_async.WithMessage(message),
