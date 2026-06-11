@@ -328,7 +328,11 @@ func (p *Pipeline) processUnloadDirect(ctx context.Context, ur *unload.Reader, f
 		zap.Int("fileCount", len(files)),
 		zap.Bool("includeHeader", len(header) > 0))
 
-	return ur.StreamToUploader(ctx, p.uploader, files, header, p.log)
+	delim := p.request.Delimiter
+	if delim == "" {
+		delim = ","
+	}
+	return ur.StreamToUploader(ctx, p.uploader, files, header, normalizedFormat(p.request.Format), delim, p.log)
 }
 
 func trimSuffix(s, suffix string) string {

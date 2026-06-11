@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -21,6 +23,8 @@ func (r *Reader) StreamToUploader(
 	uploader upload.CloudUploader,
 	files []string,
 	header []byte,
+	format string,
+	delimiter string,
 	log *zap.Logger,
 ) (int64, int64, error) {
 	partNum := 1
@@ -49,8 +53,8 @@ func (r *Reader) StreamToUploader(
 			return totalRows, totalBytes, fmt.Errorf("failed to get %s: %w", s3Path, err)
 		}
 
-		var counter lineCounter
-		body := io.TeeReader(output.Body, &counter)
+		var fileBuf bytes.Buffer
+		body := io.TeeReader(output.Body, &fileBuf)
 		size := int64(0)
 		if output.ContentLength != nil {
 			size = *output.ContentLength
@@ -70,7 +74,7 @@ func (r *Reader) StreamToUploader(
 		}
 		parts = append(parts, *part)
 		totalBytes += size
-		totalRows += counter.lines
+		totalRows += countRecords(fileBuf.Bytes(), format, delimiter)
 		partNum++
 	}
 
@@ -103,11 +107,40 @@ func BuildCSVHeader(columns []string, delimiter string) []byte {
 	return data
 }
 
-type lineCounter struct {
-	lines int64
-}
-
-func (c *lineCounter) Write(p []byte) (int, error) {
-	c.lines += int64(bytes.Count(p, []byte{'\n'}))
-	return len(p), nil
+func countRecords(data []byte, format, delimiter string) int64 {
+	if len(data) == 0 {
+		return 0
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "json":
+		dec := json.NewDecoder(bytes.NewReader(data))
+		var n int64
+		for dec.More() {
+			var row json.RawMessage
+			if err := dec.Decode(&row); err != nil {
+				break
+			}
+			n++
+		}
+		return n
+	default:
+		delim := ','
+		if delimiter != "" {
+			if r, size := utf8.DecodeRuneInString(delimiter); size > 0 && r != utf8.RuneError {
+				delim = r
+			}
+		}
+		reader := csv.NewReader(bytes.NewReader(data))
+		reader.Comma = delim
+		reader.ReuseRecord = true
+		var n int64
+		for {
+			if _, err := reader.Read(); err == io.EOF {
+				return n
+			} else if err != nil {
+				return n
+			}
+			n++
+		}
+	}
 }
