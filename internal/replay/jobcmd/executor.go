@@ -57,11 +57,12 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	throughPutController := util.NewThroughputController(throughPutLimit)
 	var wg sync.WaitGroup
 	mst.UpdateMetaData(constants.Global, constants.StatusInProgress, 0, 0, 0, 0, "")
-	totalFiles := len(mst.GetProcessList())
+	processList := mst.GetProcessList()
+	totalFiles := len(processList)
 	err := ecryption.DecryptKeys(&inputReq)
 	if err != nil {
 		for i := range totalFiles {
-			mst.UpdateMetaData(mst.GetProcessList()[i], "", 0, 0, 0, 0, err.Error())
+			mst.UpdateMetaData(processList[i], "", 0, 0, 0, 0, err.Error())
 		}
 		return
 	}
@@ -83,12 +84,12 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 			logger.GetLogger().Info(fmt.Sprintf("spawning thread {%d}", i))
 
 			defer func(wg *sync.WaitGroup) {
-				mst.TimeStampMetaData(mst.GetProcessList()[i], false, true)
+				mst.TimeStampMetaData(processList[i], false, true)
 				logger.GetLogger().Info(fmt.Sprintf("executing the wg.Done()"), zap.String("traceId", inputReq.RequestId), zap.Int("thread ", i))
 				wg.Done()
 				<-parallelCtrChan
 			}(&wg)
-			fileName := mst.GetProcessList()[i]
+			fileName := processList[i]
 			metaValue, ok := mst.GetMetaData(fileName)
 			if !ok {
 				mst.UpdateMetaData(fileName, constants.StatusFailed, 0, 0, 0, 0, "metadata not found")
@@ -97,12 +98,12 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 			logger.GetLogger().Info("spawning thread :", zap.String("traceId", inputReq.RequestId), zap.Int("thread", i), zap.String("FileName : ", fileName))
 			err, status := dbaws.FileDownloader(inputReq, i, mst, fileName, metaValue)
 			if err != nil {
-				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
+				mst.UpdateMetaData(processList[i], status, 0, 0, 0, 0, err.Error())
 				return
 			}
 			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.DestinationTopic, inputReq, throughPutController)
 			if err != nil {
-				mst.UpdateMetaData(mst.GetProcessList()[i], status, 0, 0, 0, 0, err.Error())
+				mst.UpdateMetaData(processList[i], status, 0, 0, 0, 0, err.Error())
 				return
 			}
 

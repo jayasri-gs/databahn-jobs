@@ -325,6 +325,10 @@ func findInactiveAndActiveSources(db *gorm.DB, tenantUuid uuid.UUID, sourceIdToL
 				}
 				alertDuration = configuredDuration
 			} else {
+				if s.Scope == "AGENT" { // [DB-27533]Skip agent alert if no alert config found for source. Remove this after source alert added in collection profile UI.
+					logger.GetLogger().Warn("no alert config found for agent source, skipping alert", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
+					continue
+				}
 				logger.GetLogger().Warn("no alert config found for source, defaulting", zap.String("sourceId", sourceId), zap.String("tenantId", tenantId))
 				alertDuration = defaultAlertDuration30Min
 			}
