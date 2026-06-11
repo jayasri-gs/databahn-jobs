@@ -82,7 +82,10 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult,
 		return nil, fmt.Errorf("UNLOAD failed: %w", err)
 	}
 
-	unloadReader := unload.NewReader(awsCfg, p.config.TempDir)
+	unloadReader, err := unload.NewReader(awsCfg, p.config.TempDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init unload reader: %w", err)
+	}
 
 	var outputFiles []string
 	if unloadResult.ManifestLocation != "" {

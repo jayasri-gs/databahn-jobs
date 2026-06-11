@@ -25,11 +25,14 @@ type Reader struct {
 	columns  []string
 }
 
-func NewReader(awsCfg aws.Config, tempDir string) *Reader {
+func NewReader(awsCfg aws.Config, tempDir string) (*Reader, error) {
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create temp dir: %w", err)
+	}
 	return &Reader{
 		s3Client: s3.NewFromConfig(awsCfg),
 		tempDir:  tempDir,
-	}
+	}, nil
 }
 
 func (r *Reader) ParseManifest(ctx context.Context, manifestPath string) ([]string, error) {
