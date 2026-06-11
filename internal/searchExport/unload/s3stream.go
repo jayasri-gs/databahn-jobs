@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -15,6 +14,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/upload"
 	"go.uber.org/zap"
+)
+
+// S3 requires every multipart part except the last to be at least 5 MiB.
+const (
+	s3MinPartSize   = 5 * 1024 * 1024
+	streamChunkSize = 256 * 1024
 )
 
 // StreamToUploader copies UNLOAD output files from S3 directly into a multipart upload,
@@ -32,6 +37,38 @@ func (r *Reader) StreamToUploader(
 	var parts []upload.PartInfo
 	var totalBytes int64
 	var totalRows int64
+	var pending []byte
+	rows := &lineRowCounter{}
+
+	uploadPart := func(data []byte) error {
+		part, err := uploader.UploadPart(ctx, partNum, bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return fmt.Errorf("failed to upload part %d: %w", partNum, err)
+		}
+		parts = append(parts, *part)
+		totalBytes += int64(len(data))
+		partNum++
+		return nil
+	}
+
+	flushFullParts := func() error {
+		for len(pending) >= s3MinPartSize {
+			if err := uploadPart(pending[:s3MinPartSize]); err != nil {
+				return err
+			}
+			pending = pending[s3MinPartSize:]
+		}
+		return nil
+	}
+
+	appendChunk := func(chunk []byte) error {
+		if len(chunk) == 0 {
+			return nil
+		}
+		pending = append(pending, chunk...)
+		totalRows += rows.add(chunk)
+		return flushFullParts()
+	}
 
 	for i, s3Path := range files {
 		if log != nil {
@@ -54,25 +91,49 @@ func (r *Reader) StreamToUploader(
 			return totalRows, totalBytes, fmt.Errorf("failed to get %s: %w", s3Path, err)
 		}
 
-		fileData, err := readUnloadObject(output.Body, key)
-		output.Body.Close()
+		reader, err := openUnloadReader(output.Body, key)
 		if err != nil {
-			return totalRows, totalBytes, fmt.Errorf("failed to read %s: %w", s3Path, err)
+			output.Body.Close()
+			return totalRows, totalBytes, fmt.Errorf("failed to open %s: %w", s3Path, err)
 		}
 
-		partData := fileData
 		if i == 0 && len(header) > 0 {
-			partData = append(append([]byte(nil), header...), fileData...)
+			pending = append(pending, header...)
+			if err := flushFullParts(); err != nil {
+				reader.Close()
+				return totalRows, totalBytes, err
+			}
 		}
 
-		part, err := uploader.UploadPart(ctx, partNum, bytes.NewReader(partData), int64(len(partData)))
-		if err != nil {
-			return totalRows, totalBytes, fmt.Errorf("failed to upload part %d: %w", partNum, err)
+		buf := make([]byte, streamChunkSize)
+		for {
+			n, readErr := reader.Read(buf)
+			if n > 0 {
+				if err := appendChunk(buf[:n]); err != nil {
+					reader.Close()
+					return totalRows, totalBytes, err
+				}
+			}
+			if readErr == io.EOF {
+				break
+			}
+			if readErr != nil {
+				reader.Close()
+				return totalRows, totalBytes, fmt.Errorf("failed to read %s: %w", s3Path, readErr)
+			}
 		}
-		parts = append(parts, *part)
-		totalBytes += int64(len(partData))
-		totalRows += countRecords(fileData, format, delimiter)
-		partNum++
+		if err := reader.Close(); err != nil {
+			return totalRows, totalBytes, fmt.Errorf("failed to close %s: %w", s3Path, err)
+		}
+	}
+
+	totalRows += rows.finish()
+
+	if len(pending) > 0 {
+		if err := uploadPart(pending); err != nil {
+			return totalRows, totalBytes, err
+		}
+		pending = nil
 	}
 
 	if len(parts) == 0 {
@@ -104,57 +165,57 @@ func BuildCSVHeader(columns []string, delimiter string) []byte {
 	return data
 }
 
-// readUnloadObject returns decompressed UNLOAD payload. Athena UNLOAD writes gzip-compressed objects.
-func readUnloadObject(body io.Reader, key string) ([]byte, error) {
-	if strings.HasSuffix(strings.ToLower(key), ".gz") {
-		gr, err := gzip.NewReader(body)
-		if err != nil {
-			return nil, fmt.Errorf("gzip reader: %w", err)
-		}
-		defer gr.Close()
-		body = gr
+func openUnloadReader(body io.ReadCloser, key string) (io.ReadCloser, error) {
+	if !strings.HasSuffix(strings.ToLower(key), ".gz") {
+		return body, nil
 	}
-	data, err := io.ReadAll(body)
+	gr, err := gzip.NewReader(body)
 	if err != nil {
-		return nil, err
+		body.Close()
+		return nil, fmt.Errorf("gzip reader: %w", err)
 	}
-	return data, nil
+	return &gzipReadCloser{Reader: gr, closers: []io.Closer{gr, body}}, nil
 }
 
-func countRecords(data []byte, format, delimiter string) int64 {
-	if len(data) == 0 {
+type gzipReadCloser struct {
+	io.Reader
+	closers []io.Closer
+}
+
+func (g *gzipReadCloser) Close() error {
+	var err error
+	for _, c := range g.closers {
+		if e := c.Close(); e != nil && err == nil {
+			err = e
+		}
+	}
+	return err
+}
+
+// lineRowCounter counts newline-delimited records across chunk boundaries (Athena UNLOAD output).
+type lineRowCounter struct {
+	tail []byte
+}
+
+func (c *lineRowCounter) add(chunk []byte) int64 {
+	data := append(c.tail, chunk...)
+	c.tail = nil
+	lastNL := bytes.LastIndexByte(data, '\n')
+	if lastNL < 0 {
+		c.tail = data
 		return 0
 	}
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "json":
-		dec := json.NewDecoder(bytes.NewReader(data))
-		var n int64
-		for dec.More() {
-			var row json.RawMessage
-			if err := dec.Decode(&row); err != nil {
-				break
-			}
-			n++
-		}
-		return n
-	default:
-		delim := ','
-		if delimiter != "" {
-			if r, size := utf8.DecodeRuneInString(delimiter); size > 0 && r != utf8.RuneError {
-				delim = r
-			}
-		}
-		reader := csv.NewReader(bytes.NewReader(data))
-		reader.Comma = delim
-		reader.ReuseRecord = true
-		var n int64
-		for {
-			if _, err := reader.Read(); err == io.EOF {
-				return n
-			} else if err != nil {
-				return n
-			}
-			n++
-		}
+	if lastNL < len(data)-1 {
+		c.tail = append(c.tail, data[lastNL+1:]...)
 	}
+	return int64(bytes.Count(data[:lastNL+1], []byte{'\n'}))
+}
+
+func (c *lineRowCounter) finish() int64 {
+	if len(c.tail) == 0 {
+		return 0
+	}
+	n := int64(1)
+	c.tail = nil
+	return n
 }
