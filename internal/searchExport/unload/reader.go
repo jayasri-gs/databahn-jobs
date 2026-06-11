@@ -90,7 +90,7 @@ func (r *Reader) ListFiles(ctx context.Context, s3Prefix string) ([]string, erro
 				continue
 			}
 			key := *obj.Key
-			if strings.Contains(key, "manifest") {
+			if isUnloadManifestKey(key) {
 				continue
 			}
 			if obj.Size != nil && *obj.Size == 0 {
@@ -289,6 +289,15 @@ func (r *Reader) DeleteS3Files(ctx context.Context, files []string) {
 				zap.String("path", s3Path), zap.Error(err))
 		}
 	}
+}
+
+// isUnloadManifestKey matches Athena UNLOAD metadata/manifest objects, not data files.
+func isUnloadManifestKey(key string) bool {
+	name := filepath.Base(key)
+	return strings.HasSuffix(name, "-manifest.csv") ||
+		strings.HasSuffix(name, "-manifest") ||
+		name == "manifest" ||
+		strings.HasSuffix(name, ".metadata")
 }
 
 func parseS3Path(path string) (bucket, key string) {

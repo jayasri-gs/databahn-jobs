@@ -41,14 +41,6 @@ func (r *Reader) StreamToUploader(
 			return totalRows, totalBytes, fmt.Errorf("invalid S3 path: %s", s3Path)
 		}
 
-		head, err := r.s3Client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(key),
-		})
-		if err != nil {
-			return totalRows, totalBytes, fmt.Errorf("failed to head %s: %w", s3Path, err)
-		}
-
 		output, err := r.s3Client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
@@ -60,8 +52,8 @@ func (r *Reader) StreamToUploader(
 		var counter lineCounter
 		body := io.TeeReader(output.Body, &counter)
 		size := int64(0)
-		if head.ContentLength != nil {
-			size = *head.ContentLength
+		if output.ContentLength != nil {
+			size = *output.ContentLength
 		}
 
 		// Prepend header to the first part so we don't upload a sub-5MB part (S3 multipart minimum).
