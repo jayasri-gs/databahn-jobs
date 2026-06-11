@@ -22,12 +22,6 @@ var (
 	searchObjectStoreCollection string
 )
 
-type AwsSearchSecret struct {
-	AccessKeyID     string `json:"search.access_key_id"`
-	SecretAccessKey string `json:"search.secret_access_key"`
-	Bucket          string `json:"search.bucket"`
-}
-
 func loadS3Secret(_ context.Context) (*AwsSearchSecret, error) {
 	secretName := appConfig.GetAppConfiguration().GetString("search.secret_name")
 	region := appConfig.GetAppConfiguration().GetString("region")
@@ -95,10 +89,18 @@ func getSearchObjectStore(ctx context.Context) (objectstore.ObjectStore, string,
 }
 
 func UploadFileToObjectStore(ctx context.Context, objectKey, filePath string) error {
+	cfg := appConfig.GetAppConfiguration()
+	backend := cfg.GetString(configuration.ObjectBackend)
+
 	client, container, err := getSearchObjectStore(ctx)
 	if err != nil {
 		return err
 	}
+
+	if backend == objectstore.BackendS3 {
+		container = container + "-parquet"
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
