@@ -37,21 +37,24 @@ type Pipeline struct {
 	reportID string
 	executor query.QueryExecutor
 	uploader upload.CloudUploader
+	log      *zap.Logger
 }
 
-func New(cfg PipelineConfig, reportID string, req *models.SearchExportConfig, executor query.QueryExecutor) *Pipeline {
+func New(cfg PipelineConfig, reportID string, req *models.SearchExportConfig, executor query.QueryExecutor, log *zap.Logger) *Pipeline {
+	if log == nil {
+		log = logging.GetLogger()
+	}
 	return &Pipeline{
 		config:   cfg,
 		request:  req,
 		reportID: reportID,
 		executor: executor,
+		log:      log,
 	}
 }
 
 func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult, error) {
-	logging.GetLogger().Info("Starting export pipeline",
-		zap.String("reportId", p.reportID),
-		zap.String("format", p.request.Format))
+	p.log.Info("Starting export pipeline", zap.String("destBucket", destBucket))
 
 	if err := p.executor.Connect(ctx); err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
@@ -72,8 +75,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult,
 	tempPath := fmt.Sprintf("unload_%s_%d/", p.reportID, time.Now().Unix())
 	tempS3Path := trimSuffix(athenaOutputLoc, "/") + "/" + tempPath
 
-	logging.GetLogger().Info("Executing UNLOAD",
-		zap.String("outputPath", tempS3Path))
+	p.log.Info("Executing UNLOAD", zap.String("tempS3Path", tempS3Path))
 
 	unloadResult, err := p.executor.ExecuteUnload(ctx, p.request.Query, p.request.Database, tempS3Path)
 	if err != nil {
@@ -93,7 +95,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult,
 	}
 
 	if len(outputFiles) == 0 {
-		logging.GetLogger().Warn("UNLOAD produced no files")
+		p.log.Warn("UNLOAD produced no files")
 		return &PipelineResult{TotalRows: 0}, nil
 	}
 
@@ -129,7 +131,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult,
 
 	presignedURL, err := p.uploader.GeneratePresignedURL(ctx, p.config.PresignExpiry)
 	if err != nil {
-		logging.GetLogger().Warn("Failed to generate presigned URL", zap.Error(err))
+		p.log.Warn("Failed to generate presigned URL", zap.Error(err))
 	}
 
 	return &PipelineResult{
@@ -246,7 +248,7 @@ func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur *unload.Reader, 
 		return totalRows, 0, fmt.Errorf("failed to complete multipart upload: %w", err)
 	}
 
-	logging.GetLogger().Info("Export completed",
+	p.log.Info("Export upload completed",
 		zap.Int64("totalRows", totalRows),
 		zap.Int64("totalBytes", totalBytes))
 

@@ -32,13 +32,20 @@ type AthenaExecutor struct {
 	cfg       AthenaConfig
 	client    *athena.Client
 	awsConfig aws.Config
+	log       *zap.Logger
 }
 
 func NewAthenaExecutor(cfg AthenaConfig) *AthenaExecutor {
 	if cfg.QueryTimeout == 0 {
 		cfg.QueryTimeout = 30 * time.Minute
 	}
-	return &AthenaExecutor{cfg: cfg}
+	return &AthenaExecutor{cfg: cfg, log: logging.GetLogger()}
+}
+
+func (e *AthenaExecutor) SetLogger(log *zap.Logger) {
+	if log != nil {
+		e.log = log
+	}
 }
 
 func (e *AthenaExecutor) Connect(ctx context.Context) error {
@@ -75,7 +82,11 @@ func (e *AthenaExecutor) Connect(ctx context.Context) error {
 
 	e.awsConfig = awsCfg
 	e.client = athena.NewFromConfig(awsCfg)
-	logging.GetLogger().Info("Connected to Athena", zap.String("region", e.cfg.Region))
+	e.log.Info("Connected to Athena",
+		zap.String("region", e.cfg.Region),
+		zap.String("workgroup", e.cfg.Workgroup),
+		zap.String("outputLocation", e.cfg.OutputLocation),
+		zap.String("authType", e.cfg.AuthType))
 	return nil
 }
 
@@ -85,9 +96,10 @@ func (e *AthenaExecutor) ExecuteUnload(ctx context.Context, query, database, s3O
 		query, s3OutputPath,
 	)
 
-	logging.GetLogger().Info("Executing UNLOAD query",
+	e.log.Info("Executing UNLOAD query",
 		zap.String("database", database),
-		zap.String("outputPath", s3OutputPath))
+		zap.String("outputPath", s3OutputPath),
+		zap.String("sqlQuery", query))
 
 	startInput := &athena.StartQueryExecutionInput{
 		QueryString: aws.String(unloadQuery),
@@ -109,7 +121,7 @@ func (e *AthenaExecutor) ExecuteUnload(ctx context.Context, query, database, s3O
 	}
 
 	queryID := *startOutput.QueryExecutionId
-	logging.GetLogger().Info("Started UNLOAD query", zap.String("queryId", queryID))
+	e.log.Info("Started UNLOAD query", zap.String("athenaQueryExecutionId", queryID))
 
 	if err := e.waitForCompletion(ctx, queryID); err != nil {
 		return nil, err
@@ -136,9 +148,10 @@ func (e *AthenaExecutor) ExecuteUnload(ctx context.Context, query, database, s3O
 		}
 	}
 
-	logging.GetLogger().Info("UNLOAD query completed",
-		zap.String("queryId", queryID),
-		zap.Int64("bytesScanned", result.BytesScanned))
+	e.log.Info("UNLOAD query completed",
+		zap.String("athenaQueryExecutionId", queryID),
+		zap.Int64("bytesScanned", result.BytesScanned),
+		zap.String("manifestLocation", result.ManifestLocation))
 
 	return result, nil
 }
@@ -159,9 +172,13 @@ func (e *AthenaExecutor) waitForCompletion(ctx context.Context, queryID string) 
 		}
 
 		state := output.QueryExecution.Status.State
+		e.log.Debug("Polling Athena query status",
+			zap.String("athenaQueryExecutionId", queryID),
+			zap.String("state", string(state)))
 
 		switch state {
 		case athenatypes.QueryExecutionStateSucceeded:
+			e.log.Info("Athena query succeeded", zap.String("athenaQueryExecutionId", queryID))
 			return nil
 		case athenatypes.QueryExecutionStateFailed:
 			reason := ""

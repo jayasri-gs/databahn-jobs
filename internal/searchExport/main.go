@@ -37,11 +37,17 @@ func GenerateSearchExport(ctx context.Context) common.JobResult {
 	}
 
 	if len(reports) == 0 {
-		logging.GetLogger().Info("No search export requests found")
+		logging.GetLogger().Info("No search export requests found during poll")
 		return common.NewJobResultSuccess()
 	}
 
-	logging.GetLogger().Info("Found search export requests", zap.Int("count", len(reports)))
+	reportIDs := make([]string, len(reports))
+	for i, r := range reports {
+		reportIDs[i] = r.ID.String()
+	}
+	logging.GetLogger().Info("Polled search export requests",
+		zap.Int("count", len(reports)),
+		zap.Strings("reportIds", reportIDs))
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, parallelism)
@@ -64,49 +70,56 @@ func GenerateSearchExport(ctx context.Context) common.JobResult {
 	}
 
 	wg.Wait()
-	logging.GetLogger().Info("Search export processor completed")
+	logging.GetLogger().Info("Search export processor completed",
+		zap.Int("processedCount", len(reports)))
 	return common.NewJobResultSuccess()
 }
 
 func processExportRequest(ctx context.Context, db *gorm.DB, report models.SearchExportReport, cfg pipeline.PipelineConfig) {
 	reportID := report.ID.String()
 
-	logging.GetLogger().Info("Processing export request",
-		zap.String("reportId", reportID),
-		zap.String("name", report.Name))
-
-	if err := models.UpdateRequestStatus(db, reportID, consts.PROCESSING); err != nil {
-		logging.GetLogger().Error("Failed to update status", zap.Error(err))
-		return
-	}
-
 	exportConfig, err := report.GetConfig()
+	log := exportLogger(report, exportConfig)
+
+	log.Info("Processing export request", zap.String("name", report.Name))
+
 	if err != nil {
-		handleFailure(db, reportID, report.Retries, "Failed to parse config: "+err.Error())
+		handleFailure(db, log, reportID, report.Retries, "Failed to parse config: "+err.Error())
 		return
 	}
 
 	if exportConfig == nil {
-		handleFailure(db, reportID, report.Retries, "Missing searchExportConfig")
+		handleFailure(db, log, reportID, report.Retries, "Missing searchExportConfig")
 		return
 	}
 
+	if err := models.UpdateRequestStatus(db, reportID, consts.PROCESSING); err != nil {
+		log.Error("Failed to update status to PROCESSING", zap.Error(err))
+		return
+	}
+	log.Info("Export status updated", zap.String("status", consts.PROCESSING))
+
 	destID, err := uuid.Parse(exportConfig.DestinationID)
 	if err != nil {
-		handleFailure(db, reportID, report.Retries, "Invalid destinationId: "+err.Error())
+		handleFailure(db, log, reportID, report.Retries, "Invalid destinationId: "+err.Error())
 		return
 	}
 	tenantID, err := uuid.Parse(report.TenantID)
 	if err != nil {
-		handleFailure(db, reportID, report.Retries, "Invalid tenantId: "+err.Error())
+		handleFailure(db, log, reportID, report.Retries, "Invalid tenantId: "+err.Error())
 		return
 	}
 
 	s3Cfg, err := destination.LoadS3Config(ctx, db, destID, tenantID)
 	if err != nil {
-		handleFailure(db, reportID, report.Retries, "Failed to get destination: "+err.Error())
+		handleFailure(db, log, reportID, report.Retries, "Failed to get destination: "+err.Error())
 		return
 	}
+	log.Info("Destination config loaded",
+		zap.String("bucket", s3Cfg.Bucket),
+		zap.String("region", s3Cfg.Region),
+		zap.String("authType", s3Cfg.AuthType),
+		zap.String("athenaOutputLocation", s3Cfg.AthenaOutputLocation()))
 
 	athenaConfig := query.AthenaConfig{
 		Region:          s3Cfg.Region,
@@ -119,30 +132,35 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		ExternalID:      s3Cfg.ExternalID,
 	}
 	executor := query.NewAthenaExecutor(athenaConfig)
+	executor.SetLogger(log)
 
-	p := pipeline.New(cfg, reportID, exportConfig, executor)
+	p := pipeline.New(cfg, reportID, exportConfig, executor, log)
 	result, err := p.Run(ctx, s3Cfg.Bucket)
 	if err != nil {
-		handleFailure(db, reportID, report.Retries, err.Error())
+		handleFailure(db, log, reportID, report.Retries, err.Error())
 		return
 	}
 
 	if err := models.UpdateExportComplete(db, reportID, result.PresignedURL, result.Expiry); err != nil {
-		handleFailure(db, reportID, report.Retries, "Failed to update completion status: "+err.Error())
+		handleFailure(db, log, reportID, report.Retries, "Failed to update completion status: "+err.Error())
 		return
 	}
 
-	logging.GetLogger().Info("Export completed successfully",
-		zap.String("reportId", reportID),
-		zap.Int64("rows", result.TotalRows),
-		zap.String("location", result.Location))
+	log.Info("Export completed successfully",
+		zap.String("status", consts.COMPLETED),
+		zap.Int64("totalRows", result.TotalRows),
+		zap.Int64("totalBytes", result.TotalBytes),
+		zap.String("location", result.Location),
+		zap.Time("downloadLinkExpiry", result.Expiry))
 }
 
-func handleFailure(db *gorm.DB, reportID string, retries int, errMsg string) {
-	logging.GetLogger().Error("Export failed",
-		zap.String("reportId", reportID),
+func handleFailure(db *gorm.DB, log *zap.Logger, reportID string, retries int, errMsg string) {
+	newRetries := retries + 1
+	log.Error("Export failed",
+		zap.String("status", consts.FAILED),
+		zap.Int("retries", retries),
+		zap.Int("newRetries", newRetries),
 		zap.String("error", errMsg))
 
-	newRetries := retries + 1
 	models.UpdateRequestStatusAndRetries(db, reportID, consts.FAILED, newRetries)
 }
