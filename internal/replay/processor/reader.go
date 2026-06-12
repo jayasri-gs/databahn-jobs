@@ -165,12 +165,9 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			logger.GetLogger().Info("seek to line completed", zap.Int("offset", offsetSeek), zap.Int("lineCounter", lineCounter), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 		}
 
-		// while reading from parquet file itself we consider forwardDataType
-		if (!isParquetFile && strings.EqualFold(forwardDataType, "parsed")) || !matchReplayType(req.ReplayType, "CUSTOM") {
-			line, err = getRawDataFromDataBahnParsedObject(line)
-			if err != nil {
-				return err, constants.StatusFailed
-			}
+		line, err = prepareReplayLine(line, req, isParquetFile)
+		if err != nil {
+			return err, constants.StatusFailed
 		}
 		message := kafka.Message{
 			Message: []byte(line),
@@ -278,19 +275,57 @@ func GetHeader(request model.Message) []kafka.Header {
 	return headers
 }
 
+func prepareReplayLine(line string, req model.Message, isParquetFile bool) (string, error) {
+	forwardDataType := req.AdditionalConfig["forward_data_type"]
+
+	switch {
+	case matchReplayType(req.ReplayType, "UNDELIVERED"):
+		return line, nil
+
+	case matchReplayType(req.ReplayType, "UNPARSED"):
+		return getRawDataFromUnparsedObject(line)
+
+	case matchReplayType(req.ReplayType, "CUSTOM"), strings.TrimSpace(req.ReplayType) == "":
+		if isParquetFile {
+			return line, nil
+		}
+		if strings.EqualFold(forwardDataType, "parsed") {
+			return getRawDataFromDataBahnParsedObject(line)
+		}
+		return line, nil
+
+	default:
+		if isParquetFile {
+			return line, nil
+		}
+		if strings.EqualFold(forwardDataType, "parsed") {
+			return getRawDataFromDataBahnParsedObject(line)
+		}
+		return line, nil
+	}
+}
+
+func getRawDataFromUnparsedObject(line string) (string, error) {
+	return model.ExtractUnparsedRawLog(line)
+}
+
 func getRawDataFromDataBahnParsedObject(line string) (string, error) {
+	return extractRawEvent(line, "Parsed")
+}
+
+func extractRawEvent(line string, eventKind string) (string, error) {
 	var parsedLine databahnParsedLine
 	if err := json.Unmarshal([]byte(line), &parsedLine); err != nil {
-		return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: %v", err)
+		return "", fmt.Errorf("failed to unmarshal %s event to extract rawevent: %v", eventKind, err)
 	}
 	if len(parsedLine.RawEvent) == 0 {
-		return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: rawevent is missing or empty")
+		return "", fmt.Errorf("failed to unmarshal %s event to extract rawevent: rawevent is missing or empty", eventKind)
 	}
 
 	var raweventString string
 	if err := json.Unmarshal(parsedLine.RawEvent, &raweventString); err == nil {
 		if raweventString == "" {
-			return "", fmt.Errorf("failed to unmarshal Parsed event to extract rawevent: rawevent is missing or empty")
+			return "", fmt.Errorf("failed to unmarshal %s event to extract rawevent: rawevent is missing or empty", eventKind)
 		}
 		return raweventString, nil
 	}
@@ -301,6 +336,7 @@ func getRawDataFromDataBahnParsedObject(line string) (string, error) {
 	}
 
 	return "", fmt.Errorf(
-		"failed to unmarshal Parsed event to extract rawevent: rawevent must be a string or an object with msg",
+		"failed to unmarshal %s event to extract rawevent: rawevent must be a string or an object with msg",
+		eventKind,
 	)
 }
