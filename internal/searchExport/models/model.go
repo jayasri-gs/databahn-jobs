@@ -35,6 +35,8 @@ type SearchExportConfig struct {
 	Database      string `json:"database"`
 	DataStoreID   string `json:"dataStoreId"`
 	DataSetID     string `json:"dataSetId"`
+	DataSetName   string `json:"dataSetName"`
+	TableName     string `json:"tableName"`
 	DataStoreType string `json:"dataStoreType"`
 	StartTime     int64  `json:"startTime"`
 	EndTime       int64  `json:"endTime"`

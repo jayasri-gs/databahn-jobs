@@ -134,7 +134,7 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 	executor := query.NewAthenaExecutor(athenaConfig)
 	executor.SetLogger(log)
 
-	p := pipeline.New(cfg, reportID, exportConfig, executor, log)
+	p := pipeline.New(cfg, reportID, report.Name, exportConfig, executor, log)
 	result, err := p.Run(ctx, s3Cfg.Bucket)
 	if err != nil {
 		handleFailure(db, log, reportID, report.Retries, err.Error())

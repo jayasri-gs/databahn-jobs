@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -127,9 +128,11 @@ func (u *S3Uploader) Abort(ctx context.Context) error {
 }
 
 func (u *S3Uploader) GeneratePresignedURL(ctx context.Context, expiry time.Duration) (string, error) {
+	filename := filepath.Base(u.key)
 	output, err := u.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(u.key),
+		Bucket:                     aws.String(u.bucket),
+		Key:                        aws.String(u.key),
+		ResponseContentDisposition: aws.String(fmt.Sprintf(`attachment; filename="%s"`, filename)),
 	}, s3.WithPresignExpires(expiry))
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)

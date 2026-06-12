@@ -34,24 +34,26 @@ type PipelineResult struct {
 }
 
 type Pipeline struct {
-	config   PipelineConfig
-	request  *models.SearchExportConfig
-	reportID string
-	executor query.QueryExecutor
-	uploader upload.CloudUploader
-	log      *zap.Logger
+	config     PipelineConfig
+	request    *models.SearchExportConfig
+	reportID   string
+	exportName string
+	executor   query.QueryExecutor
+	uploader   upload.CloudUploader
+	log        *zap.Logger
 }
 
-func New(cfg PipelineConfig, reportID string, req *models.SearchExportConfig, executor query.QueryExecutor, log *zap.Logger) *Pipeline {
+func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, executor query.QueryExecutor, log *zap.Logger) *Pipeline {
 	if log == nil {
 		log = logging.GetLogger()
 	}
 	return &Pipeline{
-		config:   cfg,
-		request:  req,
-		reportID: reportID,
-		executor: executor,
-		log:      log,
+		config:     cfg,
+		request:    req,
+		reportID:   reportID,
+		exportName: exportName,
+		executor:   executor,
+		log:        log,
 	}
 }
 
@@ -121,7 +123,9 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string) (*PipelineResult,
 		contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 	}
 
-	outputKey := fmt.Sprintf("exports/%s/export.%s", p.reportID, ext)
+	fileName := exportFileName(p.exportName, p.request.TableName, p.request.DataSetName, ext, p.reportID)
+	outputKey := fmt.Sprintf("exports/%s/%s", p.reportID, fileName)
+	p.log.Info("Export output file", zap.String("fileName", fileName), zap.String("outputKey", outputKey))
 
 	p.uploader = upload.NewS3Uploader(awsCfg, p.config.LifecycleTag)
 	if err := p.uploader.Init(ctx, destBucket, outputKey, contentType); err != nil {
@@ -340,4 +344,64 @@ func trimSuffix(s, suffix string) string {
 		return s[:len(s)-len(suffix)]
 	}
 	return s
+}
+
+// exportFileName builds SearchExport_<table>_<datetime>.<ext>.
+func exportFileName(displayName, tableName, dataSetName, ext, reportID string) string {
+	table := sanitizeFileBase(strings.TrimSpace(tableName))
+	if table == "" {
+		table = sanitizeFileBase(strings.TrimSpace(dataSetName))
+	}
+	if table == "" {
+		table = "data"
+		if len(reportID) >= 8 {
+			table = reportID[:8]
+		}
+	}
+	base := fmt.Sprintf("SearchExport_%s_%s", table, exportDateTime(displayName))
+	if len(base) > 120 {
+		base = strings.Trim(base[:120], "._")
+	}
+	return base + "." + ext
+}
+
+// exportDateTime parses the timestamp from the audit report name, e.g. "Search Export - 2026-06-11 18:50:13".
+func exportDateTime(displayName string) string {
+	const sep = " - "
+	if idx := strings.LastIndex(displayName, sep); idx >= 0 {
+		raw := strings.TrimSpace(displayName[idx+len(sep):])
+		if t, err := time.Parse("2006-01-02 15:04:05", raw); err == nil {
+			return t.Format("2006-01-02_15-04-05")
+		}
+	}
+	return time.Now().UTC().Format("2006-01-02_15-04-05")
+}
+
+func sanitizeFileBase(name string) string {
+	if name == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(name))
+	prevUnderscore := false
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevUnderscore = false
+		case r == '-' || r == '.':
+			b.WriteRune(r)
+			prevUnderscore = false
+		default:
+			if !prevUnderscore {
+				b.WriteByte('_')
+				prevUnderscore = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "._")
+	if len(out) > 120 {
+		out = strings.Trim(out[:120], "._")
+	}
+	return out
 }
