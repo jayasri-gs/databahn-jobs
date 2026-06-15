@@ -107,7 +107,7 @@ func UpdateAthenaExecutionID(db *gorm.DB, id, executionID string) error {
 		Where("id = ?", id).
 		Update("report_configuration",
 			gorm.Expr(
-				"jsonb_set(report_configuration, '{searchExportConfig,athenaExecutionId}', to_jsonb(?::text))",
+				"jsonb_set(report_configuration::jsonb, '{searchExportConfig,athenaExecutionId}', to_jsonb(?::text))::json",
 				executionID,
 			),
 		).Error
@@ -119,7 +119,7 @@ func UpdateExecutionStartedAt(db *gorm.DB, id string, t time.Time) error {
 		Where("id = ?", id).
 		Update("report_configuration",
 			gorm.Expr(
-				"jsonb_set(report_configuration, '{searchExportConfig,executionStartedAt}', to_jsonb(?::text))",
+				"jsonb_set(report_configuration::jsonb, '{searchExportConfig,executionStartedAt}', to_jsonb(?::text))::json",
 				t.UTC().Format(time.RFC3339),
 			),
 		).Error
@@ -138,7 +138,7 @@ func ClaimStaleProcessingJob(db *gorm.DB, id string, staleCutoff time.Time) (boo
 		).
 		Update("report_configuration",
 			gorm.Expr(
-				"jsonb_set(report_configuration, '{searchExportConfig,executionStartedAt}', to_jsonb(?::text))",
+				"jsonb_set(report_configuration::jsonb, '{searchExportConfig,executionStartedAt}', to_jsonb(?::text))::json",
 				time.Now().UTC().Format(time.RFC3339),
 			),
 		)
