@@ -44,6 +44,10 @@ type SearchExportConfig struct {
 	Delimiter     string `json:"delimiter"`
 	IncludeHeader bool   `json:"includeHeader"`
 	DestinationID string `json:"destinationId"`
+
+	// Runtime fields — written by jobs worker, ignored by backend-service
+	AthenaExecutionID  string     `json:"athenaExecutionId,omitempty"`
+	ExecutionStartedAt *time.Time `json:"executionStartedAt,omitempty"`
 }
 
 func (r *SearchExportReport) GetConfig() (*SearchExportConfig, error) {
@@ -54,12 +58,19 @@ func (r *SearchExportReport) GetConfig() (*SearchExportConfig, error) {
 	return config.SearchExportConfig, nil
 }
 
-func GetSearchExportRequests(db *gorm.DB) ([]SearchExportReport, error) {
+func GetSearchExportRequests(db *gorm.DB, staleCutoff time.Time) ([]SearchExportReport, error) {
 	var reports []SearchExportReport
-	status := []string{consts.REQUESTED, consts.FAILED}
 	err := db.Table("audit_report").
-		Where("status IN ? AND retries < ? AND report_type = ?",
-			status, consts.MaxRetries, consts.ReportTypeSEARCH_EXPORT).
+		Where(
+			"((status IN ? AND retries < ?) OR "+
+				"(status = ? AND retries < ? AND "+
+				"((report_configuration->'searchExportConfig'->>'executionStartedAt')::timestamptz < ? "+
+				"OR report_configuration->'searchExportConfig'->>'executionStartedAt' IS NULL))) "+
+				"AND report_type = ?",
+			[]string{consts.REQUESTED, consts.FAILED}, consts.MaxRetries,
+			consts.PROCESSING, consts.MaxRetries, staleCutoff,
+			consts.ReportTypeSEARCH_EXPORT,
+		).
 		Find(&reports).Error
 	return reports, err
 }
@@ -87,4 +98,51 @@ func UpdateExportComplete(db *gorm.DB, id string, downloadLink string, expiry ti
 			"download_link":        downloadLink,
 			"download_link_expiry": expiry,
 		}).Error
+}
+
+// UpdateAthenaExecutionID writes the Athena query execution ID into report_configuration JSON.
+func UpdateAthenaExecutionID(db *gorm.DB, id, executionID string) error {
+	return db.Table("audit_report").
+		Where("id = ?", id).
+		Update("report_configuration",
+			gorm.Expr(
+				"jsonb_set(report_configuration, '{searchExportConfig,athenaExecutionId}', to_jsonb(?::text))",
+				executionID,
+			),
+		).Error
+}
+
+// UpdateExecutionStartedAt writes the timestamp into report_configuration JSON when processing begins.
+func UpdateExecutionStartedAt(db *gorm.DB, id string, t time.Time) error {
+	return db.Table("audit_report").
+		Where("id = ?", id).
+		Update("report_configuration",
+			gorm.Expr(
+				"jsonb_set(report_configuration, '{searchExportConfig,executionStartedAt}', to_jsonb(?::text))",
+				t.UTC().Format(time.RFC3339),
+			),
+		).Error
+}
+
+// ClaimStaleProcessingJob atomically refreshes executionStartedAt for a stale PROCESSING job.
+// Returns true if this caller successfully claimed the job (RowsAffected == 1).
+// Returns false if another pod already claimed it.
+func ClaimStaleProcessingJob(db *gorm.DB, id string, staleCutoff time.Time) (bool, error) {
+	result := db.Table("audit_report").
+		Where(
+			"id = ? AND status = ? AND "+
+				"((report_configuration->'searchExportConfig'->>'executionStartedAt')::timestamptz < ? "+
+				"OR report_configuration->'searchExportConfig'->>'executionStartedAt' IS NULL)",
+			id, consts.PROCESSING, staleCutoff,
+		).
+		Update("report_configuration",
+			gorm.Expr(
+				"jsonb_set(report_configuration, '{searchExportConfig,executionStartedAt}', to_jsonb(?::text))",
+				time.Now().UTC().Format(time.RFC3339),
+			),
+		)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }

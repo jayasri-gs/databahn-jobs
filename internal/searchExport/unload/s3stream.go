@@ -22,6 +22,20 @@ const (
 	streamChunkSize = 256 * 1024
 )
 
+// StreamOptions configures resume behaviour and checkpoint callbacks for StreamToUploader.
+type StreamOptions struct {
+	// StartFileIndex skips files 0..StartFileIndex-1 (already uploaded on a previous run).
+	StartFileIndex int
+	// StartPartNumber is the next part number to use. Set to lastUploadedPart+1 on resume.
+	StartPartNumber int
+	// ExistingParts are already-uploaded parts recovered via ListParts; prepended to the
+	// parts slice passed to Complete so the final multipart upload is contiguous.
+	ExistingParts []upload.PartInfo
+	// OnFileCheckpoint is called after a file is fully streamed AND pending is empty
+	// (all bytes committed as complete S3 parts). Safe to write EFS checkpoint here.
+	OnFileCheckpoint func(fileIndex, partNum int, rows, bytes int64)
+}
+
 // StreamToUploader copies UNLOAD output files from S3 directly into a multipart upload,
 // avoiding local disk and Parquet conversion.
 func (r *Reader) StreamToUploader(
@@ -32,9 +46,16 @@ func (r *Reader) StreamToUploader(
 	format string,
 	delimiter string,
 	log *zap.Logger,
+	opts StreamOptions,
 ) (int64, int64, error) {
 	partNum := 1
-	var parts []upload.PartInfo
+	if opts.StartPartNumber > 1 {
+		partNum = opts.StartPartNumber
+	}
+
+	parts := make([]upload.PartInfo, len(opts.ExistingParts))
+	copy(parts, opts.ExistingParts)
+
 	var totalBytes int64
 	var totalRows int64
 	var pending []byte
@@ -71,6 +92,10 @@ func (r *Reader) StreamToUploader(
 	}
 
 	for i, s3Path := range files {
+		if i < opts.StartFileIndex {
+			continue
+		}
+
 		if log != nil {
 			log.Info("Streaming UNLOAD file to export",
 				zap.Int("fileNumber", i+1),
@@ -97,7 +122,8 @@ func (r *Reader) StreamToUploader(
 			return totalRows, totalBytes, fmt.Errorf("failed to open %s: %w", s3Path, err)
 		}
 
-		if i == 0 && len(header) > 0 {
+		// Prepend header before first file's data (only on fresh run, not resume)
+		if i == opts.StartFileIndex && i == 0 && len(header) > 0 {
 			pending = append(pending, header...)
 			if err := flushFullParts(); err != nil {
 				reader.Close()
@@ -124,6 +150,11 @@ func (r *Reader) StreamToUploader(
 		}
 		if err := reader.Close(); err != nil {
 			return totalRows, totalBytes, fmt.Errorf("failed to close %s: %w", s3Path, err)
+		}
+
+		// Checkpoint only when pending is empty — all bytes committed as complete S3 parts.
+		if len(pending) == 0 && opts.OnFileCheckpoint != nil {
+			opts.OnFileCheckpoint(i+1, partNum-1, totalRows, totalBytes)
 		}
 	}
 

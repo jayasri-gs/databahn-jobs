@@ -2,6 +2,7 @@ package upload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -32,6 +33,22 @@ func NewS3Uploader(awsCfg aws.Config, lifecycleTag string) *S3Uploader {
 		lifecycleTag:  lifecycleTag,
 	}
 }
+
+// NewS3UploaderFromExisting reconstructs an S3Uploader for a multipart upload that already exists.
+// Used during resume to call ListParts or continue uploading parts.
+func NewS3UploaderFromExisting(awsCfg aws.Config, bucket, key, uploadID, lifecycleTag string) *S3Uploader {
+	client := s3.NewFromConfig(awsCfg)
+	return &S3Uploader{
+		client:        client,
+		presignClient: s3.NewPresignClient(client),
+		bucket:        bucket,
+		key:           key,
+		uploadID:      uploadID,
+		lifecycleTag:  lifecycleTag,
+	}
+}
+
+func (u *S3Uploader) UploadID() string { return u.uploadID }
 
 func (u *S3Uploader) Init(ctx context.Context, bucket, key, contentType string) error {
 	u.bucket = bucket
@@ -125,6 +142,51 @@ func (u *S3Uploader) Abort(ctx context.Context) error {
 		UploadId: aws.String(u.uploadID),
 	})
 	return err
+}
+
+func (u *S3Uploader) ListParts(ctx context.Context) ([]PartInfo, error) {
+	if u.uploadID == "" {
+		return nil, nil
+	}
+	paginator := s3.NewListPartsPaginator(u.client, &s3.ListPartsInput{
+		Bucket:   aws.String(u.bucket),
+		Key:      aws.String(u.key),
+		UploadId: aws.String(u.uploadID),
+	})
+	var parts []PartInfo
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list parts: %w", err)
+		}
+		for _, p := range page.Parts {
+			parts = append(parts, PartInfo{
+				PartNumber: int(aws.ToInt32(p.PartNumber)),
+				ETag:       aws.ToString(p.ETag),
+				Size:       aws.ToInt64(p.Size),
+			})
+		}
+	}
+	return parts, nil
+}
+
+// AbortOrphanedUpload aborts an in-flight multipart upload by its upload ID.
+// Safe to call if the upload has already been completed or aborted (returns nil).
+func AbortOrphanedUpload(ctx context.Context, awsCfg aws.Config, bucket, key, uploadID string) error {
+	client := s3.NewFromConfig(awsCfg)
+	_, err := client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(bucket),
+		Key:      aws.String(key),
+		UploadId: aws.String(uploadID),
+	})
+	if err != nil {
+		var nsk *s3types.NoSuchUpload
+		if errors.As(err, &nsk) {
+			return nil
+		}
+		return fmt.Errorf("abort orphaned upload: %w", err)
+	}
+	return nil
 }
 
 func (u *S3Uploader) GeneratePresignedURL(ctx context.Context, expiry time.Duration) (string, error) {
