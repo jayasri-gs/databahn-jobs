@@ -3,6 +3,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -100,6 +101,9 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 	}
 	if p.config.EFSMountPath != "" {
 		if err := state.Write(p.config.EFSMountPath, p.reportID, cp); err != nil {
+			if cancelErr := p.executor.CancelQueryExecution(ctx, executionID); cancelErr != nil {
+				p.log.Warn("Failed to cancel Athena query after checkpoint write failure", zap.Error(cancelErr))
+			}
 			return nil, fmt.Errorf("failed to write querying checkpoint: %w", err)
 		}
 	}
@@ -111,7 +115,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 	}
 
 	if err := p.executor.WaitForExecution(ctx, executionID); err != nil {
-		if !isAthenaTimeout(err) {
+		if !shouldPreserveQueryCheckpoint(err) {
 			p.cleanupCheckpoint()
 		}
 		return nil, fmt.Errorf("UNLOAD failed: %w", err)
@@ -124,7 +128,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 	}
 	unloadResult.OutputLocation = tempS3Path
 
-	return p.runUploadPhase(ctx, awsCfg, destBucket, unloadResult, directUpload, unload.StreamOptions{})
+	return p.runUploadPhase(ctx, awsCfg, destBucket, unloadResult, directUpload, unload.StreamOptions{}, nil)
 }
 
 // ResumeRun picks up a stale PROCESSING job using an existing EFS checkpoint.
@@ -183,7 +187,7 @@ func (p *Pipeline) resumeFromQuerying(ctx context.Context, awsCfg aws.Config, de
 	case query.QueryStateRunning, query.QueryStateQueued:
 		p.log.Info("Reattaching to running Athena query")
 		if err := p.executor.WaitForExecution(ctx, cp.AthenaExecutionID); err != nil {
-			if !isAthenaTimeout(err) {
+			if !shouldPreserveQueryCheckpoint(err) {
 				p.cleanupCheckpoint()
 			}
 			return nil, fmt.Errorf("reattached query failed: %w", err)
@@ -195,7 +199,7 @@ func (p *Pipeline) resumeFromQuerying(ctx context.Context, awsCfg aws.Config, de
 		}
 		result.OutputLocation = cp.TempOutputPath
 		unloadOpts := p.unloadOptions()
-		return p.runUploadPhase(ctx, awsCfg, destBucket, result, p.useDirectUpload(unloadOpts), unload.StreamOptions{})
+		return p.runUploadPhase(ctx, awsCfg, destBucket, result, p.useDirectUpload(unloadOpts), unload.StreamOptions{}, nil)
 
 	case query.QueryStateSucceeded:
 		p.log.Info("Athena query already succeeded, skipping to upload phase")
@@ -206,7 +210,7 @@ func (p *Pipeline) resumeFromQuerying(ctx context.Context, awsCfg aws.Config, de
 		}
 		result.OutputLocation = cp.TempOutputPath
 		unloadOpts := p.unloadOptions()
-		return p.runUploadPhase(ctx, awsCfg, destBucket, result, p.useDirectUpload(unloadOpts), unload.StreamOptions{})
+		return p.runUploadPhase(ctx, awsCfg, destBucket, result, p.useDirectUpload(unloadOpts), unload.StreamOptions{}, nil)
 
 	default:
 		p.log.Info("Athena query not recoverable, restarting", zap.String("status", status))
@@ -220,13 +224,7 @@ func (p *Pipeline) resumeFromUploading(ctx context.Context, awsCfg aws.Config, d
 
 	if !directUpload {
 		p.log.Info("Parquet upload resume: aborting orphaned upload, restarting from UNLOAD files")
-		if cp.UploadID != "" {
-			_ = upload.AbortOrphanedUpload(ctx, awsCfg, cp.Bucket, cp.Key, cp.UploadID)
-		}
-		fakeResult := &query.UnloadResult{
-			ManifestLocation: cp.ManifestLocation,
-		}
-		return p.runUploadPhase(ctx, awsCfg, destBucket, fakeResult, false, unload.StreamOptions{})
+		return p.restartUploadFromCheckpoint(ctx, awsCfg, destBucket, cp, false)
 	}
 
 	p.log.Info("Direct upload resume",
@@ -238,22 +236,41 @@ func (p *Pipeline) resumeFromUploading(ctx context.Context, awsCfg aws.Config, d
 	existingParts, err := s3Up.ListParts(ctx)
 	if err != nil || len(existingParts) == 0 {
 		p.log.Warn("ListParts failed or empty — restarting upload from UNLOAD files", zap.Error(err))
-		if cp.UploadID != "" {
-			_ = upload.AbortOrphanedUpload(ctx, awsCfg, cp.Bucket, cp.Key, cp.UploadID)
-		}
-		fakeResult := &query.UnloadResult{ManifestLocation: cp.ManifestLocation}
-		return p.runUploadPhase(ctx, awsCfg, destBucket, fakeResult, true, unload.StreamOptions{})
+		return p.restartUploadFromCheckpoint(ctx, awsCfg, destBucket, cp, true)
 	}
 
 	p.log.Info("Recovered existing parts",
 		zap.Int("partCount", len(existingParts)),
 		zap.Int("resumeFileIndex", cp.ProcessedFileIndex))
 
+	// Only include parts at or before the last checkpointed boundary. Parts uploaded
+	// after the checkpoint but before a crash are orphaned on S3 and must not be
+	// passed to Complete — they will be overwritten when we resume at LastUploadedPart+1.
+	committedParts := make([]upload.PartInfo, 0, cp.LastUploadedPart)
+	for _, part := range existingParts {
+		if part.PartNumber <= cp.LastUploadedPart {
+			committedParts = append(committedParts, part)
+		}
+	}
+	if len(committedParts) < len(existingParts) {
+		p.log.Warn("Ignoring S3 parts beyond checkpoint boundary",
+			zap.Int("checkpointedPart", cp.LastUploadedPart),
+			zap.Int("listedParts", len(existingParts)),
+			zap.Int("committedParts", len(committedParts)))
+	}
+
+	if cp.LastUploadedPart > 0 && len(committedParts) != cp.LastUploadedPart {
+		p.log.Warn("S3 committed parts do not match checkpoint — restarting upload from UNLOAD files",
+			zap.Int("checkpointedPart", cp.LastUploadedPart),
+			zap.Int("committedParts", len(committedParts)))
+		return p.restartUploadFromCheckpoint(ctx, awsCfg, destBucket, cp, true)
+	}
+
 	p.uploader = s3Up
 	streamOpts := unload.StreamOptions{
 		StartFileIndex:  cp.ProcessedFileIndex,
 		StartPartNumber: cp.LastUploadedPart + 1,
-		ExistingParts:   existingParts,
+		ExistingParts:   committedParts,
 	}
 	if p.config.EFSMountPath != "" {
 		s3upRef := s3Up
@@ -265,6 +282,7 @@ func (p *Pipeline) resumeFromUploading(ctx context.Context, awsCfg aws.Config, d
 				Key:                cp.Key,
 				UnloadFiles:        cp.UnloadFiles,
 				ManifestLocation:   cp.ManifestLocation,
+				TempOutputPath:     cp.TempOutputPath,
 				ProcessedFileIndex: fileIndex,
 				LastUploadedPart:   partNum,
 				RowsProcessed:      rows,
@@ -317,6 +335,7 @@ func (p *Pipeline) runUploadPhase(
 	unloadResult *query.UnloadResult,
 	directUpload bool,
 	streamOpts unload.StreamOptions,
+	preloadFiles []string,
 ) (*PipelineResult, error) {
 	unloadReader, err := unload.NewReader(awsCfg, p.config.TempDir)
 	if err != nil {
@@ -324,10 +343,14 @@ func (p *Pipeline) runUploadPhase(
 	}
 
 	var outputFiles []string
-	if unloadResult.ManifestLocation != "" {
+	if len(preloadFiles) > 0 {
+		outputFiles = preloadFiles
+	} else if unloadResult.ManifestLocation != "" {
 		outputFiles, err = unloadReader.ParseManifest(ctx, unloadResult.ManifestLocation)
-	} else {
+	} else if unloadResult.OutputLocation != "" {
 		outputFiles, err = unloadReader.ListFiles(ctx, unloadResult.OutputLocation)
+	} else {
+		return nil, fmt.Errorf("no UNLOAD manifest, output location, or preloaded files")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to list UNLOAD output: %w", err)
@@ -352,6 +375,7 @@ func (p *Pipeline) runUploadPhase(
 	}
 
 	s3Up := p.uploader.(*upload.S3Uploader)
+	tempOutputPath := unloadResult.OutputLocation
 
 	if p.config.EFSMountPath != "" {
 		cp := state.Checkpoint{
@@ -361,6 +385,7 @@ func (p *Pipeline) runUploadPhase(
 			Key:              outputKey,
 			UnloadFiles:      outputFiles,
 			ManifestLocation: unloadResult.ManifestLocation,
+			TempOutputPath:   tempOutputPath,
 		}
 		if err := state.Write(p.config.EFSMountPath, p.reportID, cp); err != nil {
 			p.uploader.Abort(ctx)
@@ -377,6 +402,7 @@ func (p *Pipeline) runUploadPhase(
 				Key:                outputKey,
 				UnloadFiles:        outputFiles,
 				ManifestLocation:   unloadResult.ManifestLocation,
+				TempOutputPath:     tempOutputPath,
 				ProcessedFileIndex: fileIndex,
 				LastUploadedPart:   partNum,
 				RowsProcessed:      rows,
@@ -432,8 +458,34 @@ func (p *Pipeline) cleanupCheckpoint() {
 	}
 }
 
-func isAthenaTimeout(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "timed out")
+func unloadResultFromCheckpoint(cp *state.Checkpoint) *query.UnloadResult {
+	return &query.UnloadResult{
+		ManifestLocation: cp.ManifestLocation,
+		OutputLocation:   cp.TempOutputPath,
+	}
+}
+
+func (p *Pipeline) restartUploadFromCheckpoint(
+	ctx context.Context,
+	awsCfg aws.Config,
+	destBucket string,
+	cp *state.Checkpoint,
+	directUpload bool,
+) (*PipelineResult, error) {
+	if cp.UploadID != "" {
+		_ = upload.AbortOrphanedUpload(ctx, awsCfg, cp.Bucket, cp.Key, cp.UploadID)
+	}
+	return p.runUploadPhase(ctx, awsCfg, destBucket, unloadResultFromCheckpoint(cp), directUpload, unload.StreamOptions{}, cp.UnloadFiles)
+}
+
+func shouldPreserveQueryCheckpoint(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	return strings.Contains(err.Error(), "timed out")
 }
 
 func formatMeta(exportFormat string) (ext, contentType string) {

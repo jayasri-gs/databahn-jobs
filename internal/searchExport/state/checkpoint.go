@@ -47,11 +47,22 @@ func Write(mountPath, reportID string, cp Checkpoint) error {
 	if err := os.MkdirAll(d, 0755); err != nil {
 		return fmt.Errorf("create checkpoint dir: %w", err)
 	}
-	tmp := filePath(mountPath, reportID) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	tmpFile, err := os.CreateTemp(d, "checkpoint-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create checkpoint tmp: %w", err)
+	}
+	tmp := tmpFile.Name()
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		os.Remove(tmp)
 		return fmt.Errorf("write checkpoint tmp: %w", err)
 	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("close checkpoint tmp: %w", err)
+	}
 	if err := os.Rename(tmp, filePath(mountPath, reportID)); err != nil {
+		os.Remove(tmp)
 		return fmt.Errorf("rename checkpoint: %w", err)
 	}
 	return nil

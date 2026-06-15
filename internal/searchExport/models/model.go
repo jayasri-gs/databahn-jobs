@@ -65,10 +65,11 @@ func GetSearchExportRequests(db *gorm.DB, staleCutoff time.Time) ([]SearchExport
 			"((status IN ? AND retries < ?) OR "+
 				"(status = ? AND retries < ? AND "+
 				"((report_configuration->'searchExportConfig'->>'executionStartedAt')::timestamptz < ? "+
-				"OR report_configuration->'searchExportConfig'->>'executionStartedAt' IS NULL))) "+
+				"OR (report_configuration->'searchExportConfig'->>'executionStartedAt' IS NULL "+
+				"AND updated_at < ?)))) "+
 				"AND report_type = ?",
 			[]string{consts.REQUESTED, consts.FAILED}, consts.MaxRetries,
-			consts.PROCESSING, consts.MaxRetries, staleCutoff,
+			consts.PROCESSING, consts.MaxRetries, staleCutoff, staleCutoff,
 			consts.ReportTypeSEARCH_EXPORT,
 		).
 		Find(&reports).Error
@@ -132,8 +133,8 @@ func ClaimStaleProcessingJob(db *gorm.DB, id string, staleCutoff time.Time) (boo
 		Where(
 			"id = ? AND status = ? AND "+
 				"((report_configuration->'searchExportConfig'->>'executionStartedAt')::timestamptz < ? "+
-				"OR report_configuration->'searchExportConfig'->>'executionStartedAt' IS NULL)",
-			id, consts.PROCESSING, staleCutoff,
+				"OR (report_configuration->'searchExportConfig'->>'executionStartedAt' IS NULL AND updated_at < ?))",
+			id, consts.PROCESSING, staleCutoff, staleCutoff,
 		).
 		Update("report_configuration",
 			gorm.Expr(

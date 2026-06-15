@@ -117,7 +117,8 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		}
 		now := time.Now()
 		if err := models.UpdateExecutionStartedAt(db, reportID, now); err != nil {
-			log.Warn("Failed to write executionStartedAt", zap.Error(err))
+			log.Error("Failed to write executionStartedAt — aborting to avoid duplicate processing", zap.Error(err))
+			return
 		}
 	}
 
@@ -204,7 +205,10 @@ func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, cfg pipeli
 		zap.Int("newRetries", newRetries),
 		zap.String("error", errMsg))
 
-	models.UpdateRequestStatusAndRetries(db, report.ID.String(), consts.FAILED, newRetries)
+	if err := models.UpdateRequestStatusAndRetries(db, report.ID.String(), consts.FAILED, newRetries); err != nil {
+		log.Error("Failed to update status and retries after export failure", zap.Error(err))
+		return
+	}
 
 	if newRetries >= consts.MaxRetries && cfg.EFSMountPath != "" {
 		cp, err := state.Read(cfg.EFSMountPath, report.ID.String())

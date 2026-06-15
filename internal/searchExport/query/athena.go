@@ -365,6 +365,19 @@ func (e *AthenaExecutor) GetExecutionResult(ctx context.Context, executionID str
 	return result, nil
 }
 
+// CancelQueryExecution stops a running Athena query execution.
+func (e *AthenaExecutor) CancelQueryExecution(ctx context.Context, executionID string) error {
+	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := e.client.StopQueryExecution(stopCtx, &athena.StopQueryExecutionInput{
+		QueryExecutionId: aws.String(executionID),
+	})
+	if err != nil {
+		return fmt.Errorf("cancel query execution: %w", err)
+	}
+	return nil
+}
+
 func (e *AthenaExecutor) Close() error {
 	return nil
 }

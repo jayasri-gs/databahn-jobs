@@ -2,6 +2,7 @@ package state
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -50,8 +51,14 @@ func TestWriteIsAtomic(t *testing.T) {
 	if got.UploadID != "uid-456" {
 		t.Errorf("expected uid-456, got %q", got.UploadID)
 	}
-	if _, err := os.Stat(filePath(dir, "r1") + ".tmp"); !os.IsNotExist(err) {
-		t.Error("tmp file should not exist after successful write")
+	entries, err := os.ReadDir(filepath.Join(dir, "r1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != "checkpoint.json" {
+			t.Errorf("unexpected file left in checkpoint dir: %s", e.Name())
+		}
 	}
 }
 

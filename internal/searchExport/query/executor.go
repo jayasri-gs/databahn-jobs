@@ -45,4 +45,5 @@ type QueryExecutor interface {
 	CheckQueryStatus(ctx context.Context, executionID string) (string, error)
 	WaitForExecution(ctx context.Context, executionID string) error
 	GetExecutionResult(ctx context.Context, executionID string) (*UnloadResult, error)
+	CancelQueryExecution(ctx context.Context, executionID string) error
 }
