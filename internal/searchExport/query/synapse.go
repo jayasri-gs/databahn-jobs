@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -42,6 +43,9 @@ type SynapseExecutor struct {
 	externalTable string
 	stagingPrefix string
 	cetasCancel   context.CancelFunc
+	cetasMu       sync.Mutex
+	cetasDone     bool
+	cetasErr      error
 }
 
 type cetasParams struct {
@@ -218,20 +222,44 @@ func (e *SynapseExecutor) ExecuteUnloadAsync(ctx context.Context, query, databas
 	}
 	executionID := fmt.Sprintf("%d", spid)
 
-	// CETAS runs on a dedicated connection; completion is tracked via SPID + DMV/blob polling.
+	e.resetCetasResult()
+
+	// CETAS runs on a dedicated connection; completion is tracked via connection result + DMV/blob polling.
 	// WithoutCancel keeps short parent deadlines from aborting CETAS; cetasCancel stops it on shutdown.
 	execCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	e.cetasCancel = cancel
 	go func() {
 		defer cancel()
 		defer conn.Close()
-		if _, err := conn.ExecContext(execCtx, cetasSQL); err != nil {
+		_, err := conn.ExecContext(execCtx, cetasSQL)
+		e.recordCetasResult(err)
+		if err != nil {
 			e.log.Warn("Synapse CETAS connection ended", zap.String("spid", executionID), zap.Error(err))
 		}
 	}()
 
 	e.log.Info("Started Synapse CETAS", zap.String("spid", executionID), zap.String("externalTable", tableName))
 	return executionID, nil
+}
+
+func (e *SynapseExecutor) resetCetasResult() {
+	e.cetasMu.Lock()
+	defer e.cetasMu.Unlock()
+	e.cetasDone = false
+	e.cetasErr = nil
+}
+
+func (e *SynapseExecutor) recordCetasResult(err error) {
+	e.cetasMu.Lock()
+	defer e.cetasMu.Unlock()
+	e.cetasDone = true
+	e.cetasErr = err
+}
+
+func (e *SynapseExecutor) cetasConnectionResult() (done bool, err error) {
+	e.cetasMu.Lock()
+	defer e.cetasMu.Unlock()
+	return e.cetasDone, e.cetasErr
 }
 
 func (e *SynapseExecutor) stopCetas(executionID string) {
@@ -252,6 +280,7 @@ func (e *SynapseExecutor) WaitForExecution(ctx context.Context, executionID stri
 	for {
 		status, err := e.CheckQueryStatus(ctx, executionID)
 		if err != nil {
+			e.stopCetas(executionID)
 			return err
 		}
 		switch status {
@@ -318,6 +347,18 @@ func (e *SynapseExecutor) sessionExists(ctx context.Context, spid int) (bool, er
 }
 
 func (e *SynapseExecutor) CheckQueryStatus(ctx context.Context, executionID string) (string, error) {
+	if done, err := e.cetasConnectionResult(); done {
+		if err != nil {
+			return QueryStateFailed, fmt.Errorf("synapse CETAS failed: %w", err)
+		}
+		hasFiles, checkErr := e.stagingHasOutput(ctx)
+		if checkErr != nil {
+			return "", checkErr
+		}
+		if hasFiles {
+			return QueryStateSucceeded, nil
+		}
+	}
 	return e.queryStatusFromDMV(ctx, executionID)
 }
 

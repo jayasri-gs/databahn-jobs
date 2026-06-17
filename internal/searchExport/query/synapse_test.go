@@ -1,6 +1,8 @@
 package query
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -47,5 +49,18 @@ func TestBuildDropExternalTableSQL(t *testing.T) {
 	}
 	if strings.Contains(sql, "DROP EXTERNAL TABLE IF EXISTS") {
 		t.Fatalf("must not use unsupported DROP IF EXISTS syntax: %s", sql)
+	}
+}
+
+func TestCheckQueryStatus_PropagatesCetasConnectionError(t *testing.T) {
+	exec := &SynapseExecutor{}
+	exec.recordCetasResult(fmt.Errorf("Parquet magic bytes not found"))
+
+	status, err := exec.CheckQueryStatus(context.Background(), "132")
+	if status != QueryStateFailed {
+		t.Fatalf("status: got %q", status)
+	}
+	if err == nil || !strings.Contains(err.Error(), "Parquet magic bytes not found") {
+		t.Fatalf("err: %v", err)
 	}
 }
