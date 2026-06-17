@@ -41,6 +41,7 @@ type SynapseExecutor struct {
 	log           *zap.Logger
 	externalTable string
 	stagingPrefix string
+	cetasCancel   context.CancelFunc
 }
 
 type cetasParams struct {
@@ -218,8 +219,11 @@ func (e *SynapseExecutor) ExecuteUnloadAsync(ctx context.Context, query, databas
 	executionID := fmt.Sprintf("%d", spid)
 
 	// CETAS runs on a dedicated connection; completion is tracked via SPID + DMV/blob polling.
-	execCtx := context.WithoutCancel(ctx)
+	// WithoutCancel keeps short parent deadlines from aborting CETAS; cetasCancel stops it on shutdown.
+	execCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	e.cetasCancel = cancel
 	go func() {
+		defer cancel()
 		defer conn.Close()
 		if _, err := conn.ExecContext(execCtx, cetasSQL); err != nil {
 			e.log.Warn("Synapse CETAS connection ended", zap.String("spid", executionID), zap.Error(err))
@@ -228,6 +232,19 @@ func (e *SynapseExecutor) ExecuteUnloadAsync(ctx context.Context, query, databas
 
 	e.log.Info("Started Synapse CETAS", zap.String("spid", executionID), zap.String("externalTable", tableName))
 	return executionID, nil
+}
+
+func (e *SynapseExecutor) stopCetas(executionID string) {
+	if e.cetasCancel != nil {
+		e.cetasCancel()
+		e.cetasCancel = nil
+	}
+	if executionID == "" {
+		return
+	}
+	killCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = e.CancelQueryExecution(killCtx, executionID)
 }
 
 func (e *SynapseExecutor) WaitForExecution(ctx context.Context, executionID string) error {
@@ -241,14 +258,16 @@ func (e *SynapseExecutor) WaitForExecution(ctx context.Context, executionID stri
 		case QueryStateSucceeded:
 			return nil
 		case QueryStateFailed, QueryStateCancelled:
+			e.stopCetas(executionID)
 			return fmt.Errorf("synapse CETAS failed")
 		}
 		if time.Now().After(deadline) {
-			_ = e.CancelQueryExecution(ctx, executionID)
+			e.stopCetas(executionID)
 			return fmt.Errorf("synapse CETAS timed out after %v", synapseQueryTimeout)
 		}
 		select {
 		case <-ctx.Done():
+			e.stopCetas(executionID)
 			return ctx.Err()
 		case <-time.After(2 * time.Second):
 		}
@@ -412,6 +431,7 @@ func (e *SynapseExecutor) Close() error {
 	if e.db == nil {
 		return nil
 	}
+	e.stopCetas("")
 	if e.externalTable != "" {
 		if _, err := e.db.Exec(buildDropExternalTableSQL(e.externalTable)); err != nil {
 			e.log.Warn("Failed to drop synapse external table", zap.String("table", e.externalTable), zap.Error(err))
