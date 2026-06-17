@@ -52,14 +52,6 @@ func TestBuildDropExternalTableSQL(t *testing.T) {
 	}
 }
 
-func TestExportProbeQuery(t *testing.T) {
-	q := "SELECT * FROM events WHERE id = 1"
-	got := exportProbeQuery(q)
-	if !strings.Contains(got, "SELECT TOP 1 * FROM (") || !strings.Contains(got, q) {
-		t.Fatalf("unexpected probe sql: %s", got)
-	}
-}
-
 func TestCheckQueryStatus_PropagatesCetasConnectionError(t *testing.T) {
 	exec := &SynapseExecutor{}
 	exec.recordCetasResult(fmt.Errorf("Parquet magic bytes not found"))

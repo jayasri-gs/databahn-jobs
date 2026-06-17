@@ -187,19 +187,26 @@ func reportIDFromUnloadPath(outputPath string) string {
 	return strings.ReplaceAll(strings.Trim(outputPath, "/"), "/", "_")
 }
 
-func exportProbeQuery(query string) string {
-	return fmt.Sprintf("SELECT TOP 1 * FROM (%s) AS databahn_export_probe", query)
-}
-
-// ValidateExportQuery runs a lightweight read against the export SQL before CETAS.
-// Surfaces format/view/permission errors in seconds instead of after a full-range scan.
+// ValidateExportQuery runs the export SQL with ROWCOUNT 1 on a dedicated connection.
+// Preserves original query grammar (CTEs, ORDER BY) while limiting rows read.
 func (e *SynapseExecutor) ValidateExportQuery(ctx context.Context, query string) error {
 	if e.db == nil {
 		return fmt.Errorf("synapse not connected")
 	}
+	conn, err := e.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("synapse export preflight connection: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, "SET ROWCOUNT 1"); err != nil {
+		return fmt.Errorf("synapse export preflight failed: %w", err)
+	}
+	defer func() { _, _ = conn.ExecContext(context.Background(), "SET ROWCOUNT 0") }()
+
 	preflightCtx, cancel := context.WithTimeout(ctx, synapsePreflightTimeout)
 	defer cancel()
-	rows, err := e.db.QueryContext(preflightCtx, exportProbeQuery(query))
+	rows, err := conn.QueryContext(preflightCtx, query)
 	if err != nil {
 		return fmt.Errorf("synapse export preflight failed: %w", err)
 	}
