@@ -401,8 +401,7 @@ func (e *SynapseExecutor) CheckQueryStatus(ctx context.Context, executionID stri
 		if hasFiles {
 			return QueryStateSucceeded, nil
 		}
-		return QueryStateFailed, fmt.Errorf(
-			"synapse CETAS failed: completed with no staging output at prefix %q", e.stagingPrefix)
+		// Connection ended without error; blobs may lag — fall through to DMV/session checks.
 	}
 	return e.queryStatusFromDMV(ctx, executionID)
 }
@@ -434,6 +433,10 @@ func (e *SynapseExecutor) queryStatusFromDMV(ctx context.Context, executionID st
 			return "", sessErr
 		}
 		if !exists {
+			if done, cetasErr := e.cetasConnectionResult(); done && cetasErr == nil {
+				return QueryStateFailed, fmt.Errorf(
+					"synapse CETAS failed: completed with no staging output at prefix %q", e.stagingPrefix)
+			}
 			return QueryStateFailed, nil
 		}
 		return QueryStateRunning, nil

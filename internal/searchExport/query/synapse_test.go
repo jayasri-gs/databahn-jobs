@@ -68,15 +68,12 @@ func TestCheckQueryStatus_PropagatesCetasConnectionError(t *testing.T) {
 	}
 }
 
-func TestCheckQueryStatus_FailsWhenCetasCompletesWithoutStaging(t *testing.T) {
+func TestCheckQueryStatus_CetasSuccessWithoutStagingFallsThroughToDMV(t *testing.T) {
 	exec := &SynapseExecutor{stagingPrefix: "unload_abc/"}
 	exec.recordCetasResult(nil)
 
-	status, err := exec.CheckQueryStatus(context.Background(), "132")
-	if status != QueryStateFailed {
-		t.Fatalf("status: got %q", status)
-	}
-	if err == nil || !strings.Contains(err.Error(), "no staging output") {
-		t.Fatalf("err: %v", err)
+	_, err := exec.CheckQueryStatus(context.Background(), "132")
+	if err == nil || !strings.Contains(err.Error(), "synapse not connected") {
+		t.Fatalf("expected DMV fallback without db, got: %v", err)
 	}
 }
