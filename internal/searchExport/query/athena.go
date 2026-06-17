@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	athenatypes "github.com/aws/aws-sdk-go-v2/service/athena/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/databahn-ai/databahn-jobs/internal/searchExport/unload"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -112,68 +113,10 @@ func buildUnloadSQL(query, s3OutputPath string, opts UnloadOptions) string {
 	}
 }
 
-func (e *AthenaExecutor) ExecuteUnload(ctx context.Context, query, database, s3OutputPath string, opts UnloadOptions) (*UnloadResult, error) {
-	unloadQuery := buildUnloadSQL(query, s3OutputPath, opts)
+func (e *AthenaExecutor) Engine() string { return EngineAthena }
 
-	e.log.Info("Executing UNLOAD query",
-		zap.String("database", database),
-		zap.String("outputPath", s3OutputPath),
-		zap.String("unloadFormat", opts.Format),
-		zap.String("sqlQuery", query))
-
-	startInput := &athena.StartQueryExecutionInput{
-		QueryString: aws.String(unloadQuery),
-		QueryExecutionContext: &athenatypes.QueryExecutionContext{
-			Database: aws.String(database),
-		},
-		WorkGroup: aws.String(e.cfg.Workgroup),
-	}
-
-	if e.cfg.OutputLocation != "" {
-		startInput.ResultConfiguration = &athenatypes.ResultConfiguration{
-			OutputLocation: aws.String(e.cfg.OutputLocation),
-		}
-	}
-
-	startOutput, err := e.client.StartQueryExecution(ctx, startInput)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start UNLOAD query: %w", err)
-	}
-
-	queryID := *startOutput.QueryExecutionId
-	e.log.Info("Started UNLOAD query", zap.String("athenaQueryExecutionId", queryID))
-
-	if err := e.waitForCompletion(ctx, queryID); err != nil {
-		return nil, err
-	}
-
-	execOutput, err := e.client.GetQueryExecution(ctx, &athena.GetQueryExecutionInput{
-		QueryExecutionId: aws.String(queryID),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get query execution details: %w", err)
-	}
-
-	result := &UnloadResult{
-		OutputLocation: s3OutputPath,
-	}
-
-	if execOutput.QueryExecution != nil && execOutput.QueryExecution.Statistics != nil {
-		stats := execOutput.QueryExecution.Statistics
-		if stats.DataManifestLocation != nil {
-			result.ManifestLocation = *stats.DataManifestLocation
-		}
-		if stats.DataScannedInBytes != nil {
-			result.BytesScanned = *stats.DataScannedInBytes
-		}
-	}
-
-	e.log.Info("UNLOAD query completed",
-		zap.String("athenaQueryExecutionId", queryID),
-		zap.Int64("bytesScanned", result.BytesScanned),
-		zap.String("manifestLocation", result.ManifestLocation))
-
-	return result, nil
+func (e *AthenaExecutor) NewStagingReader(tempDir string) (unload.StagingReader, error) {
+	return unload.NewReader(e.awsConfig, tempDir)
 }
 
 func (e *AthenaExecutor) ExecuteUnloadAsync(ctx context.Context, query, database, s3OutputPath string, opts UnloadOptions) (string, error) {

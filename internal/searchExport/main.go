@@ -10,12 +10,11 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/consts"
+	"github.com/databahn-ai/databahn-jobs/internal/searchExport/factory"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/pipeline"
-	"github.com/databahn-ai/databahn-jobs/internal/searchExport/query"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/state"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/upload"
-	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -90,11 +89,11 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 	log := exportLogger(report, exportConfig)
 
 	if err != nil {
-		handleFailure(ctx, db, log, cfg, report, "Failed to parse config: "+err.Error(), nil)
+		handleFailure(ctx, db, log, cfg, report, "Failed to parse config: "+err.Error(), nil, nil)
 		return
 	}
 	if exportConfig == nil {
-		handleFailure(ctx, db, log, cfg, report, "Missing searchExportConfig", nil)
+		handleFailure(ctx, db, log, cfg, report, "Missing searchExportConfig", nil, nil)
 		return
 	}
 
@@ -124,68 +123,50 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 
 	log.Info("Export status updated", zap.String("status", consts.PROCESSING))
 
-	destID, err := uuid.Parse(exportConfig.DestinationID)
-	if err != nil {
-		handleFailure(ctx, db, log, cfg, report, "Invalid destinationId: "+err.Error(), nil)
-		return
-	}
 	tenantID, err := uuid.Parse(report.TenantID)
 	if err != nil {
-		handleFailure(ctx, db, log, cfg, report, "Invalid tenantId: "+err.Error(), nil)
+		handleFailure(ctx, db, log, cfg, report, "Invalid tenantId: "+err.Error(), nil, nil)
 		return
 	}
 
-	s3Cfg, err := destination.LoadS3Config(ctx, db, destID, tenantID)
+	deps, err := factory.NewExportDeps(ctx, db, exportConfig, tenantID, reportID, log)
 	if err != nil {
-		handleFailure(ctx, db, log, cfg, report, "Failed to get destination: "+err.Error(), nil)
+		handleFailure(ctx, db, log, cfg, report, "Failed to build export dependencies: "+err.Error(), nil, nil)
 		return
 	}
-	log.Info("Destination config loaded",
-		zap.String("bucket", s3Cfg.Bucket),
-		zap.String("region", s3Cfg.Region),
-		zap.String("authType", s3Cfg.AuthType),
-		zap.String("athenaOutputLocation", s3Cfg.AthenaOutputLocation()))
 
-	athenaConfig := query.AthenaConfig{
-		Region:          s3Cfg.Region,
-		Workgroup:       "primary",
-		OutputLocation:  s3Cfg.AthenaOutputLocation(),
-		AuthType:        s3Cfg.AuthType,
-		AccessKeyID:     s3Cfg.AccessKeyID,
-		SecretAccessKey: s3Cfg.SecretAccessKey,
-		RoleArn:         s3Cfg.RoleArn,
-		ExternalID:      s3Cfg.ExternalID,
-	}
-	executor := query.NewAthenaExecutor(athenaConfig)
-	executor.SetLogger(log)
+	log.Info("Export dependencies loaded",
+		zap.String("exportBucket", deps.ExportBucket),
+		zap.String("engine", deps.Executor.Engine()),
+		zap.Bool("legacyMode", deps.LegacyMode))
 
-	p := pipeline.New(cfg, reportID, report.Name, exportConfig, executor, log)
+	p := pipeline.New(cfg, reportID, report.Name, exportConfig, deps.Executor, deps.Uploader, log)
 
-	onAthenaStart := func(executionID string) error {
-		return models.UpdateAthenaExecutionID(db, reportID, executionID)
+	onQueryStart := func(executionID string) error {
+		return models.UpdateQueryExecutionID(db, reportID, executionID)
 	}
 
 	var result *pipeline.PipelineResult
 	if isStaleProcessing {
-		result, err = p.ResumeRun(ctx, s3Cfg.Bucket, onAthenaStart)
+		result, err = p.ResumeRun(ctx, deps.ExportBucket, onQueryStart)
 	} else {
-		result, err = p.Run(ctx, s3Cfg.Bucket, onAthenaStart)
+		result, err = p.Run(ctx, deps.ExportBucket, onQueryStart)
 	}
 	if err != nil {
 		var awsCfg *aws.Config
-		if c, ok := executor.GetAWSConfig().(aws.Config); ok {
+		if c, ok := deps.Executor.GetAWSConfig().(aws.Config); ok {
 			awsCfg = &c
 		}
-		handleFailure(ctx, db, log, cfg, report, err.Error(), awsCfg)
+		handleFailure(ctx, db, log, cfg, report, err.Error(), awsCfg, deps.Uploader)
 		return
 	}
 
 	if err := models.UpdateExportComplete(db, reportID, result.PresignedURL, result.Expiry); err != nil {
 		var awsCfg *aws.Config
-		if c, ok := executor.GetAWSConfig().(aws.Config); ok {
+		if c, ok := deps.Executor.GetAWSConfig().(aws.Config); ok {
 			awsCfg = &c
 		}
-		handleFailure(ctx, db, log, cfg, report, "Failed to update completion status: "+err.Error(), awsCfg)
+		handleFailure(ctx, db, log, cfg, report, "Failed to update completion status: "+err.Error(), awsCfg, deps.Uploader)
 		return
 	}
 
@@ -197,7 +178,7 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		zap.Time("downloadLinkExpiry", result.Expiry))
 }
 
-func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, cfg pipeline.PipelineConfig, report models.SearchExportReport, errMsg string, awsCfg *aws.Config) {
+func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, cfg pipeline.PipelineConfig, report models.SearchExportReport, errMsg string, awsCfg *aws.Config, uploader upload.CloudUploader) {
 	newRetries := report.Retries + 1
 	log.Error("Export failed",
 		zap.String("status", consts.FAILED),
@@ -212,9 +193,17 @@ func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, cfg pipeli
 
 	if newRetries >= consts.MaxRetries && cfg.EFSMountPath != "" {
 		cp, err := state.Read(cfg.EFSMountPath, report.ID.String())
-		if err == nil && cp != nil && cp.UploadID != "" && awsCfg != nil {
-			if abortErr := upload.AbortOrphanedUpload(ctx, *awsCfg, cp.Bucket, cp.Key, cp.UploadID); abortErr != nil {
-				log.Warn("Failed to abort orphaned multipart upload", zap.Error(abortErr))
+		if err == nil && cp != nil && cp.UploadID != "" {
+			if uploader != nil {
+				if az, ok := uploader.(*upload.AzureUploader); ok {
+					_ = az.AbortInFlight(ctx, cp.Bucket, cp.Key)
+				} else {
+					_ = uploader.Abort(ctx)
+				}
+			} else if awsCfg != nil {
+				if abortErr := upload.AbortOrphanedUpload(ctx, *awsCfg, cp.Bucket, cp.Key, cp.UploadID); abortErr != nil {
+					log.Warn("Failed to abort orphaned multipart upload", zap.Error(abortErr))
+				}
 			}
 		}
 		if err := state.Delete(cfg.EFSMountPath, report.ID.String()); err != nil {

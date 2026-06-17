@@ -10,6 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	QueryEngineAthena  = "ATHENA"
+	QueryEngineSynapse = "SYNAPSE"
+	DestTypeS3         = "S3"
+	DestTypeS3Parquet  = "S3_PARQUET"
+	DestTypeAzureBlob  = "AZURE_BLOB"
+)
+
 type SearchExportReport struct {
 	ID                  uuid.UUID      `json:"id" gorm:"column:id"`
 	Name                string         `json:"name" gorm:"column:name"`
@@ -44,6 +52,12 @@ type SearchExportConfig struct {
 	Delimiter     string `json:"delimiter"`
 	IncludeHeader bool   `json:"includeHeader"`
 	DestinationID string `json:"destinationId"`
+
+	QueryEngine           string `json:"queryEngine,omitempty"`
+	DestinationType       string `json:"destinationType,omitempty"`
+	SynapseDataSourceName string `json:"synapseDataSourceName,omitempty"`
+	QueryExecutionID      string `json:"queryExecutionId,omitempty"`
+	SynapseExternalTable  string `json:"synapseExternalTable,omitempty"`
 
 	// Runtime fields — written by jobs worker, ignored by backend-service
 	AthenaExecutionID  string     `json:"athenaExecutionId,omitempty"`
@@ -103,12 +117,20 @@ func UpdateExportComplete(db *gorm.DB, id string, downloadLink string, expiry ti
 
 // UpdateAthenaExecutionID writes the Athena query execution ID into report_configuration JSON.
 func UpdateAthenaExecutionID(db *gorm.DB, id, executionID string) error {
+	return UpdateQueryExecutionID(db, id, executionID)
+}
+
+// UpdateQueryExecutionID writes the query execution ID into report_configuration JSON.
+func UpdateQueryExecutionID(db *gorm.DB, id, executionID string) error {
 	return db.Table("audit_report").
 		Where("id = ?", id).
 		Update("report_configuration",
 			gorm.Expr(
-				"jsonb_set(report_configuration::jsonb, '{searchExportConfig,athenaExecutionId}', to_jsonb(?::text))::json",
-				executionID,
+				`jsonb_set(
+					jsonb_set(report_configuration::jsonb, '{searchExportConfig,queryExecutionId}', to_jsonb(?::text)),
+					'{searchExportConfig,athenaExecutionId}', to_jsonb(?::text)
+				)::json`,
+				executionID, executionID,
 			),
 		).Error
 }

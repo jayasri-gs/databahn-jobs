@@ -23,7 +23,7 @@ func assertField(t *testing.T, field, want, got string, sensitive bool) {
 }
 
 func TestParseS3ConfigFromWrapper_InlineCredentials(t *testing.T) {
-	wrapper := configWrapper{
+	wrapper := ConfigWrapper{
 		Configuration: map[string]string{
 			"auth_type":         "key_based",
 			"access_key_id":     "test-access-key-id",
@@ -45,7 +45,7 @@ func TestParseS3ConfigFromWrapper_InlineCredentials(t *testing.T) {
 }
 
 func TestParseS3ConfigFromWrapper_RoleBased(t *testing.T) {
-	wrapper := configWrapper{
+	wrapper := ConfigWrapper{
 		Configuration: map[string]string{
 			"auth_type":   "role_based",
 			"role_arn":    "arn:aws:iam::123:role/test",
@@ -65,7 +65,7 @@ func TestParseS3ConfigFromWrapper_RoleBased(t *testing.T) {
 }
 
 func TestParseS3ConfigFromWrapper_SecretOverlay(t *testing.T) {
-	wrapper := configWrapper{
+	wrapper := ConfigWrapper{
 		Configuration: map[string]string{
 			"access_key_id":     "inline-key",
 			"secret_access_key": "inline-value",
@@ -89,7 +89,7 @@ func TestParseS3ConfigFromWrapper_SecretOverlay(t *testing.T) {
 }
 
 func TestParseS3ConfigFromWrapper_MissingBucket(t *testing.T) {
-	wrapper := configWrapper{
+	wrapper := ConfigWrapper{
 		Configuration: map[string]string{
 			"region": "us-east-1",
 		},
@@ -101,7 +101,7 @@ func TestParseS3ConfigFromWrapper_MissingBucket(t *testing.T) {
 }
 
 func TestParseS3ConfigFromWrapper_MissingRegion(t *testing.T) {
-	wrapper := configWrapper{
+	wrapper := ConfigWrapper{
 		Configuration: map[string]string{
 			"bucket": "only-bucket",
 		},

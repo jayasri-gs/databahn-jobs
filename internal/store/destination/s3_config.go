@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	dbaws "github.com/databahn-ai/common-utils/aws"
-	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -32,19 +30,7 @@ type s3ConfigRow struct {
 	Configuration string    `gorm:"column:configuration"`
 }
 
-type configWrapper struct {
-	SecretID      string            `json:"secretId"`
-	Configuration map[string]string `json:"configuration"`
-}
-
-func (w *configWrapper) getString(key string) string {
-	if w.Configuration == nil {
-		return ""
-	}
-	return w.Configuration[key]
-}
-
-func parseS3ConfigFromWrapper(wrapper configWrapper, credentialOverrides map[string]string) (*S3Config, error) {
+func parseS3ConfigFromWrapper(wrapper ConfigWrapper, credentialOverrides map[string]string) (*S3Config, error) {
 	cfg := &S3Config{
 		AuthType:        wrapper.getString("auth_type"),
 		AccessKeyID:     wrapper.getString("access_key_id"),
@@ -78,35 +64,6 @@ func parseS3ConfigFromWrapper(wrapper configWrapper, credentialOverrides map[str
 	return cfg, nil
 }
 
-// resolveCredentialOverrides loads credential fields from Secrets Manager when a destination references a secret.
-//
-//nolint:gosec // CWE-532 false positive: credentials are returned to callers, never logged
-func resolveCredentialOverrides(ctx context.Context, db *gorm.DB, secretRefID string, destID, tenantID uuid.UUID) (map[string]string, error) {
-	var backendSecretID string
-	err := db.WithContext(ctx).Raw(
-		"SELECT backend_secret_id FROM secrets WHERE id = ? LIMIT 1",
-		secretRefID,
-	).Scan(&backendSecretID).Error
-	if err != nil || backendSecretID == "" {
-		return nil, fmt.Errorf("failed to look up backend_secret_id: secret reference not found or inaccessible (destination=%s, tenant=%s)", destID, tenantID)
-	}
-
-	smOutput, err := dbaws.ReadSecretByName(backendSecretID, appConfig.GetAppConfiguration().GetString("region"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read secret from AWS Secrets Manager (destination=%s, tenant=%s)", destID, tenantID)
-	}
-
-	if smOutput.SecretString == nil {
-		return nil, nil
-	}
-
-	var credentialFields map[string]string
-	if err := json.Unmarshal([]byte(*smOutput.SecretString), &credentialFields); err != nil {
-		return nil, fmt.Errorf("failed to parse secret value: malformed JSON (destination=%s, tenant=%s)", destID, tenantID)
-	}
-	return credentialFields, nil
-}
-
 func LoadS3Config(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) (*S3Config, error) {
 	var dest s3ConfigRow
 	err := db.WithContext(ctx).Raw(
@@ -121,7 +78,7 @@ func LoadS3Config(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) 
 		return nil, fmt.Errorf("destination configuration is empty for %s", destID)
 	}
 
-	var wrapper configWrapper
+	var wrapper ConfigWrapper
 	if err := json.Unmarshal([]byte(dest.Configuration), &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse destination configuration: %w", err)
 	}
@@ -129,7 +86,7 @@ func LoadS3Config(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) 
 	var credentialOverrides map[string]string
 	if wrapper.SecretID != "" {
 		var err error
-		credentialOverrides, err = resolveCredentialOverrides(ctx, db, wrapper.SecretID, destID, dest.TenantID)
+		credentialOverrides, err = ResolveCredentialOverrides(ctx, db, wrapper.SecretID, destID, dest.TenantID)
 		if err != nil {
 			return nil, err
 		}

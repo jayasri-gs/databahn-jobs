@@ -16,6 +16,7 @@ const (
 type Checkpoint struct {
 	Stage              string    `json:"stage"`
 	AthenaExecutionID  string    `json:"athena_execution_id"`
+	QueryExecutionID   string    `json:"query_execution_id"`
 	UploadID           string    `json:"upload_id"`
 	Bucket             string    `json:"bucket"`
 	Key                string    `json:"key"`

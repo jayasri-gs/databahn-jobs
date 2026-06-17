@@ -2,6 +2,8 @@ package query
 
 import (
 	"context"
+
+	"github.com/databahn-ai/databahn-jobs/internal/searchExport/unload"
 )
 
 const (
@@ -10,13 +12,10 @@ const (
 	QueryStateSucceeded = "SUCCEEDED"
 	QueryStateFailed    = "FAILED"
 	QueryStateCancelled = "CANCELLED"
-)
 
-type ColumnType struct {
-	Name         string
-	DatabaseType string
-	Nullable     bool
-}
+	EngineAthena  = "ATHENA"
+	EngineSynapse = "SYNAPSE"
+)
 
 type UnloadResult struct {
 	OutputLocation   string
@@ -24,24 +23,22 @@ type UnloadResult struct {
 	BytesScanned     int64
 }
 
-// UnloadOptions selects the Athena UNLOAD output format.
-// Parquet is used for Excel; TEXTFILE/JSON skip the local conversion step for CSV/JSON exports.
+// UnloadOptions selects the server-side export output format (Athena UNLOAD or Synapse CETAS).
 type UnloadOptions struct {
 	Format    string // parquet, textfile, json
 	Delimiter string // single-character delimiter for textfile (CSV)
 }
 
 type QueryExecutor interface {
+	Engine() string
 	Connect(ctx context.Context) error
-	ExecuteUnload(ctx context.Context, query, database, s3OutputPath string, opts UnloadOptions) (*UnloadResult, error)
-	// ExecuteUnloadAsync starts an UNLOAD query and returns the execution ID without waiting.
-	ExecuteUnloadAsync(ctx context.Context, query, database, s3OutputPath string, opts UnloadOptions) (executionID string, err error)
+	ExecuteUnloadAsync(ctx context.Context, query, database, outputPath string, opts UnloadOptions) (executionID string, err error)
 	GetQueryColumns(ctx context.Context, query, database string) ([]string, error)
 	GetAWSConfig() interface{}
 	GetOutputLocation() string
+	NewStagingReader(tempDir string) (unload.StagingReader, error)
 	Close() error
 
-	// Resume support
 	CheckQueryStatus(ctx context.Context, executionID string) (string, error)
 	WaitForExecution(ctx context.Context, executionID string) error
 	GetExecutionResult(ctx context.Context, executionID string) (*UnloadResult, error)

@@ -157,7 +157,7 @@ func (r *Reader) StreamRows(ctx context.Context, files []string, callback func(r
 		downloadDuration := time.Since(downloadStart)
 
 		processStart := time.Now()
-		processErr := r.processParquetFile(localPath, callback)
+		processErr := ProcessLocalParquetFile(localPath, &r.columns, callback)
 		processDuration := time.Since(processStart)
 		os.Remove(localPath)
 
@@ -175,7 +175,7 @@ func (r *Reader) StreamRows(ctx context.Context, files []string, callback func(r
 	return nil
 }
 
-func (r *Reader) processParquetFile(localPath string, callback func(row []interface{}) error) error {
+func ProcessLocalParquetFile(localPath string, columns *[]string, callback func(row []interface{}) error) error {
 	fr, err := local.NewLocalFileReader(localPath)
 	if err != nil {
 		return fmt.Errorf("failed to open parquet file: %w", err)
@@ -193,14 +193,14 @@ func (r *Reader) processParquetFile(localPath string, callback func(row []interf
 		return nil
 	}
 
-	if r.columns == nil {
+	if columns != nil && *columns == nil {
 		schema := pr.SchemaHandler
 		for _, elem := range schema.SchemaElements {
 			if elem.Name == "schema" || elem.Name == "spark_schema" || elem.Name == "hive_schema" {
 				continue
 			}
 			if elem.Type != nil {
-				r.columns = append(r.columns, elem.Name)
+				*columns = append(*columns, elem.Name)
 			}
 		}
 	}
@@ -218,7 +218,7 @@ func (r *Reader) processParquetFile(localPath string, callback func(row []interf
 		}
 
 		for _, row := range rows {
-			rowData := r.extractRowValues(row)
+			rowData := extractRowValuesFromParquet(row, columns)
 			if err := callback(rowData); err != nil {
 				return err
 			}
@@ -228,12 +228,19 @@ func (r *Reader) processParquetFile(localPath string, callback func(row []interf
 	return nil
 }
 
-func (r *Reader) extractRowValues(row interface{}) []interface{} {
-	result := make([]interface{}, len(r.columns))
+func (r *Reader) processParquetFile(localPath string, callback func(row []interface{}) error) error {
+	return ProcessLocalParquetFile(localPath, &r.columns, callback)
+}
+
+func extractRowValuesFromParquet(row interface{}, columns *[]string) []interface{} {
+	if columns == nil || *columns == nil {
+		return nil
+	}
+	result := make([]interface{}, len(*columns))
 
 	switch v := row.(type) {
 	case map[string]interface{}:
-		for i, col := range r.columns {
+		for i, col := range *columns {
 			result[i] = dereferenceValue(v[col])
 		}
 	default:
@@ -242,7 +249,7 @@ func (r *Reader) extractRowValues(row interface{}) []interface{} {
 			val = val.Elem()
 		}
 		if val.Kind() == reflect.Struct {
-			for i, col := range r.columns {
+			for i, col := range *columns {
 				field := val.FieldByName(col)
 				if field.IsValid() {
 					result[i] = dereferenceValue(field.Interface())
@@ -250,7 +257,6 @@ func (r *Reader) extractRowValues(row interface{}) []interface{} {
 			}
 		}
 	}
-
 	return result
 }
 
@@ -275,6 +281,15 @@ func (r *Reader) Columns() []string {
 }
 
 func (r *Reader) DeleteS3Files(ctx context.Context, files []string) {
+	r.deleteS3Files(ctx, files)
+}
+
+func (r *Reader) DeleteFiles(ctx context.Context, files []string) error {
+	r.deleteS3Files(ctx, files)
+	return nil
+}
+
+func (r *Reader) deleteS3Files(ctx context.Context, files []string) {
 	for _, s3Path := range files {
 		bucket, key := parseS3Path(s3Path)
 		if bucket == "" {
