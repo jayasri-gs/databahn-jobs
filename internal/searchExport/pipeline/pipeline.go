@@ -70,6 +70,23 @@ func (p *Pipeline) buildTempOutputPath() string {
 	return trimSuffix(athenaOutputLoc, "/") + "/" + tempPath
 }
 
+// stagingListPrefix prefers the executor result (e.g. Synapse CETAS blob prefix);
+// Athena UNLOAD often leaves OutputLocation empty and relies on tempOutputPath instead.
+func stagingListPrefix(executorLocation, fallback string) string {
+	if executorLocation != "" {
+		return executorLocation
+	}
+	return normalizeBlobStagingPrefix(fallback)
+}
+
+func normalizeBlobStagingPrefix(path string) string {
+	path = strings.TrimPrefix(path, "/")
+	if after, ok := strings.CutPrefix(path, ".databahn_out/"); ok {
+		return strings.Trim(after, "/")
+	}
+	return path
+}
+
 func checkpointExecutionID(cp *state.Checkpoint) string {
 	if cp.QueryExecutionID != "" {
 		return cp.QueryExecutionID
@@ -133,7 +150,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 		p.cleanupCheckpoint()
 		return nil, fmt.Errorf("failed to get UNLOAD result: %w", err)
 	}
-	unloadResult.OutputLocation = tempOutputPath
+	unloadResult.OutputLocation = stagingListPrefix(unloadResult.OutputLocation, tempOutputPath)
 
 	return p.runUploadPhase(ctx, destBucket, unloadResult, directUpload, unload.StreamOptions{}, nil)
 }
@@ -213,7 +230,7 @@ func (p *Pipeline) resumeFromQuerying(ctx context.Context, awsCfg aws.Config, aw
 			p.cleanupCheckpoint()
 			return nil, fmt.Errorf("get execution result after reattach: %w", err)
 		}
-		result.OutputLocation = cp.TempOutputPath
+		result.OutputLocation = stagingListPrefix(result.OutputLocation, cp.TempOutputPath)
 		unloadOpts := p.unloadOptions()
 		return p.runUploadPhase(ctx, destBucket, result, p.useDirectUpload(unloadOpts), unload.StreamOptions{}, nil)
 
@@ -224,7 +241,7 @@ func (p *Pipeline) resumeFromQuerying(ctx context.Context, awsCfg aws.Config, aw
 			p.cleanupCheckpoint()
 			return nil, fmt.Errorf("get execution result: %w", err)
 		}
-		result.OutputLocation = cp.TempOutputPath
+		result.OutputLocation = stagingListPrefix(result.OutputLocation, cp.TempOutputPath)
 		unloadOpts := p.unloadOptions()
 		return p.runUploadPhase(ctx, destBucket, result, p.useDirectUpload(unloadOpts), unload.StreamOptions{}, nil)
 
@@ -483,7 +500,7 @@ func (p *Pipeline) cleanupCheckpoint() {
 func unloadResultFromCheckpoint(cp *state.Checkpoint) *query.UnloadResult {
 	return &query.UnloadResult{
 		ManifestLocation: cp.ManifestLocation,
-		OutputLocation:   cp.TempOutputPath,
+		OutputLocation:   normalizeBlobStagingPrefix(cp.TempOutputPath),
 	}
 }
 

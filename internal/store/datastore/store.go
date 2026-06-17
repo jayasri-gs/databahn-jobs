@@ -111,11 +111,12 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 
 	externalProvider := ""
 	if storeCfg.ExternalSearchDataStoreConfiguration != nil {
-		externalProvider = storeCfg.ExternalSearchDataStoreConfiguration.ExternalSearchProvider
+		externalProvider = strings.ToUpper(storeCfg.ExternalSearchDataStoreConfiguration.ExternalSearchProvider)
 	}
 
 	linkedDestType := ""
-	result := &ExportDataStore{ID: row.ID, Type: row.Type}
+	storeType := strings.ToUpper(row.Type)
+	result := &ExportDataStore{ID: row.ID, Type: storeType}
 
 	if row.DestinationID != nil {
 		var destType string
@@ -143,9 +144,9 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 		}
 	}
 
-	result.QueryEngine = DeriveQueryEngine(row.Type, linkedDestType, externalProvider)
+	result.QueryEngine = DeriveQueryEngine(storeType, linkedDestType, externalProvider)
 	if result.QueryEngine == "" {
-		return nil, fmt.Errorf("unsupported search_data_store: type=%s dest=%s provider=%s", row.Type, linkedDestType, externalProvider)
+		return nil, fmt.Errorf("unsupported search_data_store: type=%s dest=%s provider=%s", storeType, linkedDestType, externalProvider)
 	}
 
 	if result.QueryEngine == QueryEngineSynapse && storeCfg.AzureSynapseConfiguration != nil {

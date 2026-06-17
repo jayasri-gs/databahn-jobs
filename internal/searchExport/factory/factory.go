@@ -32,7 +32,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		return nil, fmt.Errorf("export config is required")
 	}
 
-	queryEngine := cfg.QueryEngine
+	queryEngine := strings.ToUpper(cfg.QueryEngine)
 	legacyMode := queryEngine == ""
 	if legacyMode {
 		queryEngine = models.QueryEngineAthena
@@ -45,10 +45,18 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 
 	destType := strings.ToUpper(cfg.DestinationType)
 	if destType == "" {
-		if s3Cfg, err := destination.LoadS3Config(ctx, db, destID, tenantID); err == nil && s3Cfg != nil {
+		s3Cfg, s3Err := destination.LoadS3Config(ctx, db, destID, tenantID)
+		if s3Err == nil && s3Cfg != nil {
 			destType = models.DestTypeS3
-		} else if blobCfg, err := destination.LoadAzureBlobConfig(ctx, db, destID, tenantID); err == nil && blobCfg != nil {
-			destType = models.DestTypeAzureBlob
+		} else {
+			blobCfg, blobErr := destination.LoadAzureBlobConfig(ctx, db, destID, tenantID)
+			if blobErr == nil && blobCfg != nil {
+				destType = models.DestTypeAzureBlob
+			} else if s3Err != nil {
+				return nil, s3Err
+			} else if blobErr != nil {
+				return nil, blobErr
+			}
 		}
 	}
 
@@ -61,7 +69,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		if err != nil {
 			return nil, err
 		}
-		awsCfg, err := awsConfigFromS3(exportS3)
+		awsCfg, err := awsConfigFromS3(ctx, exportS3)
 		if err != nil {
 			return nil, err
 		}
@@ -188,8 +196,7 @@ func IsSupportedExportMatrix(queryEngine, destType string) bool {
 	}
 }
 
-func awsConfigFromS3(cfg *destination.S3Config) (aws.Config, error) {
-	ctx := context.Background()
+func awsConfigFromS3(ctx context.Context, cfg *destination.S3Config) (aws.Config, error) {
 	var opts []func(*awsconfig.LoadOptions) error
 	opts = append(opts, awsconfig.WithRegion(cfg.Region))
 	if cfg.AuthType == "role_based" {

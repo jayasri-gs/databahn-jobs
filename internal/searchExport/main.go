@@ -194,16 +194,14 @@ func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, cfg pipeli
 	if newRetries >= consts.MaxRetries && cfg.EFSMountPath != "" {
 		cp, err := state.Read(cfg.EFSMountPath, report.ID.String())
 		if err == nil && cp != nil && cp.UploadID != "" {
-			if uploader != nil {
-				if az, ok := uploader.(*upload.AzureUploader); ok {
-					_ = az.AbortInFlight(ctx, cp.Bucket, cp.Key)
-				} else {
-					_ = uploader.Abort(ctx)
-				}
+			if az, ok := uploader.(*upload.AzureUploader); ok {
+				_ = az.AbortInFlight(ctx, cp.Bucket, cp.Key)
 			} else if awsCfg != nil {
 				if abortErr := upload.AbortOrphanedUpload(ctx, *awsCfg, cp.Bucket, cp.Key, cp.UploadID); abortErr != nil {
 					log.Warn("Failed to abort orphaned multipart upload", zap.Error(abortErr))
 				}
+			} else if uploader != nil {
+				_ = uploader.Abort(ctx)
 			}
 		}
 		if err := state.Delete(cfg.EFSMountPath, report.ID.String()); err != nil {

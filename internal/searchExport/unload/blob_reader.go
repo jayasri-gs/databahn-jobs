@@ -196,28 +196,34 @@ func streamReadersToUploader(
 
 func (r *BlobReader) StreamRows(ctx context.Context, files []string, callback func(row []interface{}) error) error {
 	for i, blobName := range files {
-		localPath := filepath.Join(r.tempDir, filepath.Base(blobName))
-		resp, err := r.client.DownloadStream(ctx, r.container, blobName, nil)
-		if err != nil {
-			return fmt.Errorf("download %s: %w", blobName, err)
-		}
-		f, err := os.Create(localPath)
-		if err != nil {
-			resp.Body.Close()
-			return err
-		}
-		if _, err := io.Copy(f, resp.Body); err != nil {
+		if err := func() error {
+			localPath := filepath.Join(r.tempDir, filepath.Base(blobName))
+			defer os.Remove(localPath)
+
+			resp, err := r.client.DownloadStream(ctx, r.container, blobName, nil)
+			if err != nil {
+				return fmt.Errorf("download %s: %w", blobName, err)
+			}
+			f, err := os.Create(localPath)
+			if err != nil {
+				resp.Body.Close()
+				return err
+			}
+			if _, err := io.Copy(f, resp.Body); err != nil {
+				f.Close()
+				resp.Body.Close()
+				return err
+			}
 			f.Close()
 			resp.Body.Close()
+			if err := ProcessLocalParquetFile(localPath, &r.columns, callback); err != nil {
+				return fmt.Errorf("process %s: %w", blobName, err)
+			}
+			logging.GetLogger().Info("Finished blob parquet conversion", zap.Int("fileNumber", i+1))
+			return nil
+		}(); err != nil {
 			return err
 		}
-		f.Close()
-		resp.Body.Close()
-		if err := ProcessLocalParquetFile(localPath, &r.columns, callback); err != nil {
-			return fmt.Errorf("process %s: %w", blobName, err)
-		}
-		os.Remove(localPath)
-		logging.GetLogger().Info("Finished blob parquet conversion", zap.Int("fileNumber", i+1))
 	}
 	return nil
 }

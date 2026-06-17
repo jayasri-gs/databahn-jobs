@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -22,6 +21,7 @@ type AzureUploader struct {
 	accountName string
 	container   string
 	blobName    string
+	uploadID    string
 	blockIDs    []string
 	contentType string
 }
@@ -39,6 +39,7 @@ func (u *AzureUploader) Init(ctx context.Context, container, blobName, contentTy
 	u.blobName = blobName
 	u.contentType = contentType
 	u.blockIDs = nil
+	u.uploadID = fmt.Sprintf("%s/%s", container, blobName)
 	u.bbClient = u.client.ServiceClient().NewContainerClient(container).NewBlockBlobClient(blobName)
 	return nil
 }
@@ -87,7 +88,7 @@ func (u *AzureUploader) AbortInFlight(ctx context.Context, container, blobName s
 	return err
 }
 
-func (u *AzureUploader) UploadID() string { return strings.Join(u.blockIDs, ",") }
+func (u *AzureUploader) UploadID() string { return u.uploadID }
 
 func (u *AzureUploader) ListParts(ctx context.Context) ([]PartInfo, error) {
 	if len(u.blockIDs) == 0 {

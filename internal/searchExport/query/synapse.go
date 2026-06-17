@@ -132,6 +132,8 @@ func (e *SynapseExecutor) Connect(ctx context.Context) error {
 	e.db = db
 
 	if err := e.ensureExportFileFormats(ctx); err != nil {
+		db.Close()
+		e.db = nil
 		return err
 	}
 	return nil
@@ -185,12 +187,6 @@ func (e *SynapseExecutor) ExecuteUnloadAsync(ctx context.Context, query, databas
 	if e.db == nil {
 		return "", fmt.Errorf("synapse not connected")
 	}
-	var spid int
-	if err := e.db.QueryRowContext(ctx, "SELECT @@SPID").Scan(&spid); err != nil {
-		return "", fmt.Errorf("failed to read synapse SPID: %w", err)
-	}
-	executionID := fmt.Sprintf("%d", spid)
-	e.currentSPID = executionID
 
 	tableName := sanitizeSynapseObjectName("DatabahnExport_" + reportIDFromUnloadPath(outputPath))
 	e.externalTable = tableName
@@ -213,14 +209,27 @@ func (e *SynapseExecutor) ExecuteUnloadAsync(ctx context.Context, query, databas
 		Query:         query,
 	})
 
+	conn, err := e.db.Conn(ctx)
+	if err != nil {
+		return "", fmt.Errorf("acquire synapse connection: %w", err)
+	}
+	var spid int
+	if err := conn.QueryRowContext(ctx, "SELECT @@SPID").Scan(&spid); err != nil {
+		conn.Close()
+		return "", fmt.Errorf("failed to read synapse SPID: %w", err)
+	}
+	executionID := fmt.Sprintf("%d", spid)
+	e.currentSPID = executionID
+
 	e.runMu.Lock()
 	e.runDone = make(chan struct{})
 	e.runErr = nil
 	e.runMu.Unlock()
 
 	go func() {
+		defer conn.Close()
 		defer close(e.runDone)
-		_, err := e.db.ExecContext(ctx, cetasSQL)
+		_, err := conn.ExecContext(ctx, cetasSQL)
 		e.runMu.Lock()
 		e.runErr = err
 		e.runMu.Unlock()
@@ -383,7 +392,11 @@ func (e *SynapseExecutor) CancelQueryExecution(ctx context.Context, executionID 
 	if e.db == nil || executionID == "" {
 		return nil
 	}
-	_, err := e.db.ExecContext(ctx, "DECLARE @killcmd NVARCHAR(32) = N'KILL ' + CONVERT(NVARCHAR(20), ?); EXEC (@killcmd)", executionID)
+	var spid int
+	if _, err := fmt.Sscanf(executionID, "%d", &spid); err != nil || spid <= 0 {
+		return fmt.Errorf("invalid synapse execution id: %s", executionID)
+	}
+	_, err := e.db.ExecContext(ctx, "DECLARE @killcmd NVARCHAR(32) = N'KILL ' + CONVERT(NVARCHAR(20), @p1); EXEC (@killcmd)", spid)
 	return err
 }
 
