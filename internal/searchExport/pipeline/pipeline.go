@@ -112,6 +112,13 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 		zap.String("unloadFormat", unloadOpts.Format),
 		zap.Bool("directUpload", directUpload))
 
+	if syn, ok := p.executor.(*query.SynapseExecutor); ok {
+		p.log.Info("Running Synapse export preflight")
+		if err := syn.ValidateExportQuery(ctx, p.request.Query); err != nil {
+			return nil, err
+		}
+	}
+
 	executionID, err := p.executor.ExecuteUnloadAsync(ctx, p.request.Query, p.request.Database, tempOutputPath, unloadOpts)
 	if err != nil {
 		return nil, fmt.Errorf("UNLOAD start failed: %w", err)

@@ -22,6 +22,8 @@ const (
 	synapseParquetFileFormat = "DatabahnExportParquetFF"
 	synapseCsvFileFormat     = "DatabahnExportCsvFF"
 	synapseQueryTimeout      = 30 * time.Minute
+	synapsePreflightTimeout  = 5 * time.Minute
+	synapseProgressInterval  = 30 * time.Second
 )
 
 var validSynapseObjectName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -185,6 +187,26 @@ func reportIDFromUnloadPath(outputPath string) string {
 	return strings.ReplaceAll(strings.Trim(outputPath, "/"), "/", "_")
 }
 
+func exportProbeQuery(query string) string {
+	return fmt.Sprintf("SELECT TOP 1 * FROM (%s) AS databahn_export_probe", query)
+}
+
+// ValidateExportQuery runs a lightweight read against the export SQL before CETAS.
+// Surfaces format/view/permission errors in seconds instead of after a full-range scan.
+func (e *SynapseExecutor) ValidateExportQuery(ctx context.Context, query string) error {
+	if e.db == nil {
+		return fmt.Errorf("synapse not connected")
+	}
+	preflightCtx, cancel := context.WithTimeout(ctx, synapsePreflightTimeout)
+	defer cancel()
+	rows, err := e.db.QueryContext(preflightCtx, exportProbeQuery(query))
+	if err != nil {
+		return fmt.Errorf("synapse export preflight failed: %w", err)
+	}
+	defer rows.Close()
+	return rows.Err()
+}
+
 func (e *SynapseExecutor) ExecuteUnloadAsync(ctx context.Context, query, database, outputPath string, opts UnloadOptions) (string, error) {
 	if e.db == nil {
 		return "", fmt.Errorf("synapse not connected")
@@ -281,6 +303,8 @@ func isDefinitiveCetasFailure(err error) bool {
 
 func (e *SynapseExecutor) WaitForExecution(ctx context.Context, executionID string) error {
 	deadline := time.Now().Add(synapseQueryTimeout)
+	started := time.Now()
+	lastProgress := started
 	for {
 		status, err := e.CheckQueryStatus(ctx, executionID)
 		if err != nil {
@@ -296,7 +320,15 @@ func (e *SynapseExecutor) WaitForExecution(ctx context.Context, executionID stri
 			e.stopCetas(executionID)
 			return fmt.Errorf("synapse CETAS failed")
 		}
-		if time.Now().After(deadline) {
+		now := time.Now()
+		if now.Sub(lastProgress) >= synapseProgressInterval {
+			e.log.Info("Synapse CETAS in progress",
+				zap.String("spid", executionID),
+				zap.String("status", status),
+				zap.Duration("elapsed", now.Sub(started)))
+			lastProgress = now
+		}
+		if now.After(deadline) {
 			return fmt.Errorf("synapse CETAS timed out after %v", synapseQueryTimeout)
 		}
 		select {
@@ -362,6 +394,8 @@ func (e *SynapseExecutor) CheckQueryStatus(ctx context.Context, executionID stri
 		if hasFiles {
 			return QueryStateSucceeded, nil
 		}
+		return QueryStateFailed, fmt.Errorf(
+			"synapse CETAS failed: completed with no staging output at prefix %q", e.stagingPrefix)
 	}
 	return e.queryStatusFromDMV(ctx, executionID)
 }

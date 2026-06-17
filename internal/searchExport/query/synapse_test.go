@@ -52,6 +52,14 @@ func TestBuildDropExternalTableSQL(t *testing.T) {
 	}
 }
 
+func TestExportProbeQuery(t *testing.T) {
+	q := "SELECT * FROM events WHERE id = 1"
+	got := exportProbeQuery(q)
+	if !strings.Contains(got, "SELECT TOP 1 * FROM (") || !strings.Contains(got, q) {
+		t.Fatalf("unexpected probe sql: %s", got)
+	}
+}
+
 func TestCheckQueryStatus_PropagatesCetasConnectionError(t *testing.T) {
 	exec := &SynapseExecutor{}
 	exec.recordCetasResult(fmt.Errorf("Parquet magic bytes not found"))
@@ -65,5 +73,18 @@ func TestCheckQueryStatus_PropagatesCetasConnectionError(t *testing.T) {
 	}
 	if !isDefinitiveCetasFailure(err) {
 		t.Fatalf("expected definitive CETAS failure")
+	}
+}
+
+func TestCheckQueryStatus_FailsWhenCetasCompletesWithoutStaging(t *testing.T) {
+	exec := &SynapseExecutor{stagingPrefix: "unload_abc/"}
+	exec.recordCetasResult(nil)
+
+	status, err := exec.CheckQueryStatus(context.Background(), "132")
+	if status != QueryStateFailed {
+		t.Fatalf("status: got %q", status)
+	}
+	if err == nil || !strings.Contains(err.Error(), "no staging output") {
+		t.Fatalf("err: %v", err)
 	}
 }
