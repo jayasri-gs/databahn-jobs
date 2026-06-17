@@ -275,12 +275,18 @@ func (e *SynapseExecutor) stopCetas(executionID string) {
 	_ = e.CancelQueryExecution(killCtx, executionID)
 }
 
+func isDefinitiveCetasFailure(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "synapse CETAS failed:")
+}
+
 func (e *SynapseExecutor) WaitForExecution(ctx context.Context, executionID string) error {
 	deadline := time.Now().Add(synapseQueryTimeout)
 	for {
 		status, err := e.CheckQueryStatus(ctx, executionID)
 		if err != nil {
-			e.stopCetas(executionID)
+			if isDefinitiveCetasFailure(err) {
+				e.stopCetas(executionID)
+			}
 			return err
 		}
 		switch status {
@@ -291,12 +297,10 @@ func (e *SynapseExecutor) WaitForExecution(ctx context.Context, executionID stri
 			return fmt.Errorf("synapse CETAS failed")
 		}
 		if time.Now().After(deadline) {
-			e.stopCetas(executionID)
 			return fmt.Errorf("synapse CETAS timed out after %v", synapseQueryTimeout)
 		}
 		select {
 		case <-ctx.Done():
-			e.stopCetas(executionID)
 			return ctx.Err()
 		case <-time.After(2 * time.Second):
 		}

@@ -63,4 +63,7 @@ func TestCheckQueryStatus_PropagatesCetasConnectionError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Parquet magic bytes not found") {
 		t.Fatalf("err: %v", err)
 	}
+	if !isDefinitiveCetasFailure(err) {
+		t.Fatalf("expected definitive CETAS failure")
+	}
 }
