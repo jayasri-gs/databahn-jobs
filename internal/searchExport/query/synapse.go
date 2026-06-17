@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -42,10 +41,6 @@ type SynapseExecutor struct {
 	log           *zap.Logger
 	externalTable string
 	stagingPrefix string
-	currentSPID   string
-	runMu         sync.Mutex
-	runDone       chan struct{}
-	runErr        error
 }
 
 type cetasParams struct {
@@ -81,7 +76,8 @@ AS
 }
 
 func buildDropExternalTableSQL(table string) string {
-	return fmt.Sprintf("DROP EXTERNAL TABLE IF EXISTS [dbo].[%s]", table)
+	return fmt.Sprintf(`IF EXISTS (SELECT 1 FROM sys.external_tables WHERE name = N'%s' AND schema_id = SCHEMA_ID('dbo'))
+DROP EXTERNAL TABLE [dbo].[%s]`, table, table)
 }
 
 func mapCetasFileFormat(opts UnloadOptions) string {
@@ -117,9 +113,10 @@ func (e *SynapseExecutor) Connect(ctx context.Context) error {
 		return fmt.Errorf("synapse data source name is required for CETAS")
 	}
 
+	timeoutSec := int(synapseQueryTimeout.Seconds())
 	connString := fmt.Sprintf(
-		"server=%s-ondemand.sql.azuresynapse.net;port=1433;database=%s;user id=%s;password=%s;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;connection timeout=30",
-		e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword,
+		"server=%s-ondemand.sql.azuresynapse.net;port=1433;database=%s;user id=%s;password=%s;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;connection timeout=%d",
+		e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword, timeoutSec,
 	)
 	db, err := sql.Open("sqlserver", connString)
 	if err != nil {
@@ -219,22 +216,13 @@ func (e *SynapseExecutor) ExecuteUnloadAsync(ctx context.Context, query, databas
 		return "", fmt.Errorf("failed to read synapse SPID: %w", err)
 	}
 	executionID := fmt.Sprintf("%d", spid)
-	e.currentSPID = executionID
 
-	e.runMu.Lock()
-	e.runDone = make(chan struct{})
-	e.runErr = nil
-	e.runMu.Unlock()
-
+	// CETAS runs on a dedicated connection; completion is tracked via SPID + DMV/blob polling.
+	execCtx := context.WithoutCancel(ctx)
 	go func() {
 		defer conn.Close()
-		defer close(e.runDone)
-		_, err := conn.ExecContext(ctx, cetasSQL)
-		e.runMu.Lock()
-		e.runErr = err
-		e.runMu.Unlock()
-		if err != nil {
-			e.log.Error("Synapse CETAS failed", zap.Error(err))
+		if _, err := conn.ExecContext(execCtx, cetasSQL); err != nil {
+			e.log.Warn("Synapse CETAS connection ended", zap.String("spid", executionID), zap.Error(err))
 		}
 	}()
 
@@ -251,20 +239,8 @@ func (e *SynapseExecutor) WaitForExecution(ctx context.Context, executionID stri
 		}
 		switch status {
 		case QueryStateSucceeded:
-			e.runMu.Lock()
-			err := e.runErr
-			e.runMu.Unlock()
-			if err != nil {
-				return fmt.Errorf("synapse CETAS failed: %w", err)
-			}
 			return nil
 		case QueryStateFailed, QueryStateCancelled:
-			e.runMu.Lock()
-			err := e.runErr
-			e.runMu.Unlock()
-			if err != nil {
-				return fmt.Errorf("synapse CETAS failed: %w", err)
-			}
 			return fmt.Errorf("synapse CETAS failed")
 		}
 		if time.Now().After(deadline) {
@@ -323,22 +299,6 @@ func (e *SynapseExecutor) sessionExists(ctx context.Context, spid int) (bool, er
 }
 
 func (e *SynapseExecutor) CheckQueryStatus(ctx context.Context, executionID string) (string, error) {
-	e.runMu.Lock()
-	done := e.runDone
-	runErr := e.runErr
-	e.runMu.Unlock()
-
-	if done != nil {
-		select {
-		case <-done:
-			if runErr != nil {
-				return QueryStateFailed, nil
-			}
-			return QueryStateSucceeded, nil
-		default:
-			return QueryStateRunning, nil
-		}
-	}
 	return e.queryStatusFromDMV(ctx, executionID)
 }
 

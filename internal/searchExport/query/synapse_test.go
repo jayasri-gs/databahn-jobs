@@ -36,3 +36,16 @@ func TestReportIDFromUnloadPath(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestBuildDropExternalTableSQL(t *testing.T) {
+	sql := buildDropExternalTableSQL("DatabahnExport_abc")
+	if !strings.Contains(sql, "sys.external_tables") {
+		t.Fatalf("expected sys.external_tables guard: %s", sql)
+	}
+	if !strings.Contains(sql, "DROP EXTERNAL TABLE [dbo].[DatabahnExport_abc]") {
+		t.Fatalf("missing drop: %s", sql)
+	}
+	if strings.Contains(sql, "DROP EXTERNAL TABLE IF EXISTS") {
+		t.Fatalf("must not use unsupported DROP IF EXISTS syntax: %s", sql)
+	}
+}
