@@ -170,9 +170,12 @@ func synapseMSDSNConfig(workspace, database, username, credential string) msdsn.
 	}
 }
 
-// OpenSynapseSQL opens a Synapse serverless pool connection without building a loggable DSN string.
+// OpenSynapseSQL opens a Synapse serverless pool connection.
 func OpenSynapseSQL(ctx context.Context, workspace, database, username, credential string) (*sql.DB, error) {
-	connector := mssql.NewConnectorConfig(synapseMSDSNConfig(workspace, database, username, credential))
+	connector, err := mssql.NewConnector(BuildSynapseConnectionString(workspace, database, username, credential))
+	if err != nil {
+		return nil, fmt.Errorf("synapse connection config: %w", err)
+	}
 	db := sql.OpenDB(connector)
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
