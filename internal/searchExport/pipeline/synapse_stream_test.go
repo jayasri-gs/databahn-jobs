@@ -34,6 +34,13 @@ func (m *mockSynapseStream) StreamRows(_ context.Context, _ string, _ query.Stre
 	return n, nil
 }
 
+func TestColumnIndex_caseInsensitive(t *testing.T) {
+	cols := []string{"DB_EDGE_TS", "col1"}
+	if got := columnIndex(cols, "db_edge_ts"); got != 0 {
+		t.Fatalf("columnIndex = %d, want 0", got)
+	}
+}
+
 func TestPipelineRun_UsesSynapseBranch(t *testing.T) {
 	mock := &mockSynapseStream{rows: [][]interface{}{{"a"}}}
 	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, "report-1", "test_npe 2026-06-17", &models.SearchExportConfig{

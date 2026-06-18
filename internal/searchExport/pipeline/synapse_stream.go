@@ -102,6 +102,9 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 	rangeEndMs := p.request.EndTime
 	hours := query.PlanHourChunks(rangeStartMs, rangeEndMs)
 	useHourChunks := len(hours) > 0
+	if useHourChunks && opts.HourBatchRows > 0 && sortColIdx < 0 && !opts.SkipPreflight {
+		return nil, fmt.Errorf("hour-chunk export requires db_edge_ts column in query result")
+	}
 
 	startHour := 0
 	subStart := 0
@@ -193,6 +196,9 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 				progress.subIndex = sub + 1
 				if err := p.writeSynapseStreamCheckpointFromProgress(destBucket, outputKey, len(hours), progress); err != nil {
 					return err
+				}
+				if opts.HourBatchRows > 0 && n >= opts.HourBatchRows && batchMaxKey == "" {
+					return fmt.Errorf("hour-chunk pagination requires db_edge_ts column with non-null values in result set")
 				}
 				if n == 0 || opts.HourBatchRows <= 0 || n < opts.HourBatchRows {
 					break
