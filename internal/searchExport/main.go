@@ -24,10 +24,10 @@ import (
 func GenerateSearchExport(ctx context.Context) common.JobResult {
 	var jobErrors []common.JobError
 	parallelism := utils.GetEnvInt("SEARCH_EXPORT_PARALLELISM", 2)
-	tempDir := "/tmp/search-export" // TODO(local-test): utils.GetEnvOrDefault("SEARCH_EXPORT_TEMP_DIR", "/tmp/search-export")
+	tempDir := utils.GetEnvOrDefault("SEARCH_EXPORT_TEMP_DIR", "/tmp/search-export")
 	maxSegmentMB := utils.GetEnvInt("SEARCH_EXPORT_MAX_SEGMENT_MB", 10)
 	presignHours := utils.GetEnvInt("SEARCH_EXPORT_PRESIGN_HOURS", consts.PresignExpiryHours)
-	efsMountPath := "/tmp/search-export" // TODO(local-test): utils.GetEnvOrDefault("SEARCH_EXPORT_EFS_MOUNT", "/mnt/efs/search-export")
+	efsMountPath := utils.GetEnvOrDefault("SEARCH_EXPORT_EFS_MOUNT", "/opt/databahn/search-export")
 	staleMinutes := utils.GetEnvInt("SEARCH_EXPORT_STALE_PROCESSING_MINUTES", 40)
 	staleCutoff := time.Now().Add(-time.Duration(staleMinutes) * time.Minute)
 
