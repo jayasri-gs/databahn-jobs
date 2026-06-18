@@ -168,6 +168,10 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 // If the checkpoint is missing or corrupt, it falls back to a fresh run.
 func (p *Pipeline) ResumeRun(ctx context.Context, destBucket string, onAthenaStart func(executionID string) error) (*PipelineResult, error) {
 	if p.synapse != nil {
+		if err := p.synapse.Connect(ctx); err != nil {
+			return nil, fmt.Errorf("failed to connect: %w", err)
+		}
+		defer p.synapse.Close()
 		return p.runSynapseStreamExport(ctx, destBucket, p.synapse)
 	}
 

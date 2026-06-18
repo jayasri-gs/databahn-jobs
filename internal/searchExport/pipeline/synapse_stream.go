@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/query"
@@ -60,19 +61,33 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 	fileName, outputKey := p.buildExportObjectKey(ext)
 	p.log.Info("Export output file", zap.String("fileName", fileName), zap.String("outputKey", outputKey))
 
+	if resumeCP != nil && resumeCP.Key != "" && resumeCP.Key != outputKey {
+		p.log.Warn("Checkpoint output key mismatch; ignoring resume state",
+			zap.String("checkpointKey", resumeCP.Key),
+			zap.String("outputKey", outputKey))
+		resumeCP = nil
+	}
+
 	var encodeResume *EncodeResume
-	if resumeCP != nil && resumeCP.UploadID != "" && resumeCP.Key == outputKey {
-		if err := p.reattachSynapseUpload(resumeCP); err != nil {
+	if resumeCP != nil && resumeCP.UploadID != "" {
+		if err := p.reattachSynapseUpload(resumeCP, contentType); err != nil {
 			p.log.Warn("Failed to reattach export upload; starting fresh", zap.Error(err))
 			p.abortCheckpointedUpload(ctx, resumeCP)
 			resumeCP = nil
 		} else {
-			encodeResume = &EncodeResume{
-				StartPartNumber: resumeCP.LastUploadedPart + 1,
-				RowsProcessed:   resumeCP.RowsProcessed,
-				BytesProcessed:  resumeCP.BytesProcessed,
+			existingParts, partsErr := p.committedUploadParts(ctx, resumeCP)
+			if partsErr != nil {
+				p.log.Warn("Failed to list committed upload parts; starting fresh", zap.Error(partsErr))
+				p.abortCheckpointedUpload(ctx, resumeCP)
+				resumeCP = nil
+			} else {
+				encodeResume = &EncodeResume{
+					StartPartNumber: resumeCP.LastUploadedPart + 1,
+					RowsProcessed:   resumeCP.RowsProcessed,
+					BytesProcessed:  resumeCP.BytesProcessed,
+					ExistingParts:   existingParts,
+				}
 			}
-			encodeResume.ExistingParts = p.committedUploadParts(ctx, resumeCP)
 		}
 	}
 
@@ -109,6 +124,12 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 	}
 
 	remaining := opts.MaxRows
+	if resumeCP != nil && opts.MaxRows > 0 {
+		remaining = opts.MaxRows - resumeCP.RowsProcessed
+		if remaining < 0 {
+			remaining = 0
+		}
+	}
 
 	totalRows, totalBytes, err := p.encodeRowsToUploader(ctx, func() []string { return columns }, func(cb func([]interface{}) error) error {
 		if !useHourChunks {
@@ -236,14 +257,14 @@ func synapseStreamOpts(opts query.StreamRowsOptions, remaining int64) query.Stre
 	return streamOpts
 }
 
-func (p *Pipeline) committedUploadParts(ctx context.Context, cp *state.Checkpoint) []upload.PartInfo {
+func (p *Pipeline) committedUploadParts(ctx context.Context, cp *state.Checkpoint) ([]upload.PartInfo, error) {
 	if cp == nil || cp.LastUploadedPart <= 0 {
-		return nil
+		return nil, nil
 	}
 	if s3up, ok := p.uploader.(*upload.S3Uploader); ok {
 		existing, listErr := s3up.ListParts(ctx)
 		if listErr != nil {
-			return nil
+			return nil, fmt.Errorf("list s3 parts: %w", listErr)
 		}
 		committed := make([]upload.PartInfo, 0, cp.LastUploadedPart)
 		for _, part := range existing {
@@ -251,15 +272,18 @@ func (p *Pipeline) committedUploadParts(ctx context.Context, cp *state.Checkpoin
 				committed = append(committed, part)
 			}
 		}
-		return committed
+		if len(committed) != cp.LastUploadedPart {
+			return nil, fmt.Errorf("s3 committed parts %d != checkpoint %d", len(committed), cp.LastUploadedPart)
+		}
+		return committed, nil
 	}
 	if len(cp.UploadBlockIDs) > 0 {
-		return upload.PartInfosThrough(len(cp.UploadBlockIDs))
+		return upload.PartInfosThrough(len(cp.UploadBlockIDs)), nil
 	}
-	return upload.PartInfosThrough(cp.LastUploadedPart)
+	return upload.PartInfosThrough(cp.LastUploadedPart), nil
 }
 
-func (p *Pipeline) reattachSynapseUpload(cp *state.Checkpoint) error {
+func (p *Pipeline) reattachSynapseUpload(cp *state.Checkpoint, contentType string) error {
 	if cp == nil || cp.UploadID == "" {
 		return fmt.Errorf("checkpoint missing upload id")
 	}
@@ -272,14 +296,15 @@ func (p *Pipeline) reattachSynapseUpload(cp *state.Checkpoint) error {
 		if len(blockIDs) == 0 {
 			blockIDs = upload.BlockIDsThrough(cp.LastUploadedPart)
 		}
-		return azureUp.ReattachMultipart(cp.Bucket, cp.Key, cp.UploadID, blockIDs)
+		return azureUp.ReattachMultipart(cp.Bucket, cp.Key, cp.UploadID, blockIDs, contentType)
 	}
 	return fmt.Errorf("upload reattach not supported for this destination")
 }
 
 func columnIndex(columns []string, name string) int {
+	want := strings.ToLower(name)
 	for i, c := range columns {
-		if c == name {
+		if strings.ToLower(c) == want {
 			return i
 		}
 	}

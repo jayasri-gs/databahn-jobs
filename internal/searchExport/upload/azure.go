@@ -75,13 +75,14 @@ func PartInfosThrough(partNumber int) []PartInfo {
 }
 
 // ReattachMultipart continues an in-flight Azure block blob upload after resume.
-func (u *AzureUploader) ReattachMultipart(container, blobName, uploadID string, blockIDs []string) error {
+func (u *AzureUploader) ReattachMultipart(container, blobName, uploadID string, blockIDs []string, contentType string) error {
 	if u.client == nil {
 		return fmt.Errorf("azure client not configured")
 	}
 	u.container = container
 	u.blobName = blobName
 	u.uploadID = uploadID
+	u.contentType = contentType
 	u.blockIDs = append([]string(nil), blockIDs...)
 	u.bbClient = u.client.ServiceClient().NewContainerClient(container).NewBlockBlobClient(blobName)
 	return nil
@@ -108,9 +109,11 @@ func (u *AzureUploader) Complete(ctx context.Context, parts []PartInfo) error {
 	if u.bbClient == nil {
 		return fmt.Errorf("azure uploader not initialized")
 	}
-	_, err := u.bbClient.CommitBlockList(ctx, u.blockIDs, &blockblob.CommitBlockListOptions{
-		HTTPHeaders: &blob.HTTPHeaders{BlobContentType: &u.contentType},
-	})
+	commitOpts := &blockblob.CommitBlockListOptions{}
+	if u.contentType != "" {
+		commitOpts.HTTPHeaders = &blob.HTTPHeaders{BlobContentType: &u.contentType}
+	}
+	_, err := u.bbClient.CommitBlockList(ctx, u.blockIDs, commitOpts)
 	if err != nil {
 		return fmt.Errorf("commit block list: %w", err)
 	}

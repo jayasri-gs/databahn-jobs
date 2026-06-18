@@ -14,7 +14,7 @@ func TestBlockIDsThrough(t *testing.T) {
 
 func TestAzureUploader_ReattachMultipartRequiresClient(t *testing.T) {
 	u := &AzureUploader{uploadID: "old"}
-	err := u.ReattachMultipart("container", "blob.csv", "container/blob.csv", BlockIDsThrough(2))
+	err := u.ReattachMultipart("container", "blob.csv", "container/blob.csv", BlockIDsThrough(2), "text/csv")
 	if err == nil {
 		t.Fatal("expected error without client")
 	}

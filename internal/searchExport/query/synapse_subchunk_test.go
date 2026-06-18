@@ -49,3 +49,32 @@ func TestEffectiveTopLimit(t *testing.T) {
 		t.Fatalf("got %d", got)
 	}
 }
+
+func TestBuildSubChunkQuery_multilineOrderBy(t *testing.T) {
+	got := BuildSubChunkQuery("SELECT * FROM t\nORDER BY db_edge_ts", 100, "")
+	if strings.Count(strings.ToUpper(got), "ORDER BY") != 1 {
+		t.Fatalf("duplicate ORDER BY: %q", got)
+	}
+}
+
+func TestStripTop_ignoresNestedSelect(t *testing.T) {
+	sql := "SELECT * FROM (SELECT TOP 100 * FROM inner_t) s"
+	stripped, limit := stripTop(sql)
+	if limit != 0 {
+		t.Fatalf("limit=%d want 0", limit)
+	}
+	if !strings.Contains(strings.ToUpper(stripped), "TOP 100") {
+		t.Fatalf("inner TOP stripped: %q", stripped)
+	}
+}
+
+func TestInjectTop_cteOuterSelect(t *testing.T) {
+	sql := "WITH cte AS (SELECT col FROM t) SELECT * FROM cte"
+	got := injectTop(sql, 50)
+	if !strings.HasPrefix(strings.ToUpper(got), "WITH CTE AS") {
+		t.Fatalf("unexpected: %q", got)
+	}
+	if !strings.Contains(got, "TOP (50) * FROM cte") {
+		t.Fatalf("TOP not on outer select: %q", got)
+	}
+}

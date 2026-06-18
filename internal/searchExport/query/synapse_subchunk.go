@@ -9,7 +9,7 @@ import (
 
 const synapseExportSortColumn = "db_edge_ts"
 
-var synapseSelectTopRe = regexp.MustCompile(`(?is)(\bSELECT\s+(?:DISTINCT\s+)?)TOP\s*(?:\(\s*(\d+)\s*\)|(\d+))\s+`)
+var synapseTopAfterSelectRe = regexp.MustCompile(`(?is)^\s*TOP\s*(?:\(\s*(\d+)\s*\)|(\d+))\s+`)
 
 // BuildSubChunkQuery adds TOP/keyset pagination for large single-hour exports.
 // When batchRows <= 0, only keyset continuation is applied when lastSortKey is set.
@@ -23,7 +23,7 @@ func BuildSubChunkQuery(hourSQL string, batchRows int64, lastSortKey string) str
 		sql = AddPartitionFilter(sql, fmt.Sprintf("%s > '%s'", synapseExportSortColumn, escapeSQLLiteral(lastSortKey)))
 	}
 	if topN > 0 || lastSortKey != "" {
-		if !strings.Contains(strings.ToUpper(sql), " ORDER BY ") {
+		if !hasOrderByClause(sql) {
 			sql += " ORDER BY " + synapseExportSortColumn
 		}
 	}
@@ -46,39 +46,37 @@ func effectiveTopLimit(batchRows int64, existingTop int64) int64 {
 	return existingTop
 }
 
-// stripTop removes an existing SELECT TOP clause and returns the prior limit (0 if none).
+// stripTop removes TOP from the outermost SELECT and returns the prior limit (0 if none).
 func stripTop(sql string) (string, int64) {
-	loc := synapseSelectTopRe.FindStringSubmatchIndex(sql)
+	pos, ok := outerSelectInsertPos(sql)
+	if !ok {
+		return sql, 0
+	}
+	tail := sql[pos:]
+	loc := synapseTopAfterSelectRe.FindStringSubmatchIndex(tail)
 	if loc == nil {
 		return sql, 0
 	}
-	groups := synapseSelectTopRe.FindStringSubmatch(sql)
+	groups := synapseTopAfterSelectRe.FindStringSubmatch(tail)
 	limit := int64(0)
-	if groups[2] != "" {
+	if groups[1] != "" {
+		if n, err := strconv.ParseInt(groups[1], 10, 64); err == nil {
+			limit = n
+		}
+	} else if groups[2] != "" {
 		if n, err := strconv.ParseInt(groups[2], 10, 64); err == nil {
 			limit = n
 		}
-	} else if groups[3] != "" {
-		if n, err := strconv.ParseInt(groups[3], 10, 64); err == nil {
-			limit = n
-		}
 	}
-	stripped := sql[:loc[0]] + groups[1] + sql[loc[1]:]
-	return stripped, limit
+	return sql[:pos] + tail[loc[1]:], limit
 }
 
 func injectTop(sql string, n int64) string {
-	upper := strings.ToUpper(sql)
-	top := fmt.Sprintf("TOP (%d) ", n)
-	if i := strings.Index(upper, "SELECT DISTINCT "); i >= 0 {
-		pos := i + len("SELECT DISTINCT ")
-		return sql[:pos] + top + sql[pos:]
+	pos, ok := outerSelectInsertPos(sql)
+	if !ok {
+		return sql
 	}
-	if i := strings.Index(upper, "SELECT "); i >= 0 {
-		pos := i + len("SELECT ")
-		return sql[:pos] + top + sql[pos:]
-	}
-	return sql
+	return sql[:pos] + fmt.Sprintf("TOP (%d) ", n) + sql[pos:]
 }
 
 func escapeSQLLiteral(s string) string {

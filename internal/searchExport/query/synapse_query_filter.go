@@ -1,8 +1,11 @@
 package query
 
 import (
+	"regexp"
 	"strings"
 )
+
+var sqlWhereClauseRe = regexp.MustCompile(`(?i)\bWHERE\b`)
 
 // AddPartitionFilter appends a partition predicate without changing existing user filters.
 func AddPartitionFilter(query, partitionFilter string) string {
@@ -11,8 +14,7 @@ func AddPartitionFilter(query, partitionFilter string) string {
 	if f == "" {
 		return q
 	}
-	upper := strings.ToUpper(q)
-	if strings.Contains(upper, " WHERE ") {
+	if sqlWhereClauseRe.MatchString(q) {
 		return q + " AND (" + f + ")"
 	}
 	return q + " WHERE (" + f + ")"
