@@ -38,10 +38,11 @@ type ExportDataStore struct {
 }
 
 type SynapseSQLConfig struct {
-	Workspace   string
-	Database    string
-	SqlUsername string
-	SqlPassword string
+	ConnectionString string
+	Workspace        string
+	Database         string
+	SqlUsername      string
+	SqlPassword      string
 }
 
 type dataStoreRow struct {
@@ -64,7 +65,9 @@ type synapseSQLConfigJSON struct {
 }
 
 type externalStoreConfigJSON struct {
-	ExternalSearchProvider string `json:"externalSearchProvider"`
+	ExternalSearchProvider string            `json:"externalSearchProvider"`
+	SecretID               string            `json:"secretId"`
+	ConnectorConfig        map[string]string `json:"connectorConfig"`
 }
 
 func DeriveQueryEngine(storeType, linkedDestType, externalProvider string) string {
@@ -156,6 +159,9 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 			Database:    s.Database,
 			SqlUsername: s.SqlUsername,
 			SqlPassword: s.SqlPassword,
+		}
+		if s.Workspace != "" && s.Database != "" && s.SqlUsername != "" && s.SqlPassword != "" {
+			result.SynapseSQL.ConnectionString = BuildSynapseConnectionString(s.Workspace, s.Database, s.SqlUsername, s.SqlPassword)
 		}
 	}
 

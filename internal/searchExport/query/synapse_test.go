@@ -2,78 +2,21 @@ package query
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 )
 
-func TestBuildCetasSQL_Parquet(t *testing.T) {
-	sql := buildCetasSQL(cetasParams{
-		ExternalTable: "DatabahnExport_abc",
-		DataSource:    "DatabahnDataSource_t1",
-		FileFormat:    synapseParquetFileFormat,
-		Location:      "unload_abc_1710000000/",
-		Query:         "SELECT col1 FROM dbo.v1",
-	})
-	if !strings.Contains(sql, "CREATE EXTERNAL TABLE [dbo].[DatabahnExport_abc]") {
-		t.Fatalf("missing external table: %s", sql)
-	}
-	if !strings.Contains(sql, "DATA_SOURCE = [DatabahnDataSource_t1]") {
-		t.Fatalf("missing data source: %s", sql)
-	}
-}
-
-func TestMapCetasFileFormat(t *testing.T) {
-	if got := mapCetasFileFormat(UnloadOptions{Format: "textfile"}); got != synapseCsvFileFormat {
-		t.Fatalf("csv: got %s", got)
-	}
-	if got := mapCetasFileFormat(UnloadOptions{Format: "json"}); got != synapseParquetFileFormat {
-		t.Fatalf("json: got %s", got)
-	}
-}
-
-func TestReportIDFromUnloadPath(t *testing.T) {
-	got := reportIDFromUnloadPath(".databahn_out/unload_abc123_1710000000/")
-	if got != "abc123" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestBuildDropExternalTableSQL(t *testing.T) {
-	sql := buildDropExternalTableSQL("DatabahnExport_abc")
-	if !strings.Contains(sql, "sys.external_tables") {
-		t.Fatalf("expected sys.external_tables guard: %s", sql)
-	}
-	if !strings.Contains(sql, "DROP EXTERNAL TABLE [dbo].[DatabahnExport_abc]") {
-		t.Fatalf("missing drop: %s", sql)
-	}
-	if strings.Contains(sql, "DROP EXTERNAL TABLE IF EXISTS") {
-		t.Fatalf("must not use unsupported DROP IF EXISTS syntax: %s", sql)
-	}
-}
-
-func TestCheckQueryStatus_PropagatesCetasConnectionError(t *testing.T) {
+func TestValidateExportQuery_NotConnected(t *testing.T) {
 	exec := &SynapseExecutor{}
-	exec.recordCetasResult(fmt.Errorf("Parquet magic bytes not found"))
-
-	status, err := exec.CheckQueryStatus(context.Background(), "132")
-	if status != QueryStateFailed {
-		t.Fatalf("status: got %q", status)
-	}
-	if err == nil || !strings.Contains(err.Error(), "Parquet magic bytes not found") {
-		t.Fatalf("err: %v", err)
-	}
-	if !isDefinitiveCetasFailure(err) {
-		t.Fatalf("expected definitive CETAS failure")
+	if err := exec.ValidateExportQuery(context.Background(), "SELECT 1"); err == nil {
+		t.Fatal("expected error")
 	}
 }
 
-func TestCheckQueryStatus_CetasSuccessWithoutStagingFallsThroughToDMV(t *testing.T) {
-	exec := &SynapseExecutor{stagingPrefix: "unload_abc/"}
-	exec.recordCetasResult(nil)
-
-	_, err := exec.CheckQueryStatus(context.Background(), "132")
-	if err == nil || !strings.Contains(err.Error(), "synapse not connected") {
-		t.Fatalf("expected DMV fallback without db, got: %v", err)
+func TestStreamRows_NotConnected(t *testing.T) {
+	exec := &SynapseExecutor{}
+	_, err := exec.StreamRows(context.Background(), "SELECT 1", StreamRowsOptionsFromEnv(), func([]interface{}) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "not connected") {
+		t.Fatalf("err=%v", err)
 	}
 }

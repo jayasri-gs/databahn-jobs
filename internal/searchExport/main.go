@@ -137,10 +137,10 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 
 	log.Info("Export dependencies loaded",
 		zap.String("exportBucket", deps.ExportBucket),
-		zap.String("engine", deps.Executor.Engine()),
+		zap.String("engine", deps.QueryEngine),
 		zap.Bool("legacyMode", deps.LegacyMode))
 
-	p := pipeline.New(cfg, reportID, report.Name, exportConfig, deps.Executor, deps.Uploader, log)
+	p := pipeline.New(cfg, reportID, report.Name, exportConfig, deps.Athena, deps.Synapse, deps.Uploader, log)
 
 	onQueryStart := func(executionID string) error {
 		return models.UpdateQueryExecutionID(db, reportID, executionID)
@@ -153,19 +153,13 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		result, err = p.Run(ctx, deps.ExportBucket, onQueryStart)
 	}
 	if err != nil {
-		var awsCfg *aws.Config
-		if c, ok := deps.Executor.GetAWSConfig().(aws.Config); ok {
-			awsCfg = &c
-		}
+		awsCfg := exportAWSConfig(deps)
 		handleFailure(ctx, db, log, cfg, report, err.Error(), awsCfg, deps.Uploader)
 		return
 	}
 
 	if err := models.UpdateExportComplete(db, reportID, result.PresignedURL, result.Expiry); err != nil {
-		var awsCfg *aws.Config
-		if c, ok := deps.Executor.GetAWSConfig().(aws.Config); ok {
-			awsCfg = &c
-		}
+		awsCfg := exportAWSConfig(deps)
 		handleFailure(ctx, db, log, cfg, report, "Failed to update completion status: "+err.Error(), awsCfg, deps.Uploader)
 		return
 	}
@@ -208,4 +202,14 @@ func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, cfg pipeli
 			log.Warn("Failed to delete EFS checkpoint on permanent failure", zap.Error(err))
 		}
 	}
+}
+
+func exportAWSConfig(deps *factory.ExportDeps) *aws.Config {
+	if deps == nil || deps.Athena == nil {
+		return nil
+	}
+	if c, ok := deps.Athena.GetAWSConfig().(aws.Config); ok {
+		return &c
+	}
+	return nil
 }

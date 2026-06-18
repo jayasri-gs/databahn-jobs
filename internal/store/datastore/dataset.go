@@ -10,6 +10,7 @@ import (
 )
 
 type SynapseExportMetadata struct {
+	Workspace      string
 	DataSourceName string
 	Database       string
 }
@@ -20,6 +21,7 @@ type datasetSearchConfiguration struct {
 }
 
 type datasetSynapseConfiguration struct {
+	Workspace      string `json:"workspace"`
 	Database       string `json:"database"`
 	DataSourceName string `json:"dataSourceName"`
 }
@@ -46,6 +48,7 @@ func LoadSynapseExportMetadata(ctx context.Context, db *gorm.DB, dataSetID, tena
 	}
 	syn := cfg.AzureSynapseConfiguration
 	return &SynapseExportMetadata{
+		Workspace:      syn.Workspace,
 		DataSourceName: syn.DataSourceName,
 		Database:       syn.Database,
 	}, nil

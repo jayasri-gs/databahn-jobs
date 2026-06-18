@@ -21,7 +21,9 @@ import (
 )
 
 type ExportDeps struct {
-	Executor     query.QueryExecutor
+	QueryEngine  string
+	Athena       query.UnloadExecutor
+	Synapse      query.RowStreamExecutor
 	Uploader     upload.CloudUploader
 	ExportBucket string
 	LegacyMode   bool
@@ -90,7 +92,13 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		return nil, fmt.Errorf("unsupported export destination type: %s", destType)
 	}
 
-	var executor query.QueryExecutor
+	deps := &ExportDeps{
+		QueryEngine:  queryEngine,
+		Uploader:     exportUploader,
+		ExportBucket: exportBucket,
+		LegacyMode:   legacyMode,
+	}
+
 	switch queryEngine {
 	case models.QueryEngineAthena:
 		var staging *destination.S3Config
@@ -124,7 +132,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 			ExternalID:      staging.ExternalID,
 		})
 		athenaExec.SetLogger(log)
-		executor = athenaExec
+		deps.Athena = athenaExec
 	case models.QueryEngineSynapse:
 		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
 		if err != nil {
@@ -134,12 +142,9 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		if err != nil {
 			return nil, fmt.Errorf("invalid dataSetId: %w", err)
 		}
-		store, err := datastore.LoadExportDataStore(ctx, db, dataStoreID, tenantID)
+		synapseSQL, err := datastore.LoadSynapseSQLConfig(ctx, db, dataStoreID, dataSetID, tenantID)
 		if err != nil {
 			return nil, err
-		}
-		if store.SynapseSQL == nil || store.StagingBlob == nil {
-			return nil, fmt.Errorf("synapse export requires SQL and staging blob configuration")
 		}
 		meta, err := datastore.LoadSynapseExportMetadata(ctx, db, dataSetID, tenantID)
 		if err != nil {
@@ -150,26 +155,20 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 			dataSource = meta.DataSourceName
 		}
 		synapseExec := query.NewSynapseExecutor(query.SynapseConfig{
-			Workspace:        store.SynapseSQL.Workspace,
-			Database:         firstNonEmpty(cfg.Database, store.SynapseSQL.Database, meta.Database),
-			SqlUsername:      store.SynapseSQL.SqlUsername,
-			SqlPassword:      store.SynapseSQL.SqlPassword,
+			ConnectionString: synapseSQL.ConnectionString,
+			Workspace:        synapseSQL.Workspace,
+			Database:         firstNonEmpty(cfg.Database, synapseSQL.Database, meta.Database),
+			SqlUsername:      synapseSQL.SqlUsername,
+			SqlPassword:      synapseSQL.SqlPassword,
 			DataSourceName:   dataSource,
-			StagingContainer: store.StagingBlob.Container,
-			StagingBlob:      store.StagingBlob,
 		})
 		synapseExec.SetLogger(log)
-		executor = synapseExec
+		deps.Synapse = synapseExec
 	default:
 		return nil, fmt.Errorf("unsupported query engine: %s", queryEngine)
 	}
 
-	return &ExportDeps{
-		Executor:     executor,
-		Uploader:     exportUploader,
-		ExportBucket: exportBucket,
-		LegacyMode:   legacyMode,
-	}, nil
+	return deps, nil
 }
 
 func firstNonEmpty(values ...string) string {

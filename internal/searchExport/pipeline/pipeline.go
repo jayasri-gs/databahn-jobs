@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/databahn-ai/databahn-jobs/internal/searchExport/format"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/query"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/state"
@@ -41,12 +39,13 @@ type Pipeline struct {
 	request    *models.SearchExportConfig
 	reportID   string
 	exportName string
-	executor   query.QueryExecutor
+	athena     query.UnloadExecutor
+	synapse    query.RowStreamExecutor
 	uploader   upload.CloudUploader
 	log        *zap.Logger
 }
 
-func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, executor query.QueryExecutor, uploader upload.CloudUploader, log *zap.Logger) *Pipeline {
+func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, athena query.UnloadExecutor, synapse query.RowStreamExecutor, uploader upload.CloudUploader, log *zap.Logger) *Pipeline {
 	if log == nil {
 		log = logging.GetLogger()
 	}
@@ -55,7 +54,8 @@ func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExpo
 		request:    req,
 		reportID:   reportID,
 		exportName: exportName,
-		executor:   executor,
+		athena:     athena,
+		synapse:    synapse,
 		uploader:   uploader,
 		log:        log,
 	}
@@ -63,10 +63,7 @@ func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExpo
 
 func (p *Pipeline) buildTempOutputPath() string {
 	tempPath := fmt.Sprintf("unload_%s_%d/", p.reportID, time.Now().Unix())
-	if p.executor.Engine() == query.EngineSynapse {
-		return ".databahn_out/" + tempPath
-	}
-	athenaOutputLoc := p.executor.GetOutputLocation()
+	athenaOutputLoc := p.athena.GetOutputLocation()
 	return trimSuffix(athenaOutputLoc, "/") + "/" + tempPath
 }
 
@@ -97,10 +94,22 @@ func checkpointExecutionID(cp *state.Checkpoint) string {
 func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart func(executionID string) error) (*PipelineResult, error) {
 	p.log.Info("Starting export pipeline", zap.String("destBucket", destBucket))
 
-	if err := p.executor.Connect(ctx); err != nil {
+	if p.synapse != nil {
+		if err := p.synapse.Connect(ctx); err != nil {
+			return nil, fmt.Errorf("failed to connect: %w", err)
+		}
+		defer p.synapse.Close()
+		return p.runSynapseStreamExport(ctx, destBucket, p.synapse)
+	}
+
+	if p.athena == nil {
+		return nil, fmt.Errorf("no export executor configured")
+	}
+
+	if err := p.athena.Connect(ctx); err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
-	defer p.executor.Close()
+	defer p.athena.Close()
 
 	tempOutputPath := p.buildTempOutputPath()
 
@@ -108,18 +117,11 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 	directUpload := p.useDirectUpload(unloadOpts)
 	p.log.Info("Executing server-side export",
 		zap.String("tempOutputPath", tempOutputPath),
-		zap.String("engine", p.executor.Engine()),
+		zap.String("engine", p.athena.Engine()),
 		zap.String("unloadFormat", unloadOpts.Format),
 		zap.Bool("directUpload", directUpload))
 
-	if syn, ok := p.executor.(*query.SynapseExecutor); ok {
-		p.log.Info("Running Synapse export preflight")
-		if err := syn.ValidateExportQuery(ctx, p.request.Query); err != nil {
-			return nil, err
-		}
-	}
-
-	executionID, err := p.executor.ExecuteUnloadAsync(ctx, p.request.Query, p.request.Database, tempOutputPath, unloadOpts)
+	executionID, err := p.athena.ExecuteUnloadAsync(ctx, p.request.Query, p.request.Database, tempOutputPath, unloadOpts)
 	if err != nil {
 		return nil, fmt.Errorf("UNLOAD start failed: %w", err)
 	}
@@ -132,7 +134,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 	}
 	if p.config.EFSMountPath != "" {
 		if err := state.Write(p.config.EFSMountPath, p.reportID, cp); err != nil {
-			if cancelErr := p.executor.CancelQueryExecution(ctx, executionID); cancelErr != nil {
+			if cancelErr := p.athena.CancelQueryExecution(ctx, executionID); cancelErr != nil {
 				p.log.Warn("Failed to cancel Athena query after checkpoint write failure", zap.Error(cancelErr))
 			}
 			return nil, fmt.Errorf("failed to write querying checkpoint: %w", err)
@@ -145,14 +147,14 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 		}
 	}
 
-	if err := p.executor.WaitForExecution(ctx, executionID); err != nil {
+	if err := p.athena.WaitForExecution(ctx, executionID); err != nil {
 		if !shouldPreserveQueryCheckpoint(err) {
 			p.cleanupCheckpoint()
 		}
 		return nil, fmt.Errorf("UNLOAD failed: %w", err)
 	}
 
-	unloadResult, err := p.executor.GetExecutionResult(ctx, executionID)
+	unloadResult, err := p.athena.GetExecutionResult(ctx, executionID)
 	if err != nil {
 		p.cleanupCheckpoint()
 		return nil, fmt.Errorf("failed to get UNLOAD result: %w", err)
@@ -165,6 +167,17 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 // ResumeRun picks up a stale PROCESSING job using an existing EFS checkpoint.
 // If the checkpoint is missing or corrupt, it falls back to a fresh run.
 func (p *Pipeline) ResumeRun(ctx context.Context, destBucket string, onAthenaStart func(executionID string) error) (*PipelineResult, error) {
+	if p.synapse != nil {
+		if p.config.EFSMountPath != "" {
+			cp, err := state.Read(p.config.EFSMountPath, p.reportID)
+			if err == nil && cp != nil && cp.Stage == state.StageStreaming {
+				p.log.Info("Synapse stream checkpoint is not resumable, starting fresh")
+				p.cleanupCheckpoint()
+			}
+		}
+		return p.Run(ctx, destBucket, onAthenaStart)
+	}
+
 	if p.config.EFSMountPath == "" {
 		return p.Run(ctx, destBucket, onAthenaStart)
 	}
@@ -183,10 +196,14 @@ func (p *Pipeline) ResumeRun(ctx context.Context, destBucket string, onAthenaSta
 		zap.String("stage", cp.Stage),
 		zap.String("athenaExecutionID", cp.AthenaExecutionID))
 
-	if err := p.executor.Connect(ctx); err != nil {
+	if p.athena == nil {
+		return nil, fmt.Errorf("no athena executor configured")
+	}
+
+	if err := p.athena.Connect(ctx); err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
-	defer p.executor.Close()
+	defer p.athena.Close()
 
 	awsCfg, awsErr := p.executorAWSConfig()
 
@@ -202,20 +219,18 @@ func (p *Pipeline) ResumeRun(ctx context.Context, destBucket string, onAthenaSta
 }
 
 func (p *Pipeline) executorAWSConfig() (aws.Config, error) {
-	if cfg, ok := p.executor.GetAWSConfig().(aws.Config); ok {
+	if p.athena == nil {
+		return aws.Config{}, fmt.Errorf("athena executor not configured")
+	}
+	if cfg, ok := p.athena.GetAWSConfig().(aws.Config); ok {
 		return cfg, nil
 	}
 	return aws.Config{}, fmt.Errorf("executor does not provide AWS config")
 }
 
 func (p *Pipeline) resumeFromQuerying(ctx context.Context, awsCfg aws.Config, awsErr error, destBucket string, cp *state.Checkpoint, onAthenaStart func(string) error) (*PipelineResult, error) {
-	if cp.TempOutputPath != "" {
-		if se, ok := p.executor.(interface{ SetResumeStagingPrefix(string) }); ok {
-			se.SetResumeStagingPrefix(cp.TempOutputPath)
-		}
-	}
 	execID := checkpointExecutionID(cp)
-	status, err := p.executor.CheckQueryStatus(ctx, execID)
+	status, err := p.athena.CheckQueryStatus(ctx, execID)
 	if err != nil {
 		p.log.Warn("Cannot check Athena status, restarting query", zap.Error(err))
 		return p.Run(ctx, destBucket, onAthenaStart)
@@ -226,13 +241,13 @@ func (p *Pipeline) resumeFromQuerying(ctx context.Context, awsCfg aws.Config, aw
 	switch status {
 	case query.QueryStateRunning, query.QueryStateQueued:
 		p.log.Info("Reattaching to running query")
-		if err := p.executor.WaitForExecution(ctx, execID); err != nil {
+		if err := p.athena.WaitForExecution(ctx, execID); err != nil {
 			if !shouldPreserveQueryCheckpoint(err) {
 				p.cleanupCheckpoint()
 			}
 			return nil, fmt.Errorf("reattached query failed: %w", err)
 		}
-		result, err := p.executor.GetExecutionResult(ctx, execID)
+		result, err := p.athena.GetExecutionResult(ctx, execID)
 		if err != nil {
 			p.cleanupCheckpoint()
 			return nil, fmt.Errorf("get execution result after reattach: %w", err)
@@ -243,7 +258,7 @@ func (p *Pipeline) resumeFromQuerying(ctx context.Context, awsCfg aws.Config, aw
 
 	case query.QueryStateSucceeded:
 		p.log.Info("Query already succeeded, skipping to upload phase")
-		result, err := p.executor.GetExecutionResult(ctx, execID)
+		result, err := p.athena.GetExecutionResult(ctx, execID)
 		if err != nil {
 			p.cleanupCheckpoint()
 			return nil, fmt.Errorf("get execution result: %w", err)
@@ -339,7 +354,7 @@ func (p *Pipeline) resumeFromUploading(ctx context.Context, awsCfg aws.Config, a
 		}
 	}
 
-	unloadReader, err := p.executor.NewStagingReader(p.config.TempDir)
+	unloadReader, err := p.athena.NewStagingReader(p.config.TempDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init staging reader: %w", err)
 	}
@@ -385,7 +400,7 @@ func (p *Pipeline) runUploadPhase(
 		return nil, fmt.Errorf("uploader not configured")
 	}
 
-	unloadReader, err := p.executor.NewStagingReader(p.config.TempDir)
+	unloadReader, err := p.athena.NewStagingReader(p.config.TempDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init staging reader: %w", err)
 	}
@@ -553,111 +568,12 @@ func formatMeta(exportFormat string) (ext, contentType string) {
 }
 
 func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur unload.StagingReader, files []string) (int64, int64, error) {
-	var totalRows int64
-	var totalBytes int64
-	var parts []upload.PartInfo
-	partNum := 1
-
-	exportFormat := normalizedFormat(p.request.Format)
-	isExcel := exportFormat == "xlsx" || exportFormat == "excel"
-	maxSegBytes := int64(p.config.MaxSegmentSizeMB) * 1024 * 1024
-	if maxSegBytes == 0 {
-		maxSegBytes = 10 * 1024 * 1024
-	}
-
-	var buf bytes.Buffer
-	var enc format.FormatEncoder
-	var columns []string
-
-	newEncoder := func() error {
-		buf.Reset()
-		var err error
-		enc, err = format.NewEncoder(exportFormat, &buf, p.request.Delimiter)
-		if err != nil {
-			return err
-		}
-		if columns != nil {
-			if err := enc.Init(columns); err != nil {
-				return err
-			}
-			return enc.WriteHeader()
-		}
-		return nil
-	}
-
-	flushPart := func(final bool) error {
-		if isExcel && !final {
-			return nil
-		}
-		if err := enc.Finalize(); err != nil {
-			return fmt.Errorf("failed to finalize encoder: %w", err)
-		}
-		data := buf.Bytes()
-		if exportFormat == "csv" && partNum > 1 {
-			if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
-				data = data[idx+1:]
-			}
-		}
-		if len(data) == 0 {
-			return nil
-		}
-		size := int64(len(data))
-		part, err := p.uploader.UploadPart(ctx, partNum, bytes.NewReader(data), size)
-		if err != nil {
-			return fmt.Errorf("failed to upload part %d: %w", partNum, err)
-		}
-		parts = append(parts, *part)
-		totalBytes += size
-		partNum++
-		if !final {
-			return newEncoder()
-		}
-		return nil
-	}
-
-	if err := newEncoder(); err != nil {
-		return 0, 0, fmt.Errorf("failed to create encoder: %w", err)
-	}
-
-	err := ur.StreamRows(ctx, files, func(row []interface{}) error {
-		if columns == nil {
-			columns = ur.Columns()
-			if err := enc.Init(columns); err != nil {
-				return fmt.Errorf("failed to init encoder: %w", err)
-			}
-			if err := enc.WriteHeader(); err != nil {
-				return fmt.Errorf("failed to write header: %w", err)
-			}
-		}
-		if err := enc.WriteRow(row); err != nil {
-			return fmt.Errorf("failed to write row: %w", err)
-		}
-		totalRows++
-		if !isExcel && int64(buf.Len()) >= maxSegBytes {
-			return flushPart(false)
-		}
-		return nil
-	})
+	totalRows, totalBytes, err := p.encodeRowsToUploader(ctx, func() []string { return ur.Columns() }, func(cb func([]interface{}) error) error {
+		return ur.StreamRows(ctx, files, cb)
+	}, nil)
 	if err != nil {
 		return totalRows, 0, fmt.Errorf("failed to process Parquet: %w", err)
 	}
-
-	if err := flushPart(true); err != nil {
-		return totalRows, 0, err
-	}
-
-	if len(parts) == 0 {
-		return 0, 0, nil
-	}
-
-	if err := p.uploader.Complete(ctx, parts); err != nil {
-		return totalRows, 0, fmt.Errorf("failed to complete multipart upload: %w", err)
-	}
-
-	p.log.Info("Export upload completed",
-		zap.Int64("totalRows", totalRows),
-		zap.Int64("totalBytes", totalBytes))
-
 	return totalRows, totalBytes, nil
 }
 
@@ -694,17 +610,13 @@ func (p *Pipeline) unloadOptions() query.UnloadOptions {
 }
 
 func (p *Pipeline) useDirectUpload(opts query.UnloadOptions) bool {
-	if p.executor.Engine() == query.EngineSynapse {
-		exportFormat := normalizedFormat(p.request.Format)
-		return exportFormat == "csv" && opts.Format == "textfile"
-	}
 	return opts.Format == "textfile" || opts.Format == "json"
 }
 
 func (p *Pipeline) processUnloadDirect(ctx context.Context, ur unload.StagingReader, files []string, opts unload.StreamOptions) (int64, int64, error) {
 	var header []byte
 	if p.request.IncludeHeader && normalizedFormat(p.request.Format) == "csv" {
-		columns, err := p.executor.GetQueryColumns(ctx, p.request.Query, p.request.Database)
+		columns, err := p.athena.GetQueryColumns(ctx, p.request.Query, p.request.Database)
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to get column names for header: %w", err)
 		}

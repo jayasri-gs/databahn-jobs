@@ -10,6 +10,7 @@ import (
 
 const (
 	StageQuerying  = "querying"
+	StageStreaming = "streaming"
 	StageUploading = "uploading"
 )
 
