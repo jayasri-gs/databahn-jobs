@@ -114,6 +114,15 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 		subStart = resumeCP.SynapseSubChunkIndex
 		lastSortKey = resumeCP.SynapseLastSortKey
 	}
+	if useHourChunks {
+		p.log.Info("Synapse export hour plan",
+			zap.Int("totalHours", len(hours)),
+			zap.Int("startHourIndex", startHour+1),
+			zap.Int64("rangeStartMs", rangeStartMs),
+			zap.Int64("rangeEndMs", rangeEndMs),
+			zap.Time("rangeStartUTC", time.UnixMilli(rangeStartMs).UTC()),
+			zap.Time("rangeEndUTC", time.UnixMilli(rangeEndMs).UTC()))
+	}
 
 	progress := &synapseChunkProgress{
 		hourIndex: startHour,
@@ -148,8 +157,15 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 		}
 
 		for hi := progress.hourIndex; hi < len(hours); hi++ {
-			hourFilter := query.HourChunkFilter(hours[hi].StartMs, rangeStartMs, rangeEndMs, partCols)
+			hourStartMs := hours[hi].StartMs
+			hourStartUTC := time.UnixMilli(hourStartMs).UTC()
+			hourFilter := query.HourChunkFilter(hourStartMs, rangeStartMs, rangeEndMs, partCols)
 			hourSQL := query.AddPartitionFilter(p.request.Query, hourFilter)
+			p.log.Info("Synapse export hour started",
+				zap.Int("hourIndex", hi+1),
+				zap.Int("totalHours", len(hours)),
+				zap.Time("hourStartUTC", hourStartUTC),
+				zap.String("hourFilter", hourFilter))
 			sub := 0
 			key := ""
 			if hi == progress.hourIndex {
@@ -158,10 +174,14 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 			}
 			for ; ; sub++ {
 				chunkSQL := query.BuildSubChunkQuery(hourSQL, opts.HourBatchRows, key)
-				p.log.Info("Synapse export chunk",
-					zap.Int("hour", hi+1),
+				p.log.Info("Synapse export chunk query",
+					zap.Int("hourIndex", hi+1),
 					zap.Int("totalHours", len(hours)),
-					zap.Int("subChunk", sub+1))
+					zap.Time("hourStartUTC", hourStartUTC),
+					zap.Int("subChunk", sub+1),
+					zap.String("lastSortKey", key),
+					zap.Int64("batchLimit", opts.HourBatchRows),
+					zap.String("query", chunkSQL))
 
 				streamOpts := synapseStreamOpts(opts, remaining)
 				var batchMaxKey string
@@ -186,9 +206,25 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 						} else if batchMaxKey != "" {
 							progress.sortKey = batchMaxKey
 						}
+						p.log.Info("Synapse export chunk complete",
+							zap.Int("hourIndex", hi+1),
+							zap.Int("totalHours", len(hours)),
+							zap.Time("hourStartUTC", hourStartUTC),
+							zap.Int("subChunk", sub+1),
+							zap.Int64("rowsInChunk", n),
+							zap.String("batchMaxKey", batchMaxKey),
+							zap.Int64("remainingRowBudget", remaining))
 						return nil
 					}
 				}
+				p.log.Info("Synapse export chunk complete",
+					zap.Int("hourIndex", hi+1),
+					zap.Int("totalHours", len(hours)),
+					zap.Time("hourStartUTC", hourStartUTC),
+					zap.Int("subChunk", sub+1),
+					zap.Int64("rowsInChunk", n),
+					zap.String("batchMaxKey", batchMaxKey),
+					zap.Int64("remainingRowBudget", remaining))
 				if batchMaxKey != "" {
 					key = batchMaxKey
 				}
@@ -208,6 +244,10 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 			progress.subIndex = 0
 			progress.sortKey = ""
 			progress.pendingMaxKey = ""
+			p.log.Info("Synapse export hour complete",
+				zap.Int("hourIndex", hi+1),
+				zap.Int("totalHours", len(hours)),
+				zap.Time("hourStartUTC", hourStartUTC))
 			if err := p.writeSynapseStreamCheckpointFromProgress(destBucket, outputKey, len(hours), progress); err != nil {
 				return err
 			}
