@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/google/uuid"
+	"github.com/microsoft/go-mssqldb/msdsn"
 	"gorm.io/gorm"
 )
 
@@ -142,12 +144,22 @@ func validateSynapseSQLConfig(cfg *SynapseSQLConfig) (*SynapseSQLConfig, error) 
 	return cfg, nil
 }
 
-// BuildSynapseConnectionString builds a go-mssqldb connection string for serverless SQL pool.
+// BuildSynapseConnectionString builds a go-mssqldb connection URL for serverless SQL pool.
+// Uses msdsn URL encoding so credentials with DSN control characters are safe.
 func BuildSynapseConnectionString(workspace, database, username, password string) string {
-	return fmt.Sprintf(
-		"server=%s-ondemand.sql.azuresynapse.net;port=1433;database=%s;user id=%s;password=%s;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;connection timeout=60",
-		workspace, database, username, password,
-	)
+	cfg := msdsn.Config{
+		Host:       fmt.Sprintf("%s-ondemand.sql.azuresynapse.net", workspace),
+		Port:       1433,
+		Database:   database,
+		User:       username,
+		Password:   password,
+		Encryption: msdsn.EncryptionRequired,
+		Parameters: map[string]string{
+			"host name in certificate": "*.database.windows.net",
+		},
+		ConnTimeout: 60 * time.Second,
+	}
+	return cfg.URL().String()
 }
 
 func firstNonEmptyStr(values ...string) string {

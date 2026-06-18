@@ -8,6 +8,7 @@ import (
 
 	_ "github.com/microsoft/go-mssqldb"
 
+	"github.com/databahn-ai/databahn-jobs/internal/store/datastore"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -47,7 +48,7 @@ func (e *SynapseExecutor) Connect(ctx context.Context) error {
 	if e.cfg.SqlUsername == "" || e.cfg.SqlPassword == "" {
 		return fmt.Errorf("synapse SQL credentials are required")
 	}
-	connString := buildSynapseConnectionString(e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword)
+	connString := datastore.BuildSynapseConnectionString(e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword)
 
 	db, err := sql.Open("sqlserver", connString)
 	if err != nil {

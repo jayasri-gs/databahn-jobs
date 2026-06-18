@@ -6,17 +6,31 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/microsoft/go-mssqldb/msdsn"
 )
 
 func TestBuildSynapseConnectionString(t *testing.T) {
 	got := BuildSynapseConnectionString("myws", "mydb", "user", "pass")
-	if got == "" {
-		t.Fatal("expected connection string")
+	parsed, err := msdsn.Parse(got)
+	if err != nil {
+		t.Fatalf("parse connection string: %v", err)
 	}
-	for _, want := range []string{"myws-ondemand.sql.azuresynapse.net", "database=mydb", "user id=user", "password=pass"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("connection string %q missing %q", got, want)
-		}
+	if parsed.Host != "myws-ondemand.sql.azuresynapse.net" {
+		t.Fatalf("host=%q", parsed.Host)
+	}
+	if parsed.Database != "mydb" || parsed.User != "user" || parsed.Password != "pass" {
+		t.Fatalf("db/user/pass=%q/%q/%q", parsed.Database, parsed.User, parsed.Password)
+	}
+}
+
+func TestBuildSynapseConnectionString_EscapesSpecialCharacters(t *testing.T) {
+	got := BuildSynapseConnectionString("myws", "mydb", "user", "pass;encrypt=false")
+	parsed, err := msdsn.Parse(got)
+	if err != nil {
+		t.Fatalf("parse connection string: %v", err)
+	}
+	if parsed.Password != "pass;encrypt=false" {
+		t.Fatalf("password=%q", parsed.Password)
 	}
 }
 
