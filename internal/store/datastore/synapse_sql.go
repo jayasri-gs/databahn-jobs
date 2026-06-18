@@ -128,7 +128,7 @@ func resolveDestinationSynapseSQL(
 	}
 
 	// Fall back to linked destination secret only when store SQL creds are missing.
-	if destinationID != nil {
+	if destinationID != nil && (strings.TrimSpace(cfg.SqlUsername) == "" || cfg.SqlPassword == "") {
 		merged, err := destination.LoadMergedConfiguration(ctx, db, *destinationID, tenantID)
 		if err != nil {
 			return nil, err
