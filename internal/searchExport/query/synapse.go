@@ -48,14 +48,8 @@ func (e *SynapseExecutor) Connect(ctx context.Context) error {
 	if e.cfg.SqlUsername == "" || e.cfg.SqlPassword == "" {
 		return fmt.Errorf("synapse SQL credentials are required")
 	}
-	connString := datastore.BuildSynapseConnectionString(e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword)
-
-	db, err := sql.Open("sqlserver", connString)
+	db, err := datastore.OpenSynapseSQL(ctx, e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword)
 	if err != nil {
-		return fmt.Errorf("failed to open synapse connection: %w", err)
-	}
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
 		return fmt.Errorf("failed to ping synapse: %w", err)
 	}
 	e.db = db

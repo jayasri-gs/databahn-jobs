@@ -2,12 +2,14 @@ package datastore
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/google/uuid"
+	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/microsoft/go-mssqldb/msdsn"
 	"gorm.io/gorm"
 )
@@ -102,7 +104,7 @@ func resolveExternalSynapseSQL(
 		Workspace:   strings.TrimSpace(dsSyn.Workspace),
 		Database:    strings.TrimSpace(dsSyn.Database),
 		SqlUsername: strings.TrimSpace(merged[azureSynapseSQLUsernameKey]),
-		SqlPassword: normalizeSynapseSQLPassword(merged[azureSynapseSQLPasswordKey]),
+		SqlPassword: trimTrailingWhitespace(merged[azureSynapseSQLPasswordKey]),
 	}
 	return validateSynapseSQLConfig(cfg)
 }
@@ -124,7 +126,7 @@ func resolveDestinationSynapseSQL(
 		Workspace:   strings.TrimSpace(storeSyn.Workspace),
 		Database:    strings.TrimSpace(storeSyn.Database),
 		SqlUsername: strings.TrimSpace(storeSyn.SqlUsername),
-		SqlPassword: normalizeSynapseSQLPassword(storeSyn.SqlPassword),
+		SqlPassword: trimTrailingWhitespace(storeSyn.SqlPassword),
 	}
 
 	// Fall back to linked destination secret only when store SQL creds are missing.
@@ -134,7 +136,7 @@ func resolveDestinationSynapseSQL(
 			return nil, err
 		}
 		cfg.SqlUsername = firstNonEmptyStr(cfg.SqlUsername, merged[azureSynapseSQLUsernameKey])
-		cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, normalizeSynapseSQLPassword(merged[azureSynapseSQLPasswordKey]))
+		cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, trimTrailingWhitespace(merged[azureSynapseSQLPasswordKey]))
 	}
 
 	return validateSynapseSQLConfig(cfg)
@@ -150,29 +152,38 @@ func validateSynapseSQLConfig(cfg *SynapseSQLConfig) (*SynapseSQLConfig, error) 
 	return cfg, nil
 }
 
-func normalizeSynapseSQLPassword(password string) string {
-	return strings.TrimRight(password, " \t\r\n")
+func trimTrailingWhitespace(s string) string {
+	return strings.TrimRight(s, " \t\r\n")
 }
 
-// BuildSynapseConnectionString builds a go-mssqldb connection string for serverless SQL pool.
-// Always uses URL form: ADO semicolon DSNs mishandle passwords with @ and strip trailing spaces.
-func BuildSynapseConnectionString(workspace, database, username, password string) string {
-	return buildSynapseURLConnectionString(workspace, database, username, password)
-}
-
-func buildSynapseURLConnectionString(workspace, database, username, password string) string {
-	cfg := msdsn.Config{
+func synapseMSDSNConfig(workspace, database, username, credential string) msdsn.Config {
+	return msdsn.Config{
 		Host:       fmt.Sprintf("%s-ondemand.sql.azuresynapse.net", workspace),
 		Port:       1433,
 		Database:   database,
 		User:       username,
-		Password:   normalizeSynapseSQLPassword(password),
+		Password:   trimTrailingWhitespace(credential),
 		Encryption: msdsn.EncryptionRequired,
 		Parameters: map[string]string{
 			"host name in certificate": "*.database.windows.net",
 		},
 	}
-	return cfg.URL().String()
+}
+
+// OpenSynapseSQL opens a Synapse serverless pool connection without building a loggable DSN string.
+func OpenSynapseSQL(ctx context.Context, workspace, database, username, credential string) (*sql.DB, error) {
+	connector := mssql.NewConnectorConfig(synapseMSDSNConfig(workspace, database, username, credential))
+	db := sql.OpenDB(connector)
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// BuildSynapseConnectionString builds a go-mssqldb URL DSN for tests only; do not log the return value.
+func BuildSynapseConnectionString(workspace, database, username, credential string) string {
+	return synapseMSDSNConfig(workspace, database, username, credential).URL().String()
 }
 
 func firstNonEmptyStr(values ...string) string {

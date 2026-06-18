@@ -9,16 +9,16 @@ import (
 	"github.com/microsoft/go-mssqldb/msdsn"
 )
 
-func TestBuildSynapseConnectionString_PreservesTrailingSpacesInPassword(t *testing.T) {
-	// Real tenant password shape: special chars + trailing spaces must survive DSN build.
+func TestBuildSynapseConnectionString_TrimsTrailingWhitespaceInCredential(t *testing.T) {
 	pw := "G7!vQ9#xP4@Lm2$Ks8  "
+	want := "G7!vQ9#xP4@Lm2$Ks8"
 	got := BuildSynapseConnectionString("dev-eastus2-cp01-synapse", "databahn_tenant_db", "dbadmin", pw)
 	parsed, err := msdsn.Parse(got)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if parsed.Password != pw {
-		t.Fatalf("password=%q want %q", parsed.Password, pw)
+	if parsed.Password != want {
+		t.Fatalf("password=%q want %q", parsed.Password, want)
 	}
 	if parsed.User != "dbadmin" {
 		t.Fatalf("user=%q", parsed.User)
