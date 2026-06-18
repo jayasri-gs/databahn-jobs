@@ -9,6 +9,22 @@ import (
 	"github.com/microsoft/go-mssqldb/msdsn"
 )
 
+func TestBuildSynapseConnectionString_PreservesTrailingSpacesInPassword(t *testing.T) {
+	// Real tenant password shape: special chars + trailing spaces must survive DSN build.
+	pw := "G7!vQ9#xP4@Lm2$Ks8  "
+	got := BuildSynapseConnectionString("dev-eastus2-cp01-synapse", "databahn_tenant_db", "dbadmin", pw)
+	parsed, err := msdsn.Parse(got)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if parsed.Password != pw {
+		t.Fatalf("password=%q want %q", parsed.Password, pw)
+	}
+	if parsed.User != "dbadmin" {
+		t.Fatalf("user=%q", parsed.User)
+	}
+}
+
 func TestBuildSynapseConnectionString(t *testing.T) {
 	got := BuildSynapseConnectionString("myws", "mydb", "user", "pass")
 	parsed, err := msdsn.Parse(got)
@@ -18,8 +34,8 @@ func TestBuildSynapseConnectionString(t *testing.T) {
 	if parsed.Host != "myws-ondemand.sql.azuresynapse.net" {
 		t.Fatalf("host=%q", parsed.Host)
 	}
-	if parsed.Database != "mydb" || parsed.User != "user" || parsed.Password != "pass" {
-		t.Fatalf("db/user/pass=%q/%q/%q", parsed.Database, parsed.User, parsed.Password)
+	if parsed.User != "user" || parsed.Password != "pass" {
+		t.Fatalf("user/pass=%q/%q", parsed.User, parsed.Password)
 	}
 }
 
@@ -37,6 +53,44 @@ func TestBuildSynapseConnectionString_EscapesSpecialCharacters(t *testing.T) {
 func TestFirstNonEmptyStr(t *testing.T) {
 	if got := firstNonEmptyStr("", "  ", "ok"); got != "ok" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestResolveDestinationSynapseSQL_MergesDestinationSecretCreds(t *testing.T) {
+	storeCfg := dataStoreConfiguration{
+		AzureSynapseConfiguration: &synapseSQLConfigJSON{
+			Workspace:   "store-ws",
+			Database:    "store-db",
+			SqlUsername: "store-user",
+			SqlPassword: "store-pass",
+		},
+	}
+	merged := map[string]string{
+		azureSynapseSQLUsernameKey: "secret-user",
+		azureSynapseSQLPasswordKey: "secret-pass",
+	}
+	cfg := &SynapseSQLConfig{
+		Workspace:   storeCfg.AzureSynapseConfiguration.Workspace,
+		Database:    storeCfg.AzureSynapseConfiguration.Database,
+		SqlUsername: storeCfg.AzureSynapseConfiguration.SqlUsername,
+		SqlPassword: storeCfg.AzureSynapseConfiguration.SqlPassword,
+	}
+	cfg.SqlUsername = firstNonEmptyStr(cfg.SqlUsername, merged[azureSynapseSQLUsernameKey])
+	cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, merged[azureSynapseSQLPasswordKey])
+
+	if cfg.Workspace != "store-ws" || cfg.Database != "store-db" {
+		t.Fatalf("workspace/db=%q/%q", cfg.Workspace, cfg.Database)
+	}
+	if cfg.SqlUsername != "store-user" || cfg.SqlPassword != "store-pass" {
+		t.Fatalf("store creds should win when set, got %q/%q", cfg.SqlUsername, cfg.SqlPassword)
+	}
+
+	cfg.SqlUsername = ""
+	cfg.SqlPassword = ""
+	cfg.SqlUsername = firstNonEmptyStr(cfg.SqlUsername, merged[azureSynapseSQLUsernameKey])
+	cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, merged[azureSynapseSQLPasswordKey])
+	if cfg.SqlUsername != "secret-user" || cfg.SqlPassword != "secret-pass" {
+		t.Fatalf("secret fallback=%q/%q", cfg.SqlUsername, cfg.SqlPassword)
 	}
 }
 

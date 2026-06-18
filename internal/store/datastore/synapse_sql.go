@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	"github.com/google/uuid"
@@ -116,10 +115,6 @@ func resolveDestinationSynapseSQL(
 	storeCfg dataStoreConfiguration,
 	dsSyn *datasetSynapseConfiguration,
 ) (*SynapseSQLConfig, error) {
-	_ = ctx
-	_ = db
-	_ = destinationID
-	_ = tenantID
 	_ = dsSyn
 	if storeCfg.AzureSynapseConfiguration == nil {
 		return nil, fmt.Errorf("azure synapse configuration is required on search_data_store")
@@ -131,6 +126,17 @@ func resolveDestinationSynapseSQL(
 		SqlUsername: storeSyn.SqlUsername,
 		SqlPassword: storeSyn.SqlPassword,
 	}
+
+	// Fall back to linked destination secret only when store SQL creds are missing.
+	if destinationID != nil {
+		merged, err := destination.LoadMergedConfiguration(ctx, db, *destinationID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		cfg.SqlUsername = firstNonEmptyStr(cfg.SqlUsername, merged[azureSynapseSQLUsernameKey])
+		cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, merged[azureSynapseSQLPasswordKey])
+	}
+
 	return validateSynapseSQLConfig(cfg)
 }
 
@@ -144,9 +150,13 @@ func validateSynapseSQLConfig(cfg *SynapseSQLConfig) (*SynapseSQLConfig, error) 
 	return cfg, nil
 }
 
-// BuildSynapseConnectionString builds a go-mssqldb connection URL for serverless SQL pool.
-// Uses msdsn URL encoding so credentials with DSN control characters are safe.
+// BuildSynapseConnectionString builds a go-mssqldb connection string for serverless SQL pool.
+// Always uses URL form: ADO semicolon DSNs mishandle passwords with @ and strip trailing spaces.
 func BuildSynapseConnectionString(workspace, database, username, password string) string {
+	return buildSynapseURLConnectionString(workspace, database, username, password)
+}
+
+func buildSynapseURLConnectionString(workspace, database, username, password string) string {
 	cfg := msdsn.Config{
 		Host:       fmt.Sprintf("%s-ondemand.sql.azuresynapse.net", workspace),
 		Port:       1433,
@@ -157,7 +167,6 @@ func BuildSynapseConnectionString(workspace, database, username, password string
 		Parameters: map[string]string{
 			"host name in certificate": "*.database.windows.net",
 		},
-		ConnTimeout: 60 * time.Second,
 	}
 	return cfg.URL().String()
 }

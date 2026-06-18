@@ -50,6 +50,16 @@ func (e *SynapseExecutor) Connect(ctx context.Context) error {
 	}
 	connString := datastore.BuildSynapseConnectionString(e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword)
 
+	// TODO: remove after Synapse export login is verified — logs exact credential bytes (incl. trailing spaces).
+	e.log.Info("Synapse JDBC connect (temporary credential debug)",
+		zap.String("workspace", e.cfg.Workspace),
+		zap.String("database", e.cfg.Database),
+		zap.String("sqlUsername", e.cfg.SqlUsername),
+		zap.String("sqlPassword", e.cfg.SqlPassword),
+		zap.String("sqlPasswordQuoted", fmt.Sprintf("%q", e.cfg.SqlPassword)),
+		zap.Int("sqlPasswordLen", len(e.cfg.SqlPassword)),
+		zap.String("server", e.cfg.Workspace+"-ondemand.sql.azuresynapse.net"))
+
 	db, err := sql.Open("sqlserver", connString)
 	if err != nil {
 		return fmt.Errorf("failed to open synapse connection: %w", err)
