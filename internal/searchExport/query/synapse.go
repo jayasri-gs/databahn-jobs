@@ -109,29 +109,33 @@ func (e *SynapseExecutor) CancelQueryExecution(ctx context.Context, executionID 
 }
 
 func (e *SynapseExecutor) GetQueryColumns(ctx context.Context, query, database string) ([]string, error) {
+	_ = database
 	if e.db == nil {
 		return nil, fmt.Errorf("synapse not connected")
 	}
-	rows, err := e.db.QueryContext(ctx, `
-		SELECT name
-		FROM sys.dm_exec_describe_first_result_set(@p1, NULL, 0)
-		WHERE name IS NOT NULL
-		ORDER BY column_ordinal`, query)
+	conn, err := e.db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("synapse column discovery connection: %w", err)
+	}
+	defer conn.Close()
+
+	colCtx, cancel := context.WithTimeout(ctx, synapsePreflightTimeout)
+	defer cancel()
+
+	if _, err := conn.ExecContext(colCtx, "SET ROWCOUNT 1"); err != nil {
+		return nil, fmt.Errorf("describe synapse query columns: %w", err)
+	}
+	defer func() { _, _ = conn.ExecContext(context.Background(), "SET ROWCOUNT 0") }()
+
+	rows, err := conn.QueryContext(colCtx, query)
 	if err != nil {
 		return nil, fmt.Errorf("describe synapse query columns: %w", err)
 	}
 	defer rows.Close()
 
-	var columns []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("scan synapse column name: %w", err)
-		}
-		columns = append(columns, name)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("describe synapse query columns: %w", err)
 	}
 	if len(columns) == 0 {
 		return nil, fmt.Errorf("no columns returned for synapse query")

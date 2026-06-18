@@ -20,3 +20,11 @@ func TestStreamRows_NotConnected(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestGetQueryColumns_NotConnected(t *testing.T) {
+	exec := &SynapseExecutor{}
+	_, err := exec.GetQueryColumns(context.Background(), "SELECT 1", "db")
+	if err == nil || !strings.Contains(err.Error(), "not connected") {
+		t.Fatalf("err=%v", err)
+	}
+}

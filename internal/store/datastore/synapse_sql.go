@@ -102,7 +102,7 @@ func resolveExternalSynapseSQL(
 		Workspace:   strings.TrimSpace(dsSyn.Workspace),
 		Database:    strings.TrimSpace(dsSyn.Database),
 		SqlUsername: strings.TrimSpace(merged[azureSynapseSQLUsernameKey]),
-		SqlPassword: merged[azureSynapseSQLPasswordKey],
+		SqlPassword: normalizeSynapseSQLPassword(merged[azureSynapseSQLPasswordKey]),
 	}
 	return validateSynapseSQLConfig(cfg)
 }
@@ -121,10 +121,10 @@ func resolveDestinationSynapseSQL(
 	}
 	storeSyn := storeCfg.AzureSynapseConfiguration
 	cfg := &SynapseSQLConfig{
-		Workspace:   storeSyn.Workspace,
-		Database:    storeSyn.Database,
-		SqlUsername: storeSyn.SqlUsername,
-		SqlPassword: storeSyn.SqlPassword,
+		Workspace:   strings.TrimSpace(storeSyn.Workspace),
+		Database:    strings.TrimSpace(storeSyn.Database),
+		SqlUsername: strings.TrimSpace(storeSyn.SqlUsername),
+		SqlPassword: normalizeSynapseSQLPassword(storeSyn.SqlPassword),
 	}
 
 	// Fall back to linked destination secret only when store SQL creds are missing.
@@ -134,7 +134,7 @@ func resolveDestinationSynapseSQL(
 			return nil, err
 		}
 		cfg.SqlUsername = firstNonEmptyStr(cfg.SqlUsername, merged[azureSynapseSQLUsernameKey])
-		cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, merged[azureSynapseSQLPasswordKey])
+		cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, normalizeSynapseSQLPassword(merged[azureSynapseSQLPasswordKey]))
 	}
 
 	return validateSynapseSQLConfig(cfg)
@@ -150,6 +150,10 @@ func validateSynapseSQLConfig(cfg *SynapseSQLConfig) (*SynapseSQLConfig, error) 
 	return cfg, nil
 }
 
+func normalizeSynapseSQLPassword(password string) string {
+	return strings.TrimRight(password, " \t\r\n")
+}
+
 // BuildSynapseConnectionString builds a go-mssqldb connection string for serverless SQL pool.
 // Always uses URL form: ADO semicolon DSNs mishandle passwords with @ and strip trailing spaces.
 func BuildSynapseConnectionString(workspace, database, username, password string) string {
@@ -162,7 +166,7 @@ func buildSynapseURLConnectionString(workspace, database, username, password str
 		Port:       1433,
 		Database:   database,
 		User:       username,
-		Password:   password,
+		Password:   normalizeSynapseSQLPassword(password),
 		Encryption: msdsn.EncryptionRequired,
 		Parameters: map[string]string{
 			"host name in certificate": "*.database.windows.net",
