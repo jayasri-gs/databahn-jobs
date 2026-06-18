@@ -98,10 +98,10 @@ func resolveExternalSynapseSQL(
 	}
 
 	cfg := &SynapseSQLConfig{
-		Workspace:   firstNonEmptyStr(dsSyn.Workspace, merged[azureSynapseWorkspaceKey], storeCfgField(storeCfg, "workspace")),
-		Database:    firstNonEmptyStr(dsSyn.Database, merged[azureSynapseDatabaseKey], storeCfgField(storeCfg, "database")),
-		SqlUsername: firstNonEmptyStr(merged[azureSynapseSQLUsernameKey], storeCfgField(storeCfg, "sqlUsername")),
-		SqlPassword: firstNonEmptyStr(merged[azureSynapseSQLPasswordKey], storeCfgField(storeCfg, "sqlPassword")),
+		Workspace:   strings.TrimSpace(dsSyn.Workspace),
+		Database:    strings.TrimSpace(dsSyn.Database),
+		SqlUsername: strings.TrimSpace(merged[azureSynapseSQLUsernameKey]),
+		SqlPassword: merged[azureSynapseSQLPasswordKey],
 	}
 	return validateSynapseSQLConfig(cfg)
 }
@@ -114,52 +114,22 @@ func resolveDestinationSynapseSQL(
 	storeCfg dataStoreConfiguration,
 	dsSyn *datasetSynapseConfiguration,
 ) (*SynapseSQLConfig, error) {
-	var storeSyn *synapseSQLConfigJSON
-	if storeCfg.AzureSynapseConfiguration != nil {
-		storeSyn = storeCfg.AzureSynapseConfiguration
-	}
-
-	cfg := &SynapseSQLConfig{}
-	if storeSyn != nil {
-		cfg.Workspace = storeSyn.Workspace
-		cfg.Database = storeSyn.Database
-		cfg.SqlUsername = storeSyn.SqlUsername
-		cfg.SqlPassword = storeSyn.SqlPassword
-	}
-
-	cfg.Workspace = firstNonEmptyStr(cfg.Workspace, dsSyn.Workspace)
-	cfg.Database = firstNonEmptyStr(cfg.Database, dsSyn.Database)
-
-	if destinationID != nil {
-		merged, err := destination.LoadMergedConfiguration(ctx, db, *destinationID, tenantID)
-		if err != nil {
-			return nil, err
-		}
-		cfg.Workspace = firstNonEmptyStr(cfg.Workspace, merged[azureSynapseWorkspaceKey])
-		cfg.Database = firstNonEmptyStr(cfg.Database, merged[azureSynapseDatabaseKey])
-		cfg.SqlUsername = firstNonEmptyStr(cfg.SqlUsername, merged[azureSynapseSQLUsernameKey])
-		cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, merged[azureSynapseSQLPasswordKey])
-	}
-
-	return validateSynapseSQLConfig(cfg)
-}
-
-func storeCfgField(storeCfg dataStoreConfiguration, field string) string {
+	_ = ctx
+	_ = db
+	_ = destinationID
+	_ = tenantID
+	_ = dsSyn
 	if storeCfg.AzureSynapseConfiguration == nil {
-		return ""
+		return nil, fmt.Errorf("azure synapse configuration is required on search_data_store")
 	}
-	switch field {
-	case "workspace":
-		return storeCfg.AzureSynapseConfiguration.Workspace
-	case "database":
-		return storeCfg.AzureSynapseConfiguration.Database
-	case "sqlUsername":
-		return storeCfg.AzureSynapseConfiguration.SqlUsername
-	case "sqlPassword":
-		return storeCfg.AzureSynapseConfiguration.SqlPassword
-	default:
-		return ""
+	storeSyn := storeCfg.AzureSynapseConfiguration
+	cfg := &SynapseSQLConfig{
+		Workspace:   storeSyn.Workspace,
+		Database:    storeSyn.Database,
+		SqlUsername: storeSyn.SqlUsername,
+		SqlPassword: storeSyn.SqlPassword,
 	}
+	return validateSynapseSQLConfig(cfg)
 }
 
 func validateSynapseSQLConfig(cfg *SynapseSQLConfig) (*SynapseSQLConfig, error) {
@@ -169,7 +139,6 @@ func validateSynapseSQLConfig(cfg *SynapseSQLConfig) (*SynapseSQLConfig, error) 
 	if cfg.SqlUsername == "" || cfg.SqlPassword == "" {
 		return nil, fmt.Errorf("synapse SQL credentials are required")
 	}
-	cfg.ConnectionString = BuildSynapseConnectionString(cfg.Workspace, cfg.Database, cfg.SqlUsername, cfg.SqlPassword)
 	return cfg, nil
 }
 

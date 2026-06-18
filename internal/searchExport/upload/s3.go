@@ -170,11 +170,12 @@ func (u *S3Uploader) ListParts(ctx context.Context) ([]PartInfo, error) {
 	return parts, nil
 }
 
-// AbortOrphanedUpload aborts an in-flight multipart upload by its upload ID.
-// Safe to call if the upload has already been completed or aborted (returns nil).
-func AbortOrphanedUpload(ctx context.Context, awsCfg aws.Config, bucket, key, uploadID string) error {
-	client := s3.NewFromConfig(awsCfg)
-	_, err := client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+// AbortOrphaned aborts an in-flight multipart upload by upload ID using this uploader's client.
+func (u *S3Uploader) AbortOrphaned(ctx context.Context, bucket, key, uploadID string) error {
+	if u.client == nil || uploadID == "" {
+		return nil
+	}
+	_, err := u.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 		Bucket:   aws.String(bucket),
 		Key:      aws.String(key),
 		UploadId: aws.String(uploadID),
@@ -187,6 +188,12 @@ func AbortOrphanedUpload(ctx context.Context, awsCfg aws.Config, bucket, key, up
 		return fmt.Errorf("abort orphaned upload: %w", err)
 	}
 	return nil
+}
+
+// AbortOrphanedUpload aborts an in-flight multipart upload by its upload ID.
+// Safe to call if the upload has already been completed or aborted (returns nil).
+func AbortOrphanedUpload(ctx context.Context, awsCfg aws.Config, bucket, key, uploadID string) error {
+	return NewS3Uploader(awsCfg, "").AbortOrphaned(ctx, bucket, key, uploadID)
 }
 
 func (u *S3Uploader) GeneratePresignedURL(ctx context.Context, expiry time.Duration) (string, error) {

@@ -38,11 +38,10 @@ type ExportDataStore struct {
 }
 
 type SynapseSQLConfig struct {
-	ConnectionString string
-	Workspace        string
-	Database         string
-	SqlUsername      string
-	SqlPassword      string
+	Workspace   string
+	Database    string
+	SqlUsername string
+	SqlPassword string
 }
 
 type dataStoreRow struct {
@@ -159,9 +158,6 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 			Database:    s.Database,
 			SqlUsername: s.SqlUsername,
 			SqlPassword: s.SqlPassword,
-		}
-		if s.Workspace != "" && s.Database != "" && s.SqlUsername != "" && s.SqlPassword != "" {
-			result.SynapseSQL.ConnectionString = BuildSynapseConnectionString(s.Workspace, s.Database, s.SqlUsername, s.SqlPassword)
 		}
 	}
 

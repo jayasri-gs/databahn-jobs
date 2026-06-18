@@ -10,6 +10,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const s3MinPartSize = 5 * 1024 * 1024
+
 // encodeRowsToUploader streams rows through the export encoder into multipart upload parts.
 func (p *Pipeline) encodeRowsToUploader(
 	ctx context.Context,
@@ -25,8 +27,11 @@ func (p *Pipeline) encodeRowsToUploader(
 	exportFormat := normalizedFormat(p.request.Format)
 	isExcel := exportFormat == "xlsx" || exportFormat == "excel"
 	maxSegBytes := int64(p.config.MaxSegmentSizeMB) * 1024 * 1024
-	if maxSegBytes == 0 {
+	if maxSegBytes <= 0 {
 		maxSegBytes = 10 * 1024 * 1024
+	}
+	if _, ok := p.uploader.(*upload.S3Uploader); ok && maxSegBytes < s3MinPartSize {
+		maxSegBytes = s3MinPartSize
 	}
 
 	var buf bytes.Buffer
@@ -118,13 +123,27 @@ func (p *Pipeline) encodeRowsToUploader(
 		return totalRows, 0, err
 	}
 
-	if encoderReady {
+	if !encoderReady {
+		columns := getColumns()
+		if len(columns) > 0 {
+			if err := newEncoder(columns); err != nil {
+				return totalRows, 0, fmt.Errorf("failed to create encoder for empty export: %w", err)
+			}
+			encoderReady = true
+			if err := flushPart(true); err != nil {
+				return totalRows, 0, err
+			}
+		}
+	} else if encoderReady {
 		if err := flushPart(true); err != nil {
 			return totalRows, 0, err
 		}
 	}
 
 	if len(parts) == 0 {
+		if p.uploader != nil && p.uploader.UploadID() != "" {
+			_ = p.uploader.Abort(ctx)
+		}
 		return 0, 0, nil
 	}
 

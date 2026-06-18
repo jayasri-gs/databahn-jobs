@@ -155,12 +155,11 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 			dataSource = meta.DataSourceName
 		}
 		synapseExec := query.NewSynapseExecutor(query.SynapseConfig{
-			ConnectionString: synapseSQL.ConnectionString,
-			Workspace:        synapseSQL.Workspace,
-			Database:         firstNonEmpty(cfg.Database, synapseSQL.Database, meta.Database),
-			SqlUsername:      synapseSQL.SqlUsername,
-			SqlPassword:      synapseSQL.SqlPassword,
-			DataSourceName:   dataSource,
+			Workspace:      synapseSQL.Workspace,
+			Database:       firstNonEmpty(cfg.Database, synapseSQL.Database, meta.Database),
+			SqlUsername:    synapseSQL.SqlUsername,
+			SqlPassword:    synapseSQL.SqlPassword,
+			DataSourceName: dataSource,
 		})
 		synapseExec.SetLogger(log)
 		deps.Synapse = synapseExec

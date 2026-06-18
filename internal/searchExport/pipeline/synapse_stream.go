@@ -63,6 +63,11 @@ func (p *Pipeline) runSynapseStreamExport(ctx context.Context, destBucket string
 		return nil, fmt.Errorf("synapse stream export: %w", err)
 	}
 
+	if totalBytes == 0 {
+		p.cleanupCheckpoint()
+		return &PipelineResult{TotalRows: totalRows, TotalBytes: 0}, nil
+	}
+
 	presignedURL, err := p.uploader.GeneratePresignedURL(ctx, p.config.PresignExpiry)
 	if err != nil {
 		p.log.Warn("Failed to generate presigned URL", zap.Error(err))

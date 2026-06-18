@@ -171,7 +171,8 @@ func (p *Pipeline) ResumeRun(ctx context.Context, destBucket string, onAthenaSta
 		if p.config.EFSMountPath != "" {
 			cp, err := state.Read(p.config.EFSMountPath, p.reportID)
 			if err == nil && cp != nil && cp.Stage == state.StageStreaming {
-				p.log.Info("Synapse stream checkpoint is not resumable, starting fresh")
+				p.log.Info("Synapse stream checkpoint is not resumable, aborting orphaned upload and starting fresh")
+				p.abortCheckpointedUpload(ctx, cp)
 				p.cleanupCheckpoint()
 			}
 		}
@@ -497,6 +498,11 @@ func (p *Pipeline) runUploadPhase(
 		_ = unloadReader.DeleteFiles(ctx, []string{unloadResult.ManifestLocation})
 	}
 
+	if totalBytes == 0 {
+		p.cleanupCheckpoint()
+		return &PipelineResult{TotalRows: totalRows, TotalBytes: 0}, nil
+	}
+
 	presignedURL, err := p.uploader.GeneratePresignedURL(ctx, p.config.PresignExpiry)
 	if err != nil {
 		p.log.Warn("Failed to generate presigned URL", zap.Error(err))
@@ -519,6 +525,27 @@ func (p *Pipeline) cleanupCheckpoint() {
 	}
 }
 
+func (p *Pipeline) abortCheckpointedUpload(ctx context.Context, cp *state.Checkpoint) {
+	if cp == nil || cp.UploadID == "" {
+		return
+	}
+	if s3up, ok := p.uploader.(*upload.S3Uploader); ok {
+		if err := s3up.AbortOrphaned(ctx, cp.Bucket, cp.Key, cp.UploadID); err != nil {
+			p.log.Warn("Failed to abort orphaned S3 multipart upload", zap.Error(err))
+		}
+		return
+	}
+	if az, ok := p.uploader.(*upload.AzureUploader); ok {
+		if err := az.AbortInFlight(ctx, cp.Bucket, cp.Key); err != nil {
+			p.log.Warn("Failed to abort orphaned Azure blob upload", zap.Error(err))
+		}
+		return
+	}
+	if p.uploader != nil {
+		_ = p.uploader.Abort(ctx)
+	}
+}
+
 func unloadResultFromCheckpoint(cp *state.Checkpoint) *query.UnloadResult {
 	return &query.UnloadResult{
 		ManifestLocation: cp.ManifestLocation,
@@ -534,15 +561,7 @@ func (p *Pipeline) restartUploadFromCheckpoint(
 	cp *state.Checkpoint,
 	directUpload bool,
 ) (*PipelineResult, error) {
-	if cp.UploadID != "" {
-		if _, ok := p.uploader.(*upload.S3Uploader); ok && awsErr == nil {
-			_ = upload.AbortOrphanedUpload(ctx, awsCfg, cp.Bucket, cp.Key, cp.UploadID)
-		} else if az, ok := p.uploader.(*upload.AzureUploader); ok {
-			_ = az.AbortInFlight(ctx, cp.Bucket, cp.Key)
-		} else if p.uploader != nil {
-			_ = p.uploader.Abort(ctx)
-		}
-	}
+	p.abortCheckpointedUpload(ctx, cp)
 	return p.runUploadPhase(ctx, destBucket, unloadResultFromCheckpoint(cp), directUpload, unload.StreamOptions{}, cp.UnloadFiles)
 }
 

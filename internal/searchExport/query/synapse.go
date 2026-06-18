@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"sync"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -14,12 +13,11 @@ import (
 )
 
 type SynapseConfig struct {
-	ConnectionString string
-	Workspace        string
-	Database         string
-	SqlUsername      string
-	SqlPassword      string
-	DataSourceName   string // optional metadata; unused by JDBC stream
+	Workspace      string
+	Database       string
+	SqlUsername    string
+	SqlPassword    string
+	DataSourceName string // optional metadata; unused by JDBC stream
 }
 
 type SynapseExecutor struct {
@@ -43,16 +41,13 @@ func (e *SynapseExecutor) SetLogger(log *zap.Logger) {
 func (e *SynapseExecutor) Engine() string { return EngineSynapse }
 
 func (e *SynapseExecutor) Connect(ctx context.Context) error {
-	connString := strings.TrimSpace(e.cfg.ConnectionString)
-	if connString == "" {
-		if e.cfg.Workspace == "" || e.cfg.Database == "" {
-			return fmt.Errorf("synapse workspace and database are required")
-		}
-		if e.cfg.SqlUsername == "" || e.cfg.SqlPassword == "" {
-			return fmt.Errorf("synapse SQL credentials are required")
-		}
-		connString = buildSynapseConnectionString(e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword)
+	if e.cfg.Workspace == "" || e.cfg.Database == "" {
+		return fmt.Errorf("synapse workspace and database are required")
 	}
+	if e.cfg.SqlUsername == "" || e.cfg.SqlPassword == "" {
+		return fmt.Errorf("synapse SQL credentials are required")
+	}
+	connString := buildSynapseConnectionString(e.cfg.Workspace, e.cfg.Database, e.cfg.SqlUsername, e.cfg.SqlPassword)
 
 	db, err := sql.Open("sqlserver", connString)
 	if err != nil {

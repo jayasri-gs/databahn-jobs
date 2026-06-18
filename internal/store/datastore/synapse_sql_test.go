@@ -1,8 +1,11 @@
 package datastore
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestBuildSynapseConnectionString(t *testing.T) {
@@ -23,13 +26,30 @@ func TestFirstNonEmptyStr(t *testing.T) {
 	}
 }
 
-func TestResolveDestinationSynapseSQL_MergesFields(t *testing.T) {
+func TestResolveDestinationSynapseSQL_UsesStoreConfigOnly(t *testing.T) {
 	storeCfg := dataStoreConfiguration{
 		AzureSynapseConfiguration: &synapseSQLConfigJSON{
-			Workspace: "store-ws",
-			Database:  "store-db",
+			Workspace:   "store-ws",
+			Database:    "store-db",
+			SqlUsername: "store-user",
+			SqlPassword: "store-pass",
 		},
 	}
+	dsSyn := &datasetSynapseConfiguration{Workspace: "ds-ws", Database: "ds-db"}
+
+	cfg, err := resolveDestinationSynapseSQL(context.Background(), nil, nil, uuid.Nil, storeCfg, dsSyn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Workspace != "store-ws" || cfg.Database != "store-db" {
+		t.Fatalf("expected store workspace/db, got %q/%q", cfg.Workspace, cfg.Database)
+	}
+	if cfg.SqlUsername != "store-user" || cfg.SqlPassword != "store-pass" {
+		t.Fatalf("expected store creds, got %q/%q", cfg.SqlUsername, cfg.SqlPassword)
+	}
+}
+
+func TestResolveExternalSynapseSQL_UsesDatasetAndSecret(t *testing.T) {
 	dsSyn := &datasetSynapseConfiguration{Workspace: "ds-ws", Database: "ds-db"}
 	merged := map[string]string{
 		azureSynapseSQLUsernameKey: "secret-user",
@@ -37,21 +57,19 @@ func TestResolveDestinationSynapseSQL_MergesFields(t *testing.T) {
 	}
 
 	cfg := &SynapseSQLConfig{
-		Workspace: storeCfg.AzureSynapseConfiguration.Workspace,
-		Database:  storeCfg.AzureSynapseConfiguration.Database,
+		Workspace:   strings.TrimSpace(dsSyn.Workspace),
+		Database:    strings.TrimSpace(dsSyn.Database),
+		SqlUsername: strings.TrimSpace(merged[azureSynapseSQLUsernameKey]),
+		SqlPassword: merged[azureSynapseSQLPasswordKey],
 	}
-	cfg.Workspace = firstNonEmptyStr(cfg.Workspace, dsSyn.Workspace)
-	cfg.Database = firstNonEmptyStr(cfg.Database, dsSyn.Database)
-	cfg.SqlUsername = firstNonEmptyStr(cfg.SqlUsername, merged[azureSynapseSQLUsernameKey])
-	cfg.SqlPassword = firstNonEmptyStr(cfg.SqlPassword, merged[azureSynapseSQLPasswordKey])
-
-	if cfg.Workspace != "store-ws" {
-		t.Fatalf("workspace=%q", cfg.Workspace)
+	cfg, err := validateSynapseSQLConfig(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Database != "store-db" {
-		t.Fatalf("database=%q", cfg.Database)
+	if cfg.Workspace != "ds-ws" || cfg.Database != "ds-db" {
+		t.Fatalf("expected dataset workspace/db, got %q/%q", cfg.Workspace, cfg.Database)
 	}
 	if cfg.SqlUsername != "secret-user" || cfg.SqlPassword != "secret-pass" {
-		t.Fatalf("creds=%q/%q", cfg.SqlUsername, cfg.SqlPassword)
+		t.Fatalf("expected secret creds, got %q/%q", cfg.SqlUsername, cfg.SqlPassword)
 	}
 }
