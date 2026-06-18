@@ -15,20 +15,25 @@ const (
 )
 
 type Checkpoint struct {
-	Stage              string    `json:"stage"`
-	AthenaExecutionID  string    `json:"athena_execution_id"`
-	QueryExecutionID   string    `json:"query_execution_id"`
-	UploadID           string    `json:"upload_id"`
-	Bucket             string    `json:"bucket"`
-	Key                string    `json:"key"`
-	UnloadFiles        []string  `json:"unload_files"`
-	ManifestLocation   string    `json:"manifest_location"`
-	ProcessedFileIndex int       `json:"processed_file_index"`
-	LastUploadedPart   int       `json:"last_uploaded_part"`
-	RowsProcessed      int64     `json:"rows_processed"`
-	BytesProcessed     int64     `json:"bytes_processed"`
-	TempOutputPath     string    `json:"temp_output_path"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	Stage                string    `json:"stage"`
+	AthenaExecutionID    string    `json:"athena_execution_id"`
+	QueryExecutionID     string    `json:"query_execution_id"`
+	UploadID             string    `json:"upload_id"`
+	Bucket               string    `json:"bucket"`
+	Key                  string    `json:"key"`
+	UnloadFiles          []string  `json:"unload_files"`
+	ManifestLocation     string    `json:"manifest_location"`
+	ProcessedFileIndex   int       `json:"processed_file_index"`
+	LastUploadedPart     int       `json:"last_uploaded_part"`
+	RowsProcessed        int64     `json:"rows_processed"`
+	BytesProcessed       int64     `json:"bytes_processed"`
+	TempOutputPath       string    `json:"temp_output_path"`
+	SynapseHourIndex     int       `json:"synapse_hour_index,omitempty"`
+	SynapseSubChunkIndex int       `json:"synapse_sub_chunk_index,omitempty"`
+	SynapseLastSortKey   string    `json:"synapse_last_sort_key,omitempty"`
+	TotalHourChunks      int       `json:"total_hour_chunks,omitempty"`
+	UploadBlockIDs       []string  `json:"upload_block_ids,omitempty"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 func dir(mountPath, reportID string) string {

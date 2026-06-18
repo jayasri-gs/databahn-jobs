@@ -168,15 +168,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 // If the checkpoint is missing or corrupt, it falls back to a fresh run.
 func (p *Pipeline) ResumeRun(ctx context.Context, destBucket string, onAthenaStart func(executionID string) error) (*PipelineResult, error) {
 	if p.synapse != nil {
-		if p.config.EFSMountPath != "" {
-			cp, err := state.Read(p.config.EFSMountPath, p.reportID)
-			if err == nil && cp != nil && cp.Stage == state.StageStreaming {
-				p.log.Info("Synapse stream checkpoint is not resumable, aborting orphaned upload and starting fresh")
-				p.abortCheckpointedUpload(ctx, cp)
-				p.cleanupCheckpoint()
-			}
-		}
-		return p.Run(ctx, destBucket, onAthenaStart)
+		return p.runSynapseStreamExport(ctx, destBucket, p.synapse)
 	}
 
 	if p.config.EFSMountPath == "" {
@@ -589,7 +581,7 @@ func formatMeta(exportFormat string) (ext, contentType string) {
 func (p *Pipeline) processUnloadToFinal(ctx context.Context, ur unload.StagingReader, files []string) (int64, int64, error) {
 	totalRows, totalBytes, err := p.encodeRowsToUploader(ctx, func() []string { return ur.Columns() }, func(cb func([]interface{}) error) error {
 		return ur.StreamRows(ctx, files, cb)
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		return totalRows, 0, fmt.Errorf("failed to process Parquet: %w", err)
 	}

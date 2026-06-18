@@ -50,6 +50,13 @@ func NewS3UploaderFromExisting(awsCfg aws.Config, bucket, key, uploadID, lifecyc
 
 func (u *S3Uploader) UploadID() string { return u.uploadID }
 
+// ReattachMultipart continues an in-flight multipart upload (resume).
+func (u *S3Uploader) ReattachMultipart(bucket, key, uploadID string) {
+	u.bucket = bucket
+	u.key = key
+	u.uploadID = uploadID
+}
+
 func (u *S3Uploader) Init(ctx context.Context, bucket, key, contentType string) error {
 	u.bucket = bucket
 	u.key = key

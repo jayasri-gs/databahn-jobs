@@ -61,6 +61,18 @@ func (e *SynapseExecutor) StreamRows(
 	e.setSPID(spid)
 	defer e.setSPID(0)
 
+	if opts.ServerRowCap > 0 {
+		if _, err := conn.ExecContext(streamCtx, fmt.Sprintf("SET ROWCOUNT %d", opts.ServerRowCap)); err != nil {
+			return 0, fmt.Errorf("synapse set rowcount: %w", err)
+		}
+		defer func() { _, _ = conn.ExecContext(context.Background(), "SET ROWCOUNT 0") }()
+		e.log.Info("Synapse JDBC stream server row cap enabled",
+			zap.Int("spid", spid),
+			zap.Int64("serverRowCap", opts.ServerRowCap))
+	}
+
+	e.log.Info("Synapse JDBC stream query started", zap.Int("spid", spid))
+
 	rows, err := conn.QueryContext(streamCtx, query)
 	if err != nil {
 		return 0, fmt.Errorf("synapse query: %w", err)
@@ -70,6 +82,11 @@ func (e *SynapseExecutor) StreamRows(
 	cols, err := rows.Columns()
 	if err != nil {
 		return 0, err
+	}
+	if opts.OnColumns != nil {
+		if err := opts.OnColumns(cols); err != nil {
+			return 0, err
+		}
 	}
 	dest := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
@@ -94,14 +111,26 @@ func (e *SynapseExecutor) StreamRows(
 			row[i] = norm
 		}
 		count++
-		if opts.MaxRows > 0 && count > opts.MaxRows {
+		if count == 1 {
+			e.log.Info("Synapse JDBC stream first row received",
+				zap.Int("spid", spid),
+				zap.Duration("elapsed", time.Since(started)))
+		}
+		if opts.ServerRowCap == 0 && opts.MaxRows > 0 && count > opts.MaxRows {
 			return count, fmt.Errorf("export row cap exceeded (%d)", opts.MaxRows)
 		}
 		if err := fn(row); err != nil {
 			return count, err
 		}
 		now := time.Now()
-		if now.Sub(lastProgress) >= opts.ProgressEvery {
+		if opts.ProgressEveryRows > 0 && count%opts.ProgressEveryRows == 0 {
+			e.log.Info("Synapse JDBC stream batch progress",
+				zap.Int("spid", spid),
+				zap.Int64("rowsStreamed", count),
+				zap.Int64("batchSize", opts.ProgressEveryRows),
+				zap.Duration("elapsed", now.Sub(started)))
+			lastProgress = now
+		} else if now.Sub(lastProgress) >= opts.ProgressEvery {
 			e.log.Info("Synapse JDBC stream in progress",
 				zap.Int("spid", spid),
 				zap.Int64("rowsStreamed", count),
@@ -112,5 +141,9 @@ func (e *SynapseExecutor) StreamRows(
 	if err := rows.Err(); err != nil {
 		return count, fmt.Errorf("synapse rows: %w", err)
 	}
+	e.log.Info("Synapse JDBC stream completed",
+		zap.Int("spid", spid),
+		zap.Int64("rowsStreamed", count),
+		zap.Duration("elapsed", time.Since(started)))
 	return count, nil
 }

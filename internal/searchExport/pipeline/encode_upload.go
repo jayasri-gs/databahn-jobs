@@ -12,17 +12,36 @@ import (
 
 const s3MinPartSize = 5 * 1024 * 1024
 
+// EncodeResume continues a multipart upload after a checkpointed Synapse stream export.
+type EncodeResume struct {
+	StartPartNumber int
+	ExistingParts   []upload.PartInfo
+	RowsProcessed   int64
+	BytesProcessed  int64
+}
+
 // encodeRowsToUploader streams rows through the export encoder into multipart upload parts.
 func (p *Pipeline) encodeRowsToUploader(
 	ctx context.Context,
 	getColumns func() []string,
 	streamFn func(func([]interface{}) error) error,
 	onPartUploaded func(partNum int, totalRows, totalBytes int64) error,
+	resume *EncodeResume,
 ) (int64, int64, error) {
 	var totalRows int64
 	var totalBytes int64
 	var parts []upload.PartInfo
 	partNum := 1
+	if resume != nil {
+		if resume.StartPartNumber > 0 {
+			partNum = resume.StartPartNumber
+		}
+		if len(resume.ExistingParts) > 0 {
+			parts = append(parts, resume.ExistingParts...)
+		}
+		totalRows = resume.RowsProcessed
+		totalBytes = resume.BytesProcessed
+	}
 
 	exportFormat := normalizedFormat(p.request.Format)
 	isExcel := exportFormat == "xlsx" || exportFormat == "excel"

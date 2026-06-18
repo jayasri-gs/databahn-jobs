@@ -44,6 +44,49 @@ func (u *AzureUploader) Init(ctx context.Context, container, blobName, contentTy
 	return nil
 }
 
+// BlockIDForPart returns the deterministic staged block ID for a multipart part number.
+func BlockIDForPart(partNumber int) string {
+	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("part-%06d", partNumber)))
+}
+
+// BlockIDsThrough returns staged block IDs for parts 1..partNumber inclusive.
+func BlockIDsThrough(partNumber int) []string {
+	if partNumber <= 0 {
+		return nil
+	}
+	ids := make([]string, partNumber)
+	for i := 1; i <= partNumber; i++ {
+		ids[i-1] = BlockIDForPart(i)
+	}
+	return ids
+}
+
+// PartInfosThrough rebuilds committed part metadata for Azure block uploads.
+func PartInfosThrough(partNumber int) []PartInfo {
+	if partNumber <= 0 {
+		return nil
+	}
+	parts := make([]PartInfo, partNumber)
+	for i := 1; i <= partNumber; i++ {
+		id := BlockIDForPart(i)
+		parts[i-1] = PartInfo{PartNumber: i, ETag: id}
+	}
+	return parts
+}
+
+// ReattachMultipart continues an in-flight Azure block blob upload after resume.
+func (u *AzureUploader) ReattachMultipart(container, blobName, uploadID string, blockIDs []string) error {
+	if u.client == nil {
+		return fmt.Errorf("azure client not configured")
+	}
+	u.container = container
+	u.blobName = blobName
+	u.uploadID = uploadID
+	u.blockIDs = append([]string(nil), blockIDs...)
+	u.bbClient = u.client.ServiceClient().NewContainerClient(container).NewBlockBlobClient(blobName)
+	return nil
+}
+
 func (u *AzureUploader) UploadPart(ctx context.Context, partNumber int, data io.Reader, size int64) (*PartInfo, error) {
 	if u.bbClient == nil {
 		return nil, fmt.Errorf("azure uploader not initialized")
@@ -52,7 +95,7 @@ func (u *AzureUploader) UploadPart(ctx context.Context, partNumber int, data io.
 	if err != nil {
 		return nil, fmt.Errorf("read upload part %d: %w", partNumber, err)
 	}
-	blockID := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("part-%06d", partNumber)))
+	blockID := BlockIDForPart(partNumber)
 	_, err = u.bbClient.StageBlock(ctx, blockID, nopSeekCloser{bytes.NewReader(body)}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("upload block %d: %w", partNumber, err)
@@ -94,11 +137,7 @@ func (u *AzureUploader) ListParts(ctx context.Context) ([]PartInfo, error) {
 	if len(u.blockIDs) == 0 {
 		return nil, nil
 	}
-	parts := make([]PartInfo, len(u.blockIDs))
-	for i, id := range u.blockIDs {
-		parts[i] = PartInfo{PartNumber: i + 1, ETag: id}
-	}
-	return parts, nil
+	return PartInfosThrough(len(u.blockIDs)), nil
 }
 
 func (u *AzureUploader) GeneratePresignedURL(ctx context.Context, expiry time.Duration) (string, error) {
