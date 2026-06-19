@@ -177,7 +177,7 @@ func (e *SynapseExecutor) ExecDDL(ctx context.Context, ddl string) error {
 		return fmt.Errorf("synapse not connected")
 	}
 	if _, err := e.db.ExecContext(ctx, ddl); err != nil {
-		return fmt.Errorf("DDL failed: %w\nSQL: %.200s", err, ddl)
+		return fmt.Errorf("DDL failed: %w", err)
 	}
 	return nil
 }
