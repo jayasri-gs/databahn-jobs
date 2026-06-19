@@ -21,6 +21,11 @@ import (
 
 const defaultSandboxCleanupRetentionHours = 4
 
+// sandboxCleanupDeleteAllEnv is the env var name; when set to true, the job deletes every object
+// under each valid hour-partition path (year=/month=/day=/hour=) within tenant/status prefixes,
+// ignoring retention. Intended for one-time cleanup after layout or format migrations (e.g. JSON → Parquet).
+const sandboxCleanupDeleteAllEnv = "SANDBOX_CLEANUP_DELETE_ALL"
+
 var sandboxStatuses = []string{"published", "dropped"}
 
 type hourFolderInfo struct {
@@ -54,20 +59,29 @@ func CleanupSandboxStorage(ctx context.Context) common.JobResult {
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
+	deleteAll := utils.GetEnvBool(sandboxCleanupDeleteAllEnv, false)
 	retentionHours := utils.GetEnvInt("SANDBOX_CLEANUP_RETENTION_HOURS", defaultSandboxCleanupRetentionHours)
 	now := time.Now().UTC()
 	cutoffTime := now.Add(-time.Duration(retentionHours) * time.Hour).Truncate(time.Hour)
 
-	logger.GetLoggerWithContext(ctx).Info("starting sandbox storage cleanup",
+	log := logger.GetLoggerWithContext(ctx)
+	if deleteAll {
+		log.Warn("sandbox storage cleanup running in delete-all mode; all objects under hour-partition paths (year=/month=/day=/hour=) will be removed for each tenant/status prefix",
+			zap.String("env_flag", sandboxCleanupDeleteAllEnv),
+			zap.Bool("value", true))
+	}
+
+	log.Info("starting sandbox storage cleanup",
 		zap.Int("dataplane_count", len(dataplaneConfigs)),
 		zap.Int("tenant_count", len(tenantIDs)),
 		zap.Time("current_time_utc", now),
 		zap.Time("cutoff_time_utc", cutoffTime),
-		zap.Int("retention_hours", retentionHours))
+		zap.Int("retention_hours", retentionHours),
+		zap.Bool("delete_all_objects", deleteAll))
 
 	totalDeleted := 0
 	for dataplaneID, sandboxConfig := range dataplaneConfigs {
-		deleted, errs := cleanupDataPlane(ctx, dataplaneID, sandboxConfig, tenantIDs, cutoffTime)
+		deleted, errs := cleanupDataPlane(ctx, dataplaneID, sandboxConfig, tenantIDs, cutoffTime, deleteAll)
 		totalDeleted += deleted
 		jobErrors = append(jobErrors, errs...)
 	}
@@ -99,7 +113,7 @@ func loadTenantIDs(ctx context.Context) ([]string, error) {
 }
 
 // cleanupDataPlane processes cleanup for a single data plane across all tenants and statuses.
-func cleanupDataPlane(ctx context.Context, dataplaneID uuid.UUID, sandboxConfig *dataplane.SandboxConfig, tenantIDs []string, cutoffTime time.Time) (int, []common.JobError) {
+func cleanupDataPlane(ctx context.Context, dataplaneID uuid.UUID, sandboxConfig *dataplane.SandboxConfig, tenantIDs []string, cutoffTime time.Time, deleteAll bool) (int, []common.JobError) {
 	var jobErrors []common.JobError
 	collectionName := sandboxConfig.CollectionName()
 
@@ -121,7 +135,7 @@ func cleanupDataPlane(ctx context.Context, dataplaneID uuid.UUID, sandboxConfig 
 	for _, tenantID := range tenantIDs {
 		for _, status := range sandboxStatuses {
 			prefix := fmt.Sprintf("databahn-sandbox/status=%s/tenant_id=%s/", status, tenantID)
-			deleted, err := cleanupPrefix(ctx, store, collectionName, prefix, cutoffTime)
+			deleted, err := cleanupPrefix(ctx, store, collectionName, prefix, cutoffTime, deleteAll)
 			if err != nil {
 				errorMsg := fmt.Sprintf("error cleaning up prefix %s in collection %s for data plane %s: %v",
 					prefix, collectionName, dataplaneID.String(), err)
@@ -216,15 +230,18 @@ func createObjectStore(ctx context.Context, cfg *dataplane.SandboxConfig) (objec
 	return objectstore.NewS3Backend(ctx, region, "", "", "", false)
 }
 
-// cleanupPrefix lists objects under the prefix, groups them by hour folder,
-// and deletes all objects belonging to hour folders older than the cutoff time.
-func cleanupPrefix(ctx context.Context, store objectstore.ObjectStore, collection, prefix string, cutoffTime time.Time) (int, error) {
+// cleanupPrefix lists objects under the prefix, groups them by hour folder
+// (paths containing .../year=.../month=.../day=.../hour=.../), and deletes objects in those folders.
+// When deleteAll is false, only hour folders older than cutoffTime are removed.
+// When deleteAll is true, every object under matching hour folders is removed (retention ignored);
+// keys that do not match that layout are left unchanged.
+func cleanupPrefix(ctx context.Context, store objectstore.ObjectStore, collection, prefix string, cutoffTime time.Time, deleteAll bool) (int, error) {
 	objects, err := store.List(ctx, collection, prefix)
 	if err != nil {
 		return 0, fmt.Errorf("error listing objects: %w", err)
 	}
 
-	hourFolders := groupObjectsByHourFolder(ctx, objects, cutoffTime)
+	hourFolders := groupObjectsByHourFolder(ctx, objects, cutoffTime, deleteAll)
 
 	foldersToDelete := 0
 	for _, info := range hourFolders {
@@ -236,7 +253,8 @@ func cleanupPrefix(ctx context.Context, store objectstore.ObjectStore, collectio
 	logger.GetLoggerWithContext(ctx).Info("identified hour folders to delete",
 		zap.String("prefix", prefix),
 		zap.Int("total_scanned", len(objects)),
-		zap.Int("hour_folders_to_delete", foldersToDelete))
+		zap.Int("hour_folders_to_delete", foldersToDelete),
+		zap.Bool("delete_all_hour_folders", deleteAll))
 
 	totalDeleted := deleteExpiredHourFolders(ctx, store, collection, hourFolders)
 
@@ -248,8 +266,9 @@ func cleanupPrefix(ctx context.Context, store objectstore.ObjectStore, collectio
 }
 
 // groupObjectsByHourFolder groups object keys by their hour folder path.
-// Returns a map where nil values indicate folders that should be skipped (unparseable or not expired).
-func groupObjectsByHourFolder(ctx context.Context, objects []objectstore.ObjectInfo, cutoffTime time.Time) map[string]*hourFolderInfo {
+// Returns a map where nil values indicate folders that should be skipped (unparseable or, in retention mode, not expired).
+// deleteAllHourFolders: if true, every object under a valid hour-partition path is grouped for deletion (cutoff ignored).
+func groupObjectsByHourFolder(ctx context.Context, objects []objectstore.ObjectInfo, cutoffTime time.Time, deleteAllHourFolders bool) map[string]*hourFolderInfo {
 	hourFolders := make(map[string]*hourFolderInfo)
 
 	for _, obj := range objects {
@@ -274,7 +293,7 @@ func groupObjectsByHourFolder(ctx context.Context, objects []objectstore.ObjectI
 			continue
 		}
 
-		if folderTime.Before(cutoffTime) {
+		if deleteAllHourFolders || folderTime.Before(cutoffTime) {
 			hourFolders[hourFolder] = &hourFolderInfo{
 				folderTime: folderTime,
 				keys:       []string{obj.Key},
@@ -313,7 +332,7 @@ func deleteExpiredHourFolders(ctx context.Context, store objectstore.ObjectStore
 }
 
 // extractHourFolder extracts the hour folder path from an object key.
-// Example: tenant_id=xxx/source_id=yyy/year=2025/month=12/day=17/hour=11/file.json
+// Example: tenant_id=xxx/source_id=yyy/year=2025/month=12/day=17/hour=11/part-000.parquet
 // Returns: tenant_id=xxx/source_id=yyy/year=2025/month=12/day=17/hour=11/
 // The trailing slash prevents prefix matching issues (hour=1 matching hour=10..hour=19).
 func extractHourFolder(key string) string {
