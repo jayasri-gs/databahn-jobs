@@ -2,6 +2,8 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -174,6 +176,7 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 			}
 			for ; ; sub++ {
 				chunkSQL := query.BuildSubChunkQuery(hourSQL, opts.HourBatchRows, key)
+				p.log.Debug("Synapse export chunk query SQL", zap.String("query", chunkSQL))
 				p.log.Info("Synapse export chunk query",
 					zap.Int("hourIndex", hi+1),
 					zap.Int("totalHours", len(hours)),
@@ -181,7 +184,7 @@ func (p *Pipeline) runSynapseStreamExportWithCheckpoint(ctx context.Context, des
 					zap.Int("subChunk", sub+1),
 					zap.String("lastSortKey", key),
 					zap.Int64("batchLimit", opts.HourBatchRows),
-					zap.String("query", chunkSQL))
+					zap.String("queryHash", sqlFingerprint(chunkSQL)))
 
 				streamOpts := synapseStreamOpts(opts, remaining)
 				var batchMaxKey string
@@ -420,4 +423,9 @@ func (p *Pipeline) writeSynapseStreamCheckpoint(destBucket, outputKey string, to
 		}
 	}
 	return state.Write(p.config.EFSMountPath, p.reportID, cp)
+}
+
+func sqlFingerprint(sql string) string {
+	sum := sha256.Sum256([]byte(sql))
+	return hex.EncodeToString(sum[:8])
 }
