@@ -14,6 +14,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/state"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/unload"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/upload"
+	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -35,30 +36,39 @@ type PipelineResult struct {
 }
 
 type Pipeline struct {
-	config     PipelineConfig
-	request    *models.SearchExportConfig
-	reportID   string
-	exportName string
-	athena     query.UnloadExecutor
-	synapse    query.RowStreamExecutor
-	uploader   upload.CloudUploader
-	log        *zap.Logger
+	config         PipelineConfig
+	request        *models.SearchExportConfig
+	reportID       string
+	exportName     string
+	athena         query.UnloadExecutor
+	synapse        query.RowStreamExecutor
+	cetasExec      query.CETASExecutor
+	stagingBlobCfg *destination.AzureBlobConfig
+	uploader       upload.CloudUploader
+	log            *zap.Logger
 }
 
-func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, athena query.UnloadExecutor, synapse query.RowStreamExecutor, uploader upload.CloudUploader, log *zap.Logger) *Pipeline {
+func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, athena query.UnloadExecutor, synapse query.RowStreamExecutor, uploader upload.CloudUploader, stagingBlobCfg *destination.AzureBlobConfig, log *zap.Logger) *Pipeline {
 	if log == nil {
 		log = logging.GetLogger()
 	}
-	return &Pipeline{
-		config:     cfg,
-		request:    req,
-		reportID:   reportID,
-		exportName: exportName,
-		athena:     athena,
-		synapse:    synapse,
-		uploader:   uploader,
-		log:        log,
+	p := &Pipeline{
+		config:         cfg,
+		request:        req,
+		reportID:       reportID,
+		exportName:     exportName,
+		athena:         athena,
+		synapse:        synapse,
+		uploader:       uploader,
+		stagingBlobCfg: stagingBlobCfg,
+		log:            log,
 	}
+	if stagingBlobCfg != nil {
+		if ce, ok := synapse.(query.CETASExecutor); ok {
+			p.cetasExec = ce
+		}
+	}
+	return p
 }
 
 func (p *Pipeline) buildTempOutputPath() string {
@@ -67,8 +77,7 @@ func (p *Pipeline) buildTempOutputPath() string {
 	return trimSuffix(athenaOutputLoc, "/") + "/" + tempPath
 }
 
-// stagingListPrefix prefers the executor result (e.g. Synapse CETAS blob prefix);
-// Athena UNLOAD often leaves OutputLocation empty and relies on tempOutputPath instead.
+// stagingListPrefix prefers the executor result over the generated tempOutputPath fallback.
 func stagingListPrefix(executorLocation, fallback string) string {
 	if executorLocation != "" {
 		return executorLocation
@@ -78,7 +87,7 @@ func stagingListPrefix(executorLocation, fallback string) string {
 
 func normalizeBlobStagingPrefix(path string) string {
 	path = strings.TrimPrefix(path, "/")
-	if after, ok := strings.CutPrefix(path, ".databahn_out/"); ok {
+	if after, ok := strings.CutPrefix(path, "databahn_out/"); ok {
 		return strings.Trim(after, "/")
 	}
 	return path
@@ -99,6 +108,9 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onAthenaStart fun
 			return nil, fmt.Errorf("failed to connect: %w", err)
 		}
 		defer p.synapse.Close()
+		if p.cetasExec != nil && p.stagingBlobCfg != nil {
+			return p.runSynapseCETASExport(ctx, destBucket, p.cetasExec, p.stagingBlobCfg)
+		}
 		return p.runSynapseStreamExport(ctx, destBucket, p.synapse)
 	}
 
@@ -172,6 +184,9 @@ func (p *Pipeline) ResumeRun(ctx context.Context, destBucket string, onAthenaSta
 			return nil, fmt.Errorf("failed to connect: %w", err)
 		}
 		defer p.synapse.Close()
+		if p.cetasExec != nil && p.stagingBlobCfg != nil {
+			return p.runSynapseCETASExport(ctx, destBucket, p.cetasExec, p.stagingBlobCfg)
+		}
 		return p.runSynapseStreamExport(ctx, destBucket, p.synapse)
 	}
 

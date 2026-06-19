@@ -17,3 +17,4 @@ type StagingReader interface {
 }
 
 var _ StagingReader = (*Reader)(nil)
+var _ StagingReader = (*BlobReader)(nil)

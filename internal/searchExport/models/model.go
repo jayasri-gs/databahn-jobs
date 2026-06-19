@@ -57,7 +57,6 @@ type SearchExportConfig struct {
 	DestinationType       string `json:"destinationType,omitempty"`
 	SynapseDataSourceName string `json:"synapseDataSourceName,omitempty"`
 	QueryExecutionID      string `json:"queryExecutionId,omitempty"`
-	SynapseExternalTable  string `json:"synapseExternalTable,omitempty"`
 
 	// Runtime fields — written by jobs worker, ignored by backend-service
 	AthenaExecutionID  string     `json:"athenaExecutionId,omitempty"`

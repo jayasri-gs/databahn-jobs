@@ -140,7 +140,7 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		zap.String("engine", deps.QueryEngine),
 		zap.Bool("legacyMode", deps.LegacyMode))
 
-	p := pipeline.New(cfg, reportID, report.Name, exportConfig, deps.Athena, deps.Synapse, deps.Uploader, log)
+	p := pipeline.New(cfg, reportID, report.Name, exportConfig, deps.Athena, deps.Synapse, deps.Uploader, deps.StagingBlobConfig, log)
 
 	onQueryStart := func(executionID string) error {
 		return models.UpdateQueryExecutionID(db, reportID, executionID)

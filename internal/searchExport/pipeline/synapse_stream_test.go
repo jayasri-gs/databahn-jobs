@@ -46,7 +46,7 @@ func TestPipelineRun_UsesSynapseBranch(t *testing.T) {
 	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, "report-1", "test_npe 2026-06-17", &models.SearchExportConfig{
 		Query:  "SELECT col1 FROM t",
 		Format: "csv",
-	}, nil, mock, nil, nil)
+	}, nil, mock, nil, nil, nil)
 
 	if p.synapse == nil {
 		t.Fatal("expected synapse executor")

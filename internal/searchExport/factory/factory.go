@@ -21,12 +21,13 @@ import (
 )
 
 type ExportDeps struct {
-	QueryEngine  string
-	Athena       query.UnloadExecutor
-	Synapse      query.RowStreamExecutor
-	Uploader     upload.CloudUploader
-	ExportBucket string
-	LegacyMode   bool
+	QueryEngine       string
+	Athena            query.UnloadExecutor
+	Synapse           query.RowStreamExecutor
+	Uploader          upload.CloudUploader
+	ExportBucket      string
+	LegacyMode        bool
+	StagingBlobConfig *destination.AzureBlobConfig
 }
 
 func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportConfig, tenantID uuid.UUID, reportID string, log *zap.Logger) (*ExportDeps, error) {
@@ -64,6 +65,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 
 	var exportUploader upload.CloudUploader
 	var exportBucket string
+	var exportBlob *destination.AzureBlobConfig
 
 	switch destType {
 	case models.DestTypeS3, models.DestTypeS3Parquet:
@@ -78,7 +80,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		exportUploader = upload.NewS3Uploader(awsCfg, "export-expiry=true")
 		exportBucket = exportS3.Bucket
 	case models.DestTypeAzureBlob:
-		exportBlob, err := destination.LoadAzureBlobConfig(ctx, db, destID, tenantID)
+		exportBlob, err = destination.LoadAzureBlobConfig(ctx, db, destID, tenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -163,6 +165,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		})
 		synapseExec.SetLogger(log)
 		deps.Synapse = synapseExec
+		deps.StagingBlobConfig = exportBlob
 	default:
 		return nil, fmt.Errorf("unsupported query engine: %s", queryEngine)
 	}
