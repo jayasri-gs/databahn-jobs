@@ -59,9 +59,14 @@ func (p *Pipeline) runSynapseCETASExport(
 	}
 	defer cetasExec.ExecDDL(context.Background(), query.CETASDataSourceDropIfExistsDDL(dsName)) //nolint:errcheck
 
-	// Create file format (one per export; unique name avoids collision across concurrent runs).
-	if err := cetasExec.ExecDDL(ctx, query.CETASFileFormatDDL(fmtName, exportFormat, p.request.Delimiter)); err != nil {
-		return nil, fmt.Errorf("CETAS file format: %w", err)
+	// Create file format (drop-if-exists first for idempotency on retry).
+	for _, ddl := range []string{
+		query.CETASFileFormatDropIfExistsDDL(fmtName),
+		query.CETASFileFormatDDL(fmtName, exportFormat, p.request.Delimiter),
+	} {
+		if err := cetasExec.ExecDDL(ctx, ddl); err != nil {
+			return nil, fmt.Errorf("CETAS file format: %w", err)
+		}
 	}
 	defer cetasExec.ExecDDL(context.Background(), query.CETASFileFormatDropDDL(fmtName)) //nolint:errcheck
 
@@ -95,7 +100,7 @@ func (p *Pipeline) runSynapseCETASExport(
 		stagingPrefix := query.CETASStagingPrefix(p.reportID, hi)
 
 		hourFilter := query.HourChunkFilter(hour.StartMs, p.request.StartTime, p.request.EndTime, partCols)
-		hourSQL := query.AddPartitionFilter(p.request.Query, hourFilter)
+		hourSQL := query.WrapWithPartitionFilter(p.request.Query, hourFilter)
 
 		p.log.Info("CETAS export hour",
 			zap.Int("hourIndex", hi+1),

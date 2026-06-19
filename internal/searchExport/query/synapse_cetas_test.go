@@ -111,6 +111,16 @@ func TestCETASTableDDL(t *testing.T) {
 	}
 }
 
+func TestCETASFileFormatDropIfExistsDDL(t *testing.T) {
+	ddl := CETASFileFormatDropIfExistsDDL("DatabahnCETASParquet_abc12345")
+	if !strings.Contains(ddl, "sys.external_file_formats") {
+		t.Error("missing sys.external_file_formats check")
+	}
+	if !strings.Contains(ddl, "DROP EXTERNAL FILE FORMAT [DatabahnCETASParquet_abc12345]") {
+		t.Error("missing DROP EXTERNAL FILE FORMAT")
+	}
+}
+
 func TestCETASTableDropIfExistsDDL(t *testing.T) {
 	ddl := CETASTableDropIfExistsDDL("staging_abc12345_0000")
 	if !strings.Contains(ddl, "sys.external_tables") {
@@ -139,6 +149,41 @@ func TestParseConnectionString(t *testing.T) {
 	}
 	if key != "abc123==" {
 		t.Errorf("account key = %q, want abc123==", key)
+	}
+}
+
+func TestParseSASConnectionString_BlobEndpoint(t *testing.T) {
+	connStr := "BlobEndpoint=https://myaccount.blob.core.windows.net;SharedAccessSignature=sv=2023-01-03&ss=b&sig=xxx"
+	name, sas, err := parseSASConnectionString(connStr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "myaccount" {
+		t.Errorf("account name = %q, want myaccount", name)
+	}
+	if sas != "sv=2023-01-03&ss=b&sig=xxx" {
+		t.Errorf("sas = %q", sas)
+	}
+}
+
+func TestParseSASConnectionString_ExplicitAccountName(t *testing.T) {
+	connStr := "AccountName=myaccount;SharedAccessSignature=sv=2023-01-03&ss=b&sig=xxx"
+	name, sas, err := parseSASConnectionString(connStr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "myaccount" {
+		t.Errorf("account name = %q", name)
+	}
+	if sas == "" {
+		t.Error("expected non-empty sas token")
+	}
+}
+
+func TestParseSASConnectionString_Missing(t *testing.T) {
+	_, _, err := parseSASConnectionString("AccountName=myaccount;AccountKey=abc123==")
+	if err == nil {
+		t.Error("expected error for connection string without SharedAccessSignature")
 	}
 }
 

@@ -184,9 +184,9 @@ func (p *Pipeline) ResumeRun(ctx context.Context, destBucket string, onAthenaSta
 			return nil, fmt.Errorf("failed to connect: %w", err)
 		}
 		defer p.synapse.Close()
-		if p.cetasExec != nil && p.stagingBlobCfg != nil {
-			return p.runSynapseCETASExport(ctx, destBucket, p.cetasExec, p.stagingBlobCfg)
-		}
+		// CETAS path has no checkpoint support: re-running would accumulate stale staging
+		// blobs in the same prefix, causing duplicate rows in the output. Fall back to the
+		// checkpoint-aware stream path for resume.
 		return p.runSynapseStreamExport(ctx, destBucket, p.synapse)
 	}
 

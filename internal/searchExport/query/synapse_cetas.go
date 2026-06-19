@@ -33,9 +33,18 @@ type StagingCreds struct {
 func StagingCredsFromBlobConfig(cfg *destination.AzureBlobConfig) (*StagingCreds, error) {
 	switch cfg.AuthType {
 	case "AUTH_CONNECTION_STRING", "":
-		accountName, accountKey, err := parseConnectionString(cfg.ConnectionString)
-		if err != nil {
-			return nil, fmt.Errorf("parse connection string: %w", err)
+		accountName, accountKey, keyErr := parseConnectionString(cfg.ConnectionString)
+		if keyErr != nil {
+			// May be a SAS connection string (no AccountKey). Use SAS token directly.
+			accountName, sasToken, sasErr := parseSASConnectionString(cfg.ConnectionString)
+			if sasErr != nil {
+				return nil, fmt.Errorf("parse connection string: %w", keyErr)
+			}
+			return &StagingCreds{
+				Identity:   "SHARED ACCESS SIGNATURE",
+				Secret:     sasToken,
+				DataSrcURL: fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, cfg.Container),
+			}, nil
 		}
 		sasToken, err := generateWriteSAS(accountName, accountKey, cfg.Container, cetasSASExpiry)
 		if err != nil {
@@ -132,6 +141,14 @@ func CETASFileFormatDropDDL(name string) string {
 	return fmt.Sprintf("DROP EXTERNAL FILE FORMAT [%s]", name)
 }
 
+// CETASFileFormatDropIfExistsDDL returns idempotent DDL to drop an EXTERNAL FILE FORMAT.
+func CETASFileFormatDropIfExistsDDL(name string) string {
+	return fmt.Sprintf(
+		"IF EXISTS (SELECT 1 FROM sys.external_file_formats WHERE name = '%s')\n    DROP EXTERNAL FILE FORMAT [%s]",
+		escapeSQL(name), name,
+	)
+}
+
 // CETASTableDDL returns DDL to create a CETAS external table writing to stagingPrefix.
 func CETASTableDDL(tableName, dataSourceName, stagingPrefix, fileFormatName, selectSQL string) string {
 	return fmt.Sprintf(
@@ -168,6 +185,35 @@ func (e *SynapseExecutor) ExecDDL(ctx context.Context, ddl string) error {
 // escapeSQL single-quote-escapes a string for Synapse DDL.
 func escapeSQL(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
+}
+
+func parseSASConnectionString(connStr string) (accountName, sasToken string, err error) {
+	var blobEndpoint string
+	for _, part := range strings.Split(connStr, ";") {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		switch kv[0] {
+		case "AccountName":
+			accountName = kv[1]
+		case "SharedAccessSignature":
+			sasToken = kv[1]
+		case "BlobEndpoint":
+			blobEndpoint = kv[1]
+		}
+	}
+	if sasToken == "" {
+		return "", "", fmt.Errorf("connection string missing SharedAccessSignature")
+	}
+	if accountName == "" && blobEndpoint != "" {
+		host := strings.TrimPrefix(strings.TrimPrefix(blobEndpoint, "https://"), "http://")
+		accountName = strings.SplitN(host, ".", 2)[0]
+	}
+	if accountName == "" {
+		return "", "", fmt.Errorf("connection string missing AccountName")
+	}
+	return accountName, sasToken, nil
 }
 
 func parseConnectionString(connStr string) (accountName, accountKey string, err error) {
