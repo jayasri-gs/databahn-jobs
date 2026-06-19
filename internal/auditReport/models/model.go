@@ -43,7 +43,7 @@ func NewFailedRequest(reqId string, name string, tenantId string, retry int, err
 func GetAllReportRequests(db *gorm.DB) ([]AuditReport, error) {
 	var auditReportRequests []AuditReport
 	var status = []string{consts.REQUESTED, consts.FAILED}
-	err := db.Table("audit_report").Where("status in ? and retries < ? ", status, consts.MaxRetries).Find(&auditReportRequests).Error
+	err := db.Table("audit_report").Where("status in ? and retries < ? and report_type != ?", status, consts.MaxRetries, "SEARCH_EXPORT").Find(&auditReportRequests).Error
 	if err != nil {
 		return nil, err
 	}
