@@ -39,19 +39,20 @@ type ReportConfiguration struct {
 }
 
 type SearchExportConfig struct {
-	Query         string `json:"query"`
-	Database      string `json:"database"`
-	DataStoreID   string `json:"dataStoreId"`
-	DataSetID     string `json:"dataSetId"`
-	DataSetName   string `json:"dataSetName"`
-	TableName     string `json:"tableName"`
-	DataStoreType string `json:"dataStoreType"`
-	StartTime     int64  `json:"startTime"`
-	EndTime       int64  `json:"endTime"`
-	Format        string `json:"format"`
-	Delimiter     string `json:"delimiter"`
-	IncludeHeader bool   `json:"includeHeader"`
-	DestinationID string `json:"destinationId"`
+	Query               string `json:"query"`
+	Database            string `json:"database"`
+	DataStoreID         string `json:"dataStoreId"`
+	DataSetID           string `json:"dataSetId"`
+	DataSetName         string `json:"dataSetName"`
+	TableName           string `json:"tableName"`
+	DataStoreType       string `json:"dataStoreType"`
+	StartTime           int64  `json:"startTime"`
+	EndTime             int64  `json:"endTime"`
+	Format              string `json:"format"`
+	Delimiter           string `json:"delimiter"`
+	IncludeHeader       bool   `json:"includeHeader"`
+	DestinationID       string `json:"destinationId"`
+	GlobalDestinationID string `json:"globalDestinationId,omitempty"`
 
 	QueryEngine           string `json:"queryEngine,omitempty"`
 	DestinationType       string `json:"destinationType,omitempty"`
