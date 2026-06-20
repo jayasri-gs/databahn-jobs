@@ -1,18 +1,16 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"sort"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsConfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/store/objstore"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -84,109 +82,71 @@ func processSubscriptionStatusForTenant(ctx context.Context, tenantID, s3Path st
 		zap.String("tenant_id", tenantID),
 		zap.String("s3_path", s3Path))
 
-	// Get S3 client
-	s3Client, err := createS3Client(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create S3 client: %w", err)
-	}
-
-	// Get bucket name from configuration
-	bucketName := config.GetAppConfiguration().GetString(configuration.ArtifactsS3Bucket)
+	bucketName := objstore.GetBucket(objstore.BucketArtifacts)
 	if bucketName == "" {
-		return fmt.Errorf("ArtifactsS3Bucket not configured")
+		return fmt.Errorf("artifacts bucket not configured")
 	}
 
-	// Parse and process CSV data from S3
-	dataMap, err := parseCSVFromS3(ctx, s3Client, bucketName, s3Path)
+	dataMap, err := parseCSVFromObjectStore(ctx, bucketName, s3Path)
 	if err != nil {
-		return fmt.Errorf("failed to parse CSV from S3: %w", err)
+		return fmt.Errorf("failed to parse CSV from object store: %w", err)
 	}
 
-	// Handle case where no files were found (customer not onboarded)
 	if dataMap == nil {
 		logger.GetLoggerWithContext(ctx).Info("no CSV data to process - skipping subscription update",
 			zap.String("tenant_id", tenantID))
-		return nil // Success - no processing needed
+		return nil
 	}
 
-	// Update subscription data
 	return updateSubscription(ctx, dataMap, tenantID)
 }
 
-// createS3Client creates an S3 client using AWS default configuration
-func createS3Client(ctx context.Context) (*s3.Client, error) {
-	cfg, err := awsConfig.LoadDefaultConfig(ctx,
-		awsConfig.WithRegion(config.GetAppConfiguration().GetString(configuration.Region)))
+// parseCSVFromObjectStore retrieves and parses the most recent CSV file from the object store
+func parseCSVFromObjectStore(ctx context.Context, bucket, prefix string) (map[string]map[string]map[string]string, error) {
+	objects, err := objstore.GetClient().List(ctx, bucket, prefix)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-	return s3.NewFromConfig(cfg), nil
-}
-
-// parseCSVFromS3 retrieves and parses the most recent CSV file from S3
-func parseCSVFromS3(ctx context.Context, s3Client *s3.Client, bucket, s3Path string) (map[string]map[string]map[string]string, error) {
-	// List objects in the bucket with the specified path as prefix
-	listObjectsInput := &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket),
-		Prefix: aws.String(s3Path),
+		return nil, fmt.Errorf("unable to list items in bucket %q with prefix %q: %w", bucket, prefix, err)
 	}
 
-	listObjectsOutput, err := s3Client.ListObjectsV2(ctx, listObjectsInput)
-	if err != nil {
-		return nil, fmt.Errorf("unable to list items in bucket %q with prefix %q: %w", bucket, s3Path, err)
-	}
-
-	if len(listObjectsOutput.Contents) == 0 {
+	if len(objects) == 0 {
 		logger.GetLoggerWithContext(ctx).Info("no CSV files found - customer may not be onboarded yet",
 			zap.String("bucket", bucket),
-			zap.String("prefix", s3Path))
-		return nil, nil // Return nil instead of error - this is a valid scenario
+			zap.String("prefix", prefix))
+		return nil, nil
 	}
 
-	// Sort objects by last modified date (most recent first)
-	sort.Slice(listObjectsOutput.Contents, func(i, j int) bool {
-		return listObjectsOutput.Contents[i].LastModified.After(*listObjectsOutput.Contents[j].LastModified)
+	sort.Slice(objects, func(i, j int) bool {
+		return objects[i].LastModified.After(objects[j].LastModified)
 	})
 
-	// Get the most recent object
-	mostRecentObject := listObjectsOutput.Contents[0]
+	mostRecentKey := objects[0].Key
 	logger.GetLoggerWithContext(ctx).Info("processing most recent CSV file",
-		zap.String("key", *mostRecentObject.Key),
-		zap.Time("last_modified", *mostRecentObject.LastModified))
+		zap.String("key", mostRecentKey),
+		zap.Time("last_modified", objects[0].LastModified))
 
-	// Get the object
-	getObjectInput := &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(*mostRecentObject.Key),
-	}
-
-	getObjectOutput, err := s3Client.GetObject(ctx, getObjectInput)
+	data, err := objstore.GetClient().Get(ctx, bucket, mostRecentKey)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get object %q from bucket %q: %w", *mostRecentObject.Key, bucket, err)
+		return nil, fmt.Errorf("unable to get object %q from bucket %q: %w", mostRecentKey, bucket, err)
 	}
-	defer getObjectOutput.Body.Close()
 
-	// Parse CSV data
 	dataMap := make(map[string]map[string]map[string]string)
-	r := csv.NewReader(getObjectOutput.Body)
+	r := csv.NewReader(bytes.NewReader(data))
 
-	// Read all records
 	records, err := r.ReadAll()
 	if err != nil {
 		return nil, fmt.Errorf("error reading CSV data: %w", err)
 	}
 
-	// Process records (skip header row)
 	// CSV structure: "Computer Name","LogName","ChannelAccess","Data"
 	for i, record := range records {
 		if i == 0 {
-			continue // Skip header row
+			continue
 		}
 		if len(record) == 4 {
 			computerName := record[0]
 			logName := record[1]
 			channelAccess := record[2]
-			data := record[3]
+			csvData := record[3]
 
 			if _, ok := dataMap[computerName]; !ok {
 				dataMap[computerName] = make(map[string]map[string]string)
@@ -195,7 +155,7 @@ func parseCSVFromS3(ctx context.Context, s3Client *s3.Client, bucket, s3Path str
 				dataMap[computerName][logName] = make(map[string]string)
 			}
 			dataMap[computerName][logName]["ChannelAccess"] = channelAccess
-			dataMap[computerName][logName]["Data"] = data
+			dataMap[computerName][logName]["Data"] = csvData
 		}
 	}
 

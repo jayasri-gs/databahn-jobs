@@ -3,11 +3,14 @@ package changeflag
 import (
 	"context"
 	"errors"
-	"github.com/databahn-ai/db-models/alerts_async"
+	"github.com/databahn-ai/common-utils/svc"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/databahn-ai/db-models/alerts_async"
 
 	kafkaconfl "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/databahn-ai/common-utils/ack"
@@ -17,6 +20,59 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
+
+type ResiliencyConfig struct {
+	onDown            func(err error)
+	connWaitDuration  time.Duration
+	connCheckDuration time.Duration
+	downCallWait      time.Duration
+}
+
+type ResiliencyConfigOption func(*ResiliencyConfig)
+
+func WithConnectionWaitDuration(connWaitDuration time.Duration) ResiliencyConfigOption {
+	return func(rc *ResiliencyConfig) {
+		rc.connWaitDuration = connWaitDuration
+	}
+}
+
+func WithConnectionCheckDuration(connCheckDuration time.Duration) ResiliencyConfigOption {
+	return func(rc *ResiliencyConfig) {
+		rc.connCheckDuration = connCheckDuration
+	}
+}
+
+func WithDownCallWaitDuration(downCallWait time.Duration) ResiliencyConfigOption {
+	return func(rc *ResiliencyConfig) {
+		rc.downCallWait = downCallWait
+	}
+}
+
+func NewResiliencyConfig(onDownCallBack func(err error), options ...ResiliencyConfigOption) *ResiliencyConfig {
+	config := &ResiliencyConfig{
+		onDown: onDownCallBack,
+	}
+	for _, opt := range options {
+		opt(config)
+	}
+
+	if config.connWaitDuration == 0 {
+		config.connWaitDuration = 20 * time.Second
+	}
+	if config.connCheckDuration == 0 {
+		config.connCheckDuration = 10 * time.Second
+	}
+
+	if config.downCallWait == 0 {
+		config.downCallWait = 1 * time.Minute
+	}
+
+	return config
+}
+
+func NewResiliencyConfigWithShutdownService(shutdownService *svc.ShutdownService, options ...ResiliencyConfigOption) *ResiliencyConfig {
+	return NewResiliencyConfig(shutdownService.StopDueToError, options...)
+}
 
 type Trigger struct {
 	changeTypes           map[string]struct{}
@@ -33,6 +89,7 @@ type Trigger struct {
 	consumerGroupId       string
 	alertsManager         *alerts_async.AlertsManager
 	dataPlaneId           string
+	resiliencyConfig      *ResiliencyConfig
 }
 
 func NewTriggerWithoutConfigReader(ctx context.Context, kafkaBootstrap, cacheUrl string, changeTypes []string,
@@ -42,7 +99,7 @@ func NewTriggerWithoutConfigReader(ctx context.Context, kafkaBootstrap, cacheUrl
 	for _, changeType := range changeTypes {
 		changeTypesMap[changeType] = struct{}{}
 	}
-	q := make(chan struct{})
+	q := make(chan struct{}, 1)
 	cnd := sync.NewCond(&sync.Mutex{})
 	ord := make(map[string]bool)
 	eof := make(map[string]bool)
@@ -89,6 +146,14 @@ func WithAlertsManager(alertsManager *alerts_async.AlertsManager, dataPlaneId st
 	}
 }
 
+func WithResiliencyConfig(resiliencyConfig *ResiliencyConfig) TriggerOption {
+	return func(t *Trigger) {
+		if resiliencyConfig != nil {
+			t.resiliencyConfig = resiliencyConfig
+		}
+	}
+}
+
 func NewTrigger(ctx context.Context, confReader configuration.ConfigReader, changeTypes []string,
 	firstLoadCallBack func(map[string][]ChangeFlag) []Acknowledgement,
 	newTriggerCallBack func(ChangeFlag) *Acknowledgement, options ...TriggerOption) (*Trigger, error) {
@@ -96,7 +161,7 @@ func NewTrigger(ctx context.Context, confReader configuration.ConfigReader, chan
 	for _, changeType := range changeTypes {
 		changeTypesMap[changeType] = struct{}{}
 	}
-	q := make(chan struct{})
+	q := make(chan struct{}, 1)
 	cnd := sync.NewCond(&sync.Mutex{})
 	ord := make(map[string]bool)
 	eof := make(map[string]bool)
@@ -124,8 +189,15 @@ func NewTrigger(ctx context.Context, confReader configuration.ConfigReader, chan
 }
 
 func (t *Trigger) Close(ctx context.Context) {
-	t.quit <- struct{}{}
-	t.ackProducer.Close(ctx)
+	// Non-blocking send to quit channel in case readMessages goroutine was never started
+	select {
+	case t.quit <- struct{}{}:
+	default:
+		// Channel already has a value or no receiver, safe to proceed
+	}
+	if t.ackProducer != nil {
+		t.ackProducer.Close(ctx)
+	}
 	if t.alertsManager != nil {
 		t.alertsManager.Close(ctx)
 	}
@@ -176,22 +248,62 @@ func (t *Trigger) createConsumer(ctx context.Context) (*kafkaconfl.Consumer, err
 		return nil, err
 	}
 
-	changeFlagTopic := constants.ChangeFlagTopic
-	topicDetails, err := consumer.GetMetadata(&changeFlagTopic, false, 5000)
-	if err != nil {
-		return nil, err
+	changeFlagTopics := map[string]bool{
+		constants.ChangeFlagTopic:           true,
+		constants.ChangeFlagPlaygroundTopic: false,
 	}
-	for _, topicDetail := range topicDetails.Topics {
-		topic := topicDetail.Topic
-		for _, partition := range topicDetail.Partitions {
-			id := topicPartitionId(&topic, partition.ID)
-			t.topicPartitionEofDone[id] = false
+	var validTopics []string
+
+	// Get metadata for all topics
+	for topic, mandatory := range changeFlagTopics {
+		topicDetails, err := consumer.GetMetadata(&topic, false, 5000)
+		if err != nil {
+			logger.GetLogger().Error("could not get metadata for topic, skipping", zap.String("topic", topic), zap.Error(err))
+			if mandatory {
+				consumer.Close()
+				return nil, errors.New("could not get metadata for mandatory change flag topic: " + topic)
+			}
+			continue
+		}
+		if topicDetails == nil {
+			logger.GetLogger().Error("metadata not found for topic, skipping", zap.String("topic", topic))
+			if mandatory {
+				consumer.Close()
+				return nil, errors.New("metadata is nil for mandatory change flag topic: " + topic)
+			}
+			continue
+		}
+		if topicDetails.Topics[topic].Error.Code() != kafkaconfl.ErrNoError {
+			logger.GetLogger().Error("failed to get kafka metadata", zap.String("topic", topic),
+				zap.String("error", topicDetails.Topics[topic].Error.String()))
+			if mandatory {
+				consumer.Close()
+				return nil, errors.New("failed to get kafka metadata for topic: " + topic +
+					" error: " + topicDetails.Topics[topic].Error.String())
+			}
+			continue
+		}
+		validTopics = append(validTopics, topic)
+		for _, topicDetail := range topicDetails.Topics {
+			topicName := topicDetail.Topic
+			for _, partition := range topicDetail.Partitions {
+				id := topicPartitionId(&topicName, partition.ID)
+				t.topicPartitionEofDone[id] = false
+			}
 		}
 	}
+
+	// Ensure we have at least one valid topic
+	if len(validTopics) == 0 {
+		consumer.Close()
+		return nil, errors.New("no valid topics found - metadata retrieval failed for all topics")
+	}
+
 	logger.GetLogger().Info("change flag topic details", zap.Any("topic partitions", t.topicPartitionEofDone))
 
-	err = consumer.Subscribe(changeFlagTopic, t.offsetZeroCallback)
+	err = consumer.SubscribeTopics(validTopics, t.offsetZeroCallback)
 	if err != nil {
+		consumer.Close()
 		return nil, err
 	}
 	return consumer, nil
@@ -200,6 +312,17 @@ func (t *Trigger) createConsumer(ctx context.Context) (*kafkaconfl.Consumer, err
 func (t *Trigger) readMessages(ctx context.Context, consumer *kafkaconfl.Consumer) {
 	initialLoadDone := false
 	initialMessages := make(map[string][]ChangeFlag)
+	connected := true
+	downAt := time.Time{}
+	downCalledAt := time.Time{}
+	var connectionError error
+
+	connectionCheckTicker := time.NewTicker(24 * time.Hour)
+	if t.resiliencyConfig != nil {
+		connectionCheckTicker.Stop()
+		connectionCheckTicker = time.NewTicker(t.resiliencyConfig.connCheckDuration)
+	}
+
 	for {
 		select {
 		case <-t.quit:
@@ -207,15 +330,30 @@ func (t *Trigger) readMessages(ctx context.Context, consumer *kafkaconfl.Consume
 			if err != nil {
 				logger.GetLogger().Error("failed to close kafka consumer for change flag", zap.Error(err))
 			}
+			connectionCheckTicker.Stop()
 			logger.GetLogger().Info("closed kafka consumer thread for change flag")
 			return
+		case <-connectionCheckTicker.C:
+			if t.resiliencyConfig != nil && !connected {
+				downDuration := time.Since(downAt)
+				durationSinceLastDownCall := time.Since(downCalledAt)
+				if downDuration >= t.resiliencyConfig.connWaitDuration && durationSinceLastDownCall >= t.resiliencyConfig.downCallWait {
+					t.resiliencyConfig.onDown(connectionError)
+					downCalledAt = time.Now()
+				}
+			}
 		default:
 			if consumer.IsClosed() {
+				connectionCheckTicker.Stop()
 				return
 			}
 			ev := consumer.Poll(2000)
 			switch e := ev.(type) {
 			case kafkaconfl.PartitionEOF:
+				if !connected {
+					connected = true
+					downAt = time.Time{}
+				}
 				id := topicPartitionId(e.Topic, e.Partition)
 				t.topicPartitionEofDone[id] = true
 				if t.allTopicPartitionsEof() {
@@ -235,7 +373,11 @@ func (t *Trigger) readMessages(ctx context.Context, consumer *kafkaconfl.Consume
 					logger.GetLogger().Debug("change flag waiting for more topic partitions to eof", zap.Any("status", t.topicPartitionEofDone))
 				}
 			case *kafkaconfl.Message:
-				flag, err := prepareChangeFlag(e.Value, e.Headers, e.Key)
+				if !connected {
+					connected = true
+					downAt = time.Time{}
+				}
+				flag, err := prepareChangeFlag(e.Value, e.Headers, e.Key, *e.TopicPartition.Topic)
 				if err != nil {
 					logger.GetLogger().Error("change flag entity header not found",
 						zap.Int64("offset", int64(e.TopicPartition.Offset)), zap.Int32("partition", e.TopicPartition.Partition), zap.Error(err))
@@ -250,15 +392,32 @@ func (t *Trigger) readMessages(ctx context.Context, consumer *kafkaconfl.Consume
 					} else {
 						initialMessages[flag.EntityType] = append(initialMessages[flag.EntityType], *flag)
 					}
+					logger.GetLogger().Debug("change flag message read", zap.String("entityType", flag.EntityType),
+						zap.String("entityId", flag.EntityId), zap.Int64("offset", int64(e.TopicPartition.Offset)),
+						zap.Int32("partition", e.TopicPartition.Partition))
 				}
 			case kafkaconfl.Error:
 				logger.GetLogger().Error("failed to read kafka message from change flag", zap.Error(e))
+				isConnectionError := e.Code() == kafkaconfl.ErrAllBrokersDown ||
+					e.Code() == kafkaconfl.ErrTransport ||
+					e.Code() == kafkaconfl.ErrResolve ||
+					e.Code() == kafkaconfl.ErrBrokerNotAvailable ||
+					e.Code() == kafkaconfl.ErrUnknownPartition ||
+					e.Code() == kafkaconfl.ErrNetworkException ||
+					e.Code() == kafkaconfl.ErrUnknownBroker ||
+					e.Code() == kafkaconfl.ErrUnknownTopic
+				if isConnectionError && connected {
+					connectionError = errors.New(e.String())
+					connected = false
+					downAt = time.Now()
+					logger.GetLogger().Error("kafka connection lost for change flag consumer")
+				}
 			}
 		}
 	}
 }
 
-func prepareChangeFlag(value []byte, headers []kafkaconfl.Header, key []byte) (*ChangeFlag, error) {
+func prepareChangeFlag(value []byte, headers []kafkaconfl.Header, key []byte, topicName string) (*ChangeFlag, error) {
 	changeFlag := ChangeFlag{}
 	for _, hdr := range headers {
 		if hdr.Key == constants.HeaderTenantId {
@@ -283,6 +442,7 @@ func prepareChangeFlag(value []byte, headers []kafkaconfl.Header, key []byte) (*
 	}
 	changeFlag.EntityId = string(key)
 	changeFlag.Entity = value
+	changeFlag.IsPlayground = topicName == constants.ChangeFlagPlaygroundTopic
 	return &changeFlag, nil
 }
 
@@ -296,7 +456,7 @@ func (t *Trigger) offsetZeroCallback(consumer *kafkaconfl.Consumer, event kafkac
 		for _, tp := range ev.Partitions {
 			key := topicPartitionId(tp.Topic, tp.Partition)
 			if !t.offsetResetDone[key] {
-				tp.Offset = kafkaconfl.Offset(0)
+				tp.Offset = kafkaconfl.OffsetBeginning
 				newOffsets = append(newOffsets, tp)
 				t.offsetResetDone[key] = true
 			} else {
@@ -318,8 +478,12 @@ func (t *Trigger) offsetZeroCallback(consumer *kafkaconfl.Consumer, event kafkac
 }
 
 func (t *Trigger) allTopicPartitionsEof() bool {
+	// If no topic partitions are tracked, we can't consider them all EOF
+	if len(t.topicPartitionEofDone) == 0 {
+		return false
+	}
 	for _, tp := range t.topicPartitionEofDone {
-		if tp == false {
+		if !tp {
 			return false
 		}
 	}

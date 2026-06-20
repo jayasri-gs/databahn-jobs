@@ -36,6 +36,7 @@ type FlagSource struct {
 	ApplicationName        string                   `json:"application_name"`
 	UnparsedFlowEnabled    bool                     `json:"unparsedFlowEnabled"`
 	DeviceInventoryEnabled bool                     `json:"device_inventory_enabled"`
+	DeviceInventoryConfig  *DeviceInventoryConfig   `json:"device_inventory_config"`
 	Filter                 *RuleGroup               `json:"filter"`
 	SchemaLessEnabled      bool                     `json:"schemaless_enabled"`
 	SchemaLessConfig       *SchemaLessConfig        `json:"schemaless_configuration"`
@@ -128,4 +129,8 @@ type RuleItem struct {
 
 func (r RuleItem) IsNestedGroup() bool {
 	return len(r.Rules) > 0
+}
+
+type DeviceInventoryConfig struct {
+	SourceHostNameMappingFields []string `json:"sourceHostNameMappingFields"`
 }

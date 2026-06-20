@@ -26,6 +26,23 @@ import (
 // Default cardinality threshold for tracking unique event keys
 const DefaultCardinalityThreshold = 360000
 
+// Search backend config key and values. "synapse" denotes the Synapse backend.
+const (
+	SearchBackendKey     = "search.backend"
+	SearchBackendSynapse = "synapse"
+)
+
+// IsSynapseBackend returns true when search.backend is Synapse.
+func IsSynapseBackend(backend string) bool {
+	return backend == SearchBackendSynapse
+}
+
+// Search output file extensions
+const (
+	SearchFileExtTxt     = ".txt"
+	SearchFileExtParquet = ".parquet"
+)
+
 // checkIndexCardinalityAndAlert checks cardinality for a single index and generates alerts if needed
 func checkIndexCardinalityAndAlert(ctx context.Context, indexMetadata IndexMetadata, dataPlaneId string, uniqueKeyCount, cardinalityThreshold int) error {
 	var insightRuleName string

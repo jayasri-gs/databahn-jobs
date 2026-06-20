@@ -7,4 +7,5 @@ const (
 	SourceConfig      = "source"
 	RuleConfig        = "rule"
 	AlertConfig       = "alert"
+	ScaleConfigName   = "scale"
 )

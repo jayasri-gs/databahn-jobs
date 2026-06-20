@@ -25,46 +25,6 @@ type InsightsWriter interface {
 	Cleanup()
 }
 
-// JSONLWriter writes newline-delimited JSON to S3 (legacy format).
-
-type JSONLWriter struct {
-	file   *os.File
-	index  *IndexMetadata
-	closed bool
-}
-
-func (w *JSONLWriter) Init(index *IndexMetadata, attMap map[string]string) error {
-	filePath := getS3FileName(*index)
-	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	w.file = f
-	w.index = index
-	return nil
-}
-
-func (w *JSONLWriter) WriteDocs(docs []Doc, attMap map[string]string, sourceIdToNameMap map[string]string) error {
-	return writeToSearchFile(w.file, docs, attMap, sourceIdToNameMap)
-}
-
-func (w *JSONLWriter) Upload(ctx context.Context) error {
-	if err := w.file.Close(); err != nil {
-		return err
-	}
-	w.closed = true
-	return uploadFileToS3ForSearch(ctx, w.index, w.file.Name())
-}
-
-func (w *JSONLWriter) Cleanup() {
-	if !w.closed && w.file != nil {
-		w.file.Close()
-	}
-	if w.file != nil {
-		os.Remove(w.file.Name())
-	}
-}
-
 // ParquetWriter writes Apache Parquet to S3 with a dynamic schema derived from attMap.
 // Column types: timestamp and count as INT64, all others as string.
 
@@ -221,7 +181,7 @@ func (w *ParquetWriter) Upload(ctx context.Context) error {
 		zap.String("object_key", objectKey),
 		zap.String("file_path", w.filePath))
 
-	err := util.UploadFileToS3Parquet(ctx, objectKey, w.filePath)
+	err := util.UploadFileToObjectStore(ctx, objectKey, w.filePath)
 	if err != nil {
 		logger.GetLogger().Error("ParquetWriter.Upload failed",
 			zap.String("tenant_id", w.index.TenantId),
