@@ -9,4 +9,6 @@ const (
 	SourceScopeCloud         = "CLOUD"
 	OtelComponentName        = "component_name"
 	OtelSourceScope          = "scope"
+	DbTimestampWindow        = "db_ts_win"
+	OtelServiceName          = "service_name"
 )

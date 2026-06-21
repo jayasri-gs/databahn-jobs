@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/databahn-ai/common-utils/utils"
 	"runtime"
 	"time"
+
+	"github.com/databahn-ai/common-utils/utils"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/databahn-ai/go-logging/logger"
@@ -31,6 +32,7 @@ type ConsumedMessage[K any, V any] struct {
 	Key       K
 	Value     *V
 	Headers   []Header
+	Timestamp int64
 }
 
 type SimpleKafkaConsumer[K any, V any] interface {
@@ -155,6 +157,18 @@ func (c Cluster) NewProducer(ctx context.Context, config ProducerConfig) (*Produ
 	producer, err := kafka.NewProducer(configMap)
 	if err != nil {
 		return nil, err
+	}
+
+	if producer != nil {
+		md, err := producer.GetMetadata(nil, false, 5000)
+		if err != nil {
+			logger.GetLogger().Error("failed to connect to kafka cluster", zap.String("brokers", c.Brokers), zap.Error(err))
+			producer.Close()
+			return nil, err
+		} else {
+			logger.GetLogger().Debug("connected to kafka cluster", zap.String("producerName", config.Name), zap.Int("brokersCount", len(md.Brokers)),
+				zap.Int("topicsCount", len(md.Topics)))
+		}
 	}
 
 	go func(name string) {
@@ -318,6 +332,7 @@ func NewDetailedConsumer[K any, V any](c Cluster, ctx context.Context, config Co
 			Key:       k,
 			Value:     &v,
 			Headers:   adaptToDBHeaders(message.Headers),
+			Timestamp: message.Timestamp.UnixMilli(),
 		}
 		err = consumer.Process(detailedMessage)
 		if err != nil {

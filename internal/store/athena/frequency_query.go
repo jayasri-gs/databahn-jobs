@@ -2,7 +2,6 @@ package athena
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -11,12 +10,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/aws/aws-sdk-go-v2/service/athena/types"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	commonAws "github.com/databahn-ai/common-utils/aws"
-	"github.com/databahn-ai/common-utils/configuration"
 	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
@@ -301,96 +297,4 @@ func getStringValue(datum types.Datum) string {
 		return ""
 	}
 	return *datum.VarCharValue
-}
-
-// DownloadResultsFromS3 is an alternative method that downloads results directly from S3
-// This can be faster for large result sets
-func DownloadResultsFromS3(ctx context.Context, executionId string) ([]FrequencyAggregation, error) {
-	athenaClient, err := GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Athena client: %w", err)
-	}
-
-	// Get query execution details to find S3 location
-	input := &athena.GetQueryExecutionInput{
-		QueryExecutionId: aws.String(executionId),
-	}
-
-	result, err := athenaClient.GetQueryExecution(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-
-	if result.QueryExecution.ResultConfiguration.OutputLocation == nil {
-		return nil, fmt.Errorf("no output location found for query execution")
-	}
-
-	outputLocation := *result.QueryExecution.ResultConfiguration.OutputLocation
-
-	// Parse S3 location
-	s3Path := strings.TrimPrefix(outputLocation, "s3://")
-	parts := strings.SplitN(s3Path, "/", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid S3 path: %s", outputLocation)
-	}
-
-	bucket := parts[0]
-	key := parts[1]
-
-	// Download from S3
-	region := appConfig.GetAppConfiguration().GetString(configuration.Region)
-	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	s3Client := s3.NewFromConfig(awsCfg)
-	getObjectInput := &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	}
-
-	getObjectOutput, err := s3Client.GetObject(ctx, getObjectInput)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download results from S3: %w", err)
-	}
-	defer getObjectOutput.Body.Close()
-
-	// Parse CSV
-	reader := csv.NewReader(getObjectOutput.Body)
-	records, err := reader.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read CSV: %w", err)
-	}
-
-	var results []FrequencyAggregation
-	// Skip header row
-	for i := 1; i < len(records); i++ {
-		record := records[i]
-		if len(record) < 5 {
-			continue
-		}
-
-		dayEndTimestamp, err := strconv.ParseInt(record[3], 10, 64)
-		if err != nil {
-			logger.GetLogger().Warn("failed to parse day_end_timestamp", zap.Error(err))
-			continue
-		}
-
-		count, err := strconv.ParseFloat(record[4], 64)
-		if err != nil {
-			logger.GetLogger().Warn("failed to parse count", zap.Error(err))
-			continue
-		}
-
-		results = append(results, FrequencyAggregation{
-			Key1:            record[0],
-			Key2:            record[1],
-			SourceId:        record[2],
-			DayEndTimestamp: dayEndTimestamp,
-			Count:           count,
-		})
-	}
-
-	return results, nil
 }

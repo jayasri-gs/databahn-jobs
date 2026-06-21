@@ -32,12 +32,30 @@ func (mcr *MockConfigReader) GetBool(key string) bool {
 		return false
 	}
 }
+
+func (mcr *MockConfigReader) GetBoolOrDefault(key string, def bool) bool {
+	val := mcr.mp[key]
+	if v, ok := val.(bool); ok {
+		return v
+	} else {
+		return def
+	}
+}
+
 func (mcr *MockConfigReader) GetInt(key string) int {
 	val := mcr.mp[key]
 	if v, ok := val.(int); ok {
 		return v
 	} else {
 		return 0
+	}
+}
+func (mcr *MockConfigReader) GetIntOrDefault(key string, def int) int {
+	val := mcr.mp[key]
+	if v, ok := val.(int); ok {
+		return v
+	} else {
+		return def
 	}
 }
 func (mcr *MockConfigReader) GetStringMap(key string) map[string]any {

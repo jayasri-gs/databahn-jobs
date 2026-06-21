@@ -3,6 +3,7 @@ package ack
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/go-logging/logger"
@@ -35,6 +36,13 @@ func NewAckProducer(ctx context.Context, brokers string) (*AckProducer, error) {
 }
 
 func (p *AckProducer) Produce(ctx context.Context, ack Ack, headers []kafka.Header) error {
+	// Route to appropriate topic based on playground flag
+	topic := constants.ChangeFlagAckTopic
+	if ack.IsPlayground {
+		topic = constants.ChangeFlagAckPlaygroundTopic
+		logger.GetLogger().Debug("routing to playground ack topic", zap.String("entityId", ack.EntityId), zap.String("topic", topic))
+	}
+
 	ackBytes, err := json.Marshal(ack)
 	if err != nil {
 		logger.GetLogger().Error("failed to marshal ack", zap.Error(err))
@@ -44,9 +52,9 @@ func (p *AckProducer) Produce(ctx context.Context, ack Ack, headers []kafka.Head
 		Message: ackBytes,
 		Headers: headers,
 	}
-	err = p.producer.SendSync(ctx, msg)
+	err = p.producer.SendSyncTopic(ctx, msg, topic)
 	if err != nil {
-		logger.GetLogger().Error("failed to produce acknowledgement to kafka", zap.Error(err))
+		logger.GetLogger().Error("failed to produce acknowledgement to kafka", zap.String("topic", topic), zap.Error(err))
 		return err
 	}
 	return nil

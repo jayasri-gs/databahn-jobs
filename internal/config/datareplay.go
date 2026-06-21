@@ -1,6 +1,8 @@
 package config
 
 import (
+	"strconv"
+
 	"github.com/databahn-ai/common-utils/utils"
 )
 
@@ -33,8 +35,26 @@ func (drc *DataReplayConfig) GetBool(key string) bool {
 	return false
 }
 
+func (drc *DataReplayConfig) GetBoolOrDefault(key string, def bool) bool {
+	if val, ok := drc.dataMap[key]; ok {
+		if b, err := strconv.ParseBool(val); err == nil {
+			return b
+		}
+	}
+	return def
+}
+
 func (drc *DataReplayConfig) GetInt(key string) int {
 	return 0
+}
+
+func (drc *DataReplayConfig) GetIntOrDefault(key string, def int) int {
+	if val, ok := drc.dataMap[key]; ok {
+		if i, err := strconv.Atoi(val); err == nil {
+			return i
+		}
+	}
+	return def
 }
 
 func (drc *DataReplayConfig) GetStringMap(key string) map[string]any {

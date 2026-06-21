@@ -2,11 +2,12 @@ package insights
 
 import (
 	"fmt"
-	"github.com/databahn-ai/go-logging/logger"
-	"go.uber.org/zap"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
 )
 
 type IndexMetadata struct {

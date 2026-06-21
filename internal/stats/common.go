@@ -3,13 +3,14 @@ package stats
 import (
 	"errors"
 	"fmt"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
-	"github.com/databahn-ai/go-logging/logger"
-	"go.uber.org/zap"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
 )
 
 type OlderRolloverConfig struct {

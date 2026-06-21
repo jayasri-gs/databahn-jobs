@@ -2,6 +2,7 @@ package queue
 
 import (
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -15,7 +16,7 @@ type DedupeQueue[T any] struct {
 	output           chan []T
 	input            chan T
 	keyFunc          KeyFunc[T]
-	done             chan struct{}
+	closeWg          *sync.WaitGroup
 }
 
 type DedupeQueueOption[T any] func(*DedupeQueue[T])
@@ -32,7 +33,7 @@ func NewDedupeQueue[T any](opts ...DedupeQueueOption[T]) (*DedupeQueue[T], error
 		maxUniqueItems:   defaultMaxItemsSize,
 		inputBufferSize:  defaultInputBufferSize,
 		outputBufferSize: defaultOutputBufferSize,
-		done:             make(chan struct{}),
+		closeWg:          &sync.WaitGroup{},
 	}
 
 	for _, opt := range opts {
@@ -102,15 +103,16 @@ func WithKeyFunc[T any](keyFunc KeyFunc[T]) DedupeQueueOption[T] {
 }
 
 func (aq DedupeQueue[T]) OnOutput(process func([]T)) {
+	aq.closeWg.Add(1)
 	for outItem := range aq.output {
 		process(outItem)
 	}
-	aq.done <- struct{}{}
+	aq.closeWg.Done()
 }
 
 func (aq *DedupeQueue[T]) Close() {
 	close(aq.input)
-	<-aq.done
+	aq.closeWg.Wait()
 }
 
 func (aq *DedupeQueue[T]) startBatching() {

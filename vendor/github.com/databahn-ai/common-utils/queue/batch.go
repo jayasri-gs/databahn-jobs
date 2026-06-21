@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+	"sync"
 	"time"
 )
 
@@ -16,7 +17,7 @@ type BatchQueue[T any] struct {
 	inputBufferSize   int
 	output            chan []T
 	input             chan T
-	done              chan struct{}
+	closeWg           *sync.WaitGroup
 }
 
 type BatchQueueOption[T any] func(*BatchQueue[T])
@@ -35,7 +36,7 @@ func NewBachQueue[T any](opts ...BatchQueueOption[T]) *BatchQueue[T] {
 		maxBatchTime:      defaultBatchTime,
 		inputBufferSize:   defaultInputBufferSize,
 		outputBufferSize:  defaultOutputBufferSize,
-		done:              make(chan struct{}),
+		closeWg:           &sync.WaitGroup{},
 	}
 
 	for _, opt := range opts {
@@ -86,13 +87,17 @@ func (bq *BatchQueue[T]) Push(item T) {
 	bq.input <- item
 }
 
-func (bq *BatchQueue[T]) GetOutputChan() chan []T {
-	return bq.output
+func (bq *BatchQueue[T]) OnOutput(process func([]T)) {
+	bq.closeWg.Add(1)
+	for outItem := range bq.output {
+		process(outItem)
+	}
+	bq.closeWg.Done()
 }
 
 func (bq *BatchQueue[T]) Close() {
 	close(bq.input)
-	<-bq.done
+	bq.closeWg.Wait()
 }
 
 func (bq *BatchQueue[T]) startBatching() {
@@ -108,7 +113,6 @@ func (bq *BatchQueue[T]) startBatching() {
 					bq.output <- items
 				}
 				close(bq.output)
-				close(bq.done)
 				return
 			}
 			byteSizeItem, err := getSize(item)

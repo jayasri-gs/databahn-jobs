@@ -6,7 +6,9 @@ type ConfigReader interface {
 	GetString(string) string
 	GetStringOrDefault(string, string) string
 	GetBool(string) bool
+	GetBoolOrDefault(string, bool) bool
 	GetInt(string) int
+	GetIntOrDefault(string, int) int
 	GetStringMap(string) map[string]any
 	GetStringMapString(string) map[string]string
 }
@@ -25,4 +27,8 @@ func NewAppConfig() (ConfigReader, error) {
 
 func NewConfig(name string) (ConfigReader, error) {
 	return newViperConfigFromFile(name)
+}
+
+func NewScaleConfig() (ConfigReader, error) {
+	return newViperConfigFromFile(ScaleConfigName)
 }

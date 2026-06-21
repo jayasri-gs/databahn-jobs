@@ -63,7 +63,6 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	logger.GetLogger().Info("calculated indices to process", zap.Int("index_count", len(indicesToProcess)), zap.Time("before", window))
 
 	skipTenants := getSkipTenants()
-	parquetTenants, allParquet := getParquetTenants()
 	var indicesByTenant = make(map[string][]IndexMetadata)
 	for _, index := range indicesToProcess {
 		if skipTenants[index.TenantId] {
@@ -106,11 +105,8 @@ func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 						indexWg.Done()
 					}()
 					var w InsightsWriter
-					if allParquet || parquetTenants[tenantId] {
-						w = &ParquetWriter{}
-					} else {
-						w = &JSONLWriter{}
-					}
+					w = &ParquetWriter{}
+
 					err := aggregateInsights(ctx, os.GetClient(), indexMetadata, sourceIdToNameMap, w)
 					indexName := INSIGHTS_STAGING_INDEX_PREFIX + indexMetadata.String()
 					if err != nil {

@@ -5,18 +5,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
-	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	appConfig "github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/util"
 )
 
-func uploadFileToS3ForSearch(ctx context.Context, index *IndexMetadata, fileName string) error {
+// getObjectKeyForSearch returns the storage path for aggregated insight data (used for both S3 and Azure Blob).
+func getObjectKeyForSearch(index *IndexMetadata, fileName string) string {
 	fileBaseName := filepath.Base(fileName)
-	objectKey := fmt.Sprintf("tenant_id=%s/insight_rule_id=%s/year=%04d/month=%02d/date=%02d/%s", index.TenantId, index.Type, index.Year, index.Month, index.Day, fileBaseName)
-	return util.UploadFileToS3(ctx, objectKey, fileName)
+	return fmt.Sprintf("tenant_id=%s/insight_rule_id=%s/year=%04d/month=%02d/date=%02d/%s", index.TenantId, index.Type, index.Year, index.Month, index.Day, fileBaseName)
+}
+
+// uploadAggregatedInsightFile uploads the aggregated insight file to object storage (S3 or Azure Blob) using the shared objstore client.
+func uploadAggregatedInsightFile(ctx context.Context, index *IndexMetadata, fileName string) error {
+	objectKey := getObjectKeyForSearch(index, fileName)
+	return util.UploadFileToObjectStore(ctx, objectKey, fileName)
 }
 
 func writeToSearchFile(file *os.File, docs []Doc, attMap map[string]string, sourceIdToNameMap map[string]string) error {
@@ -67,6 +74,6 @@ func getAttributes(index IndexMetadata) (map[string]string, error) {
 	return attributes, nil
 }
 
-func getS3FileName(index IndexMetadata) string {
-	return os.TempDir() + "/" + index.String() + "_" + strconv.FormatInt(time.Now().UnixMilli(), 10) + ".txt"
+func getSearchFileName(index IndexMetadata, ext string) string {
+	return os.TempDir() + "/" + index.String() + "_" + strconv.FormatInt(time.Now().UnixMilli(), 10) + ext
 }
