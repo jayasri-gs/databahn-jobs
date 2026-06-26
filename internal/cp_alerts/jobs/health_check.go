@@ -17,7 +17,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/statistics"
 	"github.com/databahn-ai/databahn-jobs/internal/store/tenant"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
-	"github.com/databahn-ai/db-models/alerts_common"
 	"github.com/opensearch-project/opensearch-go/v2"
 
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
@@ -149,7 +148,7 @@ func alertForUnhealthyAgents(ctx context.Context, alertsManager *alert.AlertsMan
 				agentIds[i] = a.ID.String()
 			}
 
-			existingAlerts, err := getExistingAlerts(ctx, tenantId, agentIds, os.GetClient(), common.AgentHealthCheck)
+			existingAlerts, err := getExistingAlerts(ctx, tenantId, agentIds, os.GetClient(), alerts_async.HealthCheck.String())
 			if err != nil {
 				logger.GetLogger().Error("error while getting existing alerts for agents", zap.Error(err), zap.String("tenantId", tenantId))
 				return err
@@ -218,7 +217,7 @@ func alertForFleetHealthCheck(ctx context.Context, alertsManager *alert.AlertsMa
 				fleetIds[i] = a.Id.String()
 			}
 
-			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetIds, os.GetClient(), common.FleetNodeHealthCheck)
+			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetIds, os.GetClient(), alerts_async.HealthCheck.String())
 			if err != nil {
 				logger.GetLogger().Error("error while getting existing alerts for fleet", zap.Error(err))
 				return err
@@ -282,7 +281,7 @@ func alertForFleetConnectorsHealthCheck(ctx context.Context, alertsManager *aler
 				fleetConnectorIds[i] = a.ID.String()
 			}
 
-			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetConnectorIds, os.GetClient(), alerts_common.FleetConnectorHealthCheck)
+			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetConnectorIds, os.GetClient(), alerts_async.HealthCheck.String())
 			if err != nil {
 				logger.GetLogger().Error("error while getting existing alerts for fleet", zap.Error(err))
 			}
@@ -348,7 +347,7 @@ func alertForFleetComponentsHealthCheck(ctx context.Context, alertsManager *aler
 				fleetIds[i] = a.Id.String()
 			}
 
-			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetIds, os.GetClient(), common.FleetNodeHealthCheck)
+			existingAlerts, err := getExistingAlerts(ctx, tenantId, fleetIds, os.GetClient(), alerts_async.HealthCheck.String())
 			if err != nil {
 				logger.GetLogger().Error("error while fetching existing alerts for fleet components", zap.Error(err))
 				return err
