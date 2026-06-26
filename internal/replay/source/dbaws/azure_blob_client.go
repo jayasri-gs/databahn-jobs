@@ -3,8 +3,10 @@ package dbaws
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
@@ -12,6 +14,22 @@ import (
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/go-logging/logger"
 )
+
+// azureBlobClientOptions returns client options that disable HTTP-level gzip
+// auto-decompression. Vector dispenser blobs set Content-Encoding: gzip metadata;
+// without this, the Go HTTP client transparently decompresses on download while
+// the .log.gz filename still implies gzip bytes on disk.
+func azureBlobClientOptions() *azblob.ClientOptions {
+	return &azblob.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: &http.Client{
+				Transport: &http.Transport{
+					DisableCompression: true,
+				},
+			},
+		},
+	}
+}
 
 // GetAzureBlobClient builds an azblob.Client from replay AdditionalConfig key/value pairs.
 func GetAzureBlobClient(config map[string]string) (*azblob.Client, error) {
@@ -30,7 +48,7 @@ func GetAzureBlobClient(config map[string]string) (*azblob.Client, error) {
 			return nil, fmt.Errorf("azure blob connection string is empty")
 		}
 
-		client, err := azblob.NewClientFromConnectionString(connString, nil)
+		client, err := azblob.NewClientFromConnectionString(connString, azureBlobClientOptions())
 		if err != nil {
 			logger.GetLogger().Error("Failed to create Azure Blob client with connection string")
 			return nil, err
@@ -136,7 +154,7 @@ func getClientWithUserDelegatedSAS(config map[string]string) (*azblob.Client, er
 
 	serviceURLWithSAS := fmt.Sprintf("%s?%s", serviceURL, sasQueryParams.Encode())
 
-	blobClient, err := azblob.NewClientWithNoCredential(serviceURLWithSAS, nil)
+	blobClient, err := azblob.NewClientWithNoCredential(serviceURLWithSAS, azureBlobClientOptions())
 	if err != nil {
 		logger.GetLogger().Error(fmt.Sprintf("Failed to create Azure Blob client with SAS token: %v", err))
 		return nil, fmt.Errorf("failed to create Azure Blob client with SAS token: %w", err)
@@ -188,7 +206,7 @@ func getClientWithServicePrincipal(config map[string]string) (*azblob.Client, er
 	}
 
 	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
-	serviceClient, err := azblob.NewClient(serviceURL, cred, nil)
+	serviceClient, err := azblob.NewClient(serviceURL, cred, azureBlobClientOptions())
 	if err != nil {
 		logger.GetLogger().Error(fmt.Sprintf("Failed to create Azure Blob service client: %v", err))
 		return nil, fmt.Errorf("failed to create Azure Blob service client: %w", err)
