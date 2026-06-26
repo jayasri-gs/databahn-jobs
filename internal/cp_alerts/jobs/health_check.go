@@ -353,14 +353,13 @@ func alertForFleetComponentsHealthCheck(ctx context.Context, alertsManager *aler
 				return err
 			}
 			if len(existingAlerts) == 0 {
-				logger.GetLogger().Error("alerts not found for fleet components", zap.Error(err))
-				return err
+				logger.GetLogger().Info("no existing alerts found for fleet components", zap.Strings("fleetIds", fleetIds))
+				continue
 			}
 
 			for _, alert := range existingAlerts {
-				if _, ok := activeFleetComponentById[alert.FunctionalityEntityId]; !ok {
+				if _, ok := activeFleetComponentById[alert.FunctionalityEntityId]; ok {
 					alertsToDismiss = append(alertsToDismiss, alert.Id)
-
 				}
 			}
 
