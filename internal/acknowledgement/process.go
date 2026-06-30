@@ -18,6 +18,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var errSuppressUnsupportedEntityType = errors.New("unsupported ack entity type should be suppressed")
+
 /*
 Flow:
 1. Get all acknowledgements older than a certain time
@@ -62,8 +64,11 @@ func ProcessAck() common.JobResult {
 	// get latest cf request for each entity and collect suppressed request ids
 	latestEntityIdToRequestId, suppressedReqIds := getLatestEntityToRequestId(entityIdToChangeFlags)
 
-	// process acknowledgements and update status while collecting successful and failed update status
-	successfulReqIds, failedReqIds := startProcessing(mapOfEntityIdToRequestIdToAck, latestEntityIdToRequestId)
+	// process acknowledgements and update status while collecting successful, failed and suppressed update status
+	successfulReqIds, failedReqIds, unsupportedSuppressedReqIds := startProcessing(mapOfEntityIdToRequestIdToAck, latestEntityIdToRequestId)
+	for reqId := range unsupportedSuppressedReqIds {
+		suppressedReqIds[reqId] = struct{}{}
+	}
 
 	// mark acknowledgements as suppressed, processed and errored accordingly
 	markAllAcks(mapOfEntityIdToRequestIdToAck, successfulReqIds, failedReqIds, suppressedReqIds)
@@ -86,9 +91,10 @@ func ProcessAck() common.JobResult {
 }
 
 func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck,
-	latestEntityIdToRequestId map[string]string) (map[string]struct{}, map[string]struct{}) {
+	latestEntityIdToRequestId map[string]string) (map[string]struct{}, map[string]struct{}, map[string]struct{}) {
 	failedReqIds := make(map[string]struct{})
 	successfulReqIds := make(map[string]struct{})
+	suppressedReqIds := make(map[string]struct{})
 	for entityId, requestIdToAck := range mapOfEntityIdToRequestIdToAck {
 		latestReqId := latestEntityIdToRequestId[entityId]
 		if latestReqId == "" {
@@ -99,6 +105,12 @@ func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.Ch
 		// loop over all acknowledgements for given entity and latest requestId
 		acknowledgement := getRelevantAcknowledgement(requestIdToAck[latestReqId])
 		err := updateStatus(acknowledgement)
+		if errors.Is(err, errSuppressUnsupportedEntityType) {
+			logger.GetLogger().Info("suppressing unsupported acknowledgement entity type",
+				zap.String("entityId", acknowledgement.EntityId), zap.String("type", acknowledgement.EntityType))
+			suppressedReqIds[acknowledgement.RequestId] = struct{}{}
+			continue
+		}
 		if err != nil {
 			logger.GetLogger().Error("error while updating status", zap.Error(err),
 				zap.String("entityId", acknowledgement.EntityId), zap.String("type", acknowledgement.EntityType))
@@ -107,7 +119,7 @@ func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.Ch
 			successfulReqIds[acknowledgement.RequestId] = struct{}{}
 		}
 	}
-	return successfulReqIds, failedReqIds
+	return successfulReqIds, failedReqIds, suppressedReqIds
 }
 
 // gets the relevant acknowledgement for the latest request id
@@ -293,6 +305,8 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		if err != nil {
 			return err
 		}
+	case utilConst.EntityPipeline, utilConst.EntityDataReplay, "data-replay":
+		return errSuppressUnsupportedEntityType
 	default:
 		return errors.New("Ack does not support entity type:" + ack.EntityType)
 	}
