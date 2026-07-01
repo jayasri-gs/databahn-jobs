@@ -3,6 +3,8 @@ package acknowledgement
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,11 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+)
+
+const (
+	ackReadOlderThanSecondsEnv = "ACK_PROCESSOR_ACK_READ_OLDER_THAN_SECONDS"
+	ackLookbackDurationEnv     = "ACK_PROCESSOR_ACK_LOOKBACK_DURATION"
 )
 
 var errSuppressUnsupportedEntityType = errors.New("unsupported ack entity type should be suppressed")
@@ -36,10 +43,19 @@ Flow:
 
 func ProcessAck() common.JobResult {
 	var jobErrors []common.JobError
-	olderThan := utils.GetEnvInt("ACK_PROCESSOR_ACK_READ_OLDER_THAN_SECONDS", 60)
-	t := time.Now().Add(time.Duration(-1*olderThan) * time.Second)
+	now := time.Now()
+	olderThan := utils.GetEnvInt(ackReadOlderThanSecondsEnv, 60)
+	t := now.Add(time.Duration(-1*olderThan) * time.Second)
+	lookbackStart, err := getAckLookbackStart(now)
+	if err != nil {
+		errorMsg := fmt.Sprintf("error while parsing ack lookback duration: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLogger().Error("error while parsing ack lookback duration", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
+
 	// get all records from acknowledgement to be processed
-	acks, err := db.GetAllChangeFlagsToBeProcessed(t)
+	acks, err := db.GetAllChangeFlagsToBeProcessed(t, lookbackStart)
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while getting change flags to be processed: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -88,6 +104,45 @@ func ProcessAck() common.JobResult {
 		logger.GetLogger().Info("acknowledgement processing completed with errors", zap.Int("error_count", len(jobErrors)))
 		return common.NewJobResultFromErrors(jobErrors)
 	}
+}
+
+func getAckLookbackStart(now time.Time) (*time.Time, error) {
+	rawDuration := strings.TrimSpace(os.Getenv(ackLookbackDurationEnv))
+	if rawDuration == "" {
+		return nil, nil
+	}
+
+	duration, err := parseAckLookbackDuration(rawDuration)
+	if err != nil {
+		return nil, err
+	}
+	if duration <= 0 {
+		return nil, fmt.Errorf("%s must be greater than zero", ackLookbackDurationEnv)
+	}
+
+	start := now.Add(-duration)
+	return &start, nil
+}
+
+func parseAckLookbackDuration(rawDuration string) (time.Duration, error) {
+	durationValue := strings.TrimSpace(rawDuration)
+	if durationValue == "" {
+		return 0, fmt.Errorf("%s cannot be empty", ackLookbackDurationEnv)
+	}
+
+	if strings.HasSuffix(durationValue, "d") {
+		days, err := strconv.Atoi(strings.TrimSuffix(durationValue, "d"))
+		if err != nil {
+			return 0, fmt.Errorf("invalid day duration %q: %w", rawDuration, err)
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+
+	duration, err := time.ParseDuration(durationValue)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q: %w", rawDuration, err)
+	}
+	return duration, nil
 }
 
 func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck,
