@@ -3,6 +3,8 @@ package acknowledgement
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +19,13 @@ import (
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
+
+const (
+	ackReadOlderThanSecondsEnv = "ACK_PROCESSOR_ACK_READ_OLDER_THAN_SECONDS"
+	ackLookbackDurationEnv     = "ACK_PROCESSOR_ACK_LOOKBACK_DURATION"
+)
+
+var errSuppressUnsupportedEntityType = errors.New("unsupported ack entity type should be suppressed")
 
 /*
 Flow:
@@ -34,10 +43,19 @@ Flow:
 
 func ProcessAck() common.JobResult {
 	var jobErrors []common.JobError
-	olderThan := utils.GetEnvInt("ACK_PROCESSOR_ACK_READ_OLDER_THAN_SECONDS", 60)
-	t := time.Now().Add(time.Duration(-1*olderThan) * time.Second)
+	now := time.Now()
+	olderThan := utils.GetEnvInt(ackReadOlderThanSecondsEnv, 60)
+	t := now.Add(time.Duration(-1*olderThan) * time.Second)
+	lookbackStart, err := getAckLookbackStart(now)
+	if err != nil {
+		errorMsg := fmt.Sprintf("error while parsing ack lookback duration: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLogger().Error("error while parsing ack lookback duration", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
+
 	// get all records from acknowledgement to be processed
-	acks, err := db.GetAllChangeFlagsToBeProcessed(t)
+	acks, err := db.GetAllChangeFlagsToBeProcessed(t, lookbackStart)
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while getting change flags to be processed: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -62,8 +80,11 @@ func ProcessAck() common.JobResult {
 	// get latest cf request for each entity and collect suppressed request ids
 	latestEntityIdToRequestId, suppressedReqIds := getLatestEntityToRequestId(entityIdToChangeFlags)
 
-	// process acknowledgements and update status while collecting successful and failed update status
-	successfulReqIds, failedReqIds := startProcessing(mapOfEntityIdToRequestIdToAck, latestEntityIdToRequestId)
+	// process acknowledgements and update status while collecting successful, failed and suppressed update status
+	successfulReqIds, failedReqIds, unsupportedSuppressedReqIds := startProcessing(mapOfEntityIdToRequestIdToAck, latestEntityIdToRequestId)
+	for reqId := range unsupportedSuppressedReqIds {
+		suppressedReqIds[reqId] = struct{}{}
+	}
 
 	// mark acknowledgements as suppressed, processed and errored accordingly
 	markAllAcks(mapOfEntityIdToRequestIdToAck, successfulReqIds, failedReqIds, suppressedReqIds)
@@ -85,10 +106,50 @@ func ProcessAck() common.JobResult {
 	}
 }
 
+func getAckLookbackStart(now time.Time) (*time.Time, error) {
+	rawDuration := strings.TrimSpace(os.Getenv(ackLookbackDurationEnv))
+	if rawDuration == "" {
+		return nil, nil
+	}
+
+	duration, err := parseAckLookbackDuration(rawDuration)
+	if err != nil {
+		return nil, err
+	}
+	if duration <= 0 {
+		return nil, fmt.Errorf("%s must be greater than zero", ackLookbackDurationEnv)
+	}
+
+	start := now.Add(-duration)
+	return &start, nil
+}
+
+func parseAckLookbackDuration(rawDuration string) (time.Duration, error) {
+	durationValue := strings.TrimSpace(rawDuration)
+	if durationValue == "" {
+		return 0, fmt.Errorf("%s cannot be empty", ackLookbackDurationEnv)
+	}
+
+	if strings.HasSuffix(durationValue, "d") {
+		days, err := strconv.Atoi(strings.TrimSuffix(durationValue, "d"))
+		if err != nil {
+			return 0, fmt.Errorf("invalid day duration %q: %w", rawDuration, err)
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+
+	duration, err := time.ParseDuration(durationValue)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration %q: %w", rawDuration, err)
+	}
+	return duration, nil
+}
+
 func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck,
-	latestEntityIdToRequestId map[string]string) (map[string]struct{}, map[string]struct{}) {
+	latestEntityIdToRequestId map[string]string) (map[string]struct{}, map[string]struct{}, map[string]struct{}) {
 	failedReqIds := make(map[string]struct{})
 	successfulReqIds := make(map[string]struct{})
+	suppressedReqIds := make(map[string]struct{})
 	for entityId, requestIdToAck := range mapOfEntityIdToRequestIdToAck {
 		latestReqId := latestEntityIdToRequestId[entityId]
 		if latestReqId == "" {
@@ -99,6 +160,12 @@ func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.Ch
 		// loop over all acknowledgements for given entity and latest requestId
 		acknowledgement := getRelevantAcknowledgement(requestIdToAck[latestReqId])
 		err := updateStatus(acknowledgement)
+		if errors.Is(err, errSuppressUnsupportedEntityType) {
+			logger.GetLogger().Info("suppressing unsupported acknowledgement entity type",
+				zap.String("entityId", acknowledgement.EntityId), zap.String("type", acknowledgement.EntityType))
+			suppressedReqIds[acknowledgement.RequestId] = struct{}{}
+			continue
+		}
 		if err != nil {
 			logger.GetLogger().Error("error while updating status", zap.Error(err),
 				zap.String("entityId", acknowledgement.EntityId), zap.String("type", acknowledgement.EntityType))
@@ -107,7 +174,7 @@ func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.Ch
 			successfulReqIds[acknowledgement.RequestId] = struct{}{}
 		}
 	}
-	return successfulReqIds, failedReqIds
+	return successfulReqIds, failedReqIds, suppressedReqIds
 }
 
 // gets the relevant acknowledgement for the latest request id
@@ -293,6 +360,8 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		if err != nil {
 			return err
 		}
+	case utilConst.EntityPipeline, utilConst.EntityDataReplay, "data-replay":
+		return errSuppressUnsupportedEntityType
 	default:
 		return errors.New("Ack does not support entity type:" + ack.EntityType)
 	}

@@ -3,6 +3,8 @@ package db
 import (
 	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
 	"time"
 )
 
@@ -21,10 +23,20 @@ type ChangeFlagAck struct {
 	ProcessStatus string `json:"process_status"`
 }
 
-func GetAllChangeFlagsToBeProcessed(timestampOlderThan time.Time) ([]ChangeFlagAck, error) {
+func GetAllChangeFlagsToBeProcessed(timestampOlderThan time.Time, timestampNewerThan *time.Time) ([]ChangeFlagAck, error) {
 	var changeFlagAcks []ChangeFlagAck
-	err := config.GetDB().Table(constants.TableChangeFlagAck).
-		Where("process_status IN (?,?) AND timestamp < ?", constants.StatusPending, constants.StatusErrored, timestampOlderThan).Find(&changeFlagAcks).Error
+	query := config.GetDB().Table(constants.TableChangeFlagAck).
+		Where("process_status IN (?,?) AND timestamp < ?", constants.StatusPending, constants.StatusErrored, timestampOlderThan)
+	if timestampNewerThan != nil {
+		query = query.Where("timestamp >= ?", *timestampNewerThan)
+	}
+	logger.GetLogger().Info("change flag ack query params",
+		zap.String("process_status_1", constants.StatusPending),
+		zap.String("process_status_2", constants.StatusErrored),
+		zap.Time("timestamp_older_than", timestampOlderThan),
+		zap.Any("timestamp_newer_than", timestampNewerThan),
+	)
+	err := query.Find(&changeFlagAcks).Error
 	return changeFlagAcks, err
 }
 
