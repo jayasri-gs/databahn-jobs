@@ -360,7 +360,7 @@ func updateStatus(ack db.ChangeFlagAck) error {
 		if err != nil {
 			return err
 		}
-	case utilConst.EntityPipeline, utilConst.EntityDataReplay, "data-replay":
+	case utilConst.EntityPipeline, utilConst.EntityDataReplay, "data-replay", "aif_workflow":
 		return errSuppressUnsupportedEntityType
 	default:
 		return errors.New("Ack does not support entity type:" + ack.EntityType)
