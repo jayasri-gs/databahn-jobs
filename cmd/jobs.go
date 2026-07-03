@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
@@ -34,8 +35,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const ackProcessorCompletionAlertThresholdEnv = "ACK_PROCESSOR_COMPLETION_ALERT_THRESHOLD"
+
 func RunJob(ctx context.Context, jobName string, input model.Message) {
 	var result common.JobResult
+	var ackProcessorCompletionTime time.Duration
 
 	switch jobName {
 	case common.INSIGHTS_AGGREGATION:
@@ -77,7 +81,9 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 			result = common.NewJobResultSuccess()
 		}
 	case common.ACK_PROCESSOR:
+		startTime := time.Now()
 		result = ack.ProcessAck()
+		ackProcessorCompletionTime = time.Since(startTime)
 	case common.EVENT_SEQUENCING:
 		result = evntjobCmd.ExecuteS3DataSequencing(input)
 	case common.ALERT_REPORT_PROCESSOR:
@@ -125,6 +131,13 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))
 	}
 
+	if jobName == common.ACK_PROCESSOR {
+		threshold := getAckProcessorCompletionAlertThreshold()
+		if ackProcessorCompletionTime > threshold {
+			sendJobCompletionTimeAlert(ctx, jobName, ackProcessorCompletionTime, threshold)
+		}
+	}
+
 	// Check for errors and handle them once after the switch
 	if len(result.Errors) > 0 {
 		sendJobFailureAlert(ctx, jobName, input, result)
@@ -136,6 +149,55 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		logger.GetLogger().Sync()
 		os.Exit(0)
 	}
+}
+
+func getAckProcessorCompletionAlertThreshold() time.Duration {
+	thresholdValue := utils.GetEnvOrDefault(ackProcessorCompletionAlertThresholdEnv, "5m")
+	threshold, err := time.ParseDuration(thresholdValue)
+	if err != nil || threshold <= 0 {
+		logger.GetLogger().Error("invalid ack processor completion alert threshold, using default",
+			zap.String("value", thresholdValue),
+			zap.Error(err))
+		return 5 * time.Minute
+	}
+	return threshold
+}
+
+func sendJobCompletionTimeAlert(ctx context.Context, jobName string, completionTime, threshold time.Duration) {
+	alertsManager, alertErr := alert.NewAlertsManager(ctx)
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to create alerts manager for job completion time alert", zap.Error(alertErr))
+		return
+	}
+	defer alertsManager.Close(ctx)
+
+	message := fmt.Sprintf("Job '%s' took %s to complete, exceeding threshold %s.", jobName, completionTime, threshold)
+	alert, alertErr := alerts_async.NewAlert(
+		alerts_async.Job,
+		alerts_async.WithTitle(fmt.Sprintf("Databahn Job Duration Alert (%v)", jobName)),
+		alerts_async.WithMessage(message),
+		alerts_async.WithCriticality(alerts_async.Warning),
+		alerts_async.WithFunctionalityType(alerts_async.JobExecutionTimeLimitExceeded),
+		alerts_async.WithEntityDetails("job", jobName, common.DatabahnDataPlaneId, common.DatabahnTenantId),
+		alerts_async.WithErrorCode(alerts_async.DJFW10001, message),
+		alerts_async.WithAlertType(alerts_async.Internal),
+		alerts_async.WithAction("Please investigate why the ack processor is taking longer than expected. May be due to large number of ERRORED or SUPPRESED ack record"),
+	)
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to create job completion time alert", zap.Error(alertErr), zap.String("jobName", jobName))
+		return
+	}
+
+	alertErr = alertsManager.SendAlerts([]*alerts_async.Alert{alert})
+	if alertErr != nil {
+		logger.GetLogger().Error("failed to send job completion time alert", zap.Error(alertErr), zap.String("jobName", jobName))
+		return
+	}
+
+	logger.GetLogger().Info("job completion time alert sent successfully",
+		zap.String("jobName", jobName),
+		zap.Duration("completion_time", completionTime),
+		zap.Duration("threshold", threshold))
 }
 
 // sendJobFailureAlert sends an engineering alert when a job fails

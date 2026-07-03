@@ -74,4 +74,5 @@ var (
 	SandboxExpirationSecondWarning   = functionalityTypeEnum{value: "sandbox_expiration_second_warning"}
 	SandboxAutoDisabled              = functionalityTypeEnum{value: "sandbox_auto_disabled"}
 	DataTypeMismatchConflict         = functionalityTypeEnum{value: "data_type_mismatch_conflict"}
+	JobExecutionTimeLimitExceeded      = functionalityTypeEnum{value: "job_execution_time_limit_exceeded"}
 )
