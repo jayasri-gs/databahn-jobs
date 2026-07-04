@@ -2,6 +2,8 @@ package util
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -96,4 +98,43 @@ func FormatDuration(d time.Duration) string {
 		return "0s"
 	}
 	return result
+}
+
+var durationDaysPattern = regexp.MustCompile(`(\d+)d`)
+
+// ParseDurationWithDays parses a duration string. It supports Go's time.ParseDuration
+// units plus day suffixes (for example "7d", "1d12h").
+func ParseDurationWithDays(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+
+	normalized := durationDaysPattern.ReplaceAllStringFunc(value, func(match string) string {
+		days, err := strconv.Atoi(match[:len(match)-1])
+		if err != nil {
+			return match
+		}
+		return fmt.Sprintf("%dh", days*24)
+	})
+
+	if normalized == value {
+		d, err := time.ParseDuration(normalized)
+		if err != nil {
+			return 0, err
+		}
+		if d <= 0 {
+			return 0, fmt.Errorf("non-positive duration")
+		}
+		return d, nil
+	}
+
+	d, err := time.ParseDuration(normalized)
+	if err != nil {
+		return 0, err
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("non-positive duration")
+	}
+	return d, nil
 }

@@ -70,6 +70,7 @@ type FlagTransformFunction struct {
 	ReorderConfig            ReorderConfig              `json:"reorder_config"`
 	ResizeConfig             ResizeConfig               `json:"resize_config"`
 	OcsfTransformationConfig OcsfTransformationMappings `json:"ocsf_transformation_config"`
+	UdmTransformationConfig  UdmTransformationMappings  `json:"udm_transformation_config"`
 	CodeBlockConfig          CodeBlockConfig            `json:"code_block_config"`
 	RegexExtractConfig       string                     `json:"regex_extract_config"`
 }
@@ -102,6 +103,9 @@ type RenameConfiguration struct {
 	MessageReformattingSegments []Segment                  `json:"messageReformattingSegments"`
 	CustomTransformationConfig  CustomTransformationConfig `json:"customTransformationConfig"`
 	GetFlattenedOutput          bool                       `json:"getFlattenedOutput"`
+	CollectUnmappedAttributes   bool                       `json:"collectUnmappedAttributes,omitempty"`
+	UnmappedAttributesOutputKey string                     `json:"unmappedAttributesOutputKey,omitempty"`
+	UnmappedAttributesFormat    string                     `json:"unmappedAttributesFormat,omitempty"`
 }
 type CustomTransformationConfig struct {
 	CustomTransformationBlocks []CustomTransformationBlock `json:"customTransformationBlocks"`

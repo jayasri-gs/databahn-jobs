@@ -1,6 +1,11 @@
 package configuration
 
-import "github.com/spf13/viper"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/spf13/viper"
+)
 
 const basePath = "/opt/databahn/config"
 const localPath = "$HOME/config"
@@ -15,8 +20,22 @@ func newViperConfigFromFile(name string) (ConfigReader, error) {
 	config.AddConfigPath(localPath)
 	config.AddConfigPath(wd)
 	err := config.ReadInConfig()
-	vw := ViperWrapper{vpr: config}
-	return &vw, err
+	return &ViperWrapper{vpr: config}, err
+}
+
+// NewScaleConfigOptional loads scale.yaml from the same paths as other file configs.
+// If the file is missing, it returns a reader over an empty Viper (no error).
+// Invalid YAML or other read errors are returned; callers that need strict loading should use NewScaleConfig.
+func NewScaleConfigOptional() (ConfigReader, error) {
+	w, err := newViperConfigFromFile(ScaleConfigName)
+	if err == nil {
+		return w, nil
+	}
+	var notFound viper.ConfigFileNotFoundError
+	if errors.As(err, &notFound) {
+		return w, nil
+	}
+	return nil, err
 }
 
 type ViperWrapper struct {
@@ -42,6 +61,14 @@ func (vw *ViperWrapper) GetBoolOrDefault(key string, def bool) bool {
 	}
 	return vw.vpr.GetBool(key)
 }
+
+func (vw *ViperWrapper) GetBoolRequired(key string) (bool, error) {
+	if !vw.vpr.IsSet(key) {
+		return false, fmt.Errorf("%w: %q", ErrConfigKeyMissing, key)
+	}
+	return vw.vpr.GetBool(key), nil
+}
+
 func (vw *ViperWrapper) GetInt(key string) int {
 	return vw.vpr.GetInt(key)
 }

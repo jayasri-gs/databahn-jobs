@@ -110,13 +110,13 @@ func (t *Trigger) SendAcknowledgements(ctx context.Context, changeFlagAcks []Ack
 	// sleep for random time to ensure cache hit
 	time.Sleep(time.Duration(rand.Intn(2000)) * time.Millisecond)
 	for _, a := range changeFlagAcks {
-		if !ackExistsInCache(ctx, a, t.redisUrl) {
+		if !ackExistsInCache(ctx, a, t.redisUrl, t.isRedisClusterMode) {
 			err := t.ackProducer.Produce(ctx, prepareAck(a), nil)
 			if err != nil {
 				logger.GetLogger().Error("failed to produce ack", zap.Error(err), zap.Bool("isPlayground", a.IsPlayground))
 				// todo generate alert
 			} else {
-				setAckInCache(ctx, a, t.redisUrl)
+				setAckInCache(ctx, a, t.redisUrl, t.isRedisClusterMode)
 			}
 			// Don't send alerts for playground acknowledgements (they are for testing/simulation)
 			if t.alertsManager != nil && (!a.IsSuccess()) && (!a.IsPlayground) {

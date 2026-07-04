@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/opensearch-project/opensearch-go/v2"
 	"gorm.io/gorm"
@@ -16,6 +18,7 @@ import (
 	notification_common "github.com/databahn-ai/common-utils/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/entities"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/notification"
 	"github.com/databahn-ai/databahn-jobs/internal/store/os"
@@ -27,6 +30,10 @@ import (
 )
 
 const EmailTemplatesBasePath = "/home/databahn/templates/"
+const DefaultCustomerNotificationSendFirstAtJobFrequency = 3
+const DefaultCustomerNotificationReminderNotificationFrequencyEvery = 24 * time.Hour
+const DefaultCustomerNotificationReminderNotificationEndDuration = 7 * (24 * time.Hour)
+const MinCustomerNotificationReminderInterval = time.Hour
 
 // const EmailTemplatesBasePath = "templates/"
 
@@ -55,8 +62,19 @@ func SendNotificationsForAlerts(ctx context.Context) common.JobResult {
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
+	reminderConfig := NewCustomerNotificationReminderConfig()
+
+	alertsManager, err := alert.NewAlertsManager(ctx)
+	if err != nil {
+		errorMsg := fmt.Sprintf("error while creating alerts manager: %v", err)
+		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+		logger.GetLogger().Error("error while creating alerts manager", zap.Error(err))
+		return common.NewJobResultFromErrors(jobErrors)
+	}
+
 	defer func() {
 		notificationManager.Close(ctx)
+		alertsManager.Close(ctx)
 	}()
 
 	// Load module tenant configs once for all tenants
@@ -70,7 +88,7 @@ func SendNotificationsForAlerts(ctx context.Context) common.JobResult {
 
 	for _, t := range tenants {
 		tenantId := t.Id.String()
-		err := processExternalAlerts(ctx, db, t, osClient, notificationManager, tenantToModuleToConfigMap)
+		err := processExternalAlerts(ctx, db, t, osClient, notificationManager, alertsManager, tenantToModuleToConfigMap, reminderConfig)
 		if err != nil {
 			errorMsg := fmt.Sprintf("failed process external alerts for tenant %s: %v", tenantId, err)
 			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
@@ -101,7 +119,7 @@ func SendNotificationsForAlerts(ctx context.Context) common.JobResult {
 	}
 }
 
-func processExternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, osClient *opensearch.Client, notificationManager *notification.NotificationManager, tenantToModuleToConfigMap map[string]map[string]*entities.ModuleTenantConfigData) error {
+func processExternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, osClient *opensearch.Client, notificationManager *notification.NotificationManager, alertsManager *alert.AlertsManager, tenantToModuleToConfigMap map[string]map[string]*entities.ModuleTenantConfigData, reminderConfig *CustomerNotificationReminderConfig) error {
 	checkpoint, err := entities.GetAlertNotificationCheckpoint(db, t.Id, alerts_async.External)
 	tenantIdStr := t.Id.String()
 	if err != nil {
@@ -153,7 +171,7 @@ func processExternalAlerts(ctx context.Context, db *gorm.DB, t tenant.Tenant, os
 				}
 			}
 			if len(targetsByModuleName) > 0 {
-				err := sendCustomerNotification(t, functionalityType, functionality, alerts, targetsByModuleName, notificationManager, tenantToModuleToConfigMap)
+				err := sendCustomerNotification(t, functionalityType, functionality, alerts, targetsByModuleName, notificationManager, alertsManager, tenantToModuleToConfigMap, reminderConfig)
 				if err != nil {
 					logger.GetLogger().Error("failed to send customer notification", zap.Error(err), zap.String("tenant", tenantIdStr))
 					return err
@@ -303,7 +321,7 @@ func readAlertsSinceCheckpoint(ctx context.Context, indexName string, lastObserv
 	return alertsByFunctionalityAndFunctionalityType, latestLastObserveAt, nil
 }
 
-func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, tenantToModuleToConfigMap map[string]map[string]*entities.ModuleTenantConfigData) error {
+func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality string, alerts []alerts_async.Alert, targetsByModuleName map[string][]entities.Targets, notificationManager *notification.NotificationManager, alertsManager *alert.AlertsManager, tenantToModuleToConfigMap map[string]map[string]*entities.ModuleTenantConfigData, reminderConfig *CustomerNotificationReminderConfig) error {
 	for modulesName, targets := range targetsByModuleName {
 		if alertFunctionalityMatchesModuleName(functionality, modulesName) {
 			var databahnTargets []*notification_common.DatabahnTarget
@@ -344,9 +362,10 @@ func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality 
 				filteredAlerts = alerts
 			}
 
-			// If no alerts remain after filtering, don't send notification
-			if len(filteredAlerts) == 0 {
-				logger.GetLogger().Info("no alerts remaining after filtering, skipping notification",
+			finalAlerts := decideAlertsForNotification(filteredAlerts, reminderConfig, t.Id.String(), functionality)
+
+			if len(finalAlerts.newAlerts) == 0 && len(finalAlerts.reminderAlerts) == 0 {
+				logger.GetLogger().Info("no alerts to notify after reminder decision, skipping notification",
 					zap.String("tenant", t.Id.String()),
 					zap.String("functionality", functionality))
 				continue
@@ -356,8 +375,7 @@ func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality 
 
 			subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, emailTitle)
 
-			// Rebuild email body with filtered alerts
-			body, err := buildEmailBody(emailTitle, filteredAlerts)
+			body, err := buildEmailBody(emailTitle, finalAlerts)
 			if err != nil {
 				logger.GetLogger().Error("error while building email body with filtered alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
 				return err
@@ -372,9 +390,78 @@ func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality 
 				logger.GetLogger().Error("error while sending email notification", zap.Error(err), zap.String("tenant", t.Id.String()))
 				return err
 			}
+
+			now := time.Now().UTC().UnixMilli()
+			notifiedAlertUpdates := make(map[string]alert.NotificationSentUpdate, len(finalAlerts.newAlerts)+len(finalAlerts.reminderAlerts))
+			for _, notifiedAlert := range finalAlerts.newAlerts {
+				notifiedAlertUpdates[notifiedAlert.Id] = notificationSentUpdate(notifiedAlert, now)
+			}
+			for _, notifiedAlert := range finalAlerts.reminderAlerts {
+				notifiedAlertUpdates[notifiedAlert.Id] = notificationSentUpdate(notifiedAlert, now)
+			}
+			if err := alertsManager.RecordNotificationSent(notifiedAlertUpdates); err != nil {
+				logger.GetLogger().Error("error while recording notification sent", zap.Error(err), zap.String("tenant", t.Id.String()))
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func decideAlertsForNotification(alerts []alerts_async.Alert, reminderConfig *CustomerNotificationReminderConfig, tenantID, functionality string) *AlertsForNotification {
+	result := &AlertsForNotification{}
+	now := time.Now().UTC().UnixMilli()
+
+	for _, alert := range alerts {
+		decision := reminderConfig.CheckSendingNotification(
+			activationTimeForNotification(alert),
+			now,
+			alert.NotificationCount,
+			alert.LastNotificationTime,
+		)
+		switch {
+		case decision.SendFirstNotification:
+			result.newAlerts = append(result.newAlerts, alert)
+		case decision.SentReminder:
+			result.reminderAlerts = append(result.reminderAlerts, alert)
+		default:
+			logger.GetLogger().Info("skipping alert notification based on reminder config",
+				zap.String("tenant", tenantID),
+				zap.String("functionality", functionality),
+				zap.String("alertId", alert.Id),
+				zap.Int("notificationCount", alert.NotificationCount),
+				zap.Int64("lastActivationTime", alert.LastActivationTime),
+				zap.Int64("lastNotificationTime", alert.LastNotificationTime),
+				zap.String("reason", decision.ReasonToNotSend))
+		}
+	}
+
+	return result
+}
+
+func activationTimeForNotification(alert alerts_async.Alert) int64 {
+	if alert.LastActivationTime > 0 {
+		return alert.LastActivationTime
+	}
+	if alert.LastObservedAt > 0 {
+		logger.GetLogger().Info("defaulting activation time to lastObservedAt",
+			zap.String("alertId", alert.Id),
+			zap.String("tenantId", alert.TenantId),
+			zap.Int64("lastObservedAt", alert.LastObservedAt))
+		return alert.LastObservedAt
+	}
+	return 0
+}
+
+func notificationSentUpdate(notifiedAlert alerts_async.Alert, lastNotificationTime int64) alert.NotificationSentUpdate {
+	update := alert.NotificationSentUpdate{
+		NotificationCount:    notifiedAlert.NotificationCount + 1,
+		LastNotificationTime: lastNotificationTime,
+	}
+	if notifiedAlert.LastActivationTime <= 0 {
+		update.LastActivationTime = activationTimeForNotification(notifiedAlert)
+	}
+	return update
 }
 
 func sendSupportNotification(alert alerts_async.Alert, t tenant.Tenant, notificationManager *notification.NotificationManager, isInternal bool) error {
@@ -432,42 +519,84 @@ func buildEmailTitle(functionalityType string) string {
 	return title
 }
 
-func buildEmailBody(emailTitle string, alerts []alerts_async.Alert) (string, error) {
-	var templatePath = EmailTemplatesBasePath + "green_alert.html"
-	switch alerts[0].Criticality {
-	case alerts_async.Warning.String(), alerts_async.Sever.String():
-		templatePath = EmailTemplatesBasePath + "warning_alert.html"
-	case alerts_async.Critical.String():
-		templatePath = EmailTemplatesBasePath + "error_alert.html"
-	}
+func buildEmailBody(emailTitle string, alerts *AlertsForNotification) (string, error) {
+	templatePath := emailTemplatePathForAlerts(alerts)
 	t, err := template.ParseFiles(templatePath)
 	if err != nil {
 		logger.GetLogger().Error("error while parsing template", zap.Error(err))
 		return "", err
 	}
 	buf := new(bytes.Buffer)
-	var emailTemplateDetails []EmailTemplateDetails
-	for _, alert := range alerts {
-		emailTemplateDetails = append(emailTemplateDetails, EmailTemplateDetails{
-			FunctionalityEntityName: alert.FunctionalityEntityName,
-			FunctionalityType:       alert.FunctionalityType,
-			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
-			Title:                   alert.Title,
-			FirstObservedAt:         time.UnixMilli(alert.FirstObservedAt).Format(time.RFC3339),
-		})
-	}
 	emailTemplate := EmailTemplate{
-		Name:    "Dear Team,",
-		Title:   emailTitle,
-		Details: emailTemplateDetails,
+		Name:  "Dear Team,",
+		Title: emailTitle,
+	}
+	if len(alerts.newAlerts) > 0 {
+		emailTemplate.NewAlerts = &EmailAlertSection{
+			Heading: "New Alerts",
+			Details: alertsToEmailDetails(alerts.newAlerts),
+		}
+	}
+	if len(alerts.reminderAlerts) > 0 {
+		emailTemplate.ReminderAlerts = &EmailAlertSection{
+			Heading: "Reminder Alerts",
+			Details: alertsToReminderEmailDetails(alerts.reminderAlerts),
+		}
 	}
 	err = t.Execute(buf, emailTemplate)
 	if err != nil {
 		logger.GetLogger().Error("error while executing template", zap.Error(err))
 		return "", err
 	}
-	emailBody := buf.String()
-	return emailBody, nil
+	return buf.String(), nil
+}
+
+func emailTemplatePathForAlerts(alerts *AlertsForNotification) string {
+	hasWarning := false
+	for _, alert := range append(alerts.newAlerts, alerts.reminderAlerts...) {
+		switch alert.Criticality {
+		case alerts_async.Critical.String(), alerts_async.Sever.String():
+			return EmailTemplatesBasePath + "error_alert.html"
+		case alerts_async.Warning.String():
+			hasWarning = true
+		}
+	}
+	if hasWarning {
+		return EmailTemplatesBasePath + "warning_alert.html"
+	}
+	return EmailTemplatesBasePath + "green_alert.html"
+}
+
+func alertsToEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
+	var details []EmailTemplateDetails
+	for _, alert := range alerts {
+		details = append(details, EmailTemplateDetails{
+			FunctionalityEntityName: alert.FunctionalityEntityName,
+			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
+			Title:                   alert.Title,
+			FirstObservedAt:         time.UnixMilli(alert.FirstObservedAt).Format(time.RFC3339),
+		})
+	}
+	return details
+}
+
+func alertsToReminderEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
+	sortedAlerts := append([]alerts_async.Alert(nil), alerts...)
+	sort.Slice(sortedAlerts, func(i, j int) bool {
+		return sortedAlerts[i].NotificationCount < sortedAlerts[j].NotificationCount
+	})
+
+	var details []EmailTemplateDetails
+	for _, alert := range sortedAlerts {
+		details = append(details, EmailTemplateDetails{
+			FunctionalityEntityName: alert.FunctionalityEntityName,
+			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
+			Title:                   alert.Title,
+			FirstObservedAt:         time.UnixMilli(alert.FirstObservedAt).Format(time.RFC3339),
+			ReminderNumber:          alert.NotificationCount + 1,
+		})
+	}
+	return details
 }
 
 var prefixMatchModules = []string{"fleet", "volume_control"}
@@ -485,17 +614,23 @@ func alertFunctionalityMatchesModuleName(functionality string, moduleName string
 }
 
 type EmailTemplate struct {
-	Name    string
-	Title   string
+	Name           string
+	Title          string
+	NewAlerts      *EmailAlertSection
+	ReminderAlerts *EmailAlertSection
+}
+
+type EmailAlertSection struct {
+	Heading string
 	Details []EmailTemplateDetails
 }
 
 type EmailTemplateDetails struct {
 	FunctionalityEntityName string
-	FunctionalityType       string
 	Message                 string
 	FirstObservedAt         string
 	Title                   string
+	ReminderNumber          int
 }
 
 type OpsGenieDetails struct {
@@ -558,4 +693,135 @@ func aggregateAlertbyfunctionalityType(functionality string, alertsByFunctionali
 	}
 
 	return aggregatedAlerts
+}
+
+type AlertsForNotification struct {
+	newAlerts      []alerts_async.Alert
+	reminderAlerts []alerts_async.Alert
+}
+
+type NotificationReminderDecision struct {
+	SendFirstNotification bool
+	SentReminder          bool
+	ReasonToNotSend       string
+}
+
+type CustomerNotificationReminderConfig struct {
+	sendFirstNotifications int
+	reminderInterval       time.Duration
+	reminderDuration       time.Duration
+}
+
+func (n *CustomerNotificationReminderConfig) CheckSendingNotification(
+	activationTime int64,
+	now int64,
+	notificationsSent int,
+	lastNotificationTime int64,
+) NotificationReminderDecision {
+	if notificationsSent < n.sendFirstNotifications {
+		if notificationsSent == 0 {
+			return NotificationReminderDecision{SendFirstNotification: true}
+		}
+		return NotificationReminderDecision{SentReminder: true}
+	}
+
+	if activationTime <= 0 {
+		return NotificationReminderDecision{ReasonToNotSend: "activation time is not set"}
+	}
+	if n.reminderInterval <= 0 || n.reminderDuration <= 0 {
+		return NotificationReminderDecision{ReasonToNotSend: "reminder interval or duration is not configured"}
+	}
+
+	slot, ok := reminderSlotIndex(activationTime, now, n.reminderInterval, n.reminderDuration)
+	if !ok {
+		if now < activationTime {
+			return NotificationReminderDecision{ReasonToNotSend: "current time is before activation time"}
+		}
+		if now >= activationTime+n.reminderDuration.Milliseconds() {
+			return NotificationReminderDecision{ReasonToNotSend: "reminder duration has elapsed"}
+		}
+		return NotificationReminderDecision{ReasonToNotSend: "not within a reminder window"}
+	}
+
+	if notificationsSent >= n.sendFirstNotifications && lastNotificationTime > 0 {
+		lastSlot, lastOk := reminderSlotIndex(activationTime, lastNotificationTime, n.reminderInterval, n.reminderDuration)
+		if lastOk && lastSlot == slot {
+			return NotificationReminderDecision{ReasonToNotSend: "reminder already sent for current window"}
+		}
+	}
+
+	return NotificationReminderDecision{SentReminder: true}
+}
+
+func reminderSlotIndex(activationMillis, nowMillis int64, frequency, duration time.Duration) (slot int, ok bool) {
+	if activationMillis <= 0 || frequency <= 0 || duration <= 0 {
+		return 0, false
+	}
+
+	frequencyMillis := frequency.Milliseconds()
+	durationMillis := duration.Milliseconds()
+	if frequencyMillis <= 0 {
+		return 0, false
+	}
+
+	elapsed := nowMillis - activationMillis
+	if elapsed < 0 || elapsed >= durationMillis {
+		return 0, false
+	}
+
+	return int(elapsed / frequencyMillis), true
+}
+
+func NewCustomerNotificationReminderConfig() *CustomerNotificationReminderConfig {
+	sendFirstNotifications := utils.GetEnvInt("CUSTOMER_NOTIFICATION_FIRST_SENDS", DefaultCustomerNotificationSendFirstAtJobFrequency)
+	if sendFirstNotifications <= 0 {
+		logger.GetLogger().Warn("invalid CUSTOMER_NOTIFICATION_FIRST_SENDS, using default",
+			zap.Int("value", sendFirstNotifications),
+			zap.Int("default", DefaultCustomerNotificationSendFirstAtJobFrequency))
+		sendFirstNotifications = DefaultCustomerNotificationSendFirstAtJobFrequency
+	}
+
+	reminderInterval := customerNotificationDurationFromEnv(
+		"CUSTOMER_NOTIFICATION_REMINDER_FREQUENCY_EVERY",
+		DefaultCustomerNotificationReminderNotificationFrequencyEvery,
+	)
+	if reminderInterval < MinCustomerNotificationReminderInterval {
+		logger.GetLogger().Warn("reminder frequency must be at least 1h, using default",
+			zap.Duration("value", reminderInterval),
+			zap.Duration("default", DefaultCustomerNotificationReminderNotificationFrequencyEvery))
+		reminderInterval = DefaultCustomerNotificationReminderNotificationFrequencyEvery
+	}
+	reminderDuration := customerNotificationDurationFromEnv(
+		"CUSTOMER_NOTIFICATION_REMINDER_END_DURATION",
+		DefaultCustomerNotificationReminderNotificationEndDuration,
+	)
+	if reminderDuration <= reminderInterval {
+		logger.GetLogger().Warn("reminder end duration must be greater than reminder frequency, using defaults for both",
+			zap.Duration("reminderFrequency", reminderInterval),
+			zap.Duration("reminderEndDuration", reminderDuration),
+			zap.Duration("defaultReminderFrequency", DefaultCustomerNotificationReminderNotificationFrequencyEvery),
+			zap.Duration("defaultReminderEndDuration", DefaultCustomerNotificationReminderNotificationEndDuration))
+		reminderInterval = DefaultCustomerNotificationReminderNotificationFrequencyEvery
+		reminderDuration = DefaultCustomerNotificationReminderNotificationEndDuration
+	}
+
+	return &CustomerNotificationReminderConfig{
+		sendFirstNotifications: sendFirstNotifications,
+		reminderInterval:       reminderInterval,
+		reminderDuration:       reminderDuration,
+	}
+}
+
+func customerNotificationDurationFromEnv(key string, def time.Duration) time.Duration {
+	env := utils.GetEnvOrDefault(key, "")
+	if env == "" {
+		return def
+	}
+	d, err := util.ParseDurationWithDays(env)
+	if err != nil || d <= 0 {
+		logger.GetLogger().Error("failed to parse duration environment variable, using default",
+			zap.String("key", key), zap.String("value", env), zap.Duration("default", def), zap.Error(err))
+		return def
+	}
+	return d
 }

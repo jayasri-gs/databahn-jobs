@@ -1,5 +1,7 @@
 package configuration
 
+import "fmt"
+
 type MockConfigReader struct {
 	mp map[string]any
 }
@@ -40,6 +42,17 @@ func (mcr *MockConfigReader) GetBoolOrDefault(key string, def bool) bool {
 	} else {
 		return def
 	}
+}
+
+func (mcr *MockConfigReader) GetBoolRequired(key string) (bool, error) {
+	val, ok := mcr.mp[key]
+	if !ok {
+		return false, fmt.Errorf("%w: %q", ErrConfigKeyMissing, key)
+	}
+	if v, ok := val.(bool); ok {
+		return v, nil
+	}
+	return false, fmt.Errorf("configuration key %q has invalid type for bool", key)
 }
 
 func (mcr *MockConfigReader) GetInt(key string) int {

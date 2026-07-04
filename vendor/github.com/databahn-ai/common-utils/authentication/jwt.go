@@ -76,7 +76,7 @@ func (a *Authentication) JwtAuth(next http.Handler) http.Handler {
 		}
 
 		if claims != nil {
-			logging.GetLogger().Debug("claim validated, setting up context", zap.Reflect("claim", claims))
+			logging.GetLoggerWithContext(ctx).Debug("claim validated, setting up context")
 			association := claims["association"].(map[string]interface{})
 			ctx = context.WithValue(ctx, TenantUuid, getStringFromClaimOrNil(association, "tenantId"))
 			ctx = context.WithValue(ctx, CustomerUuid, getStringFromClaimOrNil(association, "customerId"))
@@ -126,7 +126,6 @@ func (a *Authentication) validateAuthToken(ctx context.Context, token string) (j
 	logging.GetLoggerWithContext(ctx).Debug("validated token")
 
 	if claims, ok := parsedToken.Claims.(jwt.MapClaims); ok {
-		logging.GetLoggerWithContext(ctx).Debug("parsed token for ", zap.Reflect("claim", claims))
 		if claims["association"] == nil {
 			return nil, errors.New("claim is invalid")
 		}
