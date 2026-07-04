@@ -3,10 +3,19 @@ package queue
 import (
 	"bytes"
 	"encoding/gob"
-	"github.com/databahn-ai/go-logging/logger"
-	"go.uber.org/zap"
 	"sync"
 	"time"
+
+	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
+)
+
+const (
+	defaultBatchSizeBytes   = 100000
+	defaultBatchSize        = 100
+	defaultBatchTime        = 2 * time.Second
+	defaultInputBufferSize  = 10
+	defaultOutputBufferSize = 5
 )
 
 type BatchQueue[T any] struct {
@@ -18,18 +27,14 @@ type BatchQueue[T any] struct {
 	output            chan []T
 	input             chan T
 	closeWg           *sync.WaitGroup
+	reload            chan struct{}
+	configMu          sync.RWMutex
 }
 
 type BatchQueueOption[T any] func(*BatchQueue[T])
 
 func NewBachQueue[T any](opts ...BatchQueueOption[T]) *BatchQueue[T] {
-	const (
-		defaultBatchSizeBytes   = 100000
-		defaultBatchSize        = 100
-		defaultBatchTime        = 2 * time.Second
-		defaultInputBufferSize  = 10
-		defaultOutputBufferSize = 5
-	)
+
 	bq := &BatchQueue[T]{
 		maxBatchSizeBytes: defaultBatchSizeBytes,
 		maxBatchSize:      defaultBatchSize,
@@ -37,6 +42,7 @@ func NewBachQueue[T any](opts ...BatchQueueOption[T]) *BatchQueue[T] {
 		inputBufferSize:   defaultInputBufferSize,
 		outputBufferSize:  defaultOutputBufferSize,
 		closeWg:           &sync.WaitGroup{},
+		reload:            make(chan struct{}, 1),
 	}
 
 	for _, opt := range opts {
@@ -83,6 +89,21 @@ func WithOutputBufferSize[T any](outputBufferSize int) BatchQueueOption[T] {
 	}
 }
 
+func (bq *BatchQueue[T]) Reload(opts ...BatchQueueOption[T]) {
+	if len(opts) > 0 {
+		bq.configMu.Lock()
+		for _, opt := range opts {
+			opt(bq)
+		}
+		bq.configMu.Unlock()
+	}
+	// Non-blocking signal: one pending reload is enough.
+	select {
+	case bq.reload <- struct{}{}:
+	default:
+	}
+}
+
 func (bq *BatchQueue[T]) Push(item T) {
 	bq.input <- item
 }
@@ -101,7 +122,9 @@ func (bq *BatchQueue[T]) Close() {
 }
 
 func (bq *BatchQueue[T]) startBatching() {
-	ticker := time.NewTicker(bq.maxBatchTime)
+	size, batchTime, sizeBytes := bq.getRuntimeBatchConfig()
+
+	ticker := time.NewTicker(batchTime)
 	var items []T
 	byteSize := 0
 	for {
@@ -121,8 +144,8 @@ func (bq *BatchQueue[T]) startBatching() {
 			}
 			byteSize += byteSizeItem
 			items = append(items, item)
-			if len(items) >= bq.maxBatchSize || byteSize >= bq.maxBatchSizeBytes {
-				ticker.Reset(bq.maxBatchTime)
+			if len(items) >= size || byteSize >= sizeBytes {
+				ticker.Reset(batchTime)
 				bq.output <- items
 				items = nil
 				byteSize = 0
@@ -133,8 +156,37 @@ func (bq *BatchQueue[T]) startBatching() {
 				items = nil
 				byteSize = 0
 			}
+		case <-bq.reload:
+			size, batchTime, sizeBytes = bq.getRuntimeBatchConfig()
+			if len(items) > 0 {
+				bq.output <- items
+			}
+			items = nil
+			byteSize = 0
+			ticker.Reset(batchTime)
 		}
 	}
+}
+
+func (bq *BatchQueue[T]) getRuntimeBatchConfig() (int, time.Duration, int) {
+	bq.configMu.RLock()
+	defer bq.configMu.RUnlock()
+
+	size := bq.maxBatchSize
+	batchTime := bq.maxBatchTime
+	sizeBytes := bq.maxBatchSizeBytes
+
+	if size <= 0 {
+		size = defaultBatchSize
+	}
+	if batchTime <= 0 {
+		batchTime = defaultBatchTime
+	}
+	if sizeBytes <= 0 {
+		sizeBytes = defaultBatchSizeBytes
+	}
+
+	return size, batchTime, sizeBytes
 }
 
 func getSize(v interface{}) (int, error) {

@@ -14,14 +14,15 @@ const (
 )
 
 const (
-	SAMPLING_TYPE     = "Sampling"
-	SUPPRESSION_TYPE  = "Suppression"
-	AGGREGATION_TYPE  = "Data Aggregation"
-	SAMPLING_TOPIC    = "db.staging.sampling"
-	SUPPRESSION_TOPIC = "db.staging.suppression"
-	AGGREGATION_TOPIC = "db.staging.aggregation"
-	SANDBOX_TOPIC     = "db.destination.sandbox"
-	TRANSFORM_TOPIC   = "db.staging.transform"
+	SAMPLING_TYPE        = "Sampling"
+	SUPPRESSION_TYPE     = "Suppression"
+	AGGREGATION_TYPE     = "Data Aggregation"
+	SAMPLING_TOPIC       = "db.staging.sampling"
+	SUPPRESSION_TOPIC    = "db.staging.suppression"
+	AGGREGATION_TOPIC    = "db.staging.aggregation"
+	AGGREGATION_V2_TOPIC = "db.staging.aggregation.v2"
+	SANDBOX_TOPIC        = "db.destination.sandbox"
+	TRANSFORM_TOPIC      = "db.staging.transform"
 )
 
 const (

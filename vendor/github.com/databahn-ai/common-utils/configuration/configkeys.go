@@ -44,10 +44,15 @@ const (
 	OpenTelemetryVectorCollectorUrl     = "urls.optl_collector_vector"
 	OpenTelemetryVectorCollectorGrpcUrl = "urls.optl_collector_grpc_vector"
 	RedisUrl                            = "urls.redis"
-	RedisSamplingUrl                    = "urls.redis_sampling"
-	GatewayUrl                          = "urls.gateway"
-	ControlPlaneBaseUrl                 = "urls.control_plane_base_url"
-	KsqlDbUrl                           = configs.KSqlDbUrl
+
+	RedisDefaultIsClusterKey  = "redis.default.is_cluster"
+	RedisSamplingIsClusterKey = "redis.sampling.is_cluster"
+	RedisPreviewIsClusterKey  = "redis.preview.is_cluster"
+
+	RedisSamplingUrl    = "urls.redis_sampling"
+	GatewayUrl          = "urls.gateway"
+	ControlPlaneBaseUrl = "urls.control_plane_base_url"
+	KsqlDbUrl           = configs.KSqlDbUrl
 	// DataBahnApiUrl used to get the api url from app config
 	DataBahnApiUrl      = "urls.databahn_api"
 	DataBahnAppUrl      = "urls.databahn_app"
@@ -88,6 +93,15 @@ const (
 
 	AzureInfraKeyVaultUrl    = "azure.secrets.infra.url"
 	AzureCustomerKeyVaultUrl = "azure.secrets.customer.url"
+
+	EmailBackend        = "email.backend"
+	EmailFrom           = "email.from"
+	EmailRegion         = "email.region"
+	EmailReplyTo        = "email.reply_to"
+	AzureACSEndpoint    = "email.azure.endpoint"
+	EmailBackendSES     = "ses"
+	EmailBackendACS     = "acs"
+	DefaultEmailReplyTo = "support@databahn.ai"
 
 	// Object storage configuration
 	ObjectBackend              = "object.backend"

@@ -40,6 +40,8 @@ type EnrichmentConfig struct {
 }
 
 type Mapping struct {
-	SourceField string `json:"source_field"`
-	LookupField string `json:"lookup_field"`
+	SourceField             string `json:"source_field"`
+	LookupField             string `json:"lookup_field"`
+	SourceFieldExtractRegex string `json:"source_field_extract_regex,omitempty"`
+	DefaultEnrichmentValue  string `json:"default_enrichment_value,omitempty"`
 }

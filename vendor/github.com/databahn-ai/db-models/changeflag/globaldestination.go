@@ -8,5 +8,6 @@ type FlagGlobalDestination struct {
 }
 
 type GlobalDestinationConfig struct {
-	EventTypeMap map[string]bool `json:"config"`
+	EventTypeMap          map[string]bool `json:"config"`
+	UndeliveredPathFormat string          `json:"undeliveredPathFormat"`
 }

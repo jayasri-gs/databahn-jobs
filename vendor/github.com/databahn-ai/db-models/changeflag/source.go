@@ -40,15 +40,47 @@ type FlagSource struct {
 	Filter                 *RuleGroup               `json:"filter"`
 	SchemaLessEnabled      bool                     `json:"schemaless_enabled"`
 	SchemaLessConfig       *SchemaLessConfig        `json:"schemaless_configuration"`
+	IsCloudFilterEnabled   bool                     `json:"is_cloud_filter_enabled"`
+	TimeZoneConfiguration  *TimeZoneConfiguration   `json:"time_zone_configuration"`
 }
 
+type TimeZoneConfiguration struct {
+	Enabled               bool   `json:"enabled"`
+	SourceTimeZone        string `json:"sourceTimeZone"`
+	NormalizationTimeZone string `json:"normalizationTimeZone"`
+}
+
+// FlagSourceAdvancedConfig holds advanced configuration for the source
 type FlagSourceAdvancedConfig struct {
-	SendUnmatchedEventToPrimaryDestination bool `json:"sendUnmatchedEventToPrimaryDestination"`
+	IsPreprocessorEnabled                  bool                   `json:"is_preprocessor_enabled"`
+	PreprocessorType                       string                 `json:"preprocessor_type"`
+	PreprocessorConfig                     map[string]interface{} `json:"preprocessor_config,omitempty" faker:"-"`
+	SendUnmatchedEventToPrimaryDestination bool                   `json:"sendUnmatchedEventToPrimaryDestination"`
 }
 
+// SchemaLessConfig matches backend SchemaLessConfiguration JSON (schemaless_configuration on FlagSource).
 type SchemaLessConfig struct {
-	PreProcessor PreProcessor `json:"preProcessor"`
-	Parser       ParserConfig `json:"parser"`
+	PreProcessor            PreProcessor             `json:"preProcessor"`
+	Parser                  ParserConfig             `json:"parser"`
+	FlatteningConfiguration *FlatteningConfiguration `json:"flatteningConfiguration,omitempty"`
+}
+
+// FlatteningConfiguration holds object- and array-level flattening (backend nested type).
+type FlatteningConfiguration struct {
+	ObjectFlattening *ObjectFlatteningConfig `json:"objectFlattening,omitempty"`
+	ArrayFlattening  *ArrayFlatteningConfig  `json:"arrayFlattening,omitempty"`
+}
+
+// ObjectFlatteningConfig: when Enabled, Depth must be between 1 and the deployment max (0 = unset).
+type ObjectFlatteningConfig struct {
+	Enabled bool `json:"enabled"`
+	Depth   int  `json:"depth,omitempty"`
+}
+
+// ArrayFlatteningConfig: when Enabled, Depth must be between 1 and the deployment max (0 = unset).
+type ArrayFlatteningConfig struct {
+	Enabled bool `json:"enabled"`
+	Depth   int  `json:"depth,omitempty"`
 }
 
 type ParserConfig struct {
@@ -81,8 +113,9 @@ type PsvConfig struct {
 }
 
 type PreProcessor struct {
-	Enabled           bool                    `json:"enabled"`
-	DataExtractionOps []PreProcessingFunction `json:"dataExtractionOps"`
+	Enabled                 bool                    `json:"enabled"`
+	SkipDefaultGrokPatterns bool                    `json:"skipDefaultGrokPatterns"`
+	DataExtractionOps       []PreProcessingFunction `json:"dataExtractionOps"`
 }
 
 type PreProcessingFunction struct {

@@ -1,5 +1,10 @@
 package changeflag
 
+import (
+	"github.com/databahn-ai/go-logging/logger"
+	"go.uber.org/zap"
+)
+
 type FlagDestination struct {
 	ID                  string            `json:"id"`
 	Name                string            `json:"name"`
@@ -17,6 +22,16 @@ type FlagDestination struct {
 }
 
 func (fd FlagDestination) GetSecretId() string {
+	log := logger.GetLogger()
+	hasSecret := fd.SecretId != ""
+	log.Debug("changeflag FlagDestination.GetSecretId",
+		zap.String("destinationId", fd.ID),
+		zap.String("destinationName", fd.Name),
+		zap.String("tenantUUID", fd.TenantUUID),
+		zap.String("destinationType", fd.DestinationType),
+		zap.String("pipelineId", fd.PipelineId),
+		zap.Bool("hasSecretId", hasSecret),
+		zap.Bool("willPOSTDataPlaneControllerSecrets", hasSecret))
 	return fd.SecretId
 }
 

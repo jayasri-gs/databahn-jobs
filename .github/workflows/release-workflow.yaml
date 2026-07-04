@@ -11,4 +11,5 @@ jobs:
     with:
       service_name: ${{ github.event.repository.name }}
       service_version: "v${{ github.sha }}"
+      run_integration_tests: true
     secrets: inherit

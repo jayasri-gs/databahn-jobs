@@ -63,5 +63,6 @@ var (
 	DWSE10001 = errorCodeEnum{value: "DWSE10001", messageTemplate: "Smart edge alert. {0}"}
 	DJFE10001 = errorCodeEnum{value: "DJFE10001", messageTemplate: "Job execution failed. {0}"}
 	DSLN10001 = errorCodeEnum{value: "DSLN10001", messageTemplate: "Schema less normalization conflict. {0}"}
+	DSLN10002 = errorCodeEnum{value: "DSLN10002", messageTemplate: "Schema less normalization detected fields limit exceeded. {0}"}
 	DJFW10001 = errorCodeEnum{value: "DJFW10001", messageTemplate: "Job execution threshold limit has exceeded. {0}"}
 )

@@ -11,6 +11,7 @@ const (
 	EntityEnrichment                    = "enrichment"
 	EntitySyslogDestination             = "destination_syslog"
 	EntityS3Destination                 = "destination_s3"
+	EntityS3ParquetDestination          = "destination_s3_parquet"
 	EntityKafkaDestination              = "destination_kafka"
 	EntityElasticDestination            = "destination_elastic_search"
 	EntitySnowflakeDestination          = "destination_snowflake"

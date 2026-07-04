@@ -2,13 +2,14 @@ package svc
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/db-models/destination"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 type ShutdownService struct {

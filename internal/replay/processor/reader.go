@@ -79,7 +79,7 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			gzipReader, err := gzip.NewReader(file)
 			if err != nil {
 				if err.Error() == "gzip: invalid header" {
-					newErr := fmt.Errorf(fileName + " :- file is not gZip ")
+					newErr := fmt.Errorf("%s :- file is not gZip ", fileName)
 					logger.GetLogger().Error("failed to create gzip reader, %v", zap.Error(err), zap.String("traceId", reqId), zap.Int("thread ", threadId))
 					return newErr, constants.StatusFailed
 				}
