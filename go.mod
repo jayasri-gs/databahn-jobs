@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ses v1.34.22
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.7
 	github.com/databahn-ai/common-utils v0.268.0
-	github.com/databahn-ai/db-models v0.271.0
+	github.com/databahn-ai/db-models v0.272.0
 	github.com/databahn-ai/go-logging v0.28.0
 	github.com/databahn-ai/pramaan-go v0.39.0
 	github.com/dustin/go-humanize v1.0.1
