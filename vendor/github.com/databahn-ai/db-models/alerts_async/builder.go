@@ -83,9 +83,6 @@ func validateAlert(alert *Alert) error {
 	if alert.TenantId == "" {
 		return errors.New("tenant id is required for alert")
 	}
-	if alert.DataPlaneId == "" {
-		return errors.New("data plane id is required for alert")
-	}
 	if alert.FunctionalityEntityId == "" {
 		return errors.New("entity id is required for alert")
 	}

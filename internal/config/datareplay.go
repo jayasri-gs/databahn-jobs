@@ -3,6 +3,7 @@ package config
 import (
 	"strconv"
 
+	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
 )
 
@@ -42,6 +43,17 @@ func (drc *DataReplayConfig) GetBoolOrDefault(key string, def bool) bool {
 		}
 	}
 	return def
+}
+
+func (drc *DataReplayConfig) GetBoolRequired(key string) (bool, error) {
+	if val, ok := drc.dataMap[key]; ok {
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return false, err
+		}
+		return b, nil
+	}
+	return false, configuration.ErrConfigKeyMissing
 }
 
 func (drc *DataReplayConfig) GetInt(key string) int {

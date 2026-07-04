@@ -11,7 +11,7 @@ import (
 
 // newEndpointLogger initializes a new logger for the endpoint.
 // It uses lumberjack for log rotation and zap for structured logging.
-// The logger is configured to write JSON logs and includes service version and name if available.
+// The logger is configured to write JSON logs to both console and file, and includes service version and name if available.
 // The log location, max size, max backups, and max age are configurable.
 // The logger is created only once using sync.Once to ensure thread safety.
 // The logger is returned as a pointer to zap.Logger.
@@ -22,16 +22,24 @@ import (
 // The max age is the maximum number of days to keep old log files.
 func newEndpointLogger(logLocation string, maxSize int, maxBackups int, maxAge int, fields ...zap.Field) *zap.Logger {
 	loggerOnceEndpointLogger.Do(func() {
-		w := zapcore.AddSync(&lumberjack.Logger{
+		// File writer with rotation
+		fileWriter := zapcore.AddSync(&lumberjack.Logger{
 			Filename:   logLocation,
 			MaxSize:    maxSize,
 			MaxBackups: maxBackups,
 			MaxAge:     maxAge,
 		})
+
+		// Console writer (stdout)
+		consoleWriter := zapcore.AddSync(os.Stdout)
+
+		// Combine both writers to write to console and file simultaneously
+		multiWriter := zapcore.NewMultiWriteSyncer(consoleWriter, fileWriter)
+
 		core := zapcore.NewCore(
 			zapcore.NewJSONEncoder(NewDbEncoderConfig()),
-			w,
-			zap.InfoLevel,
+			multiWriter,
+			getLogLevel(),
 		)
 
 		logger = zap.New(core, zap.AddCaller())

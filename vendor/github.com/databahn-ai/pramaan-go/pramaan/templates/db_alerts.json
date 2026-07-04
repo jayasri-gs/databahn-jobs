@@ -1,0 +1,100 @@
+{
+  "index_patterns": [
+    "db_alerts*"
+  ],
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": "1",
+        "number_of_replicas": "1"
+      }
+    },
+    "mappings": {
+      "properties": {
+        "dismissedBy": {
+          "type": "keyword"
+        },
+        "lastObservedAt": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||strict_date_time",
+          "type": "date"
+        },
+        "criticality": {
+          "type": "keyword"
+        },
+        "dismissed": {
+          "type": "boolean"
+        },
+        "functionality": {
+          "type": "text",
+          "fields": {
+            "raw": {
+              "type": "keyword"
+            }
+          }
+        },
+        "title": {
+          "type": "text"
+        },
+        "message": {
+          "type": "text"
+        },
+        "functionalityEntityId": {
+          "type": "keyword"
+        },
+        "createdAt": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||strict_date_time",
+          "type": "date"
+        },
+        "firstObservedAt": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||strict_date_time",
+          "type": "date"
+        },
+        "functionalityType": {
+          "type": "keyword"
+        },
+        "tenantId": {
+          "type": "keyword"
+        },
+        "id": {
+          "type": "keyword"
+        },
+        "functionalityEntityName": {
+          "type": "text",
+          "fields": {
+            "raw": {
+              "type": "keyword"
+            }
+          }
+        },
+        "dismissedAt": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||strict_date_time",
+          "type": "date"
+        },
+        "updatedAt": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||strict_date_time",
+          "type": "date"
+        },
+        "lastActivationTime": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||strict_date_time",
+          "type": "date"
+        },
+        "notificationCount": {
+          "type": "long"
+        },
+        "lastNotificationTime": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||strict_date_time",
+          "type": "date"
+        },
+        "status": {
+          "type": "integer"
+        },
+        "snoozeTill": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||strict_date_time",
+          "type": "date"
+        }
+      }
+    }
+  },
+  "composed_of": [],
+  "priority": 100
+}

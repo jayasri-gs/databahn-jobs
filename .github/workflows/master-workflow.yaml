@@ -10,4 +10,6 @@ jobs:
     with:
       service_name: ${{ github.event.repository.name }}
       service_version: "${{ github.event.release.tag_name }}"
+      run_integration_tests: true
+      integration_test_workdir: integration-tests
     secrets: inherit

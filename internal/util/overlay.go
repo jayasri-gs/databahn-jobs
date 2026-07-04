@@ -51,6 +51,16 @@ func (o *overlayConfigReader) GetBoolOrDefault(key string, def bool) bool {
 	return o.base.GetBoolOrDefault(key, def)
 }
 
+func (o *overlayConfigReader) GetBoolRequired(key string) (bool, error) {
+	if v, ok := o.overrides[key]; ok && v != nil {
+		if b, ok := v.(bool); ok {
+			return b, nil
+		}
+		return false, configuration.ErrConfigKeyMissing
+	}
+	return o.base.GetBoolRequired(key)
+}
+
 // GetInt returns the override value if present, otherwise base.GetInt(key).
 func (o *overlayConfigReader) GetInt(key string) int {
 	if v, ok := o.overrides[key]; ok && v != nil {

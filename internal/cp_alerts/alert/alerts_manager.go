@@ -71,26 +71,62 @@ func (am *AlertsManager) AutoResolveAlerts(alertIds []string) error {
 		return nil
 	}
 	for _, alertId := range alertIds {
-		body := make(map[string]any)
-		body["id"] = alertId
-		body["status"] = alerts_async.AlertAutoResolved.Value()
-		body["dismissed"] = true
-		jsonRequest, err := json.Marshal(body)
-		if err != nil {
+		body := map[string]any{
+			"id":        alertId,
+			"status":    alerts_async.AlertAutoResolved.Value(),
+			"dismissed": true,
+		}
+		if err := am.sendAlertUpdate(alertId, body, "status_update"); err != nil {
 			return err
 		}
-		headers := []kafka.Header{
-			{Key: "action", Value: []byte("status_update")},
-		}
-		message := kafka.Message{
-			Key:     []byte(alertId),
-			Message: jsonRequest,
-			Headers: headers,
-		}
-		am.producer.SendAsync(message, func(err error) {
-			logger.GetLogger().Error("error while sending dismiss alert request", zap.Error(err))
-		})
 	}
+	return nil
+}
+
+// NotificationSentUpdate records notification state written back to OpenSearch.
+type NotificationSentUpdate struct {
+	NotificationCount    int
+	LastNotificationTime int64
+	LastActivationTime   int64
+}
+
+// RecordNotificationSent updates notificationCount and lastNotificationTime for alerts that were emailed.
+// LastActivationTime is included when set, to backfill legacy alerts missing that field.
+func (am *AlertsManager) RecordNotificationSent(updates map[string]NotificationSentUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	for alertID, update := range updates {
+		body := map[string]any{
+			"id":                   alertID,
+			"notificationCount":    update.NotificationCount,
+			"lastNotificationTime": update.LastNotificationTime,
+		}
+		if update.LastActivationTime > 0 {
+			body["lastActivationTime"] = update.LastActivationTime
+		}
+		if err := am.sendAlertUpdate(alertID, body, "notification_sent"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (am *AlertsManager) sendAlertUpdate(alertId string, body map[string]any, action string) error {
+	jsonRequest, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	message := kafka.Message{
+		Key:     []byte(alertId),
+		Message: jsonRequest,
+		Headers: []kafka.Header{
+			{Key: "action", Value: []byte(action)},
+		},
+	}
+	am.producer.SendAsync(message, func(err error) {
+		logger.GetLogger().Error("error while sending alert update request", zap.String("action", action), zap.Error(err))
+	})
 	return nil
 }
 

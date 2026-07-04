@@ -3,6 +3,7 @@ package changeflag
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -279,11 +280,29 @@ func ParseFlagTransform(data []byte) (*FlagTransform, error) {
 	return &transform, nil
 }
 
+func ParseFlagTenant(data []byte) (*FlagTenant, error) {
+	var flag ChangeFlagBody
+	err := json.Unmarshal(data, &flag)
+	if err != nil {
+		return nil, err
+	}
+
+	var flagTenant FlagTenant
+	err = decode(flag.Entity, &flagTenant)
+	if err != nil {
+		return nil, err
+	}
+
+	return &flagTenant, nil
+}
+
 func decode(input, output interface{}) error {
 	config := &mapstructure.DecoderConfig{
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			stringToUUIDHookFunc(),
 			toTimeHookFunc(),
+			boolToStringHookFunc(),
+			numberToStringHookFunc(),
 		),
 		TagName: "json",
 		Result:  &output,
@@ -325,6 +344,43 @@ func toTimeHookFunc() mapstructure.DecodeHookFunc {
 			return time.Unix(0, int64(data.(float64))*int64(time.Millisecond)), nil
 		case reflect.Int64:
 			return time.Unix(0, data.(int64)*int64(time.Millisecond)), nil
+		default:
+			return data, nil
+		}
+	}
+}
+
+// boolToStringHookFunc converts boolean values to strings when the target type is string.
+// This handles cases where JSON has boolean values but the Go struct expects strings.
+func boolToStringHookFunc() mapstructure.DecodeHookFunc {
+	return func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+		if f.Kind() != reflect.Bool {
+			return data, nil
+		}
+		if t.Kind() != reflect.String {
+			return data, nil
+		}
+		if data.(bool) {
+			return "true", nil
+		}
+		return "false", nil
+	}
+}
+
+// numberToStringHookFunc converts numeric values to strings when the target type is string.
+// This handles cases where JSON has numeric values but the Go struct expects strings.
+func numberToStringHookFunc() mapstructure.DecodeHookFunc {
+	return func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+		if t.Kind() != reflect.String {
+			return data, nil
+		}
+		switch f.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return fmt.Sprintf("%d", data), nil
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return fmt.Sprintf("%d", data), nil
+		case reflect.Float32, reflect.Float64:
+			return fmt.Sprintf("%v", data), nil
 		default:
 			return data, nil
 		}
@@ -434,6 +490,8 @@ func validateFlagDataReplay(dataReplay FlagDataReplay) error {
 			if roleArn == "" {
 				return errors.New("dataReplay is invalid, missing role_arn for role-based authentication")
 			}
+		} else if authType == "native" {
+			// ignore this as no config required for native auth
 		} else {
 			// For key-based auth (default), validate access keys
 			if dataReplay.AccessKeyId == "" {

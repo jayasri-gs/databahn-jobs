@@ -3,6 +3,7 @@ package changeflag
 import (
 	"context"
 	"fmt"
+
 	"github.com/databahn-ai/common-utils/ack"
 	"github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/redis"
@@ -12,10 +13,10 @@ import (
 
 var redisClient *redis.Client
 
-func getRedisClient(url string) (*redis.Client, error) {
+func getRedisClient(url string, isRedisClusterMode bool) (*redis.Client, error) {
 	if redisClient == nil {
 		var err error
-		redisClient, err = redis.NewClient(url, "changeFlagAck")
+		redisClient, err = redis.NewClient(url, "changeFlagAck", isRedisClusterMode)
 		if err != nil {
 			return nil, err
 		}
@@ -24,8 +25,8 @@ func getRedisClient(url string) (*redis.Client, error) {
 	return redisClient, nil
 }
 
-func ackExistsInCache(ctx context.Context, ack Acknowledgement, redisUrl string) bool {
-	client, err := getRedisClient(redisUrl)
+func ackExistsInCache(ctx context.Context, ack Acknowledgement, redisUrl string, redisClusterMode bool) bool {
+	client, err := getRedisClient(redisUrl, redisClusterMode)
 	if err != nil {
 		logger.GetLogger().Error("failed to get redis client", zap.Error(err))
 		return false
@@ -38,8 +39,8 @@ func ackExistsInCache(ctx context.Context, ack Acknowledgement, redisUrl string)
 	return exists
 }
 
-func setAckInCache(ctx context.Context, ack Acknowledgement, redisUrl string) {
-	client, err := getRedisClient(redisUrl)
+func setAckInCache(ctx context.Context, ack Acknowledgement, redisUrl string, isRedisClusterMode bool) {
+	client, err := getRedisClient(redisUrl, isRedisClusterMode)
 	if err != nil {
 		logger.GetLogger().Error("failed to get redis client", zap.Error(err))
 		return
