@@ -5,6 +5,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,9 +28,16 @@ type EmailAlertSection struct {
 type EmailTemplateDetails struct {
 	FunctionalityEntityName string
 	Message                 string
-	FirstObservedAt         string
+	LastObservedAt          string
 	Title                   string
 	ReminderNumber          int
+}
+
+func toTitleCase(value string) string {
+	if value == "" {
+		return value
+	}
+	return cases.Title(language.English).String(value)
 }
 
 func main() {
@@ -47,13 +56,13 @@ func main() {
 					FunctionalityEntityName: "aws-cloudtrail-prod",
 					Title:                   "No data ingested in the last 30 minutes",
 					Message:                 "Source has not received any events since the configured inactivity threshold was crossed.",
-					FirstObservedAt:         "2026-06-23T10:15:00Z",
+					LastObservedAt:          "2026-06-23T10:15:00Z",
 				},
 				{
 					FunctionalityEntityName: "okta-sso-logs",
 					Title:                   "No data ingested in the last 30 minutes",
 					Message:                 "Last event timestamp is older than the inactivity window.",
-					FirstObservedAt:         "2026-06-23T10:18:00Z",
+					LastObservedAt:          "2026-06-23T10:18:00Z",
 				},
 			},
 		},
@@ -64,15 +73,15 @@ func main() {
 					FunctionalityEntityName: "crowdstrike-edr",
 					Title:                   "Reminder: no data delivered",
 					Message:                 "Delivery has not resumed. This is a follow-up for an ongoing alert.",
-					FirstObservedAt:         "2026-06-23T07:30:00Z",
-					ReminderNumber:          3,
+					LastObservedAt:          "2026-06-23T07:30:00Z",
+					ReminderNumber:          2,
 				},
 				{
 					FunctionalityEntityName: "palo-alto-fw-east",
 					Title:                   "Reminder: no data ingested",
 					Message:                 "This alert is still active. No new data has been observed since the last notification.",
-					FirstObservedAt:         "2026-06-23T08:00:00Z",
-					ReminderNumber:          2,
+					LastObservedAt:          "2026-06-23T08:00:00Z",
+					ReminderNumber:          1,
 				},
 			},
 		},
@@ -81,6 +90,14 @@ func main() {
 	sort.Slice(sample.ReminderAlerts.Details, func(i, j int) bool {
 		return sample.ReminderAlerts.Details[i].ReminderNumber < sample.ReminderAlerts.Details[j].ReminderNumber
 	})
+
+	sample.Title = toTitleCase(sample.Title)
+	for i := range sample.NewAlerts.Details {
+		sample.NewAlerts.Details[i].Title = toTitleCase(sample.NewAlerts.Details[i].Title)
+	}
+	for i := range sample.ReminderAlerts.Details {
+		sample.ReminderAlerts.Details[i].Title = toTitleCase(sample.ReminderAlerts.Details[i].Title)
+	}
 
 	templates := []string{"green_alert.html", "warning_alert.html", "error_alert.html"}
 	outDir := filepath.Join(dir, "samples")

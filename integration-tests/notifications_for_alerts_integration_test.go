@@ -54,7 +54,7 @@ func TestNotificationsForAlertsWhenObservedSinceLastCheckpoint(t *testing.T) {
 		entityName,
 	)
 	expectedEmailSubject := fmt.Sprintf(
-		"DataBahn.ai Alert - %s - configuration processing failure",
+		"DataBahn.ai Alert - %s - Configuration Processing Failure",
 		tenantName,
 	)
 
@@ -105,7 +105,7 @@ func TestNotificationsForAlertsInternalAlertOnlyOpsGenie(t *testing.T) {
 		entityName,
 	)
 	expectedEmailSubject := fmt.Sprintf(
-		"DataBahn.ai Alert - %s - configuration processing failure",
+		"DataBahn.ai Alert - %s - Configuration Processing Failure",
 		databahnTenantName,
 	)
 
@@ -220,7 +220,7 @@ func TestNotificationsForAlertsSkipsWhenLastObservedBeforeCheckpoint(t *testing.
 		entityName,
 	)
 	expectedEmailSubject := fmt.Sprintf(
-		"DataBahn.ai Alert - %s - configuration processing failure",
+		"DataBahn.ai Alert - %s - Configuration Processing Failure",
 		tenantName,
 	)
 
@@ -279,7 +279,7 @@ func TestNotificationsForAlertsMultipleAlertsSameModule(t *testing.T) {
 		entityTwo,
 	)
 	expectedEmailSubject := fmt.Sprintf(
-		"DataBahn.ai Alert - %s - configuration processing failure",
+		"DataBahn.ai Alert - %s - Configuration Processing Failure",
 		tenantName,
 	)
 
@@ -377,7 +377,7 @@ func TestNotificationsForAlertsEmailBodyNewAndReminderSections(t *testing.T) {
 	})
 
 	expectedEmailSubject := fmt.Sprintf(
-		"DataBahn.ai Alert - %s - configuration processing failure",
+		"DataBahn.ai Alert - %s - Configuration Processing Failure",
 		tenantName,
 	)
 
@@ -523,7 +523,7 @@ func TestNotificationsForAlertsReminderScenarios(t *testing.T) {
 
 	kafka := job.GetKafka(t)
 	expectedEmailSubject := fmt.Sprintf(
-		"DataBahn.ai Alert - %s - configuration processing failure",
+		"DataBahn.ai Alert - %s - Configuration Processing Failure",
 		tenantName,
 	)
 	emailMessage := WaitForKafkaMessage(t, kafka, EmailNotificationTopic, func(message dbkafka.Message) bool {
@@ -543,7 +543,7 @@ func TestNotificationsForAlertsReminderScenarios(t *testing.T) {
 		}
 		AssertKafkaEmailBodyEntityInSection(t, emailMessage, "Reminder Alerts", "", alert.entityName)
 		AssertKafkaEmailBodyEntityAbsentFromSection(t, emailMessage, "New Alerts", "Reminder Alerts", alert.entityName)
-		AssertKafkaEmailBodyReminderNumberInSection(t, emailMessage, "Reminder Alerts", "", alert.entityName, alert.wantCount)
+		AssertKafkaEmailBodyReminderNumberInSection(t, emailMessage, "Reminder Alerts", "", alert.entityName, alert.wantCount-1)
 	}
 
 	skipCaptureIndex := 0

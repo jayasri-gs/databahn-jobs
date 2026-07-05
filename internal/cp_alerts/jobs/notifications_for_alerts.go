@@ -10,6 +10,9 @@ import (
 	"text/template"
 	"time"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/opensearch-project/opensearch-go/v2"
@@ -512,11 +515,18 @@ func buildEmailTitle(functionalityType string) string {
 	titleMap[alerts_async.IngestionChecker.String()] = "No new data ingested"
 	titleMap[alerts_async.DeliveryChecker.String()] = "No data delivered"
 	if title, exists := titleMap[functionalityType]; exists {
-		return title
+		return toTitleCase(title)
 	}
 	title := strings.ReplaceAll(functionalityType, "_", " ")
 	title = strings.ReplaceAll(title, "-", " ")
-	return title
+	return toTitleCase(title)
+}
+
+func toTitleCase(value string) string {
+	if value == "" {
+		return value
+	}
+	return cases.Title(language.English).String(value)
 }
 
 func buildEmailBody(emailTitle string, alerts *AlertsForNotification) (string, error) {
@@ -573,11 +583,22 @@ func alertsToEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
 		details = append(details, EmailTemplateDetails{
 			FunctionalityEntityName: alert.FunctionalityEntityName,
 			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
-			Title:                   alert.Title,
-			FirstObservedAt:         time.UnixMilli(alert.FirstObservedAt).Format(time.RFC3339),
+			Title:                   toTitleCase(alert.Title),
+			LastObservedAt:          formatObservedAtForEmail(alert),
 		})
 	}
 	return details
+}
+
+func formatObservedAtForEmail(alert alerts_async.Alert) string {
+	observedAt := alert.LastObservedAt
+	if observedAt <= 0 {
+		observedAt = alert.FirstObservedAt
+	}
+	if observedAt <= 0 {
+		return ""
+	}
+	return time.UnixMilli(observedAt).Format(time.RFC3339)
 }
 
 func alertsToReminderEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
@@ -591,9 +612,9 @@ func alertsToReminderEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDe
 		details = append(details, EmailTemplateDetails{
 			FunctionalityEntityName: alert.FunctionalityEntityName,
 			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
-			Title:                   alert.Title,
-			FirstObservedAt:         time.UnixMilli(alert.FirstObservedAt).Format(time.RFC3339),
-			ReminderNumber:          alert.NotificationCount + 1,
+			Title:                   toTitleCase(alert.Title),
+			LastObservedAt:          formatObservedAtForEmail(alert),
+			ReminderNumber:          alert.NotificationCount,
 		})
 	}
 	return details
@@ -628,7 +649,7 @@ type EmailAlertSection struct {
 type EmailTemplateDetails struct {
 	FunctionalityEntityName string
 	Message                 string
-	FirstObservedAt         string
+	LastObservedAt          string
 	Title                   string
 	ReminderNumber          int
 }
