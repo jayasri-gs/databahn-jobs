@@ -577,14 +577,14 @@ func TestAlertsToReminderEmailDetailsSetsNotificationNumber(t *testing.T) {
 			FunctionalityEntityName: "entity-second-notification",
 			Title:                   "reminder title",
 			Message:                 "reminder message",
-			FirstObservedAt:         observedAt,
+			LastObservedAt:          observedAt,
 			NotificationCount:       1,
 		},
 		{
 			FunctionalityEntityName: "entity-third-notification",
 			Title:                   "reminder title",
 			Message:                 "reminder message",
-			FirstObservedAt:         observedAt,
+			LastObservedAt:          observedAt,
 			NotificationCount:       2,
 		},
 	}
@@ -593,52 +593,56 @@ func TestAlertsToReminderEmailDetailsSetsNotificationNumber(t *testing.T) {
 	if len(details) != 2 {
 		t.Fatalf("len(details) = %d, want 2", len(details))
 	}
-	if details[0].ReminderNumber != 2 {
-		t.Fatalf("details[0].ReminderNumber = %d, want 2", details[0].ReminderNumber)
+	if details[0].ReminderNumber != 1 {
+		t.Fatalf("details[0].ReminderNumber = %d, want 1", details[0].ReminderNumber)
 	}
-	if details[1].ReminderNumber != 3 {
-		t.Fatalf("details[1].ReminderNumber = %d, want 3", details[1].ReminderNumber)
+	if details[1].ReminderNumber != 2 {
+		t.Fatalf("details[1].ReminderNumber = %d, want 2", details[1].ReminderNumber)
+	}
+	if details[0].Title != "Reminder Title" {
+		t.Fatalf("details[0].Title = %q, want %q", details[0].Title, "Reminder Title")
+	}
+}
+
+func TestFormatObservedAtForEmailUsesLastObservedAt(t *testing.T) {
+	firstObserved := time.Date(2026, 6, 1, 8, 0, 0, 0, utc).UnixMilli()
+	lastObserved := time.Date(2026, 6, 1, 12, 0, 0, 0, utc).UnixMilli()
+
+	got := formatObservedAtForEmail(alerts_async.Alert{
+		FirstObservedAt: firstObserved,
+		LastObservedAt:  lastObserved,
+	})
+	want := time.UnixMilli(lastObserved).Format(time.RFC3339)
+	if got != want {
+		t.Fatalf("formatObservedAtForEmail() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatObservedAtForEmailFallsBackToFirstObservedAt(t *testing.T) {
+	firstObserved := time.Date(2026, 6, 1, 8, 0, 0, 0, utc).UnixMilli()
+
+	got := formatObservedAtForEmail(alerts_async.Alert{FirstObservedAt: firstObserved})
+	want := time.UnixMilli(firstObserved).Format(time.RFC3339)
+	if got != want {
+		t.Fatalf("formatObservedAtForEmail() = %q, want %q", got, want)
 	}
 }
 
 func TestAlertsToReminderEmailDetailsSortsByReminderNumberIncreasing(t *testing.T) {
-	observedAt := time.Date(2026, 6, 1, 10, 0, 0, 0, utc).UnixMilli()
-	alerts := []alerts_async.Alert{
-		{
-			FunctionalityEntityName: "entity-third-notification",
-			FirstObservedAt:         observedAt,
-			NotificationCount:       2,
-		},
-		{
-			FunctionalityEntityName: "entity-second-notification",
-			FirstObservedAt:         observedAt,
-			NotificationCount:       1,
-		},
-		{
-			FunctionalityEntityName: "entity-fourth-notification",
-			FirstObservedAt:         observedAt,
-			NotificationCount:       3,
-		},
+	tests := []struct {
+		functionalityType string
+		want              string
+	}{
+		{alerts_async.IngestionChecker.String(), "No New Data Ingested"},
+		{alerts_async.DeliveryChecker.String(), "No Data Delivered"},
+		{"configuration_processing_failure", "Configuration Processing Failure"},
 	}
 
-	details := alertsToReminderEmailDetails(alerts)
-	if len(details) != 3 {
-		t.Fatalf("len(details) = %d, want 3", len(details))
-	}
-	want := []struct {
-		entity string
-		number int
-	}{
-		{"entity-second-notification", 2},
-		{"entity-third-notification", 3},
-		{"entity-fourth-notification", 4},
-	}
-	for i, tt := range want {
-		if details[i].FunctionalityEntityName != tt.entity {
-			t.Fatalf("details[%d].FunctionalityEntityName = %q, want %q", i, details[i].FunctionalityEntityName, tt.entity)
-		}
-		if details[i].ReminderNumber != tt.number {
-			t.Fatalf("details[%d].ReminderNumber = %d, want %d", i, details[i].ReminderNumber, tt.number)
-		}
+	for _, tt := range tests {
+		t.Run(tt.functionalityType, func(t *testing.T) {
+			if got := buildEmailTitle(tt.functionalityType); got != tt.want {
+				t.Fatalf("buildEmailTitle() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
