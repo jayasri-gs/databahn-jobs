@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,10 +34,13 @@ import (
 )
 
 const EmailTemplatesBasePath = "/home/databahn/templates/"
+const customerAlertTemplateFile = "customer_alert.html"
 const DefaultCustomerNotificationSendFirstAtJobFrequency = 3
 const DefaultCustomerNotificationReminderNotificationFrequencyEvery = 24 * time.Hour
 const DefaultCustomerNotificationReminderNotificationEndDuration = 7 * (24 * time.Hour)
 const MinCustomerNotificationReminderInterval = time.Hour
+const LastReminderAlertsSectionHeading = "Last Reminder Alerts"
+const LastReminderEmailTitlePrefix = "Final Reminder: "
 
 // const EmailTemplatesBasePath = "templates/"
 
@@ -367,7 +371,7 @@ func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality 
 
 			finalAlerts := decideAlertsForNotification(filteredAlerts, reminderConfig, t.Id.String(), functionality)
 
-			if len(finalAlerts.newAlerts) == 0 && len(finalAlerts.reminderAlerts) == 0 {
+			if !finalAlerts.hasRegularAlerts() && len(finalAlerts.lastNotificationAlerts) == 0 {
 				logger.GetLogger().Info("no alerts to notify after reminder decision, skipping notification",
 					zap.String("tenant", t.Id.String()),
 					zap.String("functionality", functionality))
@@ -375,36 +379,59 @@ func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality 
 			}
 
 			emailTitle := buildEmailTitle(functionalityType)
-
-			subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, emailTitle)
-
-			body, err := buildEmailBody(emailTitle, finalAlerts)
-			if err != nil {
-				logger.GetLogger().Error("error while building email body with filtered alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
-				return err
-			}
-			emailRequest := notification_common.EmailNotificationRequest{
-				Targets: databahnTargets,
-				Body:    body,
-				Subject: subject,
-			}
-			err = notificationManager.SendEmailNotification(emailRequest)
-			if err != nil {
-				logger.GetLogger().Error("error while sending email notification", zap.Error(err), zap.String("tenant", t.Id.String()))
-				return err
-			}
-
 			now := time.Now().UTC().UnixMilli()
-			notifiedAlertUpdates := make(map[string]alert.NotificationSentUpdate, len(finalAlerts.newAlerts)+len(finalAlerts.reminderAlerts))
-			for _, notifiedAlert := range finalAlerts.newAlerts {
-				notifiedAlertUpdates[notifiedAlert.Id] = notificationSentUpdate(notifiedAlert, now)
+			notifiedAlertUpdates := make(map[string]alert.NotificationSentUpdate)
+
+			if finalAlerts.hasRegularAlerts() {
+				subject := fmt.Sprintf("DataBahn.ai Alert - %s - %s", t.Name, emailTitle)
+				body, err := buildEmailBody(emailTitle, finalAlerts)
+				if err != nil {
+					logger.GetLogger().Error("error while building email body with filtered alerts", zap.Error(err), zap.String("tenant", t.Id.String()))
+					return err
+				}
+				emailRequest := notification_common.EmailNotificationRequest{
+					Targets: databahnTargets,
+					Body:    body,
+					Subject: subject,
+				}
+				err = notificationManager.SendEmailNotification(emailRequest)
+				if err != nil {
+					logger.GetLogger().Error("error while sending email notification", zap.Error(err), zap.String("tenant", t.Id.String()))
+					return err
+				}
+				for _, notifiedAlert := range append(finalAlerts.newAlerts, finalAlerts.reminderAlerts...) {
+					notifiedAlertUpdates[notifiedAlert.Id] = notificationSentUpdate(notifiedAlert, now)
+				}
 			}
-			for _, notifiedAlert := range finalAlerts.reminderAlerts {
-				notifiedAlertUpdates[notifiedAlert.Id] = notificationSentUpdate(notifiedAlert, now)
+
+			if len(finalAlerts.lastNotificationAlerts) > 0 {
+				lastReminderTitle := buildLastReminderEmailTitle(emailTitle)
+				subject := buildLastReminderEmailSubject(t.Name, emailTitle)
+				body, err := buildLastReminderEmailBody(lastReminderTitle, finalAlerts.lastNotificationAlerts)
+				if err != nil {
+					logger.GetLogger().Error("error while building last reminder email body", zap.Error(err), zap.String("tenant", t.Id.String()))
+					return err
+				}
+				emailRequest := notification_common.EmailNotificationRequest{
+					Targets: databahnTargets,
+					Body:    body,
+					Subject: subject,
+				}
+				err = notificationManager.SendEmailNotification(emailRequest)
+				if err != nil {
+					logger.GetLogger().Error("error while sending last reminder email notification", zap.Error(err), zap.String("tenant", t.Id.String()))
+					return err
+				}
+				for _, notifiedAlert := range finalAlerts.lastNotificationAlerts {
+					notifiedAlertUpdates[notifiedAlert.Id] = notificationSentUpdate(notifiedAlert, now)
+				}
 			}
-			if err := alertsManager.RecordNotificationSent(notifiedAlertUpdates); err != nil {
-				logger.GetLogger().Error("error while recording notification sent", zap.Error(err), zap.String("tenant", t.Id.String()))
-				return err
+
+			if len(notifiedAlertUpdates) > 0 {
+				if err := alertsManager.RecordNotificationSent(notifiedAlertUpdates); err != nil {
+					logger.GetLogger().Error("error while recording notification sent", zap.Error(err), zap.String("tenant", t.Id.String()))
+					return err
+				}
 			}
 		}
 	}
@@ -412,8 +439,11 @@ func sendCustomerNotification(t tenant.Tenant, functionalityType, functionality 
 }
 
 func decideAlertsForNotification(alerts []alerts_async.Alert, reminderConfig *CustomerNotificationReminderConfig, tenantID, functionality string) *AlertsForNotification {
+	return decideAlertsForNotificationAt(alerts, reminderConfig, tenantID, functionality, time.Now().UTC().UnixMilli())
+}
+
+func decideAlertsForNotificationAt(alerts []alerts_async.Alert, reminderConfig *CustomerNotificationReminderConfig, tenantID, functionality string, now int64) *AlertsForNotification {
 	result := &AlertsForNotification{}
-	now := time.Now().UTC().UnixMilli()
 
 	for _, alert := range alerts {
 		decision := reminderConfig.CheckSendingNotification(
@@ -425,6 +455,8 @@ func decideAlertsForNotification(alerts []alerts_async.Alert, reminderConfig *Cu
 		switch {
 		case decision.SendFirstNotification:
 			result.newAlerts = append(result.newAlerts, alert)
+		case decision.SentLastReminder:
+			result.lastNotificationAlerts = append(result.lastNotificationAlerts, alert)
 		case decision.SentReminder:
 			result.reminderAlerts = append(result.reminderAlerts, alert)
 		default:
@@ -529,62 +561,101 @@ func toTitleCase(value string) string {
 	return cases.Title(language.English).String(value)
 }
 
-func buildEmailBody(emailTitle string, alerts *AlertsForNotification) (string, error) {
-	templatePath := emailTemplatePathForAlerts(alerts)
-	t, err := template.ParseFiles(templatePath)
-	if err != nil {
-		logger.GetLogger().Error("error while parsing template", zap.Error(err))
-		return "", err
-	}
-	buf := new(bytes.Buffer)
+func buildLastReminderEmailTitle(baseTitle string) string {
+	return LastReminderEmailTitlePrefix + baseTitle
+}
+
+func buildLastReminderEmailSubject(tenantName, emailTitle string) string {
+	return fmt.Sprintf("DataBahn.ai Final Reminder - %s - %s", tenantName, emailTitle)
+}
+
+func buildLastReminderEmailBody(emailTitle string, alerts []alerts_async.Alert) (string, error) {
+	theme := emailThemeForAlertList(alerts)
 	emailTemplate := EmailTemplate{
 		Name:  "Dear Team,",
 		Title: emailTitle,
+		Theme: theme,
+		LastReminderAlerts: &EmailAlertSection{
+			Heading: LastReminderAlertsSectionHeading,
+			Details: alertsToReminderEmailDetails(alerts, theme),
+		},
+	}
+	return executeCustomerAlertTemplate(emailTemplate)
+}
+
+func buildEmailBody(emailTitle string, alerts *AlertsForNotification) (string, error) {
+	theme := emailThemeForAlerts(alerts)
+	emailTemplate := EmailTemplate{
+		Name:  "Dear Team,",
+		Title: emailTitle,
+		Theme: theme,
 	}
 	if len(alerts.newAlerts) > 0 {
 		emailTemplate.NewAlerts = &EmailAlertSection{
 			Heading: "New Alerts",
-			Details: alertsToEmailDetails(alerts.newAlerts),
+			Details: alertsToEmailDetails(alerts.newAlerts, theme),
 		}
 	}
 	if len(alerts.reminderAlerts) > 0 {
 		emailTemplate.ReminderAlerts = &EmailAlertSection{
 			Heading: "Reminder Alerts",
-			Details: alertsToReminderEmailDetails(alerts.reminderAlerts),
+			Details: alertsToReminderEmailDetails(alerts.reminderAlerts, theme),
 		}
 	}
-	err = t.Execute(buf, emailTemplate)
+	return executeCustomerAlertTemplate(emailTemplate)
+}
+
+func executeCustomerAlertTemplate(emailTemplate EmailTemplate) (string, error) {
+	t, err := template.ParseFiles(EmailTemplatesBasePath + customerAlertTemplateFile)
 	if err != nil {
+		logger.GetLogger().Error("error while parsing template", zap.Error(err))
+		return "", err
+	}
+	buf := new(bytes.Buffer)
+	if err := t.Execute(buf, emailTemplate); err != nil {
 		logger.GetLogger().Error("error while executing template", zap.Error(err))
 		return "", err
 	}
 	return buf.String(), nil
 }
 
-func emailTemplatePathForAlerts(alerts *AlertsForNotification) string {
+func emailThemeForAlerts(alerts *AlertsForNotification) EmailTheme {
+	return emailThemeForAlertList(append(
+		append(alerts.newAlerts, alerts.reminderAlerts...),
+		alerts.lastNotificationAlerts...,
+	))
+}
+
+func emailThemeForAlertList(alerts []alerts_async.Alert) EmailTheme {
 	hasWarning := false
-	for _, alert := range append(alerts.newAlerts, alerts.reminderAlerts...) {
+	for _, alert := range alerts {
 		switch alert.Criticality {
 		case alerts_async.Critical.String(), alerts_async.Sever.String():
-			return EmailTemplatesBasePath + "error_alert.html"
+			return errorEmailTheme
 		case alerts_async.Warning.String():
 			hasWarning = true
 		}
 	}
 	if hasWarning {
-		return EmailTemplatesBasePath + "warning_alert.html"
+		return warningEmailTheme
 	}
-	return EmailTemplatesBasePath + "green_alert.html"
+	return greenEmailTheme
 }
 
-func alertsToEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
+func formatMessageForEmail(message string) string {
+	escaped := html.EscapeString(message)
+	return strings.ReplaceAll(escaped, "\n", "<br>")
+}
+
+func alertsToEmailDetails(alerts []alerts_async.Alert, theme EmailTheme) []EmailTemplateDetails {
 	var details []EmailTemplateDetails
 	for _, alert := range alerts {
 		details = append(details, EmailTemplateDetails{
-			FunctionalityEntityName: alert.FunctionalityEntityName,
-			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
-			Title:                   toTitleCase(alert.Title),
+			FunctionalityEntityName: html.EscapeString(alert.FunctionalityEntityName),
+			Message:                 formatMessageForEmail(alert.Message),
+			Title:                   toTitleCase(html.EscapeString(alert.Title)),
 			LastObservedAt:          formatObservedAtForEmail(alert),
+			Theme:                   theme,
 		})
 	}
 	return details
@@ -601,7 +672,7 @@ func formatObservedAtForEmail(alert alerts_async.Alert) string {
 	return time.UnixMilli(observedAt).Format(time.RFC3339)
 }
 
-func alertsToReminderEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
+func alertsToReminderEmailDetails(alerts []alerts_async.Alert, theme EmailTheme) []EmailTemplateDetails {
 	sortedAlerts := append([]alerts_async.Alert(nil), alerts...)
 	sort.Slice(sortedAlerts, func(i, j int) bool {
 		return sortedAlerts[i].NotificationCount < sortedAlerts[j].NotificationCount
@@ -610,11 +681,12 @@ func alertsToReminderEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDe
 	var details []EmailTemplateDetails
 	for _, alert := range sortedAlerts {
 		details = append(details, EmailTemplateDetails{
-			FunctionalityEntityName: alert.FunctionalityEntityName,
-			Message:                 strings.ReplaceAll(alert.Message, "\n", "<br>"),
-			Title:                   toTitleCase(alert.Title),
+			FunctionalityEntityName: html.EscapeString(alert.FunctionalityEntityName),
+			Message:                 formatMessageForEmail(alert.Message),
+			Title:                   toTitleCase(html.EscapeString(alert.Title)),
 			LastObservedAt:          formatObservedAtForEmail(alert),
 			ReminderNumber:          alert.NotificationCount,
+			Theme:                   theme,
 		})
 	}
 	return details
@@ -635,11 +707,57 @@ func alertFunctionalityMatchesModuleName(functionality string, moduleName string
 }
 
 type EmailTemplate struct {
-	Name           string
-	Title          string
-	NewAlerts      *EmailAlertSection
-	ReminderAlerts *EmailAlertSection
+	Name               string
+	Title              string
+	Theme              EmailTheme
+	NewAlerts          *EmailAlertSection
+	ReminderAlerts     *EmailAlertSection
+	LastReminderAlerts *EmailAlertSection
 }
+
+type EmailTheme struct {
+	Accent                string
+	Heading               string
+	EntityHeading         string
+	SectionBackground     string
+	LastSectionBackground string
+	CardBorder            string
+	BadgeBackground       string
+	LastAccent            string
+}
+
+var (
+	errorEmailTheme = EmailTheme{
+		Accent:                "#E85D5D",
+		Heading:               "#C03939",
+		EntityHeading:         "#C03939",
+		SectionBackground:     "#FEF2F2",
+		LastSectionBackground: "#FEF2F2",
+		CardBorder:            "#F5D5D5",
+		BadgeBackground:       "#FDE8E8",
+		LastAccent:            "#C03939",
+	}
+	warningEmailTheme = EmailTheme{
+		Accent:                "#E8943A",
+		Heading:               "#C47A15",
+		EntityHeading:         "#C47A15",
+		SectionBackground:     "#FFF8F0",
+		LastSectionBackground: "#FFEFD9",
+		CardBorder:            "#F5E4CC",
+		BadgeBackground:       "#FFEFD9",
+		LastAccent:            "#C47A15",
+	}
+	greenEmailTheme = EmailTheme{
+		Accent:                "#45C96A",
+		Heading:               "#1F7A4A",
+		EntityHeading:         "#2B8A58",
+		SectionBackground:     "#F0FBF4",
+		LastSectionBackground: "#D4F5DE",
+		CardBorder:            "#C8EBD4",
+		BadgeBackground:       "#D4F5DE",
+		LastAccent:            "#2B8A58",
+	}
+)
 
 type EmailAlertSection struct {
 	Heading string
@@ -652,6 +770,7 @@ type EmailTemplateDetails struct {
 	LastObservedAt          string
 	Title                   string
 	ReminderNumber          int
+	Theme                   EmailTheme
 }
 
 type OpsGenieDetails struct {
@@ -717,13 +836,19 @@ func aggregateAlertbyfunctionalityType(functionality string, alertsByFunctionali
 }
 
 type AlertsForNotification struct {
-	newAlerts      []alerts_async.Alert
-	reminderAlerts []alerts_async.Alert
+	newAlerts              []alerts_async.Alert
+	reminderAlerts         []alerts_async.Alert
+	lastNotificationAlerts []alerts_async.Alert
+}
+
+func (a *AlertsForNotification) hasRegularAlerts() bool {
+	return len(a.newAlerts) > 0 || len(a.reminderAlerts) > 0
 }
 
 type NotificationReminderDecision struct {
 	SendFirstNotification bool
 	SentReminder          bool
+	SentLastReminder      bool
 	ReasonToNotSend       string
 }
 
@@ -743,7 +868,7 @@ func (n *CustomerNotificationReminderConfig) CheckSendingNotification(
 		if notificationsSent == 0 {
 			return NotificationReminderDecision{SendFirstNotification: true}
 		}
-		return NotificationReminderDecision{SentReminder: true}
+		return n.reminderDecision(activationTime, now)
 	}
 
 	if activationTime <= 0 {
@@ -764,14 +889,41 @@ func (n *CustomerNotificationReminderConfig) CheckSendingNotification(
 		return NotificationReminderDecision{ReasonToNotSend: "not within a reminder window"}
 	}
 
-	if notificationsSent >= n.sendFirstNotifications && lastNotificationTime > 0 {
+	if lastNotificationTime > 0 {
 		lastSlot, lastOk := reminderSlotIndex(activationTime, lastNotificationTime, n.reminderInterval, n.reminderDuration)
 		if lastOk && lastSlot == slot {
 			return NotificationReminderDecision{ReasonToNotSend: "reminder already sent for current window"}
 		}
 	}
 
+	return n.reminderDecision(activationTime, now)
+}
+
+func (n *CustomerNotificationReminderConfig) reminderDecision(activationTime, now int64) NotificationReminderDecision {
+	if n.isLastReminderNotification(activationTime, now) {
+		return NotificationReminderDecision{SentLastReminder: true}
+	}
 	return NotificationReminderDecision{SentReminder: true}
+}
+
+func (n *CustomerNotificationReminderConfig) isLastReminderNotification(activationTime, now int64) bool {
+	if activationTime <= 0 || n.reminderInterval <= 0 || n.reminderDuration <= 0 {
+		return false
+	}
+	slot, ok := reminderSlotIndex(activationTime, now, n.reminderInterval, n.reminderDuration)
+	if !ok {
+		return false
+	}
+	return slot == lastReminderSlotIndex(n.reminderInterval, n.reminderDuration)
+}
+
+func lastReminderSlotIndex(frequency, duration time.Duration) int {
+	frequencyMillis := frequency.Milliseconds()
+	durationMillis := duration.Milliseconds()
+	if frequencyMillis <= 0 || durationMillis <= 0 {
+		return 0
+	}
+	return int((durationMillis - 1) / frequencyMillis)
 }
 
 func reminderSlotIndex(activationMillis, nowMillis int64, frequency, duration time.Duration) (slot int, ok bool) {

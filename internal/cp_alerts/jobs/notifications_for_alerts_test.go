@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -159,7 +160,7 @@ func TestCustomerNotificationReminderConfig_CheckSendingNotification_phaseOne(t 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			decision := config.CheckSendingNotification(0, 0, tt.notificationsSent, 0)
-			assertReminderDecision(t, decision, tt.wantFirst, tt.wantReminder, "")
+			assertReminderDecision(t, decision, tt.wantFirst, tt.wantReminder, false, "")
 		})
 	}
 }
@@ -262,7 +263,7 @@ func TestCustomerNotificationReminderConfig_CheckSendingNotification_phaseTwo(t 
 				tt.notificationsSent,
 				tt.lastNotificationTime,
 			)
-			assertReminderDecision(t, decision, tt.wantFirst, tt.wantReminder, tt.wantReason)
+			assertReminderDecision(t, decision, tt.wantFirst, tt.wantReminder, false, tt.wantReason)
 		})
 	}
 }
@@ -304,15 +305,16 @@ type notificationScenarioState struct {
 }
 
 type notificationScenarioStep struct {
-	name         string
-	now          time.Time
-	wantFirst    bool
-	wantReminder bool
-	wantReason   string
+	name             string
+	now              time.Time
+	wantFirst        bool
+	wantReminder     bool
+	wantLastReminder bool
+	wantReason       string
 }
 
 func (s *notificationScenarioState) applySend(now time.Time, decision NotificationReminderDecision) {
-	if decision.SendFirstNotification || decision.SentReminder {
+	if decision.SendFirstNotification || decision.SentReminder || decision.SentLastReminder {
 		s.count++
 		s.lastNotificationTime = now.UnixMilli()
 	}
@@ -337,7 +339,7 @@ func runNotificationScenario(
 				state.count,
 				state.lastNotificationTime,
 			)
-			assertReminderDecision(t, decision, step.wantFirst, step.wantReminder, step.wantReason)
+			assertReminderDecision(t, decision, step.wantFirst, step.wantReminder, step.wantLastReminder, step.wantReason)
 			state.applySend(step.now, decision)
 		})
 	}
@@ -361,6 +363,7 @@ func TestCustomerNotificationReminderConfig_oneHourWindowFrequency(t *testing.T)
 		{name: "hour 1 duplicate job run skipped", now: time.Date(2026, 6, 1, 15, 45, 0, 0, utc), wantReason: "reminder already sent for current window"},
 		{name: "hour 2 reminder", now: time.Date(2026, 6, 1, 16, 5, 0, 0, utc), wantReminder: true},
 		{name: "hour 3 reminder", now: time.Date(2026, 6, 1, 17, 5, 0, 0, utc), wantReminder: true},
+		{name: "hour 5 last reminder", now: time.Date(2026, 6, 1, 19, 5, 0, 0, utc), wantLastReminder: true},
 		{name: "after duration elapsed", now: time.Date(2026, 6, 1, 20, 30, 0, 0, utc), wantReason: "reminder duration has elapsed"},
 	})
 }
@@ -408,6 +411,7 @@ func assertReminderDecision(
 	decision NotificationReminderDecision,
 	wantFirst bool,
 	wantReminder bool,
+	wantLastReminder bool,
 	wantReason string,
 ) {
 	t.Helper()
@@ -418,14 +422,197 @@ func assertReminderDecision(
 	if decision.SentReminder != wantReminder {
 		t.Fatalf("SentReminder = %v, want %v", decision.SentReminder, wantReminder)
 	}
+	if decision.SentLastReminder != wantLastReminder {
+		t.Fatalf("SentLastReminder = %v, want %v", decision.SentLastReminder, wantLastReminder)
+	}
 	if wantReason != "" && decision.ReasonToNotSend != wantReason {
 		t.Fatalf("ReasonToNotSend = %q, want %q", decision.ReasonToNotSend, wantReason)
 	}
 	if wantReason == "" && decision.ReasonToNotSend != "" {
 		t.Fatalf("ReasonToNotSend = %q, want empty", decision.ReasonToNotSend)
 	}
-	if (wantFirst || wantReminder) && decision.ReasonToNotSend != "" {
+	if (wantFirst || wantReminder || wantLastReminder) && decision.ReasonToNotSend != "" {
 		t.Fatalf("expected send decision, got reason %q", decision.ReasonToNotSend)
+	}
+	if wantReminder && wantLastReminder {
+		t.Fatalf("wantReminder and wantLastReminder are mutually exclusive")
+	}
+}
+
+func Test_lastReminderSlotIndex(t *testing.T) {
+	frequency := time.Hour
+	duration := 6 * time.Hour
+	if got := lastReminderSlotIndex(frequency, duration); got != 5 {
+		t.Fatalf("lastReminderSlotIndex() = %d, want 5", got)
+	}
+}
+
+func TestCustomerNotificationReminderConfig_lastReminderInFinalSlot(t *testing.T) {
+	activation := time.Date(2026, 6, 1, 14, 0, 0, 0, utc)
+	config := &CustomerNotificationReminderConfig{
+		sendFirstNotifications: 3,
+		reminderInterval:       time.Hour,
+		reminderDuration:       6 * time.Hour,
+	}
+
+	decision := config.CheckSendingNotification(
+		activation.UnixMilli(),
+		time.Date(2026, 6, 1, 19, 5, 0, 0, utc).UnixMilli(),
+		4,
+		time.Date(2026, 6, 1, 17, 5, 0, 0, utc).UnixMilli(),
+	)
+	assertReminderDecision(t, decision, false, false, true, "")
+}
+
+func TestCustomerNotificationReminderConfig_phaseOneReminderInFinalSlotIsLast(t *testing.T) {
+	activation := time.Date(2026, 6, 1, 14, 0, 0, 0, utc)
+	config := &CustomerNotificationReminderConfig{
+		sendFirstNotifications: 3,
+		reminderInterval:       time.Hour,
+		reminderDuration:       6 * time.Hour,
+	}
+
+	decision := config.CheckSendingNotification(
+		activation.UnixMilli(),
+		time.Date(2026, 6, 1, 19, 5, 0, 0, utc).UnixMilli(),
+		1,
+		0,
+	)
+	assertReminderDecision(t, decision, false, false, true, "")
+}
+
+func TestCustomerNotificationReminderConfig_phaseOneFinalSendInFinalSlotIsLast(t *testing.T) {
+	activation := time.Date(2026, 6, 1, 14, 0, 0, 0, utc)
+	config := &CustomerNotificationReminderConfig{
+		sendFirstNotifications: 3,
+		reminderInterval:       time.Hour,
+		reminderDuration:       6 * time.Hour,
+	}
+
+	decision := config.CheckSendingNotification(
+		activation.UnixMilli(),
+		time.Date(2026, 6, 1, 19, 5, 0, 0, utc).UnixMilli(),
+		2,
+		time.Date(2026, 6, 1, 19, 0, 0, 0, utc).UnixMilli(),
+	)
+	assertReminderDecision(t, decision, false, false, true, "")
+}
+
+func TestCustomerNotificationReminderConfig_phaseOneReminderOutsideFinalSlotIsRegular(t *testing.T) {
+	activation := time.Date(2026, 6, 1, 14, 0, 0, 0, utc)
+	config := &CustomerNotificationReminderConfig{
+		sendFirstNotifications: 3,
+		reminderInterval:       time.Hour,
+		reminderDuration:       6 * time.Hour,
+	}
+
+	decision := config.CheckSendingNotification(
+		activation.UnixMilli(),
+		time.Date(2026, 6, 1, 15, 5, 0, 0, utc).UnixMilli(),
+		1,
+		0,
+	)
+	assertReminderDecision(t, decision, false, true, false, "")
+}
+
+func TestDecideAlertsForNotificationRoutesLastReminderAlerts(t *testing.T) {
+	activation := time.Date(2026, 6, 1, 14, 0, 0, 0, utc).UnixMilli()
+	config := &CustomerNotificationReminderConfig{
+		sendFirstNotifications: 3,
+		reminderInterval:       time.Hour,
+		reminderDuration:       6 * time.Hour,
+	}
+	lastNotification := time.Date(2026, 6, 1, 17, 5, 0, 0, utc).UnixMilli()
+
+	regularNow := time.Date(2026, 6, 1, 18, 5, 0, 0, utc).UnixMilli()
+	regularResult := decideAlertsForNotificationAt([]alerts_async.Alert{{
+		Id:                   "regular-reminder",
+		NotificationCount:    4,
+		LastActivationTime:   activation,
+		LastNotificationTime: lastNotification,
+	}}, config, "tenant", "log_source", regularNow)
+	if len(regularResult.reminderAlerts) != 1 || len(regularResult.lastNotificationAlerts) != 0 {
+		t.Fatalf("regular reminder routing = new:%d reminder:%d last:%d",
+			len(regularResult.newAlerts), len(regularResult.reminderAlerts), len(regularResult.lastNotificationAlerts))
+	}
+
+	lastNow := time.Date(2026, 6, 1, 19, 5, 0, 0, utc).UnixMilli()
+	lastResult := decideAlertsForNotificationAt([]alerts_async.Alert{{
+		Id:                   "last-reminder",
+		NotificationCount:    4,
+		LastActivationTime:   activation,
+		LastNotificationTime: lastNotification,
+	}}, config, "tenant", "log_source", lastNow)
+	if len(lastResult.lastNotificationAlerts) != 1 || len(lastResult.reminderAlerts) != 0 {
+		t.Fatalf("last reminder routing = new:%d reminder:%d last:%d",
+			len(lastResult.newAlerts), len(lastResult.reminderAlerts), len(lastResult.lastNotificationAlerts))
+	}
+}
+
+func TestLastReminderNotSentMultipleTimesInLastWindow(t *testing.T) {
+	activation := time.Date(2026, 6, 1, 14, 0, 0, 0, utc)
+	config := &CustomerNotificationReminderConfig{
+		sendFirstNotifications: 3,
+		reminderInterval:       time.Hour,
+		reminderDuration:       6 * time.Hour,
+	}
+
+	t.Run("CheckSendingNotification", func(t *testing.T) {
+		runNotificationScenario(t, config, activation, []notificationScenarioStep{
+			{name: "initial notification", now: time.Date(2026, 6, 1, 14, 10, 0, 0, utc), wantFirst: true},
+			{name: "phase one reminder 1", now: time.Date(2026, 6, 1, 14, 20, 0, 0, utc), wantReminder: true},
+			{name: "phase one reminder 2", now: time.Date(2026, 6, 1, 14, 40, 0, 0, utc), wantReminder: true},
+			{name: "hour 2 reminder", now: time.Date(2026, 6, 1, 16, 10, 0, 0, utc), wantReminder: true},
+			{name: "hour 3 reminder", now: time.Date(2026, 6, 1, 17, 10, 0, 0, utc), wantReminder: true},
+			{name: "hour 4 reminder", now: time.Date(2026, 6, 1, 18, 10, 0, 0, utc), wantReminder: true},
+			{name: "final slot last reminder", now: time.Date(2026, 6, 1, 19, 5, 0, 0, utc), wantLastReminder: true},
+			{name: "duplicate job run in final slot skipped", now: time.Date(2026, 6, 1, 19, 20, 0, 0, utc), wantReason: "reminder already sent for current window"},
+			{name: "another duplicate job run in final slot skipped", now: time.Date(2026, 6, 1, 19, 50, 0, 0, utc), wantReason: "reminder already sent for current window"},
+		})
+	})
+
+	t.Run("decideAlertsForNotificationAt", func(t *testing.T) {
+		alert := alerts_async.Alert{
+			Id:                   "last-reminder-alert",
+			NotificationCount:    4,
+			LastActivationTime:   activation.UnixMilli(),
+			LastNotificationTime: time.Date(2026, 6, 1, 18, 10, 0, 0, utc).UnixMilli(),
+		}
+		lastWindowNow := time.Date(2026, 6, 1, 19, 5, 0, 0, utc).UnixMilli()
+
+		firstRun := decideAlertsForNotificationAt([]alerts_async.Alert{alert}, config, "tenant", "log_source", lastWindowNow)
+		if len(firstRun.lastNotificationAlerts) != 1 {
+			t.Fatalf("first last-window run: last=%d, want 1", len(firstRun.lastNotificationAlerts))
+		}
+		if len(firstRun.reminderAlerts) != 0 || len(firstRun.newAlerts) != 0 {
+			t.Fatalf("first last-window run: new=%d reminder=%d last=%d, want 0 new and 0 reminder",
+				len(firstRun.newAlerts), len(firstRun.reminderAlerts), len(firstRun.lastNotificationAlerts))
+		}
+
+		alert.LastNotificationTime = lastWindowNow
+		alert.NotificationCount++
+
+		for _, duplicateNow := range []time.Time{
+			time.Date(2026, 6, 1, 19, 20, 0, 0, utc),
+			time.Date(2026, 6, 1, 19, 45, 0, 0, utc),
+		} {
+			result := decideAlertsForNotificationAt([]alerts_async.Alert{alert}, config, "tenant", "log_source", duplicateNow.UnixMilli())
+			if len(result.lastNotificationAlerts) != 0 || len(result.reminderAlerts) != 0 || len(result.newAlerts) != 0 {
+				t.Fatalf("duplicate run at %s routed alerts new=%d reminder=%d last=%d, want all zero",
+					duplicateNow.Format(time.RFC3339),
+					len(result.newAlerts), len(result.reminderAlerts), len(result.lastNotificationAlerts))
+			}
+		}
+	})
+}
+
+func TestBuildLastReminderEmailSubjectAndTitle(t *testing.T) {
+	baseTitle := buildEmailTitle("configuration_processing_failure")
+	if got := buildLastReminderEmailTitle(baseTitle); got != "Final Reminder: Configuration Processing Failure" {
+		t.Fatalf("buildLastReminderEmailTitle() = %q", got)
+	}
+	if got := buildLastReminderEmailSubject("tenant-a", baseTitle); got != "DataBahn.ai Final Reminder - tenant-a - Configuration Processing Failure" {
+		t.Fatalf("buildLastReminderEmailSubject() = %q", got)
 	}
 }
 
@@ -475,20 +662,20 @@ func TestActivationTimeForNotification(t *testing.T) {
 	}
 }
 
-func TestEmailTemplatePathForAlerts(t *testing.T) {
+func TestEmailThemeForAlerts(t *testing.T) {
 	alert := func(criticality string) alerts_async.Alert {
 		return alerts_async.Alert{Criticality: criticality}
 	}
 
 	tests := []struct {
-		name     string
-		alerts   *AlertsForNotification
-		wantPath string
+		name      string
+		alerts    *AlertsForNotification
+		wantTheme EmailTheme
 	}{
 		{
-			name:     "green when all info",
-			alerts:   &AlertsForNotification{newAlerts: []alerts_async.Alert{alert(alerts_async.Info.String())}},
-			wantPath: EmailTemplatesBasePath + "green_alert.html",
+			name:      "green when all info",
+			alerts:    &AlertsForNotification{newAlerts: []alerts_async.Alert{alert(alerts_async.Info.String())}},
+			wantTheme: greenEmailTheme,
 		},
 		{
 			name: "warning when any warning and no critical or severe",
@@ -496,32 +683,32 @@ func TestEmailTemplatePathForAlerts(t *testing.T) {
 				newAlerts:      []alerts_async.Alert{alert(alerts_async.Info.String())},
 				reminderAlerts: []alerts_async.Alert{alert(alerts_async.Warning.String())},
 			},
-			wantPath: EmailTemplatesBasePath + "warning_alert.html",
+			wantTheme: warningEmailTheme,
 		},
 		{
-			name: "critical template when any severe",
+			name: "critical theme when any severe",
 			alerts: &AlertsForNotification{
 				newAlerts:      []alerts_async.Alert{alert(alerts_async.Info.String())},
 				reminderAlerts: []alerts_async.Alert{alert(alerts_async.Sever.String())},
 			},
-			wantPath: EmailTemplatesBasePath + "error_alert.html",
+			wantTheme: errorEmailTheme,
 		},
 		{
-			name: "critical template when any critical even with warning first",
+			name: "critical theme when any critical even with warning first",
 			alerts: &AlertsForNotification{
 				newAlerts: []alerts_async.Alert{
 					alert(alerts_async.Warning.String()),
 					alert(alerts_async.Critical.String()),
 				},
 			},
-			wantPath: EmailTemplatesBasePath + "error_alert.html",
+			wantTheme: errorEmailTheme,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := emailTemplatePathForAlerts(tt.alerts); got != tt.wantPath {
-				t.Fatalf("emailTemplatePathForAlerts() = %q, want %q", got, tt.wantPath)
+			if got := emailThemeForAlerts(tt.alerts); got != tt.wantTheme {
+				t.Fatalf("emailThemeForAlerts() = %+v, want %+v", got, tt.wantTheme)
 			}
 		})
 	}
@@ -589,7 +776,7 @@ func TestAlertsToReminderEmailDetailsSetsNotificationNumber(t *testing.T) {
 		},
 	}
 
-	details := alertsToReminderEmailDetails(alerts)
+	details := alertsToReminderEmailDetails(alerts, greenEmailTheme)
 	if len(details) != 2 {
 		t.Fatalf("len(details) = %d, want 2", len(details))
 	}
@@ -644,5 +831,24 @@ func TestAlertsToReminderEmailDetailsSortsByReminderNumberIncreasing(t *testing.
 				t.Fatalf("buildEmailTitle() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFormatMessageForEmailEscapesHTML(t *testing.T) {
+	message := "error fetching model breaches: API call failed with status 404: <style>body{background:#eee}</style><h1>Example Domain</h1>"
+	got := formatMessageForEmail(message)
+	if strings.Contains(got, "<style>") || strings.Contains(got, "<h1>") {
+		t.Fatalf("formatMessageForEmail() should escape HTML tags, got %q", got)
+	}
+	if !strings.Contains(got, "&lt;style&gt;") {
+		t.Fatalf("formatMessageForEmail() should contain escaped tags, got %q", got)
+	}
+}
+
+func TestFormatMessageForEmailPreservesNewlines(t *testing.T) {
+	got := formatMessageForEmail("line one\nline two")
+	want := "line one<br>line two"
+	if got != want {
+		t.Fatalf("formatMessageForEmail() = %q, want %q", got, want)
 	}
 }

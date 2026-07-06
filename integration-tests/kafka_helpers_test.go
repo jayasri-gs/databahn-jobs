@@ -15,6 +15,8 @@ import (
 	"github.com/databahn-ai/pramaan-go/pramaan"
 )
 
+const lastReminderAlertsSection = "Last Reminder Alerts"
+
 func KafkaBodyJSONPathEquals(message dbkafka.Message, jsonPath string, expected any) bool {
 	var body any
 	if err := json.Unmarshal(message.Message, &body); err != nil {
@@ -314,5 +316,25 @@ func AssertKafkaEmailBodyReminderNumberInSection(
 	marker := fmt.Sprintf(">#%d</span>%s", reminderNumber, entityName)
 	if !strings.Contains(section, marker) {
 		t.Fatalf("reminder #%d for entity %q not found in %q section of email body", reminderNumber, entityName, sectionHeading)
+	}
+}
+
+func AssertKafkaEmailBodyLastReminderOnly(
+	t *testing.T,
+	message dbkafka.Message,
+	entityName string,
+	reminderNumber int,
+) {
+	t.Helper()
+
+	body := kafkaEmailBody(t, message)
+	if !strings.Contains(body, "Final Reminder:") {
+		t.Fatalf("email body missing Final Reminder title prefix")
+	}
+	AssertKafkaEmailBodyEntityInSection(t, message, lastReminderAlertsSection, "", entityName)
+	AssertKafkaEmailBodyEntityAbsentFromSection(t, message, "New Alerts", "Reminder Alerts", entityName)
+	AssertKafkaEmailBodyEntityAbsentFromSection(t, message, "Reminder Alerts", lastReminderAlertsSection, entityName)
+	if reminderNumber > 0 {
+		AssertKafkaEmailBodyReminderNumberInSection(t, message, lastReminderAlertsSection, "", entityName, reminderNumber)
 	}
 }

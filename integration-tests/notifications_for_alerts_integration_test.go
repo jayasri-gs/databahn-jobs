@@ -567,6 +567,104 @@ func TestNotificationsForAlertsReminderScenarios(t *testing.T) {
 	})
 }
 
+func TestNotificationsForAlertsLastReminderInFinalWindow(t *testing.T) {
+	ctx := context.Background()
+	tg := pramaan.NewGoTestLogger(t)
+	job := JobPramaan()
+
+	const tenantName = "last-reminder-window-tenant"
+	fixture := SeedNewNotificationTenant(t, fixtures.NotificationFixtureOptions{
+		TenantName:  tenantName,
+		TargetName:  "last-reminder-window-email-target",
+		TargetEmail: "last-reminder-window@databahn.ai",
+		ModuleNames: []string{"LOG_SOURCE"},
+	})
+
+	now := time.Now().UTC()
+	observedAt := now.Add(-5 * time.Minute)
+	defaultReminderInterval := 24 * time.Hour
+	defaultReminderLastSlot := int((defaultReminderDuration - time.Nanosecond) / defaultReminderInterval)
+	activationInLastWindow := now.Add(-time.Duration(defaultReminderLastSlot)*defaultReminderInterval - 6*time.Hour)
+	lastNotificationPreviousWindow := now.Add(-30 * time.Hour)
+	lastNotificationCurrentWindow := now.Add(-45 * time.Minute)
+
+	const (
+		lastReminderEntity = "last-reminder-final-window-entity"
+		skipEntity         = "last-reminder-skip-same-window-entity"
+	)
+
+	tenantID := fixture.TenantID.String()
+	openSearch := job.GetOpenSearch(t)
+
+	lastReminderAlert, err := BuildExternalAlertWithTitle(
+		tenantID,
+		uuid.NewString(),
+		lastReminderEntity,
+		"last reminder final window alert",
+	)
+	if err != nil {
+		t.Fatalf("build last reminder alert: %v", err)
+	}
+	skipAlert, err := BuildExternalAlertWithTitle(
+		tenantID,
+		uuid.NewString(),
+		skipEntity,
+		"last reminder skip same window alert",
+	)
+	if err != nil {
+		t.Fatalf("build skip alert: %v", err)
+	}
+
+	IndexExternalAlertWithState(ctx, t, openSearch, lastReminderAlert, observedAt, ExternalAlertNotificationState{
+		NotificationCount:    4,
+		LastActivationTime:   activationInLastWindow.UnixMilli(),
+		LastNotificationTime: lastNotificationPreviousWindow.UnixMilli(),
+	})
+	IndexExternalAlertWithState(ctx, t, openSearch, skipAlert, observedAt, ExternalAlertNotificationState{
+		NotificationCount:    5,
+		LastActivationTime:   activationInLastWindow.UnixMilli(),
+		LastNotificationTime: lastNotificationCurrentWindow.UnixMilli(),
+	})
+
+	expectedRegularEmailSubject := fmt.Sprintf(
+		"DataBahn.ai Alert - %s - Configuration Processing Failure",
+		tenantName,
+	)
+	expectedLastReminderSubject := fmt.Sprintf(
+		"DataBahn.ai Final Reminder - %s - Configuration Processing Failure",
+		tenantName,
+	)
+
+	jobStartedAt := time.Now().UTC().Add(-1 * time.Minute).UnixMilli()
+	result := runNotificationsForAlertsJob(t, ctx, tg, job, alertIDLogMarker(skipAlert.Id))
+
+	kafka := job.GetKafka(t)
+
+	AssertKafkaMessageCount(t, kafka, EmailNotificationTopic, 0, func(message dbkafka.Message) bool {
+		return KafkaBodyJSONPathEquals(message, "$.subject", expectedRegularEmailSubject)
+	})
+
+	lastReminderEmail := WaitForKafkaMessage(t, kafka, EmailNotificationTopic, func(message dbkafka.Message) bool {
+		return KafkaBodyJSONPathEquals(message, "$.subject", expectedLastReminderSubject)
+	}, notificationJobPollRate, notificationJobTimeout)
+	AssertKafkaMessageJSONPath(t, lastReminderEmail, "$.subject", expectedLastReminderSubject)
+	AssertKafkaEmailBodyLastReminderOnly(t, lastReminderEmail, lastReminderEntity, 4)
+	AssertKafkaEmailBodyEntityAbsent(t, lastReminderEmail, skipEntity)
+
+	notificationSentMessage := WaitForKafkaMessage(t, kafka, AlertIndexingTopic, func(message dbkafka.Message) bool {
+		return pramaan.GetHeader(&message, "action") == "notification_sent" &&
+			KafkaBodyJSONPathEquals(message, "$.id", lastReminderAlert.Id)
+	}, notificationJobPollRate, notificationJobTimeout)
+	assertNotificationSentMessage(t, notificationSentMessage, lastReminderAlert.Id, 5, jobStartedAt)
+
+	assertCapturedJobLogContains(t, tg, result.Logger, result.LogCaptureIDs[0], reminderSkipSameWindowReason)
+	AssertNoNotificationSent(t, kafka, skipAlert.Id)
+
+	AssertKafkaMessageCount(t, kafka, EmailNotificationTopic, 1, func(message dbkafka.Message) bool {
+		return KafkaBodyJSONPathEquals(message, "$.subject", expectedLastReminderSubject)
+	})
+}
+
 func runNotificationsForAlertsJob(
 	t *testing.T,
 	ctx context.Context,
