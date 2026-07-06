@@ -13,9 +13,21 @@ import (
 	"text/template"
 )
 
+type EmailTheme struct {
+	Accent                string
+	Heading               string
+	EntityHeading         string
+	SectionBackground     string
+	LastSectionBackground string
+	CardBorder            string
+	BadgeBackground       string
+	LastAccent            string
+}
+
 type EmailTemplate struct {
 	Name               string
 	Title              string
+	Theme              EmailTheme
 	NewAlerts          *EmailAlertSection
 	ReminderAlerts     *EmailAlertSection
 	LastReminderAlerts *EmailAlertSection
@@ -32,7 +44,41 @@ type EmailTemplateDetails struct {
 	LastObservedAt          string
 	Title                   string
 	ReminderNumber          int
+	Theme                   EmailTheme
 }
+
+var (
+	errorEmailTheme = EmailTheme{
+		Accent:                "#E85D5D",
+		Heading:               "#C03939",
+		EntityHeading:         "#C03939",
+		SectionBackground:     "#FEF2F2",
+		LastSectionBackground: "#FEF2F2",
+		CardBorder:            "#F5D5D5",
+		BadgeBackground:       "#FDE8E8",
+		LastAccent:            "#C03939",
+	}
+	warningEmailTheme = EmailTheme{
+		Accent:                "#E8943A",
+		Heading:               "#C47A15",
+		EntityHeading:         "#C47A15",
+		SectionBackground:     "#FFF8F0",
+		LastSectionBackground: "#FFEFD9",
+		CardBorder:            "#F5E4CC",
+		BadgeBackground:       "#FFEFD9",
+		LastAccent:            "#C47A15",
+	}
+	greenEmailTheme = EmailTheme{
+		Accent:                "#45C96A",
+		Heading:               "#1F7A4A",
+		EntityHeading:         "#2B8A58",
+		SectionBackground:     "#F0FBF4",
+		LastSectionBackground: "#D4F5DE",
+		CardBorder:            "#C8EBD4",
+		BadgeBackground:       "#D4F5DE",
+		LastAccent:            "#2B8A58",
+	}
+)
 
 func toTitleCase(value string) string {
 	if value == "" {
@@ -100,14 +146,30 @@ func main() {
 		sample.ReminderAlerts.Details[i].Title = toTitleCase(sample.ReminderAlerts.Details[i].Title)
 	}
 
-	templates := []string{"green_alert.html", "warning_alert.html", "error_alert.html"}
 	outDir := filepath.Join(dir, "samples")
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		panic(err)
 	}
 
-	for _, name := range templates {
-		t, err := template.ParseFiles(filepath.Join(dir, name))
+	themes := []struct {
+		name  string
+		theme EmailTheme
+	}{
+		{name: "green", theme: greenEmailTheme},
+		{name: "warning", theme: warningEmailTheme},
+		{name: "error", theme: errorEmailTheme},
+	}
+
+	templatePath := filepath.Join(dir, "customer_alert.html")
+	for _, theme := range themes {
+		sample.Theme = theme.theme
+		for i := range sample.NewAlerts.Details {
+			sample.NewAlerts.Details[i].Theme = theme.theme
+		}
+		for i := range sample.ReminderAlerts.Details {
+			sample.ReminderAlerts.Details[i].Theme = theme.theme
+		}
+		t, err := template.ParseFiles(templatePath)
 		if err != nil {
 			panic(err)
 		}
@@ -115,7 +177,7 @@ func main() {
 		if err := t.Execute(&buf, sample); err != nil {
 			panic(err)
 		}
-		outPath := filepath.Join(outDir, "sample_"+name)
+		outPath := filepath.Join(outDir, "sample_"+theme.name+"_alert.html")
 		if err := os.WriteFile(outPath, buf.Bytes(), 0o644); err != nil {
 			panic(err)
 		}
@@ -140,8 +202,12 @@ func main() {
 	}
 	lastReminderSample.LastReminderAlerts.Details[0].Title = toTitleCase(lastReminderSample.LastReminderAlerts.Details[0].Title)
 
-	for _, name := range templates {
-		t, err := template.ParseFiles(filepath.Join(dir, name))
+	for _, theme := range themes {
+		lastReminderSample.Theme = theme.theme
+		for i := range lastReminderSample.LastReminderAlerts.Details {
+			lastReminderSample.LastReminderAlerts.Details[i].Theme = theme.theme
+		}
+		t, err := template.ParseFiles(templatePath)
 		if err != nil {
 			panic(err)
 		}
@@ -149,7 +215,7 @@ func main() {
 		if err := t.Execute(&buf, lastReminderSample); err != nil {
 			panic(err)
 		}
-		outPath := filepath.Join(outDir, "sample_last_reminder_"+name)
+		outPath := filepath.Join(outDir, "sample_last_reminder_"+theme.name+"_alert.html")
 		if err := os.WriteFile(outPath, buf.Bytes(), 0o644); err != nil {
 			panic(err)
 		}

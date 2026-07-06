@@ -662,20 +662,20 @@ func TestActivationTimeForNotification(t *testing.T) {
 	}
 }
 
-func TestEmailTemplatePathForAlerts(t *testing.T) {
+func TestEmailThemeForAlerts(t *testing.T) {
 	alert := func(criticality string) alerts_async.Alert {
 		return alerts_async.Alert{Criticality: criticality}
 	}
 
 	tests := []struct {
-		name     string
-		alerts   *AlertsForNotification
-		wantPath string
+		name      string
+		alerts    *AlertsForNotification
+		wantTheme EmailTheme
 	}{
 		{
-			name:     "green when all info",
-			alerts:   &AlertsForNotification{newAlerts: []alerts_async.Alert{alert(alerts_async.Info.String())}},
-			wantPath: EmailTemplatesBasePath + "green_alert.html",
+			name:      "green when all info",
+			alerts:    &AlertsForNotification{newAlerts: []alerts_async.Alert{alert(alerts_async.Info.String())}},
+			wantTheme: greenEmailTheme,
 		},
 		{
 			name: "warning when any warning and no critical or severe",
@@ -683,32 +683,32 @@ func TestEmailTemplatePathForAlerts(t *testing.T) {
 				newAlerts:      []alerts_async.Alert{alert(alerts_async.Info.String())},
 				reminderAlerts: []alerts_async.Alert{alert(alerts_async.Warning.String())},
 			},
-			wantPath: EmailTemplatesBasePath + "warning_alert.html",
+			wantTheme: warningEmailTheme,
 		},
 		{
-			name: "critical template when any severe",
+			name: "critical theme when any severe",
 			alerts: &AlertsForNotification{
 				newAlerts:      []alerts_async.Alert{alert(alerts_async.Info.String())},
 				reminderAlerts: []alerts_async.Alert{alert(alerts_async.Sever.String())},
 			},
-			wantPath: EmailTemplatesBasePath + "error_alert.html",
+			wantTheme: errorEmailTheme,
 		},
 		{
-			name: "critical template when any critical even with warning first",
+			name: "critical theme when any critical even with warning first",
 			alerts: &AlertsForNotification{
 				newAlerts: []alerts_async.Alert{
 					alert(alerts_async.Warning.String()),
 					alert(alerts_async.Critical.String()),
 				},
 			},
-			wantPath: EmailTemplatesBasePath + "error_alert.html",
+			wantTheme: errorEmailTheme,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := emailTemplatePathForAlerts(tt.alerts); got != tt.wantPath {
-				t.Fatalf("emailTemplatePathForAlerts() = %q, want %q", got, tt.wantPath)
+			if got := emailThemeForAlerts(tt.alerts); got != tt.wantTheme {
+				t.Fatalf("emailThemeForAlerts() = %+v, want %+v", got, tt.wantTheme)
 			}
 		})
 	}
@@ -776,7 +776,7 @@ func TestAlertsToReminderEmailDetailsSetsNotificationNumber(t *testing.T) {
 		},
 	}
 
-	details := alertsToReminderEmailDetails(alerts)
+	details := alertsToReminderEmailDetails(alerts, greenEmailTheme)
 	if len(details) != 2 {
 		t.Fatalf("len(details) = %d, want 2", len(details))
 	}

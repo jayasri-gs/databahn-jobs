@@ -34,6 +34,7 @@ import (
 )
 
 const EmailTemplatesBasePath = "/home/databahn/templates/"
+const customerAlertTemplateFile = "customer_alert.html"
 const DefaultCustomerNotificationSendFirstAtJobFrequency = 3
 const DefaultCustomerNotificationReminderNotificationFrequencyEvery = 24 * time.Hour
 const DefaultCustomerNotificationReminderNotificationEndDuration = 7 * (24 * time.Hour)
@@ -569,82 +570,76 @@ func buildLastReminderEmailSubject(tenantName, emailTitle string) string {
 }
 
 func buildLastReminderEmailBody(emailTitle string, alerts []alerts_async.Alert) (string, error) {
-	templatePath := emailTemplatePathForAlertList(alerts)
-	t, err := template.ParseFiles(templatePath)
-	if err != nil {
-		logger.GetLogger().Error("error while parsing template", zap.Error(err))
-		return "", err
-	}
-	buf := new(bytes.Buffer)
+	theme := emailThemeForAlertList(alerts)
 	emailTemplate := EmailTemplate{
 		Name:  "Dear Team,",
 		Title: emailTitle,
+		Theme: theme,
 		LastReminderAlerts: &EmailAlertSection{
 			Heading: LastReminderAlertsSectionHeading,
-			Details: alertsToReminderEmailDetails(alerts),
+			Details: alertsToReminderEmailDetails(alerts, theme),
 		},
 	}
-	err = t.Execute(buf, emailTemplate)
-	if err != nil {
-		logger.GetLogger().Error("error while executing template", zap.Error(err))
-		return "", err
-	}
-	return buf.String(), nil
+	return executeCustomerAlertTemplate(emailTemplate)
 }
 
 func buildEmailBody(emailTitle string, alerts *AlertsForNotification) (string, error) {
-	templatePath := emailTemplatePathForAlerts(alerts)
-	t, err := template.ParseFiles(templatePath)
-	if err != nil {
-		logger.GetLogger().Error("error while parsing template", zap.Error(err))
-		return "", err
-	}
-	buf := new(bytes.Buffer)
+	theme := emailThemeForAlerts(alerts)
 	emailTemplate := EmailTemplate{
 		Name:  "Dear Team,",
 		Title: emailTitle,
+		Theme: theme,
 	}
 	if len(alerts.newAlerts) > 0 {
 		emailTemplate.NewAlerts = &EmailAlertSection{
 			Heading: "New Alerts",
-			Details: alertsToEmailDetails(alerts.newAlerts),
+			Details: alertsToEmailDetails(alerts.newAlerts, theme),
 		}
 	}
 	if len(alerts.reminderAlerts) > 0 {
 		emailTemplate.ReminderAlerts = &EmailAlertSection{
 			Heading: "Reminder Alerts",
-			Details: alertsToReminderEmailDetails(alerts.reminderAlerts),
+			Details: alertsToReminderEmailDetails(alerts.reminderAlerts, theme),
 		}
 	}
-	err = t.Execute(buf, emailTemplate)
+	return executeCustomerAlertTemplate(emailTemplate)
+}
+
+func executeCustomerAlertTemplate(emailTemplate EmailTemplate) (string, error) {
+	t, err := template.ParseFiles(EmailTemplatesBasePath + customerAlertTemplateFile)
 	if err != nil {
+		logger.GetLogger().Error("error while parsing template", zap.Error(err))
+		return "", err
+	}
+	buf := new(bytes.Buffer)
+	if err := t.Execute(buf, emailTemplate); err != nil {
 		logger.GetLogger().Error("error while executing template", zap.Error(err))
 		return "", err
 	}
 	return buf.String(), nil
 }
 
-func emailTemplatePathForAlerts(alerts *AlertsForNotification) string {
-	return emailTemplatePathForAlertList(append(
+func emailThemeForAlerts(alerts *AlertsForNotification) EmailTheme {
+	return emailThemeForAlertList(append(
 		append(alerts.newAlerts, alerts.reminderAlerts...),
 		alerts.lastNotificationAlerts...,
 	))
 }
 
-func emailTemplatePathForAlertList(alerts []alerts_async.Alert) string {
+func emailThemeForAlertList(alerts []alerts_async.Alert) EmailTheme {
 	hasWarning := false
 	for _, alert := range alerts {
 		switch alert.Criticality {
 		case alerts_async.Critical.String(), alerts_async.Sever.String():
-			return EmailTemplatesBasePath + "error_alert.html"
+			return errorEmailTheme
 		case alerts_async.Warning.String():
 			hasWarning = true
 		}
 	}
 	if hasWarning {
-		return EmailTemplatesBasePath + "warning_alert.html"
+		return warningEmailTheme
 	}
-	return EmailTemplatesBasePath + "green_alert.html"
+	return greenEmailTheme
 }
 
 func formatMessageForEmail(message string) string {
@@ -652,7 +647,7 @@ func formatMessageForEmail(message string) string {
 	return strings.ReplaceAll(escaped, "\n", "<br>")
 }
 
-func alertsToEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
+func alertsToEmailDetails(alerts []alerts_async.Alert, theme EmailTheme) []EmailTemplateDetails {
 	var details []EmailTemplateDetails
 	for _, alert := range alerts {
 		details = append(details, EmailTemplateDetails{
@@ -660,6 +655,7 @@ func alertsToEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
 			Message:                 formatMessageForEmail(alert.Message),
 			Title:                   toTitleCase(html.EscapeString(alert.Title)),
 			LastObservedAt:          formatObservedAtForEmail(alert),
+			Theme:                   theme,
 		})
 	}
 	return details
@@ -676,7 +672,7 @@ func formatObservedAtForEmail(alert alerts_async.Alert) string {
 	return time.UnixMilli(observedAt).Format(time.RFC3339)
 }
 
-func alertsToReminderEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDetails {
+func alertsToReminderEmailDetails(alerts []alerts_async.Alert, theme EmailTheme) []EmailTemplateDetails {
 	sortedAlerts := append([]alerts_async.Alert(nil), alerts...)
 	sort.Slice(sortedAlerts, func(i, j int) bool {
 		return sortedAlerts[i].NotificationCount < sortedAlerts[j].NotificationCount
@@ -690,6 +686,7 @@ func alertsToReminderEmailDetails(alerts []alerts_async.Alert) []EmailTemplateDe
 			Title:                   toTitleCase(html.EscapeString(alert.Title)),
 			LastObservedAt:          formatObservedAtForEmail(alert),
 			ReminderNumber:          alert.NotificationCount,
+			Theme:                   theme,
 		})
 	}
 	return details
@@ -712,10 +709,55 @@ func alertFunctionalityMatchesModuleName(functionality string, moduleName string
 type EmailTemplate struct {
 	Name               string
 	Title              string
+	Theme              EmailTheme
 	NewAlerts          *EmailAlertSection
 	ReminderAlerts     *EmailAlertSection
 	LastReminderAlerts *EmailAlertSection
 }
+
+type EmailTheme struct {
+	Accent                string
+	Heading               string
+	EntityHeading         string
+	SectionBackground     string
+	LastSectionBackground string
+	CardBorder            string
+	BadgeBackground       string
+	LastAccent            string
+}
+
+var (
+	errorEmailTheme = EmailTheme{
+		Accent:                "#E85D5D",
+		Heading:               "#C03939",
+		EntityHeading:         "#C03939",
+		SectionBackground:     "#FEF2F2",
+		LastSectionBackground: "#FEF2F2",
+		CardBorder:            "#F5D5D5",
+		BadgeBackground:       "#FDE8E8",
+		LastAccent:            "#C03939",
+	}
+	warningEmailTheme = EmailTheme{
+		Accent:                "#E8943A",
+		Heading:               "#C47A15",
+		EntityHeading:         "#C47A15",
+		SectionBackground:     "#FFF8F0",
+		LastSectionBackground: "#FFEFD9",
+		CardBorder:            "#F5E4CC",
+		BadgeBackground:       "#FFEFD9",
+		LastAccent:            "#C47A15",
+	}
+	greenEmailTheme = EmailTheme{
+		Accent:                "#45C96A",
+		Heading:               "#1F7A4A",
+		EntityHeading:         "#2B8A58",
+		SectionBackground:     "#F0FBF4",
+		LastSectionBackground: "#D4F5DE",
+		CardBorder:            "#C8EBD4",
+		BadgeBackground:       "#D4F5DE",
+		LastAccent:            "#2B8A58",
+	}
+)
 
 type EmailAlertSection struct {
 	Heading string
@@ -728,6 +770,7 @@ type EmailTemplateDetails struct {
 	LastObservedAt          string
 	Title                   string
 	ReminderNumber          int
+	Theme                   EmailTheme
 }
 
 type OpsGenieDetails struct {
