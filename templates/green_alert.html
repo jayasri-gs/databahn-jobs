@@ -54,7 +54,7 @@
             display: inline-block;
             text-align: center;
             border-radius: 30px;
-            color: green;
+            color: #45C96A;
             font-style: oblique;
             font-size: 24px;
             font-weight: bold;
@@ -143,26 +143,26 @@
                 <tr>
                     <td class="general left" style="padding: 24px 24px 20px 24px; text-align: center;">
                         <span class="information icon"><i class="bi bi-info-circle"></i></span>
-                        <p class="infocolor" style="margin: 12px 0 0 0; font-size: 24px; font-weight: 700; line-height: 1.3; color: #51cf66;">{{.Title}}</p>
+                        <p class="infocolor" style="margin: 12px 0 0 0; font-size: 24px; font-weight: 700; line-height: 1.3; color: #45C96A;">{{.Title}}</p>
                     </td>
                 </tr>
                 <!-- End: Notice line with icon -->
 
                 {{if .NewAlerts}}
                 <tr>
-                    <td class="general" style="padding: 18px 24px 10px 24px; background-color: #f0faf3; border-left: 4px solid #51cf66;">
-                        <p style="margin: 0; font-size: 18px; font-weight: 700; color: #1b4332; text-transform: uppercase; letter-spacing: 0.04em;">
-                            <i class="bi bi-bell-fill" style="font-size: 17px; margin-right: 8px; color: #51cf66; vertical-align: -2px;"></i>{{.NewAlerts.Heading}}
+                    <td class="general" style="padding: 18px 24px 10px 24px; background-color: #F0FBF4; border-left: 4px solid #45C96A;">
+                        <p style="margin: 0; font-size: 18px; font-weight: 700; color: #1F7A4A; text-transform: uppercase; letter-spacing: 0.04em;">
+                            <i class="bi bi-bell-fill" style="font-size: 17px; margin-right: 8px; color: #45C96A; vertical-align: -2px;"></i>{{.NewAlerts.Heading}}
                         </p>
                     </td>
                 </tr>
                 {{range .NewAlerts.Details}}
                 <tr>
                     <td class="general" style="padding: 4px 24px 0 24px">
-                        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color: #fafafa; border: 1px solid #e8ece9;">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color: #fafafa; border: 1px solid #C8EBD4;">
                             <tr>
-                                <td style="padding: 14px 16px; background-color: #ffffff; border-bottom: 2px solid #51cf66;">
-                                    <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 700; color: #2d6a4f; line-height: 1.35;">{{if .ReminderNumber}}<span style="display: inline-block; margin-right: 8px; padding: 2px 8px; font-size: 14px; font-weight: 700; color: #2d6a4f; background-color: #d3f9d8; border-radius: 4px;">#{{.ReminderNumber}}</span>{{end}}{{.FunctionalityEntityName}}</p>
+                                <td style="padding: 14px 16px; background-color: #ffffff; border-bottom: 2px solid #45C96A;">
+                                    <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 700; color: #2B8A58; line-height: 1.35;">{{if .ReminderNumber}}<span style="display: inline-block; margin-right: 8px; padding: 2px 8px; font-size: 14px; font-weight: 700; color: #2B8A58; background-color: #D4F5DE; border-radius: 4px;">#{{.ReminderNumber}}</span>{{end}}{{.FunctionalityEntityName}}</p>
                                 </td>
                             </tr>
                             <tr>
@@ -202,19 +202,64 @@
                 {{end}}
                 {{if .ReminderAlerts}}
                 <tr>
-                    <td class="general" style="padding: 18px 24px 10px 24px; background-color: #f0faf3; border-left: 4px solid #51cf66;">
-                        <p style="margin: 0; font-size: 18px; font-weight: 700; color: #1b4332; text-transform: uppercase; letter-spacing: 0.04em;">
-                            <i class="bi bi-arrow-clockwise" style="font-size: 17px; margin-right: 8px; color: #51cf66; vertical-align: -2px;"></i>{{.ReminderAlerts.Heading}}
+                    <td class="general" style="padding: 18px 24px 10px 24px; background-color: #F0FBF4; border-left: 4px solid #45C96A;">
+                        <p style="margin: 0; font-size: 18px; font-weight: 700; color: #1F7A4A; text-transform: uppercase; letter-spacing: 0.04em;">
+                            <i class="bi bi-arrow-clockwise" style="font-size: 17px; margin-right: 8px; color: #45C96A; vertical-align: -2px;"></i>{{.ReminderAlerts.Heading}}
                         </p>
                     </td>
                 </tr>
                 {{range .ReminderAlerts.Details}}
                 <tr>
                     <td class="general" style="padding: 4px 24px 0 24px">
-                        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color: #fafafa; border: 1px solid #e8ece9;">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color: #fafafa; border: 1px solid #C8EBD4;">
                             <tr>
-                                <td style="padding: 14px 16px; background-color: #ffffff; border-bottom: 2px solid #51cf66;">
-                                    <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 700; color: #2d6a4f; line-height: 1.35;">{{if .ReminderNumber}}<span style="display: inline-block; margin-right: 8px; padding: 2px 8px; font-size: 14px; font-weight: 700; color: #2d6a4f; background-color: #d3f9d8; border-radius: 4px;">#{{.ReminderNumber}}</span>{{end}}{{.FunctionalityEntityName}}</p>
+                                <td style="padding: 14px 16px; background-color: #ffffff; border-bottom: 2px solid #45C96A;">
+                                    <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 700; color: #2B8A58; line-height: 1.35;">{{if .ReminderNumber}}<span style="display: inline-block; margin-right: 8px; padding: 2px 8px; font-size: 14px; font-weight: 700; color: #2B8A58; background-color: #D4F5DE; border-radius: 4px;">#{{.ReminderNumber}}</span>{{end}}{{.FunctionalityEntityName}}</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 14px 18px 16px 18px; background-color: #ffffff; font-family: Arial, Helvetica, sans-serif;">
+                                    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                                        <tr>
+                                            <td width="118" valign="top" style="padding: 9px 16px 9px 0; font-family: Arial, Helvetica, sans-serif; font-size: 13px; font-weight: 600; color: #868e96; line-height: 1.4;">Summary</td>
+                                            <td valign="top" style="padding: 9px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: 400; color: #343a40; line-height: 1.55;">{{.Title}}</td>
+                                        </tr>
+                                        <tr>
+                                            <td width="118" valign="top" style="padding: 9px 16px 9px 0; font-family: Arial, Helvetica, sans-serif; font-size: 13px; font-weight: 600; color: #868e96; line-height: 1.4;">Message</td>
+                                            <td valign="top" style="padding: 9px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: 400; color: #495057; line-height: 1.6;">{{.Message}}</td>
+                                        </tr>
+                                        <tr>
+                                            <td width="118" valign="top" style="padding: 9px 16px 9px 0; font-family: Arial, Helvetica, sans-serif; font-size: 13px; font-weight: 600; color: #868e96; line-height: 1.4;">Observed</td>
+                                            <td valign="top" style="padding: 9px 0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: 400; color: #868e96; line-height: 1.5;">{{.LastObservedAt}}</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="general" style="padding: 0 24px 16px 24px">
+                        <hr width="100%" color="#e9ecef" size="1" style="border: none; border-top: 1px solid #e9ecef; margin: 12px 0 0 0;">
+                    </td>
+                </tr>
+                {{end}}
+                {{end}}
+                {{if .LastReminderAlerts}}
+                <tr>
+                    <td class="general" style="padding: 18px 24px 10px 24px; background-color: #D4F5DE; border-left: 4px solid #2B8A58;">
+                        <p class="p" style="margin: 0; font-size: 18px; font-weight: 700; color: #2B8A58; text-transform: uppercase; letter-spacing: 0.04em;">
+                            <i class="bi bi-exclamation-octagon-fill" style="font-size: 17px; margin-right: 8px; color: #45C96A; vertical-align: -2px;"></i>{{.LastReminderAlerts.Heading}}
+                        </p>
+                    </td>
+                </tr>
+                {{range .LastReminderAlerts.Details}}
+                <tr>
+                    <td class="general" style="padding: 4px 24px 0 24px">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color: #fafafa; border: 1px solid #D4F5DE;">
+                            <tr>
+                                <td style="padding: 14px 16px; background-color: #ffffff; border-bottom: 2px solid #2B8A58;">
+                                    <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 700; color: #2B8A58; line-height: 1.35;">{{if .ReminderNumber}}<span style="display: inline-block; margin-right: 8px; padding: 2px 8px; font-size: 14px; font-weight: 700; color: #2B8A58; background-color: #D4F5DE; border-radius: 4px;">#{{.ReminderNumber}}</span>{{end}}{{.FunctionalityEntityName}}</p>
                                 </td>
                             </tr>
                             <tr>

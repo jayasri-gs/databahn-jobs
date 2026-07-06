@@ -14,10 +14,11 @@ import (
 )
 
 type EmailTemplate struct {
-	Name           string
-	Title          string
-	NewAlerts      *EmailAlertSection
-	ReminderAlerts *EmailAlertSection
+	Name               string
+	Title              string
+	NewAlerts          *EmailAlertSection
+	ReminderAlerts     *EmailAlertSection
+	LastReminderAlerts *EmailAlertSection
 }
 
 type EmailAlertSection struct {
@@ -115,6 +116,40 @@ func main() {
 			panic(err)
 		}
 		outPath := filepath.Join(outDir, "sample_"+name)
+		if err := os.WriteFile(outPath, buf.Bytes(), 0o644); err != nil {
+			panic(err)
+		}
+		fmt.Println("wrote", outPath)
+	}
+
+	lastReminderSample := EmailTemplate{
+		Name:  "Dear Team,",
+		Title: "Final Reminder: No New Data Ingested",
+		LastReminderAlerts: &EmailAlertSection{
+			Heading: "Last Reminder Alerts",
+			Details: []EmailTemplateDetails{
+				{
+					FunctionalityEntityName: "palo-alto-fw-east",
+					Title:                   "Reminder: no data ingested",
+					Message:                 "This is the final reminder for this alert before notifications end.",
+					LastObservedAt:          "2026-06-23T08:00:00Z",
+					ReminderNumber:          5,
+				},
+			},
+		},
+	}
+	lastReminderSample.LastReminderAlerts.Details[0].Title = toTitleCase(lastReminderSample.LastReminderAlerts.Details[0].Title)
+
+	for _, name := range templates {
+		t, err := template.ParseFiles(filepath.Join(dir, name))
+		if err != nil {
+			panic(err)
+		}
+		var buf bytes.Buffer
+		if err := t.Execute(&buf, lastReminderSample); err != nil {
+			panic(err)
+		}
+		outPath := filepath.Join(outDir, "sample_last_reminder_"+name)
 		if err := os.WriteFile(outPath, buf.Bytes(), 0o644); err != nil {
 			panic(err)
 		}
