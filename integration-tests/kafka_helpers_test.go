@@ -264,7 +264,7 @@ func AssertKafkaEmailBodyEntityAbsentFromSection(
 }
 
 func emailHTMLSectionRange(body, heading, nextHeading string) (start, end int) {
-	start = strings.Index(body, heading)
+	start = findSectionHeadingStart(body, heading)
 	if start < 0 {
 		return -1, -1
 	}
@@ -272,11 +272,28 @@ func emailHTMLSectionRange(body, heading, nextHeading string) (start, end int) {
 	if nextHeading == "" {
 		return start, end
 	}
-	next := strings.Index(body[start+len(heading):], nextHeading)
+	remainder := body[start+len(heading):]
+	next := findSectionHeadingStart(remainder, nextHeading)
 	if next >= 0 {
 		end = start + len(heading) + next
 	}
 	return start, end
+}
+
+func findSectionHeadingStart(body, heading string) int {
+	searchFrom := 0
+	for {
+		idx := strings.Index(body[searchFrom:], heading)
+		if idx < 0 {
+			return -1
+		}
+		absIdx := searchFrom + idx
+		if absIdx > 0 && body[absIdx-1] != '>' {
+			searchFrom = absIdx + len(heading)
+			continue
+		}
+		return absIdx
+	}
 }
 
 func assertEntityInHTMLRange(t *testing.T, body string, start, end int, entity, section string) {
