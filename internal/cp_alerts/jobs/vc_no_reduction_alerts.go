@@ -37,8 +37,8 @@ const (
 	// DefaultOverDeliveryTolerancePct allows small delivered>ingested skew without raising false "no reduction" alerts.
 	DefaultOverDeliveryTolerancePct = 0.0
 	// DefaultEmitAlertsEnabled controls whether this job sends/auto-resolves alerts.
-	// Default is false for shadow mode (log-only evaluation).
-	DefaultEmitAlertsEnabled = false
+	// Set VC_ALERTS_EMIT_ENABLED=false for shadow mode (log-only evaluation).
+	DefaultEmitAlertsEnabled = true
 )
 
 // SendAlertForVCNoReduction generates alerts when volume controller doesn't perform any reduction
