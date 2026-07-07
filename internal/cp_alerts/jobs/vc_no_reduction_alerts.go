@@ -34,6 +34,11 @@ const (
 	DefaultMinReductionThreshold = 0.0
 	DefaultWindowOffsetHours     = 1
 	DefaultWindowDurationHours   = 3
+	// DefaultOverDeliveryTolerancePct allows small delivered>ingested skew without raising false "no reduction" alerts.
+	DefaultOverDeliveryTolerancePct = 0.0
+	// DefaultEmitAlertsEnabled controls whether this job sends/auto-resolves alerts.
+	// Default is false for shadow mode (log-only evaluation).
+	DefaultEmitAlertsEnabled = false
 )
 
 // SendAlertForVCNoReduction generates alerts when volume controller doesn't perform any reduction
@@ -41,13 +46,17 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 	var jobErrors []common.JobError
 	// Load configuration from environment variables
 	minReductionThreshold := utils.GetEnvInt("VC_MIN_REDUCTION_THRESHOLD", int(DefaultMinReductionThreshold))
+	overDeliveryTolerancePct := utils.GetEnvFloat("VC_OVER_DELIVERY_TOLERANCE_PCT", DefaultOverDeliveryTolerancePct)
 	offsetHours := utils.GetEnvInt("VC_WINDOW_OFFSET_HOURS", DefaultWindowOffsetHours)
 	windowDurationHours := utils.GetEnvInt("VC_WINDOW_DURATION_HOURS", DefaultWindowDurationHours)
+	emitAlertsEnabled := utils.GetEnvBool("VC_ALERTS_EMIT_ENABLED", DefaultEmitAlertsEnabled)
 
 	logger.GetLoggerWithContext(ctx).Info("Volume controller alert configuration loaded",
 		zap.Int("min_reduction_threshold", minReductionThreshold),
+		zap.Float64("over_delivery_tolerance_pct", overDeliveryTolerancePct),
 		zap.Int("window_offset_hours", offsetHours),
 		zap.Int("window_duration_hours", windowDurationHours),
+		zap.Bool("emit_alerts_enabled", emitAlertsEnabled),
 	)
 
 	db := config.GetDB()
@@ -60,17 +69,20 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
-	alertsManager, err := alert.NewAlertsManager(ctx)
-	if err != nil {
-		errorMsg := fmt.Sprintf("error getting alerts manager: %v", err)
-		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-		logger.GetLoggerWithContext(ctx).Error("Error getting alerts manager", zap.Error(err))
-		return common.NewJobResultFromErrors(jobErrors)
-	}
+	var alertsManager *alert.AlertsManager
+	if emitAlertsEnabled {
+		alertsManager, err = alert.NewAlertsManager(ctx)
+		if err != nil {
+			errorMsg := fmt.Sprintf("error getting alerts manager: %v", err)
+			jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
+			logger.GetLoggerWithContext(ctx).Error("Error getting alerts manager", zap.Error(err))
+			return common.NewJobResultFromErrors(jobErrors)
+		}
 
-	defer func() {
-		alertsManager.Close(ctx)
-	}()
+		defer func() {
+			alertsManager.Close(ctx)
+		}()
+	}
 
 	osClient := os.GetClient()
 
@@ -226,10 +238,40 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 				zap.Float64("total_delivered", totalDelivered),
 				zap.Float64("reduction_percent", reductionPercent))
 
-			shouldAlert, shouldResolve := shouldAlertOrResolve(totalIngested, totalDelivered, reductionPercent, float64(minReductionThreshold))
+			shouldAlert, shouldResolve, decision := shouldAlertOrResolve(
+				totalIngested,
+				totalDelivered,
+				reductionPercent,
+				float64(minReductionThreshold),
+				overDeliveryTolerancePct,
+			)
+
+			if decision == "skip_skew_within_tolerance" {
+				overDeliveryPct := ((totalDelivered - totalIngested) / totalIngested) * 100
+				logger.GetLoggerWithContext(ctx).Info("Skipping VC no-reduction alert due to over-delivery skew within tolerance",
+					zap.String("tenant_id", tenantId),
+					zap.String("pipeline_id", pipelineId),
+					zap.String("source", sourceName),
+					zap.String("destination", destinationName),
+					zap.Float64("total_ingested", totalIngested),
+					zap.Float64("total_delivered", totalDelivered),
+					zap.Float64("over_delivery_pct", overDeliveryPct),
+					zap.Float64("over_delivery_tolerance_pct", overDeliveryTolerancePct),
+					zap.Float64("reduction_percent", reductionPercent))
+			}
 
 			// Check if volume controller is not performing adequate reduction
 			if shouldAlert {
+				if !emitAlertsEnabled {
+					logger.GetLoggerWithContext(ctx).Info("Shadow mode enabled: would send VC no reduction alert",
+						zap.String("tenant_id", tenantId),
+						zap.String("pipeline_id", pipelineId),
+						zap.String("source", sourceName),
+						zap.String("destination", destinationName),
+						zap.Float64("reduction_percent", reductionPercent))
+					continue
+				}
+
 				logger.GetLoggerWithContext(ctx).Info("Pipeline volume controller not performing adequate reduction, sending alert",
 					zap.String("tenant_id", tenantId),
 					zap.String("pipeline_id", pipelineId),
@@ -263,6 +305,16 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 			}
 
 			if shouldResolve {
+				if !emitAlertsEnabled {
+					logger.GetLoggerWithContext(ctx).Info("Shadow mode enabled: would mark pipeline healthy for VC alert auto-resolve",
+						zap.String("tenant_id", tenantId),
+						zap.String("pipeline_id", pipelineId),
+						zap.String("source", sourceName),
+						zap.String("destination", destinationName),
+						zap.Float64("reduction_percent", reductionPercent))
+					continue
+				}
+
 				logger.GetLoggerWithContext(ctx).Info("Pipeline volume controller performing adequate reduction, no alert needed",
 					zap.String("tenant_id", tenantId),
 					zap.String("pipeline_id", pipelineId),
@@ -274,7 +326,7 @@ func SendAlertForVCNoReduction(ctx context.Context) common.JobResult {
 		}
 
 		// Auto-resolve any open VC alerts for healthy source-destination pairs
-		if len(healthyPairs) > 0 {
+		if len(healthyPairs) > 0 && emitAlertsEnabled {
 			var alertsToDismiss []string
 			for _, pair := range healthyPairs {
 				q := fmt.Sprintf("tenantId:%s AND dismissed:false AND functionalityType:%s AND functionalityEntityId:%s AND secondaryEntityId:%s",
@@ -357,14 +409,24 @@ func getSourceDataPlaneID(ctx context.Context, db *gorm.DB, sourceId uuid.UUID) 
 }
 
 // shouldAlertOrResolve determines if an alert should be sent based on volume controller performance
-func shouldAlertOrResolve(totalIngested, totalDelivered, reductionPercent, minReductionThreshold float64) (bool, bool) {
+func shouldAlertOrResolve(totalIngested, totalDelivered, reductionPercent, minReductionThreshold, overDeliveryTolerancePct float64) (bool, bool, string) {
 	// Only alert if there's significant traffic but low reduction
 	// Minimum threshold of 1000 events to avoid noise from low-traffic tenants
 	if totalIngested < 1000 {
-		return false, false
+		return false, false, "skip_low_traffic"
 	}
 
-	return reductionPercent <= minReductionThreshold, !(reductionPercent <= minReductionThreshold)
+	// If delivered is slightly above ingested, treat as stats skew/timing mismatch and skip noisy no-reduction alerts.
+	// This prevents "0% reduction" false positives caused by minor counter skew across stages.
+	if totalDelivered > totalIngested && totalIngested > 0 {
+		overDeliveryPct := ((totalDelivered - totalIngested) / totalIngested) * 100
+		if overDeliveryPct <= overDeliveryTolerancePct {
+			return false, false, "skip_skew_within_tolerance"
+		}
+	}
+
+	shouldAlert := reductionPercent <= minReductionThreshold
+	return shouldAlert, !shouldAlert, "evaluated"
 }
 
 // buildVCNoReductionAlert builds an alert for volume controller with no reduction
