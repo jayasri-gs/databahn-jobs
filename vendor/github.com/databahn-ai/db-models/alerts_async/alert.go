@@ -23,4 +23,7 @@ type Alert struct {
 	DataPlaneId             string `json:"dataPlaneId"`
 	SecondaryEntityId       string `json:"secondaryEntityId,omitempty"`
 	Action                  string `json:"action,omitempty"`
+	LastActivationTime      int64  `json:"lastActivationTime,omitempty"`
+	NotificationCount       int    `json:"notificationCount,omitempty"`
+	LastNotificationTime    int64  `json:"lastNotificationTime,omitempty"`
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/databahn-ai/go-logging/logger"
@@ -13,92 +14,147 @@ import (
 
 // PoolConfig holds Redis connection pool configuration
 type PoolConfig struct {
-	PoolSize     int           // Maximum number of socket connections
-	MinIdleConns int           // Minimum number of idle connections
-	MaxConnAge   time.Duration // Connection age at which client retires the connection
-	PoolTimeout  time.Duration // Time client waits for connection if all are busy
-	IdleTimeout  time.Duration // Time after which idle connections are closed
+	PoolSize           int           // Maximum number of socket connections
+	MinIdleConns       int           // Minimum number of idle connections
+	MaxConnAge         time.Duration // Connection age at which client retires the connection
+	PoolTimeout        time.Duration // Time client waits for connection if all are busy
+	IdleTimeout        time.Duration // Time after which idle connections are closed
+	DialTimeout        time.Duration // 5 sec
+	ReadTimeout        time.Duration // 5sec
+	MaxConcurrentDials int           //10
+}
+
+const (
+	defaultPoolDialTimeout        = 5 * time.Second
+	defaultPoolReadTimeout        = 5 * time.Second
+	defaultPoolMaxConcurrentDials = 10
+)
+
+func applyPoolConfigDefaults(pc *PoolConfig) {
+	if pc == nil {
+		return
+	}
+	if pc.DialTimeout <= 0 {
+		pc.DialTimeout = defaultPoolDialTimeout
+	}
+	if pc.ReadTimeout <= 0 {
+		pc.ReadTimeout = defaultPoolReadTimeout
+	}
+	if pc.MaxConcurrentDials <= 0 {
+		pc.MaxConcurrentDials = defaultPoolMaxConcurrentDials
+	}
 }
 
 type Client struct {
-	redisUrl    string
-	serviceName string
-	cli         *redis.Client
-	poolConfig  *PoolConfig
+	redisUrl      string
+	serviceName   string
+	isClusterMode bool
+	cli           redis.UniversalClient
+	poolConfig    *PoolConfig
 }
 
-// NewClient creates a Redis client with minimal pooling (backward compatible)
-func NewClient(redisUrl, serviceName string) (*Client, error) {
+// NewClient creates a Redis client with minimal pooling (backward compatible).
+func NewClient(redisUrl, serviceName string, isRedisClusterMode bool) (*Client, error) {
 	ctx := context.Background()
-	cli := getCli(redisUrl, serviceName)
+	cli := getCli(redisUrl, serviceName, isRedisClusterMode)
 	res := cli.Ping(ctx)
 	err := res.Err()
 	if err != nil {
-		logger.GetLogger().Error("failed to connect to redis", zap.Error(err), zap.String("url", redisUrl))
+		cli.Close()
+		logger.GetLogger().Error("failed to connect to redis", zap.Error(err), zap.String("url", redisUrl), zap.Bool("cluster", isRedisClusterMode))
 		return nil, err
 	}
-	logger.GetLogger().Info("connected to redis", zap.String("url", redisUrl))
+	logger.GetLogger().Info("connected to redis", zap.String("url", redisUrl), zap.Bool("cluster", isRedisClusterMode))
 	client := Client{
-		redisUrl:    redisUrl,
-		serviceName: serviceName,
-		cli:         cli,
+		redisUrl:      redisUrl,
+		serviceName:   serviceName,
+		isClusterMode: isRedisClusterMode,
+		cli:           cli,
 	}
 	return &client, nil
 }
 
 // NewClientWithPool creates a Redis client with explicit pool configuration
-func NewClientWithPool(redisUrl, serviceName string, poolConfig *PoolConfig) (*Client, error) {
+func NewClientWithPool(redisUrl, serviceName string, poolConfig *PoolConfig, isClusterMode bool) (*Client, error) {
 	if poolConfig == nil {
 		return nil, errors.New("poolConfig cannot be nil - use NewClient for basic Redis client without pool configuration")
 	}
 
+	pc := *poolConfig
+	applyPoolConfigDefaults(&pc)
+
 	ctx := context.Background()
-	cli := getCliWithPool(redisUrl, serviceName, poolConfig)
+	cli := getCliWithPool(redisUrl, serviceName, &pc, isClusterMode)
 	res := cli.Ping(ctx)
 	err := res.Err()
 	if err != nil {
-		logger.GetLogger().Error("failed to connect to redis", zap.Error(err), zap.String("url", redisUrl))
+		cli.Close()
+		logger.GetLogger().Error("failed to connect to redis", zap.Error(err), zap.String("url", redisUrl), zap.Bool("cluster", isClusterMode))
 		return nil, err
 	}
 	logger.GetLogger().Info("connected to redis with pool",
 		zap.String("url", redisUrl),
-		zap.Int("poolSize", poolConfig.PoolSize),
-		zap.Int("minIdleConns", poolConfig.MinIdleConns))
+		zap.Bool("cluster", isClusterMode),
+		zap.Int("poolSize", pc.PoolSize),
+		zap.Int("minIdleConns", pc.MinIdleConns))
 	client := Client{
-		redisUrl:    redisUrl,
-		serviceName: serviceName,
-		cli:         cli,
-		poolConfig:  poolConfig,
+		redisUrl:      redisUrl,
+		serviceName:   serviceName,
+		isClusterMode: isClusterMode,
+		cli:           cli,
+		poolConfig:    &pc,
 	}
 	return &client, nil
 }
 
-func getCli(url, serviceName string) *redis.Client {
-	cli := redis.NewClient(&redis.Options{
-		Addr:       url,
-		ClientName: serviceName,
-	})
-	return cli
+func parseRedisAddrs(url string) []string {
+	parts := strings.Split(url, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		s := strings.TrimSpace(p)
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return []string{url}
+	}
+	return out
+}
+
+func buildUniversalOptions(addrs []string, serviceName string, poolConfig *PoolConfig, isClusterMode bool) *redis.UniversalOptions {
+	opts := &redis.UniversalOptions{
+		Addrs:         addrs,
+		ClientName:    serviceName,
+		IsClusterMode: isClusterMode,
+	}
+	if poolConfig != nil {
+		opts.PoolSize = poolConfig.PoolSize
+		opts.MinIdleConns = poolConfig.MinIdleConns
+		opts.ConnMaxLifetime = poolConfig.MaxConnAge
+		opts.PoolTimeout = poolConfig.PoolTimeout
+		opts.ConnMaxIdleTime = poolConfig.IdleTimeout
+		opts.DialTimeout = poolConfig.DialTimeout
+		opts.ReadTimeout = poolConfig.ReadTimeout
+		opts.MaxConcurrentDials = poolConfig.MaxConcurrentDials
+	}
+	return opts
+}
+
+func getCli(url, serviceName string, isClusterMode bool) redis.UniversalClient {
+	addrs := parseRedisAddrs(url)
+	return redis.NewUniversalClient(buildUniversalOptions(addrs, serviceName, nil, isClusterMode))
 }
 
 // getCliWithPool creates a Redis client with explicit pool configuration
-func getCliWithPool(url, serviceName string, poolConfig *PoolConfig) *redis.Client {
+func getCliWithPool(url, serviceName string, poolConfig *PoolConfig, isClusterMode bool) redis.UniversalClient {
 	if poolConfig == nil {
 		// This should not happen if NewClientWithPool properly validates, but adding for safety
 		logger.GetLogger().Error("poolConfig is nil in getCliWithPool, falling back to basic client")
-		return getCli(url, serviceName)
+		return getCli(url, serviceName, isClusterMode)
 	}
-
-	cli := redis.NewClient(&redis.Options{
-		Addr:            url,
-		ClientName:      serviceName,
-		PoolSize:        poolConfig.PoolSize,
-		MinIdleConns:    poolConfig.MinIdleConns,
-		ConnMaxLifetime: poolConfig.MaxConnAge,
-		PoolTimeout:     poolConfig.PoolTimeout,
-		ConnMaxIdleTime: poolConfig.IdleTimeout,
-	})
-	return cli
+	addrs := parseRedisAddrs(url)
+	return redis.NewUniversalClient(buildUniversalOptions(addrs, serviceName, poolConfig, isClusterMode))
 }
 
 func (c *Client) Ping(ctx context.Context) error {
@@ -126,7 +182,7 @@ func (c *Client) GetPoolConfig() *PoolConfig {
 }
 
 func (c *Client) reload(ctx context.Context) error {
-	var cli *redis.Client
+	var cli redis.UniversalClient
 	var err error
 
 	if c.poolConfig != nil {
@@ -135,22 +191,36 @@ func (c *Client) reload(ctx context.Context) error {
 		cli, err = c.TestConnection(ctx)
 	}
 
-	if err == nil {
-		c.cli = cli
+	if err != nil {
+		if cli != nil {
+			cli.Close()
+		}
+		return err
 	}
-	return err
+
+	old := c.cli
+	c.cli = cli
+	if old != nil {
+		old.Close()
+	}
+	return nil
 }
 
-func (c *Client) TestConnection(ctx context.Context) (*redis.Client, error) {
-	cli := getCli(c.redisUrl, c.serviceName)
+func (c *Client) TestConnection(ctx context.Context) (redis.UniversalClient, error) {
+	cli := getCli(c.redisUrl, c.serviceName, c.isClusterMode)
 	res := cli.Ping(ctx)
 	return cli, res.Err()
 }
 
-func (c *Client) TestConnectionWithPool(ctx context.Context) (*redis.Client, error) {
-	cli := getCliWithPool(c.redisUrl, c.serviceName, c.poolConfig)
+func (c *Client) TestConnectionWithPool(ctx context.Context) (redis.UniversalClient, error) {
+	cli := getCliWithPool(c.redisUrl, c.serviceName, c.poolConfig, c.isClusterMode)
 	res := cli.Ping(ctx)
 	return cli, res.Err()
+}
+
+// IsClusterMode reports whether the underlying client was created for Redis Cluster.
+func (c *Client) IsClusterMode() bool {
+	return c.isClusterMode
 }
 
 func (c *Client) Get(ctx context.Context, key string) (string, error) {
@@ -269,6 +339,10 @@ func (c *Client) ZRemoveByScoreRange(ctx context.Context, key string, min, max f
 func (c *Client) EvalScript(ctx context.Context, script string, keys []string, args ...any) (any, error) {
 	res := c.cli.EvalSha(ctx, script, keys, args...)
 	return res.Result()
+}
+
+func (c *Client) Pipeline() redis.Pipeliner {
+	return c.cli.Pipeline()
 }
 
 func (c *Client) Eval(ctx context.Context, script string, keys []string, args ...any) (any, error) {

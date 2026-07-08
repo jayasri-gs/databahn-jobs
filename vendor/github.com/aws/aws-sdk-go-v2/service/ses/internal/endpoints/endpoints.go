@@ -157,6 +157,9 @@ var defaultPartitions = endpoints.Partitions{
 				Region: "ap-south-1",
 			}: endpoints.Endpoint{},
 			endpoints.EndpointKey{
+				Region: "ap-south-2",
+			}: endpoints.Endpoint{},
+			endpoints.EndpointKey{
 				Region: "ap-southeast-1",
 			}: endpoints.Endpoint{},
 			endpoints.EndpointKey{
@@ -164,6 +167,9 @@ var defaultPartitions = endpoints.Partitions{
 			}: endpoints.Endpoint{},
 			endpoints.EndpointKey{
 				Region: "ap-southeast-3",
+			}: endpoints.Endpoint{},
+			endpoints.EndpointKey{
+				Region: "ap-southeast-5",
 			}: endpoints.Endpoint{},
 			endpoints.EndpointKey{
 				Region: "ca-central-1",
@@ -175,7 +181,13 @@ var defaultPartitions = endpoints.Partitions{
 				Hostname: "email-fips.ca-central-1.amazonaws.com",
 			},
 			endpoints.EndpointKey{
+				Region: "ca-west-1",
+			}: endpoints.Endpoint{},
+			endpoints.EndpointKey{
 				Region: "eu-central-1",
+			}: endpoints.Endpoint{},
+			endpoints.EndpointKey{
+				Region: "eu-central-2",
 			}: endpoints.Endpoint{},
 			endpoints.EndpointKey{
 				Region: "eu-north-1",
@@ -239,6 +251,9 @@ var defaultPartitions = endpoints.Partitions{
 			},
 			endpoints.EndpointKey{
 				Region: "il-central-1",
+			}: endpoints.Endpoint{},
+			endpoints.EndpointKey{
+				Region: "me-central-1",
 			}: endpoints.Endpoint{},
 			endpoints.EndpointKey{
 				Region: "me-south-1",
@@ -323,9 +338,23 @@ var defaultPartitions = endpoints.Partitions{
 		ID: "aws-eusc",
 		Defaults: map[endpoints.DefaultKey]endpoints.Endpoint{
 			{
+				Variant: endpoints.DualStackVariant,
+			}: {
+				Hostname:          "email.{region}.api.amazonwebservices.eu",
+				Protocols:         []string{"https"},
+				SignatureVersions: []string{"v4"},
+			},
+			{
 				Variant: endpoints.FIPSVariant,
 			}: {
 				Hostname:          "email-fips.{region}.amazonaws.eu",
+				Protocols:         []string{"https"},
+				SignatureVersions: []string{"v4"},
+			},
+			{
+				Variant: endpoints.FIPSVariant | endpoints.DualStackVariant,
+			}: {
+				Hostname:          "email-fips.{region}.api.amazonwebservices.eu",
 				Protocols:         []string{"https"},
 				SignatureVersions: []string{"v4"},
 			},
@@ -339,6 +368,11 @@ var defaultPartitions = endpoints.Partitions{
 		},
 		RegionRegex:    partitionRegexp.AwsEusc,
 		IsRegionalized: true,
+		Endpoints: endpoints.Endpoints{
+			endpoints.EndpointKey{
+				Region: "eusc-de-east-1",
+			}: endpoints.Endpoint{},
+		},
 	},
 	{
 		ID: "aws-iso",

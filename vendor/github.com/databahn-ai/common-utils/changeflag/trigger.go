@@ -3,12 +3,13 @@ package changeflag
 import (
 	"context"
 	"errors"
-	"github.com/databahn-ai/common-utils/svc"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/databahn-ai/common-utils/svc"
 
 	"github.com/databahn-ai/db-models/alerts_async"
 
@@ -86,44 +87,11 @@ type Trigger struct {
 	ackProducer           *ack.AckProducer
 	kafkaBootstrapServers string
 	redisUrl              string
+	isRedisClusterMode    bool
 	consumerGroupId       string
 	alertsManager         *alerts_async.AlertsManager
 	dataPlaneId           string
 	resiliencyConfig      *ResiliencyConfig
-}
-
-func NewTriggerWithoutConfigReader(ctx context.Context, kafkaBootstrap, cacheUrl string, changeTypes []string,
-	firstLoadCallBack func(map[string][]ChangeFlag) []Acknowledgement,
-	newTriggerCallBack func(ChangeFlag) *Acknowledgement, options ...TriggerOption) (*Trigger, error) {
-	changeTypesMap := make(map[string]struct{})
-	for _, changeType := range changeTypes {
-		changeTypesMap[changeType] = struct{}{}
-	}
-	q := make(chan struct{}, 1)
-	cnd := sync.NewCond(&sync.Mutex{})
-	ord := make(map[string]bool)
-	eof := make(map[string]bool)
-	ackProducer, err := ack.NewAckProducer(ctx, kafkaBootstrap)
-	if err != nil {
-		return nil, err
-	}
-	t := Trigger{
-		quit:                  q,
-		changeTypes:           changeTypesMap,
-		firstLoadCallBack:     firstLoadCallBack,
-		newTriggerCallBack:    newTriggerCallBack,
-		initialLoad:           cnd,
-		offsetResetDone:       ord,
-		topicPartitionEofDone: eof,
-		ackProducer:           ackProducer,
-		redisUrl:              cacheUrl,
-		kafkaBootstrapServers: kafkaBootstrap,
-	}
-	for _, opt := range options {
-		opt(&t)
-	}
-	err = t.startConsuming(ctx)
-	return &t, err
 }
 
 type TriggerOption func(*Trigger)
@@ -179,6 +147,7 @@ func NewTrigger(ctx context.Context, confReader configuration.ConfigReader, chan
 		topicPartitionEofDone: eof,
 		ackProducer:           ackProducer,
 		redisUrl:              confReader.GetString(configuration.RedisUrl),
+		isRedisClusterMode:    confReader.GetBool(configuration.RedisDefaultIsClusterKey),
 		kafkaBootstrapServers: confReader.GetString(configuration.InputKafkaClusterBootstrapServers),
 	}
 	for _, opt := range options {

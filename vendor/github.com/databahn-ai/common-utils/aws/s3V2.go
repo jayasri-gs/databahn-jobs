@@ -3,16 +3,49 @@ package aws
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
+
+const (
+	s3DialTimeout              = 30 * time.Second
+	s3TLSHandshakeTimeout      = 10 * time.Second
+	s3ResponseHeaderTimeout    = 60 * time.Second
+	s3ExpectContinueTimeout    = 1 * time.Second
+	s3IdleConnTimeout          = 90 * time.Second
+	s3HTTPClientRequestTimeout = 15 * time.Minute
+)
+
+func newS3HTTPClient(insecureSkipVerify bool) *http.Client {
+	return &http.Client{
+		Timeout: s3HTTPClientRequestTimeout,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   s3DialTimeout,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       s3IdleConnTimeout,
+			TLSHandshakeTimeout:   s3TLSHandshakeTimeout,
+			ExpectContinueTimeout: s3ExpectContinueTimeout,
+			ResponseHeaderTimeout: s3ResponseHeaderTimeout,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: insecureSkipVerify,
+			},
+		},
+	}
+}
 
 type Client struct {
 	AuthType           string
@@ -51,14 +84,7 @@ func (c *Client) Connect() error {
 		config.S3ForcePathStyle = aws.Bool(c.S3ForcePathStyle)
 	}
 
-	// Custom HTTP client for TLS configuration
-	config.HTTPClient = &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: c.InsecureSkipVerify,
-			},
-		},
-	}
+	config.HTTPClient = newS3HTTPClient(c.InsecureSkipVerify)
 
 	// Create session and S3 client
 	sess, err := session.NewSession(config)
