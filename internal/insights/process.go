@@ -328,6 +328,23 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			if err != nil {
 				return err
 			}
+
+			if deviceAggEnabled() {
+				deviceDocs := docsToDeviceDocuments(docs)
+				written, err := upsertDeviceDocs(ctx, cli, index.TenantId, deviceDocs)
+				if err != nil {
+					return err
+				}
+				logger.GetLogger().Info("device agg page written",
+					zap.String("tenant_id", index.TenantId),
+					zap.String("index_type", index.Type),
+					zap.String("staging_index", indexName),
+					zap.String("device_index", DeviceIndexName(index.TenantId)),
+					zap.Int("page", page),
+					zap.Int("sights_docs", len(docs)),
+					zap.Int("device_upserts", written),
+					zap.Int("unique_devices_in_page", countUniqueDeviceIDs(deviceDocs)))
+			}
 		}
 
 		hasData = true
