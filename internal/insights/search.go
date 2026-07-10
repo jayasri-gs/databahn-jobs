@@ -22,6 +22,9 @@ func getObjectKeyForSearch(index *IndexMetadata, fileName string) string {
 
 // uploadAggregatedInsightFile uploads the aggregated insight file to object storage (S3 or Azure Blob) using the shared objstore client.
 func uploadAggregatedInsightFile(ctx context.Context, index *IndexMetadata, fileName string) error {
+	if testSkipInsightsObjectStoreUpload() {
+		return nil
+	}
 	objectKey := getObjectKeyForSearch(index, fileName)
 	return util.UploadFileToObjectStore(ctx, objectKey, fileName)
 }

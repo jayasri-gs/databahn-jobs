@@ -21,6 +21,20 @@ import (
 func AggregateInsightsAndStore(ctx context.Context, parallelism int) JobResult {
 	var errors []JobError
 
+	loadDeviceAggMode()
+	logger.GetLogger().Info("insights aggregation starting", zap.String("device_agg_mode", deviceAggMode))
+
+	if deviceBackfillEnabled() {
+		backfillErrors := backfillDevicesFromSights(ctx, parallelism)
+		errors = append(errors, backfillErrors...)
+		if len(errors) > 0 {
+			logger.GetLogger().Error("device backfilling failed", zap.Int("error_count", len(errors)))
+			return NewJobResultFromErrors(errors)
+		}
+		logger.GetLogger().Info("successful device backfilling")
+		return NewJobResultSuccess()
+	}
+
 	lastWindowTime := time.Now().Add(-time.Minute * INSIGHTS_INTERVAL_MINUTES)
 	lastTime, _ := util.FindWindow(lastWindowTime, time.Minute*INSIGHTS_INTERVAL_MINUTES)
 

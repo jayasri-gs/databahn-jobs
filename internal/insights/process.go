@@ -328,6 +328,23 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			if err != nil {
 				return err
 			}
+
+			if deviceAggEnabled() {
+				deviceDocs := docsToDeviceDocuments(docs)
+				written, err := upsertDeviceDocs(ctx, cli, index.TenantId, deviceDocs)
+				if err != nil {
+					return err
+				}
+				logger.GetLogger().Info("device agg page written",
+					zap.String("tenant_id", index.TenantId),
+					zap.String("index_type", index.Type),
+					zap.String("staging_index", indexName),
+					zap.String("device_index", DeviceIndexName(index.TenantId)),
+					zap.Int("page", page),
+					zap.Int("sights_docs", len(docs)),
+					zap.Int("device_upserts", written),
+					zap.Int("unique_devices_in_page", countUniqueDeviceIDs(deviceDocs)))
+			}
 		}
 
 		hasData = true
@@ -432,23 +449,23 @@ func performBulkRequest(ctx context.Context, cli *opensearch.Client, request *op
 	resp, err := request.Do(ctx, cli)
 	if err != nil {
 		return err
-	} else {
-		if resp.IsError() {
-			return errors.New(resp.String())
-		} else {
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			bodyJ := EsResp{}
-			err = json.Unmarshal(bodyBytes, &bodyJ)
-			if err != nil {
-				return err
-			}
-			if bodyJ.Errors {
-				return errors.New(string(bodyBytes))
-			}
-		}
+	}
+	defer resp.Body.Close()
+
+	if resp.IsError() {
+		return errors.New(resp.String())
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	bodyJ := EsResp{}
+	if err := json.Unmarshal(bodyBytes, &bodyJ); err != nil {
+		return err
+	}
+	if bodyJ.Errors {
+		return errors.New(string(bodyBytes))
 	}
 	return nil
 }
