@@ -1,0 +1,64 @@
+{
+  "index_patterns": [
+    "db_staging_insights_*"
+  ],
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": "2",
+        "number_of_replicas": "1"
+      }
+    },
+    "mappings": {
+      "properties": {
+        "key1": {
+          "type": "keyword"
+        },
+        "key2": {
+          "type": "keyword"
+        },
+        "key3": {
+          "type": "keyword"
+        },
+        "key4": {
+          "type": "keyword"
+        },
+        "key5": {
+          "type": "keyword"
+        },
+        "count": {
+          "type": "long"
+        },
+        "type": {
+          "type": "keyword"
+        },
+        "min_time": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+          "type": "date"
+        },
+        "data_plane_id": {
+          "type": "keyword"
+        },
+        "tenantId": {
+          "type": "keyword"
+        },
+        "id": {
+          "type": "keyword"
+        },
+        "source_id": {
+          "type": "keyword"
+        },
+        "max_time": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+          "type": "date"
+        },
+        "timestamp": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+          "type": "date"
+        }
+      }
+    }
+  },
+  "composed_of": [],
+  "priority": 100
+}

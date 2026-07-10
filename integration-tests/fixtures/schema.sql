@@ -50,3 +50,28 @@ CREATE TABLE IF NOT EXISTS alert_notification_checkpoint (
     checkpoint_value JSONB NOT NULL,
     alert_type VARCHAR(32)
 );
+
+CREATE TABLE IF NOT EXISTS log_source (
+    id UUID PRIMARY KEY,
+    configuration JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by UUID,
+    customer_id UUID,
+    description VARCHAR(512) DEFAULT '',
+    device VARCHAR(30) DEFAULT '',
+    log_type VARCHAR(30) DEFAULT '',
+    name VARCHAR(100) NOT NULL,
+    replay_source BOOLEAN NOT NULL DEFAULT FALSE,
+    reputation VARCHAR(255) DEFAULT '',
+    scope VARCHAR(255) DEFAULT '',
+    status VARCHAR(255) NOT NULL DEFAULT 'ACTIVE',
+    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    timestamp_override_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    timezone_normalization_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by UUID,
+    vendor VARCHAR(30) DEFAULT '',
+    version VARCHAR(36) DEFAULT '',
+    data_plane_id UUID,
+    advanced_configuration JSONB DEFAULT '{}'::jsonb
+);
