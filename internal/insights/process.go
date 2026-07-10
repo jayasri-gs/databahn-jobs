@@ -449,23 +449,23 @@ func performBulkRequest(ctx context.Context, cli *opensearch.Client, request *op
 	resp, err := request.Do(ctx, cli)
 	if err != nil {
 		return err
-	} else {
-		if resp.IsError() {
-			return errors.New(resp.String())
-		} else {
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			bodyJ := EsResp{}
-			err = json.Unmarshal(bodyBytes, &bodyJ)
-			if err != nil {
-				return err
-			}
-			if bodyJ.Errors {
-				return errors.New(string(bodyBytes))
-			}
-		}
+	}
+	defer resp.Body.Close()
+
+	if resp.IsError() {
+		return errors.New(resp.String())
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	bodyJ := EsResp{}
+	if err := json.Unmarshal(bodyBytes, &bodyJ); err != nil {
+		return err
+	}
+	if bodyJ.Errors {
+		return errors.New(string(bodyBytes))
 	}
 	return nil
 }
