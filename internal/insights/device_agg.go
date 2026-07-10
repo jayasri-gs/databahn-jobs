@@ -181,9 +181,39 @@ type deviceBackfillStats struct {
 	UniqueDevices  int
 }
 
+// streamingUniqueDeviceCounter counts distinct device IDs in sorted order using O(1) memory.
+// Input must be sorted by device identity so equal IDs are contiguous across pages.
+type streamingUniqueDeviceCounter struct {
+	lastDeviceID string
+	total        int
+}
+
+func (c *streamingUniqueDeviceCounter) observe(deviceID string) bool {
+	if deviceID == c.lastDeviceID {
+		return false
+	}
+	c.lastDeviceID = deviceID
+	c.total++
+	return true
+}
+
+func (c *streamingUniqueDeviceCounter) observeBatch(deviceIDs []string) int {
+	newInBatch := 0
+	for _, deviceID := range deviceIDs {
+		if c.observe(deviceID) {
+			newInBatch++
+		}
+	}
+	return newInBatch
+}
+
+func (c *streamingUniqueDeviceCounter) totalUnique() int {
+	return c.total
+}
+
 func backfillDevicesForTenant(ctx context.Context, cli *opensearch.Client, tenantId, sightsIndex string) (deviceBackfillStats, error) {
 	stats := deviceBackfillStats{}
-	uniqueDevices := make(map[string]struct{})
+	uniqueCounter := &streamingUniqueDeviceCounter{}
 
 	query := "*"
 	sort := []osstore.Sort{
@@ -219,13 +249,13 @@ func backfillDevicesForTenant(ctx context.Context, cli *opensearch.Client, tenan
 		}
 
 		deviceDocs := make([]DeviceDocument, 0, len(sights))
-		pageUnique := make(map[string]struct{})
+		deviceIDs := make([]string, 0, len(sights))
 		for _, sight := range sights {
 			doc := sightToDeviceDoc(sight)
 			deviceDocs = append(deviceDocs, doc)
-			uniqueDevices[doc.Id] = struct{}{}
-			pageUnique[doc.Id] = struct{}{}
+			deviceIDs = append(deviceIDs, doc.Id)
 		}
+		pageUnique := uniqueCounter.observeBatch(deviceIDs)
 
 		written, err := upsertDeviceDocs(ctx, cli, tenantId, deviceDocs)
 		if err != nil {
@@ -235,7 +265,7 @@ func backfillDevicesForTenant(ctx context.Context, cli *opensearch.Client, tenan
 		stats.Pages = page
 		stats.SightsDocsRead += len(sights)
 		stats.DeviceUpserts += written
-		stats.UniqueDevices = len(uniqueDevices)
+		stats.UniqueDevices = uniqueCounter.totalUnique()
 
 		logger.GetLogger().Info("device backfill page processed",
 			zap.String("tenant_id", tenantId),
@@ -243,7 +273,7 @@ func backfillDevicesForTenant(ctx context.Context, cli *opensearch.Client, tenan
 			zap.Int("page", page),
 			zap.Int("sights_docs", len(sights)),
 			zap.Int("device_upserts", written),
-			zap.Int("unique_devices_in_page", len(pageUnique)),
+			zap.Int("unique_devices_in_page", pageUnique),
 			zap.Int("unique_devices_total", stats.UniqueDevices))
 	}
 

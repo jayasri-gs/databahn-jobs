@@ -51,6 +51,26 @@ func TestCountUniqueDeviceIDs(t *testing.T) {
 	}
 }
 
+func TestStreamingUniqueDeviceCounter(t *testing.T) {
+	counter := &streamingUniqueDeviceCounter{}
+
+	pageOneUnique := counter.observeBatch([]string{"tenant:host-a", "tenant:host-a", "tenant:host-b"})
+	if pageOneUnique != 2 {
+		t.Fatalf("page one unique = %d, want 2", pageOneUnique)
+	}
+	if counter.totalUnique() != 2 {
+		t.Fatalf("total after page one = %d, want 2", counter.totalUnique())
+	}
+
+	pageTwoUnique := counter.observeBatch([]string{"tenant:host-b", "tenant:host-c"})
+	if pageTwoUnique != 1 {
+		t.Fatalf("page two unique = %d, want 1", pageTwoUnique)
+	}
+	if counter.totalUnique() != 3 {
+		t.Fatalf("total after page two = %d, want 3", counter.totalUnique())
+	}
+}
+
 func TestTenantIdFromSightsIndex(t *testing.T) {
 	tenantId, err := tenantIdFromSightsIndex("db_insights_sights_sourcehostname_a3a885d9-a0c1-4e94-8ccd-0aba12b169f4")
 	if err != nil {

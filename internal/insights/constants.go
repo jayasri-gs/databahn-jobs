@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/databahn-ai/common-utils/utils"
@@ -41,27 +42,47 @@ func getInsightsReadBatch() int {
 
 const deviceAggEnv = "DEVICE_AGG"
 
-func getDeviceAggMode() string {
+// deviceAggMode is parsed once per job run in loadDeviceAggMode.
+var deviceAggMode string
+
+func loadDeviceAggMode() {
+	deviceAggMode = parseDeviceAggModeFromEnv()
+}
+
+func parseDeviceAggModeFromEnv() string {
 	val := strings.ToUpper(strings.TrimSpace(utils.GetEnvOrDefault(deviceAggEnv, "")))
 	switch val {
 	case "", "BACKFILL", "AGG":
 		return val
 	default:
-		logger.GetLogger().Warn("invalid DEVICE_AGG value, treating as disabled", zap.String("value", val))
+		logger.GetLogger().Error("invalid DEVICE_AGG value, treating as disabled", zap.String("value", val))
 		return ""
 	}
 }
 
 func deviceBackfillEnabled() bool {
-	return getDeviceAggMode() == "BACKFILL"
+	return deviceAggMode == "BACKFILL"
 }
 
 func deviceAggEnabled() bool {
-	return getDeviceAggMode() == "AGG"
+	return deviceAggMode == "AGG"
 }
 
-// testSkipInsightsObjectStoreUpload skips S3/Blob uploads when INSIGHTS_TEST_SKIP_OBJECT_STORE_UPLOAD is set.
+const insightsTestSkipObjectStoreUploadEnv = "INSIGHTS_TEST_SKIP_OBJECT_STORE_UPLOAD"
+
+// testSkipInsightsObjectStoreUpload skips S3/Blob uploads when INSIGHTS_TEST_SKIP_OBJECT_STORE_UPLOAD is true.
 // For integration tests only; never enable in production.
 func testSkipInsightsObjectStoreUpload() bool {
-	return utils.GetEnvOrDefault("INSIGHTS_TEST_SKIP_OBJECT_STORE_UPLOAD", "false") != "false"
+	return parseTestSkipInsightsObjectStoreUploadFromEnv()
+}
+
+func parseTestSkipInsightsObjectStoreUploadFromEnv() bool {
+	raw := strings.TrimSpace(utils.GetEnvOrDefault(insightsTestSkipObjectStoreUploadEnv, "false"))
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		logger.GetLogger().Warn("invalid INSIGHTS_TEST_SKIP_OBJECT_STORE_UPLOAD, defaulting to false",
+			zap.String("value", raw), zap.Error(err))
+		return false
+	}
+	return enabled
 }
