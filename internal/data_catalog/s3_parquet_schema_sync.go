@@ -188,11 +188,13 @@ func processS3ParquetGroup(ctx context.Context, destID, sourceID, tenantID uuid.
 
 	// Validate fields: drop leading-underscore, reserved-keyword, and duplicate
 	// names, comparing duplicates against already-applied columns for this table.
+	// Only fetch applied names that could actually collide with an incoming field.
+	incomingLower := lowerFieldNames(fields)
 	var existingApplied []string
 	if err := db.WithContext(ctx).
 		Table("data_catalog").
-		Where("applied_on_search = ? AND destination_id = ? AND source_id = ? AND tenant_id = ? AND dispenser_type = ?",
-			true, destID, sourceID, tenantID, "S3Parquet").
+		Where("applied_on_search = ? AND destination_id = ? AND source_id = ? AND tenant_id = ? AND dispenser_type = ? AND LOWER(name) IN ?",
+			true, destID, sourceID, tenantID, "S3Parquet", incomingLower).
 		Pluck("name", &existingApplied).Error; err != nil {
 		return fmt.Errorf("failed to load applied catalog fields for %s/%s: %w", destID, sourceID, err)
 	}

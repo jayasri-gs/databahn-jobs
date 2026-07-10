@@ -219,12 +219,14 @@ func processGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fie
 
 	// Validate fields: drop leading-underscore, reserved-keyword, and duplicate
 	// names. Duplicates are compared against columns already applied to this
-	// table so an existing Athena column is never re-added.
+	// table so an existing Athena column is never re-added. Only fetch applied
+	// names that could actually collide with an incoming field.
+	incomingLower := lowerFieldNames(fields)
 	var existingApplied []string
 	if err := db.WithContext(ctx).
 		Table("data_catalog").
-		Where("applied_on_search = ? AND destination_id = ? AND source_id = ? AND tenant_id = ? AND dispenser_type = ?",
-			true, destID, sourceID, tenantID, "databahnstorage").
+		Where("applied_on_search = ? AND destination_id = ? AND source_id = ? AND tenant_id = ? AND dispenser_type = ? AND LOWER(name) IN ?",
+			true, destID, sourceID, tenantID, "databahnstorage", incomingLower).
 		Pluck("name", &existingApplied).Error; err != nil {
 		return fmt.Errorf("failed to load applied catalog fields for %s/%s: %w", destID, sourceID, err)
 	}
@@ -255,13 +257,26 @@ func processGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fie
 		return nil
 	}
 
-	// Build ALTER TABLE with fully-qualified table name
+	// Build ALTER TABLE with fully-qualified, quoted identifiers so field names
+	// cannot inject into the generated DDL.
 	database := databaseName(tenantID)
+	quotedDB, err := quoteSQLIdentifier(database)
+	if err != nil {
+		return fmt.Errorf("invalid database name: %w", err)
+	}
+	quotedTable, err := quoteSQLIdentifier(tableName)
+	if err != nil {
+		return fmt.Errorf("invalid table name: %w", err)
+	}
 	var colDefs []string
 	for _, f := range valid {
-		colDefs = append(colDefs, fmt.Sprintf("%s %s", f.Name, athenaType(f.FieldType)))
+		quotedCol, err := quoteSQLIdentifier(f.Name)
+		if err != nil {
+			return fmt.Errorf("invalid column name %q: %w", f.Name, err)
+		}
+		colDefs = append(colDefs, fmt.Sprintf("%s %s", quotedCol, athenaType(f.FieldType)))
 	}
-	query := fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMNS (%s)", database, tableName, strings.Join(colDefs, ", "))
+	query := fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMNS (%s)", quotedDB, quotedTable, strings.Join(colDefs, ", "))
 
 	logger.GetLoggerWithContext(ctx).Info("executing Athena ALTER TABLE",
 		zap.String("database", database),

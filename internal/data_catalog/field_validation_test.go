@@ -57,6 +57,14 @@ func TestPartitionCatalogFields_ReservedKeywordMixedCase(t *testing.T) {
 	}
 }
 
+func TestPartitionCatalogFields_CacheKeyword(t *testing.T) {
+	in := []catalogField{{ID: 1, Name: "cache"}}
+	valid, invalid := partitionCatalogFields(in, nil)
+	if len(valid) != 0 || reasonByName(invalid)["cache"] != "reserved_keyword" {
+		t.Fatalf("expected 'cache' rejected as reserved_keyword, got valid=%v invalid=%v", names(valid), reasonByName(invalid))
+	}
+}
+
 func TestPartitionCatalogFields_InBatchDuplicateOldestWins(t *testing.T) {
 	// higher id listed first to prove id-order (not slice-order) decides survivor
 	in := []catalogField{

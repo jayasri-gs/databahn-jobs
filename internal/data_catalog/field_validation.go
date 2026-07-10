@@ -21,7 +21,7 @@ func init() {
 	kw := []string{
 		// Reserved DDL keywords
 		"all", "alter", "and", "array", "as", "authorization", "between",
-		"bigint", "binary", "boolean", "both", "by", "case", "cashe", "cast",
+		"bigint", "binary", "boolean", "both", "by", "cache", "case", "cast",
 		"char", "column", "conf", "constraint", "commit", "create", "cross",
 		"cube", "current", "current_date", "current_timestamp", "cursor",
 		"database", "date", "dayofweek", "decimal", "delete", "describe",
@@ -57,17 +57,16 @@ func init() {
 // existing column is never re-added. Fields are evaluated in ascending id order
 // so the oldest row survives a duplicate. Checks per field, first hit wins:
 // leading underscore, then reserved keyword, then duplicate.
+// The input slice is sorted in place by id; callers do not rely on its order.
 func partitionCatalogFields(fields []catalogField, existingApplied []string) (valid []catalogField, invalid []invalidField) {
-	sorted := make([]catalogField, len(fields))
-	copy(sorted, fields)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
+	sort.SliceStable(fields, func(i, j int) bool { return fields[i].ID < fields[j].ID })
 
 	seen := make(map[string]struct{}, len(existingApplied))
 	for _, n := range existingApplied {
 		seen[strings.ToLower(n)] = struct{}{}
 	}
 
-	for _, f := range sorted {
+	for _, f := range fields {
 		lower := strings.ToLower(f.Name)
 		switch {
 		case strings.HasPrefix(f.Name, "_"):
@@ -92,4 +91,14 @@ func isReservedKeyword(lower string) bool {
 func isSeen(seen map[string]struct{}, lower string) bool {
 	_, ok := seen[lower]
 	return ok
+}
+
+// lowerFieldNames returns the lowercased names of the given fields, used to
+// scope the applied-column lookup to only names that could collide.
+func lowerFieldNames(fields []catalogField) []string {
+	out := make([]string, len(fields))
+	for i, f := range fields {
+		out[i] = strings.ToLower(f.Name)
+	}
+	return out
 }
