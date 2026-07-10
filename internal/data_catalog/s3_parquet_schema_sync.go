@@ -186,8 +186,45 @@ func processS3ParquetGroup(ctx context.Context, destID, sourceID, tenantID uuid.
 		return fmt.Errorf("invalid table name: %w", err)
 	}
 
+	// Validate fields: drop leading-underscore, reserved-keyword, and duplicate
+	// names, comparing duplicates against already-applied columns for this table.
+	var existingApplied []string
+	if err := db.WithContext(ctx).
+		Table("data_catalog").
+		Where("applied_on_search = ? AND destination_id = ? AND source_id = ? AND tenant_id = ? AND dispenser_type = ?",
+			true, destID, sourceID, tenantID, "S3Parquet").
+		Pluck("name", &existingApplied).Error; err != nil {
+		return fmt.Errorf("failed to load applied catalog fields for %s/%s: %w", destID, sourceID, err)
+	}
+
+	valid, invalid := partitionCatalogFields(fields, existingApplied)
+
+	if len(invalid) > 0 {
+		invalidIDs := make([]int64, len(invalid))
+		for i, inv := range invalid {
+			invalidIDs[i] = inv.field.ID
+			logger.GetLoggerWithContext(ctx).Warn("deleting invalid catalog field",
+				zap.String("name", inv.field.Name),
+				zap.String("reason", inv.reason),
+				zap.Int64("id", inv.field.ID))
+		}
+		if err := db.WithContext(ctx).
+			Table("data_catalog").
+			Where("id IN ?", invalidIDs).
+			Delete(nil).Error; err != nil {
+			return fmt.Errorf("failed to delete invalid catalog fields: %w", err)
+		}
+	}
+
+	if len(valid) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("no valid s3 parquet catalog fields to apply after validation",
+			zap.String("destination_id", destID.String()),
+			zap.String("source_id", sourceID.String()))
+		return nil
+	}
+
 	var colDefs []string
-	for _, f := range fields {
+	for _, f := range valid {
 		quotedCol, err := quoteSQLIdentifier(f.Name)
 		if err != nil {
 			return fmt.Errorf("invalid column name %q: %w", f.Name, err)
