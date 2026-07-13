@@ -339,6 +339,43 @@ func upsertDeviceDocs(ctx context.Context, cli *opensearch.Client, tenantId stri
 		return 0, nil
 	}
 
+	batchSize := getDeviceAggWriteBatch()
+	totalWritten := 0
+	for _, batch := range chunkDeviceDocuments(documents, batchSize) {
+		written, err := upsertDeviceDocsBatch(ctx, cli, tenantId, batch)
+		if err != nil {
+			return totalWritten, err
+		}
+		totalWritten += written
+	}
+
+	return totalWritten, nil
+}
+
+func chunkDeviceDocuments(documents []DeviceDocument, batchSize int) [][]DeviceDocument {
+	if len(documents) == 0 {
+		return nil
+	}
+	if batchSize < 1 {
+		batchSize = defaultDeviceAggWriteBatch
+	}
+
+	chunks := make([][]DeviceDocument, 0, (len(documents)+batchSize-1)/batchSize)
+	for start := 0; start < len(documents); start += batchSize {
+		end := start + batchSize
+		if end > len(documents) {
+			end = len(documents)
+		}
+		chunks = append(chunks, documents[start:end])
+	}
+	return chunks
+}
+
+func upsertDeviceDocsBatch(ctx context.Context, cli *opensearch.Client, tenantId string, documents []DeviceDocument) (int, error) {
+	if len(documents) == 0 {
+		return 0, nil
+	}
+
 	index := DeviceIndexName(tenantId)
 	buff := new(bytes.Buffer)
 	for _, doc := range documents {

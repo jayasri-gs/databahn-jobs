@@ -26,6 +26,7 @@ type JobPramaan struct {
 	redis                *RedisPramaan
 	postgres             *PostgresPramaan
 	openSearch           *OpenSearchPramaan
+	cloud                *CloudPramaan
 	vault                *VaultPramaan
 	prometheus           *PrometheusPramaan
 	configModifiers      []ConfigModifier
@@ -80,6 +81,13 @@ func (j JobPramaan) GetOpenSearch(t *testing.T) *OpenSearchPramaan {
 	return j.openSearch
 }
 
+func (j JobPramaan) GetCloud(t *testing.T) *CloudPramaan {
+	if j.cloud == nil {
+		t.Fatalf("Cloud object store not enabled/initialized")
+	}
+	return j.cloud
+}
+
 func (j JobPramaan) GetPrometheus(t *testing.T) *PrometheusPramaan {
 	if j.prometheus == nil {
 		t.Fatalf("Prometheus not enabled/initialized")
@@ -98,6 +106,7 @@ type JobPramaanBuilder struct {
 	prometheus             bool
 	postgres               bool
 	openSearch             bool
+	s3ObjectStore          bool
 	kafkaTopics            []TopicDetails
 	kafkaMessages          map[string][]dbkafka.Message
 	dockerFilePath         string
@@ -132,9 +141,10 @@ func (b *JobPramaanBuilder) WithPrometheus() *JobPramaanBuilder {
 	return b
 }
 
-func (b *JobPramaanBuilder) ForControlPlane(withPostgres bool, withOpenSearch bool) *JobPramaanBuilder {
+func (b *JobPramaanBuilder) ForControlPlane(withPostgres bool, withOpenSearch bool, withS3ObjectStore bool) *JobPramaanBuilder {
 	b.postgres = withPostgres
 	b.openSearch = withOpenSearch
+	b.s3ObjectStore = withS3ObjectStore
 	return b
 }
 
@@ -200,7 +210,7 @@ func (b *JobPramaanBuilder) Build(ctx context.Context) *JobPramaan {
 
 	dockerNetwork, err := network.New(ctx)
 	if err != nil {
-		b.tg.Fatalf("Could not create network")
+		b.tg.Fatalf("Could not create network: %v", err)
 	}
 	job.network = dockerNetwork
 
@@ -266,6 +276,13 @@ func (b *JobPramaanBuilder) Build(ctx context.Context) *JobPramaan {
 			}
 		}
 		fmt.Printf("[%s] OpenSearch started\n", b.tg.Name())
+	}
+
+	if b.s3ObjectStore {
+		cloud := NewCloudPramaan(ctx, b.tg, dockerNetwork)
+		job.cloud = cloud
+		applyCloudObjectStoreConfig(job.config, cloud)
+		fmt.Printf("[%s] Cloud object store started\n", b.tg.Name())
 	}
 
 	job.image = b.buildImage(ctx)

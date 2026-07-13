@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"strings"
+	_ "time/tzdata"
 
 	"github.com/databahn-ai/databahn-jobs/cmd"
 	"github.com/databahn-ai/databahn-jobs/internal/common"

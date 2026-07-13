@@ -24,6 +24,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/datahealthscore"
 	evntjobCmd "github.com/databahn-ai/databahn-jobs/internal/eventsequencing/jobcmd"
 	"github.com/databahn-ai/databahn-jobs/internal/healthchecker/jobs"
+	"github.com/databahn-ai/databahn-jobs/internal/importrequest"
 	"github.com/databahn-ai/databahn-jobs/internal/insights"
 	"github.com/databahn-ai/databahn-jobs/internal/kafkaquery"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/jobcmd"
@@ -126,6 +127,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = data_catalog.ApplyS3ParquetCatalogToAthena(ctx)
 	case common.SEARCH_EXPORT_PROCESSOR:
 		result = searchExport.GenerateSearchExport(ctx)
+	case common.IMPORT_REQUEST_PROCESSOR:
+		result = importrequest.ProcessImportRequests(ctx)
 
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))

@@ -18,7 +18,7 @@ require (
 	github.com/databahn-ai/common-utils v0.268.0
 	github.com/databahn-ai/db-models v0.272.0
 	github.com/databahn-ai/go-logging v0.28.0
-	github.com/databahn-ai/pramaan-go v0.40.0
+	github.com/databahn-ai/pramaan-go v0.41.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.5

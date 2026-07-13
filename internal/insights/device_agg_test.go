@@ -2,6 +2,43 @@ package insights
 
 import "testing"
 
+func TestGetDeviceAggWriteBatch(t *testing.T) {
+	t.Setenv(deviceAggWriteBatchEnv, "150")
+	if got := getDeviceAggWriteBatch(); got != 150 {
+		t.Fatalf("getDeviceAggWriteBatch() = %d, want 150", got)
+	}
+
+	t.Setenv(deviceAggWriteBatchEnv, "0")
+	if got := getDeviceAggWriteBatch(); got != defaultDeviceAggWriteBatch {
+		t.Fatalf("getDeviceAggWriteBatch() = %d, want default %d", got, defaultDeviceAggWriteBatch)
+	}
+
+	t.Setenv(deviceAggWriteBatchEnv, "")
+	if got := getDeviceAggWriteBatch(); got != defaultDeviceAggWriteBatch {
+		t.Fatalf("getDeviceAggWriteBatch() = %d, want default %d", got, defaultDeviceAggWriteBatch)
+	}
+}
+
+func TestChunkDeviceDocuments(t *testing.T) {
+	docs := []DeviceDocument{
+		{Id: "tenant:host-1"},
+		{Id: "tenant:host-2"},
+		{Id: "tenant:host-3"},
+	}
+
+	batches := chunkDeviceDocuments(docs, 2)
+	if len(batches) != 2 {
+		t.Fatalf("len(batches) = %d, want 2", len(batches))
+	}
+	if len(batches[0]) != 2 || len(batches[1]) != 1 {
+		t.Fatalf("unexpected batch sizes: %d, %d", len(batches[0]), len(batches[1]))
+	}
+
+	if got := chunkDeviceDocuments(nil, 2); got != nil {
+		t.Fatalf("chunkDeviceDocuments(nil) = %#v, want nil", got)
+	}
+}
+
 func TestDeviceId(t *testing.T) {
 	id := DeviceId("tenant-1", "host.example.com")
 	if id != "tenant-1:host.example.com" {
