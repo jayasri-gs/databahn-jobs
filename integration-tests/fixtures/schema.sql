@@ -75,3 +75,31 @@ CREATE TABLE IF NOT EXISTS log_source (
     data_plane_id UUID,
     advanced_configuration JSONB DEFAULT '{}'::jsonb
 );
+
+CREATE TABLE IF NOT EXISTS import_request (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    created_by UUID NOT NULL,
+    updated_by UUID NOT NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(512),
+    import_type VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(512) NOT NULL,
+    file_storage VARCHAR(50),
+    file_type VARCHAR(20) NOT NULL,
+    has_headers BOOLEAN,
+    import_config JSONB,
+    stats JSONB,
+    error_message TEXT,
+    retries INT NOT NULL DEFAULT 0,
+    started_at TIMESTAMP WITHOUT TIME ZONE,
+    completed_at TIMESTAMP WITHOUT TIME ZONE,
+    CONSTRAINT uq_import_request_tenant_name UNIQUE (tenant_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_import_request_tenant_created ON import_request (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_import_request_tenant_status ON import_request (tenant_id, status);

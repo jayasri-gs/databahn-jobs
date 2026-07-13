@@ -13,6 +13,8 @@ const INSIGHTS_INTERVAL_MINUTES = 60
 const INSIGHTS_STAGING_INDEX_PREFIX = "db_staging_insights_"
 const INSIGHTS_STORE_INDEX_PREFIX = "db_insights_"
 const defaultInsightsReadBatch = 500
+const defaultDeviceAggWriteBatch = 200
+const deviceAggWriteBatchEnv = "DEVICE_AGG_WRITE_BATCH"
 
 // app names should not have underscores
 const APP_TYPE_SOURCEHOSTNAME = "sourcehostname"
@@ -38,6 +40,18 @@ const STATUS_SUCCESS = "success"
 
 func getInsightsReadBatch() int {
 	return utils.GetEnvInt("INSIGHTS_READ_BATCH", defaultInsightsReadBatch)
+}
+
+func getDeviceAggWriteBatch() int {
+	batch := utils.GetEnvInt(deviceAggWriteBatchEnv, defaultDeviceAggWriteBatch)
+	if batch < 1 {
+		logger.GetLogger().Warn("invalid device agg write batch, using default",
+			zap.String("env", deviceAggWriteBatchEnv),
+			zap.Int("value", batch),
+			zap.Int("default", defaultDeviceAggWriteBatch))
+		return defaultDeviceAggWriteBatch
+	}
+	return batch
 }
 
 const deviceAggEnv = "DEVICE_AGG"
