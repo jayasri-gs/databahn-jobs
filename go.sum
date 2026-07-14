@@ -202,8 +202,8 @@ github.com/databahn-ai/db-models v0.272.0 h1:QjaYoAVachcXOYZ7SCyV7f0ZS//4ELBEy2g
 github.com/databahn-ai/db-models v0.272.0/go.mod h1:ckshZC85sbTeU2Z/YtNn0DmYPR7pKAs5+ka3H3ooKFA=
 github.com/databahn-ai/go-logging v0.28.0 h1:PgkovYE1IQPH26DOQZjJQHST7ovNWvX3teepFVIZBJs=
 github.com/databahn-ai/go-logging v0.28.0/go.mod h1:P/NmnvqbBmcjqfQLYEWHFE8HLtOjORwcTrnlEkWM/Eg=
-github.com/databahn-ai/pramaan-go v0.39.0 h1:C6sUnrrz1xjyAlJeDQlCJZGik5yGGH+JXKWjZI5m9Gw=
-github.com/databahn-ai/pramaan-go v0.39.0/go.mod h1:BGWdGnXIkKt6ryZ98bE4PUgEkxwe234BhB32Q3PxiD8=
+github.com/databahn-ai/pramaan-go v0.41.0 h1:6BOjDBILOAKQr0jsJ6yEV0JBb/2yyzYNsUi4sTyue3I=
+github.com/databahn-ai/pramaan-go v0.41.0/go.mod h1:5bJNMBTiohjyDURJ+oFl3qLRccz3BKNd+vLQ8bLsV8E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

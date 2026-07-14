@@ -1,0 +1,95 @@
+{
+  "index_patterns": [
+    "db_insights_devices_*"
+  ],
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": "5",
+        "number_of_replicas": "1"
+      }
+    },
+    "mappings": {
+      "dynamic": "false",
+      "properties": {
+        "id": {
+          "type": "keyword"
+        },
+        "tenant_id": {
+          "type": "keyword"
+        },
+        "data_plane_id": {
+          "type": "keyword"
+        },
+        "key1": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        },
+        "key2": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        },
+        "key3": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        },
+        "global_min_time": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+          "type": "date"
+        },
+        "global_max_time": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+          "type": "date"
+        },
+        "timestamp": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+          "type": "date"
+        },
+        "updated_at": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+          "type": "date"
+        },
+        "device_timezone": {
+          "type": "keyword"
+        },
+        "timezone_updated_at": {
+          "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+          "type": "date"
+        },
+        "timezone_updated_by": {
+          "type": "keyword"
+        },
+        "sources": {
+          "type": "nested",
+          "properties": {
+            "source_id": {
+              "type": "keyword"
+            },
+            "min_time": {
+              "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+              "type": "date"
+            },
+            "max_time": {
+              "format": "epoch_millis||yyyy-MM-dd HH:mm:ss||yyyy-MM-dd",
+              "type": "date"
+            }
+          }
+        }
+      }
+    }
+  },
+  "composed_of": [],
+  "priority": 110
+}

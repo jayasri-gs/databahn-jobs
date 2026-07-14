@@ -44,10 +44,7 @@ func TestMain(m *testing.M) {
 			AlertIndexingTopic,
 		}).
 		WithJobDetails("databahn-jobs", jobDockerContext).
-		ForControlPlane(true, true).
-		WithConfigModifiers([]pramaan.ConfigModifier{
-			pramaan.WithObjectStoreS3("us-east-1"),
-		}).
+		ForControlPlane(true, true, true).
 		Build(ctx)
 
 	ensureAlertIndices(ctx, jobTest.GetOpenSearch(&testing.T{}))
@@ -83,9 +80,11 @@ func initDatabase(ctx context.Context, job *pramaan.JobPramaan) {
 func ensureAlertIndices(ctx context.Context, openSearch *pramaan.OpenSearchPramaan) {
 	for _, indexName := range []string{"db_alerts", "db_alerts_internal"} {
 		if err := openSearch.CreateIndex(ctx, indexName, nil); err != nil {
-			if !strings.Contains(err.Error(), "resource_already_exists_exception") {
-				panic(fmt.Sprintf("failed to create index %q: %v", indexName, err))
+			if strings.Contains(err.Error(), "resource_already_exists_exception") ||
+				strings.Contains(err.Error(), "index_create_block_exception") {
+				continue
 			}
+			panic(fmt.Sprintf("failed to create index %q: %v", indexName, err))
 		}
 	}
 }

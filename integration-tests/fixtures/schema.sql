@@ -50,3 +50,56 @@ CREATE TABLE IF NOT EXISTS alert_notification_checkpoint (
     checkpoint_value JSONB NOT NULL,
     alert_type VARCHAR(32)
 );
+
+CREATE TABLE IF NOT EXISTS log_source (
+    id UUID PRIMARY KEY,
+    configuration JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by UUID,
+    customer_id UUID,
+    description VARCHAR(512) DEFAULT '',
+    device VARCHAR(30) DEFAULT '',
+    log_type VARCHAR(30) DEFAULT '',
+    name VARCHAR(100) NOT NULL,
+    replay_source BOOLEAN NOT NULL DEFAULT FALSE,
+    reputation VARCHAR(255) DEFAULT '',
+    scope VARCHAR(255) DEFAULT '',
+    status VARCHAR(255) NOT NULL DEFAULT 'ACTIVE',
+    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    timestamp_override_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    timezone_normalization_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by UUID,
+    vendor VARCHAR(30) DEFAULT '',
+    version VARCHAR(36) DEFAULT '',
+    data_plane_id UUID,
+    advanced_configuration JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS import_request (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    created_by UUID NOT NULL,
+    updated_by UUID NOT NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(512),
+    import_type VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(512) NOT NULL,
+    file_storage VARCHAR(50),
+    file_type VARCHAR(20) NOT NULL,
+    has_headers BOOLEAN,
+    import_config JSONB,
+    stats JSONB,
+    error_message TEXT,
+    retries INT NOT NULL DEFAULT 0,
+    started_at TIMESTAMP WITHOUT TIME ZONE,
+    completed_at TIMESTAMP WITHOUT TIME ZONE,
+    CONSTRAINT uq_import_request_tenant_name UNIQUE (tenant_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_import_request_tenant_created ON import_request (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_import_request_tenant_status ON import_request (tenant_id, status);

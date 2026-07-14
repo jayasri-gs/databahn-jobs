@@ -38,6 +38,15 @@ object:
   backend: {{.ObjectBackend}}
   s3:
     region: {{.ObjectS3Region}}
+    endpoint: {{.ObjectS3Endpoint}}
+    access_key: {{.ObjectS3AccessKey}}
+    secret_key: {{.ObjectS3SecretKey}}
+    force_path_style: {{.ObjectS3ForcePathStyle}}
+  artifacts:
+    collection: {{.ObjectArtifactCollection}}
+s3:
+  artifacts:
+    bucket: {{.ArtifactsS3Bucket}}
 redis:
   default:
     is_cluster: false
@@ -115,8 +124,14 @@ type Config struct {
 	DatabasePort string
 	DatabaseName string
 
-	ObjectBackend  string
-	ObjectS3Region string
+	ObjectBackend            string
+	ObjectS3Region           string
+	ObjectS3Endpoint         string
+	ObjectS3AccessKey        string
+	ObjectS3SecretKey        string
+	ObjectS3ForcePathStyle   string
+	ObjectArtifactCollection string
+	ArtifactsS3Bucket        string
 }
 
 /*
@@ -142,6 +157,17 @@ func WithAuthenticationUrl(authenticationUrl string) ConfigModifier {
 	return func(config *Config) {
 		config.AuthenticationUrl = authenticationUrl
 	}
+}
+
+func applyCloudObjectStoreConfig(config *Config, cloud *CloudPramaan) {
+	config.ObjectBackend = "s3"
+	config.ObjectS3Region = cloud.GetRegion()
+	config.ObjectS3Endpoint = cloud.GetNetworkEndpoint()
+	config.ObjectS3AccessKey = cloud.GetAccessKey()
+	config.ObjectS3SecretKey = cloud.GetSecretKey()
+	config.ObjectS3ForcePathStyle = "true"
+	config.ObjectArtifactCollection = cloud.GetArtifactsBucket()
+	config.ArtifactsS3Bucket = cloud.GetArtifactsBucket()
 }
 
 func WithObjectStoreS3(region string) ConfigModifier {

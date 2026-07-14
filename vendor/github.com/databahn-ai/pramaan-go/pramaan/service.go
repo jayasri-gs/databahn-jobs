@@ -26,6 +26,7 @@ type ServicePramaan struct {
 	redis      *RedisPramaan
 	postgres   *PostgresPramaan
 	openSearch *OpenSearchPramaan
+	cloud      *CloudPramaan
 	vault      *VaultPramaan
 	prometheus *PrometheusPramaan
 }
@@ -56,6 +57,13 @@ func (s ServicePramaan) GetOpenSearch(t *testing.T) *OpenSearchPramaan {
 		t.Fatalf("OpenSearch not enabled/initialized")
 	}
 	return s.openSearch
+}
+
+func (s ServicePramaan) GetCloud(t *testing.T) *CloudPramaan {
+	if s.cloud == nil {
+		t.Fatalf("Cloud object store not enabled/initialized")
+	}
+	return s.cloud
 }
 
 func (s ServicePramaan) GetPrometheus(t *testing.T) *PrometheusPramaan {
@@ -162,6 +170,7 @@ type ServicePramaanBuilder struct {
 	prometheus             bool
 	postgres               bool
 	openSearch             bool
+	s3ObjectStore          bool
 	kafkaTopics            []TopicDetails
 	kafkaMessages          map[string][]dbkafka.Message
 	dockerFilePath         string
@@ -203,9 +212,10 @@ func (s *ServicePramaanBuilder) WithPrometheus() *ServicePramaanBuilder {
 	return s
 }
 
-func (s *ServicePramaanBuilder) ForControlPlane(withPostgres bool, withOpenSearch bool) *ServicePramaanBuilder {
+func (s *ServicePramaanBuilder) ForControlPlane(withPostgres bool, withOpenSearch bool, withS3ObjectStore bool) *ServicePramaanBuilder {
 	s.postgres = withPostgres
 	s.openSearch = withOpenSearch
+	s.s3ObjectStore = withS3ObjectStore
 	return s
 }
 
@@ -276,7 +286,7 @@ func (s *ServicePramaanBuilder) Build(ctx context.Context) *ServicePramaan {
 	pramaan := ServicePramaan{}
 	dockerNetwork, err := network.New(ctx)
 	if err != nil {
-		s.tg.Fatalf("Could not create network")
+		s.tg.Fatalf("Could not create network: %v", err)
 	}
 	pramaan.network = dockerNetwork
 	config := &Config{}
@@ -341,6 +351,13 @@ func (s *ServicePramaanBuilder) Build(ctx context.Context) *ServicePramaan {
 			}
 		}
 		fmt.Printf("[%s] OpenSearch Started\n", s.tg.Name())
+	}
+
+	if s.s3ObjectStore {
+		cloud := NewCloudPramaan(ctx, s.tg, dockerNetwork)
+		pramaan.cloud = cloud
+		applyCloudObjectStoreConfig(config, cloud)
+		fmt.Printf("[%s] Cloud object store started\n", s.tg.Name())
 	}
 
 	pramaan.service, pramaan.sg = s.buildService(ctx, s.tg, dockerNetwork, config)

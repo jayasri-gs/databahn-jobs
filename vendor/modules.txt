@@ -407,7 +407,7 @@ github.com/databahn-ai/db-models/utils
 ## explicit; go 1.22
 github.com/databahn-ai/go-logging/logger
 github.com/databahn-ai/go-logging/logger/constants
-# github.com/databahn-ai/pramaan-go v0.39.0
+# github.com/databahn-ai/pramaan-go v0.41.0
 ## explicit; go 1.25.0
 github.com/databahn-ai/pramaan-go/pramaan
 # github.com/davecgh/go-spew v1.1.1

@@ -181,6 +181,13 @@ func (w *ParquetWriter) Upload(ctx context.Context) error {
 		zap.String("object_key", objectKey),
 		zap.String("file_path", w.filePath))
 
+	if testSkipInsightsObjectStoreUpload() {
+		logger.GetLogger().Info("ParquetWriter.Upload skipped",
+			zap.String("tenant_id", w.index.TenantId),
+			zap.String("index_type", w.index.Type))
+		return nil
+	}
+
 	err := util.UploadFileToObjectStore(ctx, objectKey, w.filePath)
 	if err != nil {
 		logger.GetLogger().Error("ParquetWriter.Upload failed",
