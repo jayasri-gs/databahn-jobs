@@ -45,6 +45,17 @@ func (p *Pipeline) runSynapseStreamExport(ctx context.Context, destBucket string
 		sortColIdx = columnIndex(columns, "db_edge_ts")
 	}
 
+	// All validation must happen before uploader.Init — an early return after Init
+	// would leave an orphaned multipart upload behind.
+	partCols := query.PartitionColumnsForStoreType(p.request.DataStoreType)
+	rangeStartMs := p.request.StartTime
+	rangeEndMs := p.request.EndTime
+	hours := query.PlanHourChunks(rangeStartMs, rangeEndMs)
+	useHourChunks := len(hours) > 0
+	if useHourChunks && opts.HourBatchRows > 0 && sortColIdx < 0 && !opts.SkipPreflight {
+		return nil, fmt.Errorf("hour-chunk export requires db_edge_ts column in query result")
+	}
+
 	exportFormat := normalizedFormat(p.request.Format)
 	ext, contentType := formatMeta(exportFormat)
 	fileName, outputKey := p.buildExportObjectKey(ext)
@@ -53,15 +64,6 @@ func (p *Pipeline) runSynapseStreamExport(ctx context.Context, destBucket string
 	p.abortOrphanedMultipartUploads(ctx, destBucket)
 	if err := p.uploader.Init(ctx, destBucket, outputKey, contentType); err != nil {
 		return nil, fmt.Errorf("failed to init uploader: %w", err)
-	}
-
-	partCols := query.PartitionColumnsForStoreType(p.request.DataStoreType)
-	rangeStartMs := p.request.StartTime
-	rangeEndMs := p.request.EndTime
-	hours := query.PlanHourChunks(rangeStartMs, rangeEndMs)
-	useHourChunks := len(hours) > 0
-	if useHourChunks && opts.HourBatchRows > 0 && sortColIdx < 0 && !opts.SkipPreflight {
-		return nil, fmt.Errorf("hour-chunk export requires db_edge_ts column in query result")
 	}
 
 	if useHourChunks {

@@ -187,13 +187,16 @@ func (e *SynapseExecutor) ExecDDL(ctx context.Context, ddl string) error {
 }
 
 // ExternalTableExists checks sys.external_tables for a table created by CETAS.
+// OBJECT_ID resolves the unqualified name through the caller's default schema —
+// the same resolution CREATE/DROP EXTERNAL TABLE [name] uses — so a same-named
+// table in another schema never triggers a false "complete" match.
 func (e *SynapseExecutor) ExternalTableExists(ctx context.Context, tableName string) (bool, error) {
 	if e.db == nil {
 		return false, fmt.Errorf("synapse not connected")
 	}
 	var n int
 	if err := e.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM sys.external_tables WHERE name = @p1", tableName,
+		"SELECT COUNT(*) FROM sys.external_tables WHERE object_id = OBJECT_ID(@p1)", tableName,
 	).Scan(&n); err != nil {
 		return false, fmt.Errorf("check external table %s: %w", tableName, err)
 	}

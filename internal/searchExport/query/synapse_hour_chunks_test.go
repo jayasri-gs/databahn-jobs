@@ -94,3 +94,48 @@ func TestRangePartitionFilter_InvalidRange(t *testing.T) {
 		t.Errorf("expected empty filter for inverted range, got %q", got)
 	}
 }
+
+func TestRangePartitionFilter_EndOnHourBoundary_IncludesBoundaryHour(t *testing.T) {
+	// End exactly at 11:00:00.000 — rows with db_edge_ts == end live in hour
+	// partition 11 and must not be dropped.
+	startMs := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC).UnixMilli()
+	endMs := time.Date(2026, 7, 15, 11, 0, 0, 0, time.UTC).UnixMilli()
+	got := RangePartitionFilter(startMs, endMs, DestinationPartitionColumns)
+	if !strings.Contains(got, "hour_partition = '11'") {
+		t.Errorf("filter must include boundary hour 11:\n%s", got)
+	}
+}
+
+func TestPlanHourChunks_InclusiveEndBoundary(t *testing.T) {
+	start := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC).UnixMilli()
+	end := time.Date(2026, 7, 15, 11, 0, 0, 0, time.UTC).UnixMilli()
+	chunks := PlanHourChunks(start, end)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks=%d want 2 (hours 10 and 11, end inclusive)", len(chunks))
+	}
+	if chunks[1].StartMs != end {
+		t.Errorf("second chunk start=%d want %d", chunks[1].StartMs, end)
+	}
+}
+
+func TestRangePartitionFilter_HugeRange_FallsBackToBoundsOnly(t *testing.T) {
+	// 1 year ≈ 8760 hours — far above the predicate cap. Filter must stay small:
+	// db_edge_ts bounds only, no per-hour partition predicates.
+	startMs := time.Date(2025, 7, 15, 0, 0, 0, 0, time.UTC).UnixMilli()
+	endMs := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC).UnixMilli()
+	got := RangePartitionFilter(startMs, endMs, DestinationPartitionColumns)
+	if got == "" {
+		t.Fatal("expected non-empty filter")
+	}
+	if strings.Contains(got, "hour_partition") {
+		t.Errorf("huge range must not enumerate hour predicates, got %d bytes", len(got))
+	}
+	for _, want := range []string{
+		fmt.Sprintf("db_edge_ts >= '%d'", startMs),
+		fmt.Sprintf("db_edge_ts <= '%d'", endMs),
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("filter missing %q", want)
+		}
+	}
+}

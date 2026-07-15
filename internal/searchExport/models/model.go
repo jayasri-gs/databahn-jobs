@@ -90,12 +90,6 @@ func GetSearchExportRequests(db *gorm.DB, staleCutoff time.Time) ([]SearchExport
 	return reports, err
 }
 
-func UpdateRequestStatus(db *gorm.DB, id string, status string) error {
-	return db.Table("audit_report").
-		Where("id = ?", id).
-		Update("status", status).Error
-}
-
 func UpdateRequestStatusAndRetries(db *gorm.DB, id string, status string, retries int) error {
 	return db.Table("audit_report").
 		Where("id = ?", id).
@@ -145,6 +139,20 @@ func UpdateExecutionStartedAt(db *gorm.DB, id string, t time.Time) error {
 				t.UTC().Format(time.RFC3339),
 			),
 		).Error
+}
+
+// ClaimPendingJob atomically moves a REQUESTED/FAILED report to PROCESSING.
+// Returns true only for the caller whose UPDATE actually transitioned the row,
+// so two pods polling the same report can never both process it (and never
+// abort each other's in-flight multipart uploads via prefix cleanup).
+func ClaimPendingJob(db *gorm.DB, id string) (bool, error) {
+	result := db.Table("audit_report").
+		Where("id = ? AND status IN ?", id, []string{consts.REQUESTED, consts.FAILED}).
+		Update("status", consts.PROCESSING)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // ClaimStaleProcessingJob atomically refreshes executionStartedAt for a stale PROCESSING job.

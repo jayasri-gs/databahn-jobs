@@ -108,8 +108,13 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		}
 		log.Info("Claimed stale PROCESSING job for resume")
 	} else {
-		if err := models.UpdateRequestStatus(db, reportID, consts.PROCESSING); err != nil {
-			log.Error("Failed to update status to PROCESSING", zap.Error(err))
+		claimed, err := models.ClaimPendingJob(db, reportID)
+		if err != nil {
+			log.Error("Failed to claim pending job", zap.Error(err))
+			return
+		}
+		if !claimed {
+			log.Info("Pending job already claimed by another pod — skipping")
 			return
 		}
 		now := time.Now()
