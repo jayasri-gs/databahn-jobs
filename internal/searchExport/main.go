@@ -12,7 +12,10 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/factory"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/pipeline"
+	"github.com/databahn-ai/databahn-jobs/internal/searchExport/query"
+	"github.com/databahn-ai/databahn-jobs/internal/searchExport/unload"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/upload"
+	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -141,6 +144,31 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		return models.UpdateQueryExecutionID(db, reportID, executionID)
 	}
 
+	// stagingCleanup drops the report's CETAS objects and staged blobs on permanent
+	// failure. Reconnects because the pipeline closes its Synapse connection on exit.
+	stagingCleanup := func(cleanupCtx context.Context) {
+		ce, ok := deps.Synapse.(query.CETASExecutor)
+		if !ok || deps.StagingBlobConfig == nil {
+			return
+		}
+		if err := deps.Synapse.Connect(cleanupCtx); err != nil {
+			log.Warn("CETAS permanent-failure cleanup: synapse connect failed", zap.Error(err))
+			return
+		}
+		defer deps.Synapse.Close()
+		blobClient, err := destination.NewAzureBlobClient(deps.StagingBlobConfig)
+		if err != nil {
+			log.Warn("CETAS permanent-failure cleanup: blob client failed", zap.Error(err))
+			return
+		}
+		reader, err := unload.NewBlobReader(blobClient, deps.StagingBlobConfig.Container, cfg.TempDir)
+		if err != nil {
+			log.Warn("CETAS permanent-failure cleanup: blob reader failed", zap.Error(err))
+			return
+		}
+		pipeline.CleanupCETASArtifacts(cleanupCtx, ce, reader, reportID, log)
+	}
+
 	var result *pipeline.PipelineResult
 	if isStaleProcessing {
 		result, err = p.ResumeRun(ctx, deps.ExportBucket, exportConfig.QueryExecutionID, onQueryStart)
@@ -148,12 +176,12 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		result, err = p.Run(ctx, deps.ExportBucket, onQueryStart)
 	}
 	if err != nil {
-		handleFailure(ctx, db, log, report, err.Error(), deps.ExportBucket, deps.Uploader, nil)
+		handleFailure(ctx, db, log, report, err.Error(), deps.ExportBucket, deps.Uploader, stagingCleanup)
 		return
 	}
 
 	if err := models.UpdateExportComplete(db, reportID, result.PresignedURL, result.Expiry); err != nil {
-		handleFailure(ctx, db, log, report, "Failed to update completion status: "+err.Error(), deps.ExportBucket, deps.Uploader, nil)
+		handleFailure(ctx, db, log, report, "Failed to update completion status: "+err.Error(), deps.ExportBucket, deps.Uploader, stagingCleanup)
 		return
 	}
 

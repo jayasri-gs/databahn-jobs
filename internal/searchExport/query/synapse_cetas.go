@@ -18,6 +18,10 @@ const cetasSASExpiry = 24 * time.Hour
 type CETASExecutor interface {
 	ExecDDL(ctx context.Context, ddl string) error
 	GetQueryColumns(ctx context.Context, sql, database string) ([]string, error)
+	// ExternalTableExists reports whether a CETAS external table exists. CETAS creates
+	// the table object only after the statement fully succeeds, so existence proves the
+	// staged query output is complete.
+	ExternalTableExists(ctx context.Context, tableName string) (bool, error)
 }
 
 // StagingCreds holds credential parameters for a Synapse DATABASE SCOPED CREDENTIAL.
@@ -69,14 +73,14 @@ func StagingCredsFromBlobConfig(cfg *destination.AzureBlobConfig) (*StagingCreds
 	}
 }
 
-// CETASTableName returns the Synapse external table name for a CETAS chunk.
-func CETASTableName(reportIDShort string, chunkIdx int) string {
-	return fmt.Sprintf("staging_%s_%04d", reportIDShort, chunkIdx)
+// CETASTableName returns the Synapse external table name for a report's CETAS export.
+func CETASTableName(reportIDShort string) string {
+	return fmt.Sprintf("staging_%s", reportIDShort)
 }
 
-// CETASStagingPrefix returns the blob prefix written by CETAS for a given chunk.
-func CETASStagingPrefix(reportID string, chunkIdx int) string {
-	return fmt.Sprintf("databahn_out/%s/chunk_%04d/", reportID, chunkIdx)
+// CETASStagingPrefix returns the blob prefix written by CETAS for a report.
+func CETASStagingPrefix(reportID string) string {
+	return fmt.Sprintf("databahn_out/%s/full/", reportID)
 }
 
 // CETASFileFormatName returns the Synapse file format name for a given export format.
@@ -180,6 +184,20 @@ func (e *SynapseExecutor) ExecDDL(ctx context.Context, ddl string) error {
 		return fmt.Errorf("DDL failed: %w", err)
 	}
 	return nil
+}
+
+// ExternalTableExists checks sys.external_tables for a table created by CETAS.
+func (e *SynapseExecutor) ExternalTableExists(ctx context.Context, tableName string) (bool, error) {
+	if e.db == nil {
+		return false, fmt.Errorf("synapse not connected")
+	}
+	var n int
+	if err := e.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sys.external_tables WHERE name = @p1", tableName,
+	).Scan(&n); err != nil {
+		return false, fmt.Errorf("check external table %s: %w", tableName, err)
+	}
+	return n > 0, nil
 }
 
 // escapeSQL single-quote-escapes a string for Synapse DDL.

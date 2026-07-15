@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -65,6 +66,24 @@ func HourPartitionFilter(startMs int64, cols PartitionColumns) string {
 		cols.Day, t.Day(),
 		cols.Hour, t.Hour(),
 	)
+}
+
+// RangePartitionFilter builds a whole-range predicate for a single CETAS statement:
+// an OR of hour partition equality filters covering [rangeStartMs, rangeEndMs], plus
+// db_edge_ts bounds at the range edges. Returns "" for an invalid range.
+func RangePartitionFilter(rangeStartMs, rangeEndMs int64, cols PartitionColumns) string {
+	hours := PlanHourChunks(rangeStartMs, rangeEndMs)
+	if len(hours) == 0 {
+		return ""
+	}
+	parts := make([]string, len(hours))
+	for i, h := range hours {
+		parts[i] = "(" + HourPartitionFilter(h.StartMs, cols) + ")"
+	}
+	return fmt.Sprintf("(%s) AND %s >= '%d' AND %s <= '%d'",
+		strings.Join(parts, " OR "),
+		synapseExportSortColumn, rangeStartMs,
+		synapseExportSortColumn, rangeEndMs)
 }
 
 // HourChunkFilter adds optional db_edge_ts bounds on the first/last hour of a range.

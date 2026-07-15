@@ -6,17 +6,14 @@ import (
 )
 
 func TestCETASTableName(t *testing.T) {
-	if got := CETASTableName("abc12345", 0); got != "staging_abc12345_0000" {
-		t.Errorf("got %q, want staging_abc12345_0000", got)
-	}
-	if got := CETASTableName("abc12345", 999); got != "staging_abc12345_0999" {
-		t.Errorf("got %q, want staging_abc12345_0999", got)
+	if got := CETASTableName("abc12345"); got != "staging_abc12345" {
+		t.Errorf("got %q, want staging_abc12345", got)
 	}
 }
 
 func TestCETASStagingPrefix(t *testing.T) {
-	got := CETASStagingPrefix("report-uuid-1234", 2)
-	if got != "databahn_out/report-uuid-1234/chunk_0002/" {
+	got := CETASStagingPrefix("report-uuid-1234")
+	if got != "databahn_out/report-uuid-1234/full/" {
 		t.Errorf("got %q", got)
 	}
 }

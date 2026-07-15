@@ -1,6 +1,7 @@
 package query
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -66,5 +67,30 @@ func TestHourChunkFilter_middleHourNoEdgeBounds(t *testing.T) {
 	got := HourChunkFilter(chunkStart, rangeStart, rangeEnd, DestinationPartitionColumns)
 	if strings.Contains(got, "db_edge_ts") {
 		t.Fatalf("unexpected edge bound: %q", got)
+	}
+}
+
+func TestRangePartitionFilter_TwoHours(t *testing.T) {
+	// 2026-07-15 10:30:00 UTC .. 2026-07-15 11:10:00 UTC → hours 10 and 11
+	startMs := time.Date(2026, 7, 15, 10, 30, 0, 0, time.UTC).UnixMilli()
+	endMs := time.Date(2026, 7, 15, 11, 10, 0, 0, time.UTC).UnixMilli()
+	got := RangePartitionFilter(startMs, endMs, DestinationPartitionColumns)
+
+	for _, want := range []string{
+		"hour_partition = '10'",
+		"hour_partition = '11'",
+		" OR ",
+		fmt.Sprintf("db_edge_ts >= '%d'", startMs),
+		fmt.Sprintf("db_edge_ts <= '%d'", endMs),
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("filter missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestRangePartitionFilter_InvalidRange(t *testing.T) {
+	if got := RangePartitionFilter(100, 50, DestinationPartitionColumns); got != "" {
+		t.Errorf("expected empty filter for inverted range, got %q", got)
 	}
 }
