@@ -49,45 +49,6 @@ func BlockIDForPart(partNumber int) string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("part-%06d", partNumber)))
 }
 
-// BlockIDsThrough returns staged block IDs for parts 1..partNumber inclusive.
-func BlockIDsThrough(partNumber int) []string {
-	if partNumber <= 0 {
-		return nil
-	}
-	ids := make([]string, partNumber)
-	for i := 1; i <= partNumber; i++ {
-		ids[i-1] = BlockIDForPart(i)
-	}
-	return ids
-}
-
-// PartInfosThrough rebuilds committed part metadata for Azure block uploads.
-func PartInfosThrough(partNumber int) []PartInfo {
-	if partNumber <= 0 {
-		return nil
-	}
-	parts := make([]PartInfo, partNumber)
-	for i := 1; i <= partNumber; i++ {
-		id := BlockIDForPart(i)
-		parts[i-1] = PartInfo{PartNumber: i, ETag: id}
-	}
-	return parts
-}
-
-// ReattachMultipart continues an in-flight Azure block blob upload after resume.
-func (u *AzureUploader) ReattachMultipart(container, blobName, uploadID string, blockIDs []string, contentType string) error {
-	if u.client == nil {
-		return fmt.Errorf("azure client not configured")
-	}
-	u.container = container
-	u.blobName = blobName
-	u.uploadID = uploadID
-	u.contentType = contentType
-	u.blockIDs = append([]string(nil), blockIDs...)
-	u.bbClient = u.client.ServiceClient().NewContainerClient(container).NewBlockBlobClient(blobName)
-	return nil
-}
-
 func (u *AzureUploader) UploadPart(ctx context.Context, partNumber int, data io.Reader, size int64) (*PartInfo, error) {
 	if u.bbClient == nil {
 		return nil, fmt.Errorf("azure uploader not initialized")
@@ -121,27 +82,15 @@ func (u *AzureUploader) Complete(ctx context.Context, parts []PartInfo) error {
 }
 
 func (u *AzureUploader) Abort(ctx context.Context) error {
-	return u.AbortInFlight(ctx, u.container, u.blobName)
-}
-
-// AbortInFlight deletes an in-progress block blob upload using checkpoint bucket/key.
-func (u *AzureUploader) AbortInFlight(ctx context.Context, container, blobName string) error {
-	if u.client == nil || container == "" || blobName == "" {
+	if u.client == nil || u.container == "" || u.blobName == "" {
 		return nil
 	}
-	bb := u.client.ServiceClient().NewContainerClient(container).NewBlockBlobClient(blobName)
+	bb := u.client.ServiceClient().NewContainerClient(u.container).NewBlockBlobClient(u.blobName)
 	_, err := bb.Delete(ctx, nil)
 	return err
 }
 
 func (u *AzureUploader) UploadID() string { return u.uploadID }
-
-func (u *AzureUploader) ListParts(ctx context.Context) ([]PartInfo, error) {
-	if len(u.blockIDs) == 0 {
-		return nil, nil
-	}
-	return PartInfosThrough(len(u.blockIDs)), nil
-}
 
 func (u *AzureUploader) GeneratePresignedURL(ctx context.Context, expiry time.Duration) (string, error) {
 	if u.blobCfg == nil {

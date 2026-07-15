@@ -129,7 +129,6 @@ func (p *Pipeline) runSynapseCETASExport(
 	}()
 
 	if len(allFiles) == 0 {
-		p.cleanupCheckpoint()
 		return &PipelineResult{TotalRows: 0, TotalBytes: 0}, nil
 	}
 
@@ -159,7 +158,7 @@ func (p *Pipeline) runSynapseCETASExport(
 			delim = ","
 		}
 		totalRows, totalBytes, err = stagingReader.StreamToUploader(
-			ctx, p.uploader, allFiles, header, exportFormat, delim, p.log, unload.StreamOptions{},
+			ctx, p.uploader, allFiles, header, exportFormat, delim, p.log,
 		)
 	} else {
 		// CETAS PARQUET output: decode Parquet files, encode to JSON/Excel.
@@ -167,17 +166,14 @@ func (p *Pipeline) runSynapseCETASExport(
 	}
 	if err != nil {
 		_ = p.uploader.Abort(ctx)
-		p.cleanupCheckpoint()
 		return nil, fmt.Errorf("CETAS upload: %w", err)
 	}
 
 	if totalBytes == 0 {
-		p.cleanupCheckpoint()
 		return &PipelineResult{TotalRows: totalRows, TotalBytes: 0}, nil
 	}
 
 	presignedURL, _ := p.uploader.GeneratePresignedURL(ctx, p.config.PresignExpiry)
-	p.cleanupCheckpoint()
 	return &PipelineResult{
 		TotalRows:    totalRows,
 		TotalBytes:   totalBytes,

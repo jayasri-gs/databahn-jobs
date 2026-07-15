@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
 	"github.com/databahn-ai/databahn-jobs/internal/config"
@@ -13,7 +12,6 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/factory"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/models"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/pipeline"
-	"github.com/databahn-ai/databahn-jobs/internal/searchExport/state"
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/upload"
 	logging "github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
@@ -27,13 +25,11 @@ func GenerateSearchExport(ctx context.Context) common.JobResult {
 	tempDir := utils.GetEnvOrDefault("SEARCH_EXPORT_TEMP_DIR", "/tmp/search-export")
 	maxSegmentMB := utils.GetEnvInt("SEARCH_EXPORT_MAX_SEGMENT_MB", 10)
 	presignHours := utils.GetEnvInt("SEARCH_EXPORT_PRESIGN_HOURS", consts.PresignExpiryHours)
-	efsMountPath := utils.GetEnvOrDefault("SEARCH_EXPORT_EFS_MOUNT", "/opt/databahn/search-export")
 	staleMinutes := utils.GetEnvInt("SEARCH_EXPORT_STALE_PROCESSING_MINUTES", 40)
 	staleCutoff := time.Now().Add(-time.Duration(staleMinutes) * time.Minute)
 
 	logging.GetLogger().Info("Starting search export processor",
 		zap.Int("parallelism", parallelism),
-		zap.String("efsMountPath", efsMountPath),
 		zap.Int("staleMinutes", staleMinutes))
 
 	db := config.GetDB()
@@ -72,7 +68,6 @@ func GenerateSearchExport(ctx context.Context) common.JobResult {
 				MaxSegmentSizeMB: maxSegmentMB,
 				PresignExpiry:    time.Duration(presignHours) * time.Hour,
 				LifecycleTag:     "export-expiry=true",
-				EFSMountPath:     efsMountPath,
 			})
 		}(report)
 	}
@@ -89,11 +84,11 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 	log := exportLogger(report, exportConfig)
 
 	if err != nil {
-		handleFailure(ctx, db, log, cfg, report, "Failed to parse config: "+err.Error(), nil, nil)
+		handleFailure(ctx, db, log, report, "Failed to parse config: "+err.Error(), "", nil, nil)
 		return
 	}
 	if exportConfig == nil {
-		handleFailure(ctx, db, log, cfg, report, "Missing searchExportConfig", nil, nil)
+		handleFailure(ctx, db, log, report, "Missing searchExportConfig", "", nil, nil)
 		return
 	}
 
@@ -125,13 +120,13 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 
 	tenantID, err := uuid.Parse(report.TenantID)
 	if err != nil {
-		handleFailure(ctx, db, log, cfg, report, "Invalid tenantId: "+err.Error(), nil, nil)
+		handleFailure(ctx, db, log, report, "Invalid tenantId: "+err.Error(), "", nil, nil)
 		return
 	}
 
 	deps, err := factory.NewExportDeps(ctx, db, exportConfig, tenantID, reportID, log)
 	if err != nil {
-		handleFailure(ctx, db, log, cfg, report, "Failed to build export dependencies: "+err.Error(), nil, nil)
+		handleFailure(ctx, db, log, report, "Failed to build export dependencies: "+err.Error(), "", nil, nil)
 		return
 	}
 
@@ -148,19 +143,17 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 
 	var result *pipeline.PipelineResult
 	if isStaleProcessing {
-		result, err = p.ResumeRun(ctx, deps.ExportBucket, onQueryStart)
+		result, err = p.ResumeRun(ctx, deps.ExportBucket, exportConfig.QueryExecutionID, onQueryStart)
 	} else {
 		result, err = p.Run(ctx, deps.ExportBucket, onQueryStart)
 	}
 	if err != nil {
-		awsCfg := exportAWSConfig(deps)
-		handleFailure(ctx, db, log, cfg, report, err.Error(), awsCfg, deps.Uploader)
+		handleFailure(ctx, db, log, report, err.Error(), deps.ExportBucket, deps.Uploader, nil)
 		return
 	}
 
 	if err := models.UpdateExportComplete(db, reportID, result.PresignedURL, result.Expiry); err != nil {
-		awsCfg := exportAWSConfig(deps)
-		handleFailure(ctx, db, log, cfg, report, "Failed to update completion status: "+err.Error(), awsCfg, deps.Uploader)
+		handleFailure(ctx, db, log, report, "Failed to update completion status: "+err.Error(), deps.ExportBucket, deps.Uploader, nil)
 		return
 	}
 
@@ -172,7 +165,7 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		zap.Time("downloadLinkExpiry", result.Expiry))
 }
 
-func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, cfg pipeline.PipelineConfig, report models.SearchExportReport, errMsg string, awsCfg *aws.Config, uploader upload.CloudUploader) {
+func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, report models.SearchExportReport, errMsg string, exportBucket string, uploader upload.CloudUploader, stagingCleanup func(context.Context)) {
 	newRetries := report.Retries + 1
 	log.Error("Export failed",
 		zap.String("status", consts.FAILED),
@@ -185,31 +178,12 @@ func handleFailure(ctx context.Context, db *gorm.DB, log *zap.Logger, cfg pipeli
 		return
 	}
 
-	if newRetries >= consts.MaxRetries && cfg.EFSMountPath != "" {
-		cp, err := state.Read(cfg.EFSMountPath, report.ID.String())
-		if err == nil && cp != nil && cp.UploadID != "" {
-			if az, ok := uploader.(*upload.AzureUploader); ok {
-				_ = az.AbortInFlight(ctx, cp.Bucket, cp.Key)
-			} else if awsCfg != nil {
-				if abortErr := upload.AbortOrphanedUpload(ctx, *awsCfg, cp.Bucket, cp.Key, cp.UploadID); abortErr != nil {
-					log.Warn("Failed to abort orphaned multipart upload", zap.Error(abortErr))
-				}
-			} else if uploader != nil {
-				_ = uploader.Abort(ctx)
-			}
+	if newRetries >= consts.MaxRetries {
+		if s3up, ok := uploader.(*upload.S3Uploader); ok && exportBucket != "" {
+			s3up.AbortIncompleteUploads(ctx, exportBucket, "exports/"+report.ID.String()+"/")
 		}
-		if err := state.Delete(cfg.EFSMountPath, report.ID.String()); err != nil {
-			log.Warn("Failed to delete EFS checkpoint on permanent failure", zap.Error(err))
+		if stagingCleanup != nil {
+			stagingCleanup(ctx)
 		}
 	}
-}
-
-func exportAWSConfig(deps *factory.ExportDeps) *aws.Config {
-	if deps == nil || deps.Athena == nil {
-		return nil
-	}
-	if c, ok := deps.Athena.GetAWSConfig().(aws.Config); ok {
-		return &c
-	}
-	return nil
 }
