@@ -194,12 +194,9 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	return nil, ""
 }
 
-func ProduceStatus(mst *replaymanager.MetaDataStore, inputReq model.Message) {
-
+func BuildStatusList(mst *replaymanager.MetaDataStore) []ack.Status {
 	var statusList []ack.Status
 	for _, val := range mst.GetValuesOfMap() {
-		filepath.Join(val.Prefix, val.FileName)
-
 		status := ack.Status{
 			FileName:    val.FileName,
 			RequestId:   val.RequestId,
@@ -215,8 +212,11 @@ func ProduceStatus(mst *replaymanager.MetaDataStore, inputReq model.Message) {
 		}
 		statusList = append(statusList, status)
 	}
+	return statusList
+}
 
-	acknowledgment := PrepareAck(statusList, inputReq)
+func ProduceStatus(mst *replaymanager.MetaDataStore, inputReq model.Message) {
+	acknowledgment := PrepareAck(BuildStatusList(mst), inputReq)
 	err := AckProducer.Produce(context.Background(), acknowledgment, nil)
 	if err != nil {
 		logger.GetLogger().Error("error while publishing status to kafka", zap.Error(err))

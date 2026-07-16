@@ -75,6 +75,15 @@ func NewMetaStore(reqId string) (*MetaDataStore, error) {
 	return &mst, nil
 }
 
+// NewMetaStoreForTest creates an in-memory metadata store for unit tests.
+func NewMetaStoreForTest(entries map[string]model.MetaDataValue) *MetaDataStore {
+	copied := make(map[string]model.MetaDataValue, len(entries))
+	for key, value := range entries {
+		copied[key] = value
+	}
+	return &MetaDataStore{metaMap: copied}
+}
+
 func (mst *MetaDataStore) AddMetaData(value model.MetaDataValue, key string) {
 	mst.Mutex.Lock()
 	defer mst.Mutex.Unlock()
@@ -174,11 +183,51 @@ func (mst *MetaDataStore) flushLocked() {
 	}
 }
 
+func isTerminalExecutionStatus(status string) bool {
+	return status == constants.StatusCompleted || status == constants.StatusFailed
+}
+
+// MarkUnfinishedExecutionsAsFailed marks in-progress files as failed during shutdown.
+// Returns the number of files updated.
+func (mst *MetaDataStore) MarkUnfinishedExecutionsAsFailed(errorMsg string) int {
+	mst.Mutex.Lock()
+	defer mst.Mutex.Unlock()
+
+	updated := 0
+	now := time.Now()
+	for key, data := range mst.metaMap {
+		if key == constants.Global {
+			continue
+		}
+		if isTerminalExecutionStatus(data.Status) {
+			continue
+		}
+		data.Status = constants.StatusFailed
+		data.ErrorMsg = []string{errorMsg}
+		if data.EndTime.IsZero() {
+			data.EndTime = now
+		}
+		mst.metaMap[key] = data
+		updated++
+	}
+	if updated > 0 {
+		mst.updateGlobalStatusLocked()
+		mst.flushLocked()
+	}
+	return updated
+}
+
 func (mst *MetaDataStore) UpdateGlobalStatus() {
 	logger.GetLogger().Info("CleanUp Invoked.")
 
 	mst.Mutex.Lock()
 	defer mst.Mutex.Unlock()
+	mst.updateGlobalStatusLocked()
+	mst.flushLocked()
+	logger.GetLogger().Info("CleanUp StatusCompleted.")
+}
+
+func (mst *MetaDataStore) updateGlobalStatusLocked() {
 	success := 0
 	failed := 0
 	for key, data := range mst.metaMap {
@@ -209,6 +258,4 @@ func (mst *MetaDataStore) UpdateGlobalStatus() {
 
 	global.Time = time.Now()
 	mst.metaMap[constants.Global] = global
-	mst.flushLocked()
-	logger.GetLogger().Info("CleanUp StatusCompleted.")
 }

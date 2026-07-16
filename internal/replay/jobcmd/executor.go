@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,6 +25,11 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/util"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+)
+
+var (
+	replayInterrupted  atomic.Bool
+	replayShutdownOnce sync.Once
 )
 
 func ExecuteReplayJob(input model.Message) common.JobResult {
@@ -115,9 +121,13 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	logger.GetLogger().Info("input message : ", zap.Reflect("Input data : ", inputReq))
 	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetValuesOfMap()))
 	logger.GetLogger().Info("Headers ", zap.Reflect("Headers ", processor.GetHeader(inputReq)))
-	processor.ProduceStatus(mst, inputReq)
-	logger.GetLogger().Info("threads jobs are completed ")
-	mst.UpdateGlobalStatus()
+	if !replayInterrupted.Load() {
+		processor.ProduceStatus(mst, inputReq)
+		logger.GetLogger().Info("threads jobs are completed ")
+		mst.UpdateGlobalStatus()
+	} else {
+		logger.GetLogger().Info("replay processing interrupted by shutdown hook, skipping normal status publish")
+	}
 
 }
 
@@ -130,10 +140,9 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, input
 
 	<-sig
 
-	logger.GetLogger().Info("Flushed MetaData")
-	mst.Flush()
-	time.Sleep(1 * time.Second)
-	processor.ProduceStatus(mst, input)
+	replayShutdownOnce.Do(func() {
+		handleReplayShutdown(ctx, mst, input)
+	})
 	cluster, err := kafka.GetKafkaCluster(constants.ClusterName)
 	if err == nil {
 		cluster.CloseConsumer(ctx, constants.ClusterName)
