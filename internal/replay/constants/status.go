@@ -11,3 +11,5 @@ const StatusProcessing = "PROCESSING"
 const StatusDownloaded = "DOWNLOAD"
 
 const Global string = "GLOBAL"
+
+const ProcessingInterruptedErrorMsg = "Processing interrupted, please retry."
