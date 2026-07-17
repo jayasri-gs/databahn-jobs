@@ -34,6 +34,16 @@ func TestHourPartitionFilter_destination(t *testing.T) {
 	}
 }
 
+func TestHourPartitionFilter_external(t *testing.T) {
+	ms := time.Date(2026, 6, 18, 9, 0, 0, 0, time.UTC).UnixMilli()
+	got := HourPartitionFilter(ms, ExternalHivePartitionColumns)
+	// Aliases must match the backend Synapse view projection: year/month/day/hour.
+	want := "year = '2026' AND month = '06' AND day = '18' AND hour = '09'"
+	if got != want {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestHourChunkFilter_firstHourMinBound(t *testing.T) {
 	rangeStart := time.Date(2026, 6, 18, 10, 30, 0, 0, time.UTC).UnixMilli()
 	rangeEnd := time.Date(2026, 6, 18, 14, 45, 0, 0, time.UTC).UnixMilli()

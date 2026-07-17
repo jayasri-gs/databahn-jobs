@@ -27,10 +27,12 @@ var DestinationPartitionColumns = PartitionColumns{
 }
 
 // ExternalHivePartitionColumns is used for EXTERNAL_STORAGE Azure Blob datasets.
+// Names must match the filepath() aliases projected by the backend Synapse view
+// (AbstractSynapsePartitionedOpenRowsetViewDdl): year/month/day/hour.
 var ExternalHivePartitionColumns = PartitionColumns{
 	Year:  "year",
 	Month: "month",
-	Day:   "date",
+	Day:   "day",
 	Hour:  "hour",
 }
 
