@@ -177,14 +177,17 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 		throughPutController.IncrementOrWait()
 		replayTags := metrics.ReplayMetricTags(req)
 		recordReplayMetric(metrics.MetricReplayAttempted, replayTags)
+		syncFailed := false
 		producer.SendAsyncTopic(message, utils.GetDynamicTopicName(topic), func(err error) {
 			if err != nil {
+				syncFailed = true
 				logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
 				recordReplayMetric(metrics.MetricReplayFailed, replayTags)
-				return
 			}
-			recordReplayMetric(metrics.MetricReplaySucceeded, replayTags)
 		})
+		if !syncFailed {
+			recordReplayMetric(metrics.MetricReplaySucceeded, replayTags)
+		}
 
 		if lineCounter%10000 == 0 {
 			//logger.GetLogger(("lineCounter : ", lineCounter))
