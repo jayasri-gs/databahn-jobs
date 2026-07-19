@@ -21,38 +21,40 @@ const (
 
 var (
 	metricsProducer *kafka.Producer
-	initOnce        sync.Once
-	initErr         error
+	initMu          sync.Mutex
 )
 
 func Init(ctx context.Context) error {
-	initOnce.Do(func() {
-		brokers := config.GetDataReplayConfiguration().GetString(configuration.ProcessKafkaClusterBootstrapServers)
-		if brokers == "" {
-			initErr = nil
-			logger.GetLogger().Warn("replay metrics: kafka brokers not configured, recovery counters disabled")
-			return
-		}
+	initMu.Lock()
+	defer initMu.Unlock()
 
-		cluster := kafka.NewKafkaCluster("replay_metrics_kafka_cluster", brokers)
-		prodExtraParam := map[string]any{
-			"acks":             1,
-			"linger.ms":        1000,
-			"batch.size":       100,
-			"compression.type": "snappy",
-		}
-		producer, err := cluster.NewProducer(ctx, kafka.ProducerConfig{
-			Name:       "replay_metrics_kafka_producer",
-			Topic:      otelMetricsTopic,
-			ExtraParam: prodExtraParam,
-		})
-		if err != nil {
-			initErr = err
-			return
-		}
-		metricsProducer = producer
+	if metricsProducer != nil {
+		return nil
+	}
+
+	brokers := config.GetDataReplayConfiguration().GetString(configuration.ProcessKafkaClusterBootstrapServers)
+	if brokers == "" {
+		logger.GetLogger().Warn("replay metrics: kafka brokers not configured, recovery counters disabled")
+		return nil
+	}
+
+	cluster := kafka.NewKafkaCluster("replay_metrics_kafka_cluster", brokers)
+	prodExtraParam := map[string]any{
+		"acks":             1,
+		"linger.ms":        1000,
+		"batch.size":       100,
+		"compression.type": "snappy",
+	}
+	producer, err := cluster.NewProducer(ctx, kafka.ProducerConfig{
+		Name:       "replay_metrics_kafka_producer",
+		Topic:      otelMetricsTopic,
+		ExtraParam: prodExtraParam,
 	})
-	return initErr
+	if err != nil {
+		return err
+	}
+	metricsProducer = producer
+	return nil
 }
 
 func RecordCounter(metricName string, tags map[string]string, value int64) {
@@ -76,6 +78,9 @@ func RecordCounter(metricName string, tags map[string]string, value int64) {
 }
 
 func Shutdown(ctx context.Context) {
+	initMu.Lock()
+	defer initMu.Unlock()
+
 	if metricsProducer == nil {
 		return
 	}

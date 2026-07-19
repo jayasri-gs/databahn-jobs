@@ -22,6 +22,9 @@ func ReplayTypeFromJobType(jobType string) string {
 	case "CUSTOM":
 		return "custom"
 	default:
+		if strings.TrimSpace(jobType) == "" {
+			return "custom"
+		}
 		return ReplayTypeNone
 	}
 }
