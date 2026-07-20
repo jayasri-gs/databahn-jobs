@@ -7,10 +7,12 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/common"
+	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/utils"
@@ -22,8 +24,15 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/source/dbaws"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
+	"github.com/databahn-ai/db-models/alerts_async"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
+)
+
+var (
+	replayInterrupted  atomic.Bool
+	replayShutdownOnce sync.Once
+	publishReplayStatus = processor.ProduceStatus
 )
 
 func ExecuteReplayJob(input model.Message) common.JobResult {
@@ -115,9 +124,13 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	logger.GetLogger().Info("input message : ", zap.Reflect("Input data : ", inputReq))
 	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetValuesOfMap()))
 	logger.GetLogger().Info("Headers ", zap.Reflect("Headers ", processor.GetHeader(inputReq)))
-	processor.ProduceStatus(mst, inputReq)
-	logger.GetLogger().Info("threads jobs are completed ")
-	mst.UpdateGlobalStatus()
+	if !replayInterrupted.Load() {
+		processor.ProduceStatus(mst, inputReq)
+		logger.GetLogger().Info("threads jobs are completed ")
+		mst.UpdateGlobalStatus()
+	} else {
+		logger.GetLogger().Info("replay processing interrupted by shutdown hook, skipping normal status publish")
+	}
 
 }
 
@@ -130,10 +143,9 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, input
 
 	<-sig
 
-	logger.GetLogger().Info("Flushed MetaData")
-	mst.Flush()
-	time.Sleep(1 * time.Second)
-	processor.ProduceStatus(mst, input)
+	replayShutdownOnce.Do(func() {
+		handleReplayShutdown(ctx, mst, input)
+	})
 	cluster, err := kafka.GetKafkaCluster(constants.ClusterName)
 	if err == nil {
 		cluster.CloseConsumer(ctx, constants.ClusterName)
@@ -144,4 +156,71 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, input
 	processor.GetProducer("reqId", constants.DataReplayStatusProducer).Close(ctx)
 	logger.GetLogger().Info("closed producers")
 
+}
+
+func handleReplayShutdown(ctx context.Context, mst *replaymanager.MetaDataStore, input model.Message) int {
+	replayInterrupted.Store(true)
+	logger.GetLogger().Info("replay shutdown hook triggered, marking unfinished files as failed")
+	interruptedFiles := mst.MarkUnfinishedExecutionsAsFailed(constants.ProcessingInterruptedErrorMsg)
+	logger.GetLogger().Info("Flushed MetaData")
+	mst.Flush()
+	sendReplayShutdownInterruptedAlert(ctx, input, interruptedFiles)
+	time.Sleep(1 * time.Second)
+	publishReplayStatus(mst, input)
+	return interruptedFiles
+}
+
+func sendReplayShutdownInterruptedAlert(ctx context.Context, input model.Message, interruptedFiles int) {
+	if interruptedFiles == 0 {
+		return
+	}
+
+	replayAlert, err := buildReplayShutdownAlert(input, interruptedFiles)
+	if err != nil {
+		logger.GetLogger().Error("failed to create replay shutdown alert", zap.Error(err), zap.String("partId", input.RequestId))
+		return
+	}
+
+	alertsManager, err := alert.NewAlertsManager(ctx)
+	if err != nil {
+		logger.GetLogger().Error("failed to create alerts manager for replay shutdown alert", zap.Error(err))
+		return
+	}
+	defer alertsManager.Close(ctx)
+
+	if err = alertsManager.SendAlerts([]*alerts_async.Alert{replayAlert}); err != nil {
+		logger.GetLogger().Error("failed to send replay shutdown alert", zap.Error(err), zap.String("partId", input.RequestId))
+		return
+	}
+
+	logger.GetLogger().Info("replay shutdown interrupted alert sent successfully",
+		zap.String("partId", input.RequestId),
+		zap.Int("interruptedFiles", interruptedFiles),
+		zap.String("alertId", replayAlert.Id))
+}
+
+func buildReplayShutdownAlert(input model.Message, interruptedFiles int) (*alerts_async.Alert, error) {
+	tenantID := input.TenantId
+	if tenantID == "" {
+		tenantID = common.DatabahnTenantId
+	}
+
+	message := fmt.Sprintf(
+		"Replay worker interrupted during processing for requestId=%s with %d unfinished file(s). Files were marked FAILED with message: %q.",
+		input.RequestId,
+		interruptedFiles,
+		constants.ProcessingInterruptedErrorMsg,
+	)
+
+	return alerts_async.NewAlert(
+		alerts_async.Job,
+		alerts_async.WithTitle("Data Replay Processing Interrupted"),
+		alerts_async.WithMessage(message),
+		alerts_async.WithCriticality(alerts_async.Warning),
+		alerts_async.WithFunctionalityType(alerts_async.JobFailure),
+		alerts_async.WithEntityDetails(input.RequestId, common.DATA_REPLAY, common.DatabahnDataPlaneId, tenantID),
+		alerts_async.WithErrorCode(alerts_async.DJFE10001, constants.ProcessingInterruptedErrorMsg),
+		alerts_async.WithAlertType(alerts_async.Internal),
+		alerts_async.WithAction("Investigate why the replay worker was interrupted (pod eviction, OOM, timeout) and retry the affected replay job."),
+	)
 }
