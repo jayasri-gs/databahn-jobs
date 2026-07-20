@@ -20,7 +20,4 @@ type CloudUploader interface {
 	GeneratePresignedURL(ctx context.Context, expiry time.Duration) (string, error)
 	GetLocation() string
 	UploadID() string
-	// ListParts returns all parts already uploaded for an in-progress multipart upload.
-	// Returns nil slice (not error) if the upload ID is empty.
-	ListParts(ctx context.Context) ([]PartInfo, error)
 }

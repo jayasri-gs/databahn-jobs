@@ -34,28 +34,7 @@ func NewS3Uploader(awsCfg aws.Config, lifecycleTag string) *S3Uploader {
 	}
 }
 
-// NewS3UploaderFromExisting reconstructs an S3Uploader for a multipart upload that already exists.
-// Used during resume to call ListParts or continue uploading parts.
-func NewS3UploaderFromExisting(awsCfg aws.Config, bucket, key, uploadID, lifecycleTag string) *S3Uploader {
-	client := s3.NewFromConfig(awsCfg)
-	return &S3Uploader{
-		client:        client,
-		presignClient: s3.NewPresignClient(client),
-		bucket:        bucket,
-		key:           key,
-		uploadID:      uploadID,
-		lifecycleTag:  lifecycleTag,
-	}
-}
-
 func (u *S3Uploader) UploadID() string { return u.uploadID }
-
-// ReattachMultipart continues an in-flight multipart upload (resume).
-func (u *S3Uploader) ReattachMultipart(bucket, key, uploadID string) {
-	u.bucket = bucket
-	u.key = key
-	u.uploadID = uploadID
-}
 
 func (u *S3Uploader) Init(ctx context.Context, bucket, key, contentType string) error {
 	u.bucket = bucket
@@ -151,56 +130,63 @@ func (u *S3Uploader) Abort(ctx context.Context) error {
 	return err
 }
 
-func (u *S3Uploader) ListParts(ctx context.Context) ([]PartInfo, error) {
-	if u.uploadID == "" {
-		return nil, nil
+// multipartAPI is the subset of the S3 client used for orphan cleanup, extracted
+// so cleanup can be tested without a real client.
+type multipartAPI interface {
+	ListMultipartUploads(ctx context.Context, params *s3.ListMultipartUploadsInput, optFns ...func(*s3.Options)) (*s3.ListMultipartUploadsOutput, error)
+	AbortMultipartUpload(ctx context.Context, params *s3.AbortMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error)
+}
+
+// AbortIncompleteUploads aborts every in-progress multipart upload under keyPrefix.
+// Used to clean up uploads orphaned by a crashed previous attempt (no checkpoint
+// records the upload ID). Best-effort: failures are logged, never returned.
+func (u *S3Uploader) AbortIncompleteUploads(ctx context.Context, bucket, keyPrefix string) {
+	if u.client == nil || bucket == "" || keyPrefix == "" {
+		return
 	}
-	paginator := s3.NewListPartsPaginator(u.client, &s3.ListPartsInput{
-		Bucket:   aws.String(u.bucket),
-		Key:      aws.String(u.key),
-		UploadId: aws.String(u.uploadID),
-	})
-	var parts []PartInfo
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
+	abortIncompleteUploads(ctx, u.client, bucket, keyPrefix)
+}
+
+func abortIncompleteUploads(ctx context.Context, client multipartAPI, bucket, keyPrefix string) {
+	log := logging.GetLogger()
+	input := &s3.ListMultipartUploadsInput{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String(keyPrefix),
+	}
+	for {
+		page, err := client.ListMultipartUploads(ctx, input)
 		if err != nil {
-			return nil, fmt.Errorf("list parts: %w", err)
+			log.Warn("Failed to list incomplete multipart uploads",
+				zap.String("bucket", bucket),
+				zap.String("prefix", keyPrefix),
+				zap.Error(err))
+			return
 		}
-		for _, p := range page.Parts {
-			parts = append(parts, PartInfo{
-				PartNumber: int(aws.ToInt32(p.PartNumber)),
-				ETag:       aws.ToString(p.ETag),
-				Size:       aws.ToInt64(p.Size),
-			})
+		for _, up := range page.Uploads {
+			if _, err := client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+				Bucket:   aws.String(bucket),
+				Key:      up.Key,
+				UploadId: up.UploadId,
+			}); err != nil {
+				var nsu *s3types.NoSuchUpload
+				if !errors.As(err, &nsu) {
+					log.Warn("Failed to abort incomplete multipart upload",
+						zap.String("key", aws.ToString(up.Key)),
+						zap.Error(err))
+				}
+				continue
+			}
+			log.Info("Aborted orphaned multipart upload",
+				zap.String("bucket", bucket),
+				zap.String("key", aws.ToString(up.Key)),
+				zap.String("uploadId", aws.ToString(up.UploadId)))
 		}
-	}
-	return parts, nil
-}
-
-// AbortOrphaned aborts an in-flight multipart upload by upload ID using this uploader's client.
-func (u *S3Uploader) AbortOrphaned(ctx context.Context, bucket, key, uploadID string) error {
-	if u.client == nil || uploadID == "" {
-		return nil
-	}
-	_, err := u.client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
-		Bucket:   aws.String(bucket),
-		Key:      aws.String(key),
-		UploadId: aws.String(uploadID),
-	})
-	if err != nil {
-		var nsk *s3types.NoSuchUpload
-		if errors.As(err, &nsk) {
-			return nil
+		if !aws.ToBool(page.IsTruncated) {
+			return
 		}
-		return fmt.Errorf("abort orphaned upload: %w", err)
+		input.KeyMarker = page.NextKeyMarker
+		input.UploadIdMarker = page.NextUploadIdMarker
 	}
-	return nil
-}
-
-// AbortOrphanedUpload aborts an in-flight multipart upload by its upload ID.
-// Safe to call if the upload has already been completed or aborted (returns nil).
-func AbortOrphanedUpload(ctx context.Context, awsCfg aws.Config, bucket, key, uploadID string) error {
-	return NewS3Uploader(awsCfg, "").AbortOrphaned(ctx, bucket, key, uploadID)
 }
 
 func (u *S3Uploader) GeneratePresignedURL(ctx context.Context, expiry time.Duration) (string, error) {

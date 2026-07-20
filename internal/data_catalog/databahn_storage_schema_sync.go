@@ -217,13 +217,66 @@ func processGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fie
 	}
 	outputLocation := fmt.Sprintf("s3://%s/athena-results/", bucket)
 
-	// Build ALTER TABLE with fully-qualified table name
-	database := databaseName(tenantID)
-	var colDefs []string
-	for _, f := range fields {
-		colDefs = append(colDefs, fmt.Sprintf("%s %s", f.Name, athenaType(f.FieldType)))
+	// Validate fields: drop leading-underscore, reserved-keyword, and duplicate
+	// names. Duplicates are compared against columns already applied to this
+	// table so an existing Athena column is never re-added. Only fetch applied
+	// names that could actually collide with an incoming field.
+	incomingLower := lowerFieldNames(fields)
+	var existingApplied []string
+	if err := db.WithContext(ctx).
+		Table("data_catalog").
+		Where("applied_on_search = ? AND destination_id = ? AND source_id = ? AND tenant_id = ? AND dispenser_type = ? AND LOWER(name) IN ?",
+			true, destID, sourceID, tenantID, "databahnstorage", incomingLower).
+		Pluck("name", &existingApplied).Error; err != nil {
+		return fmt.Errorf("failed to load applied catalog fields for %s/%s: %w", destID, sourceID, err)
 	}
-	query := fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMNS (%s)", database, tableName, strings.Join(colDefs, ", "))
+
+	valid, invalid := partitionCatalogFields(fields, existingApplied)
+
+	if len(invalid) > 0 {
+		invalidIDs := make([]int64, len(invalid))
+		for i, inv := range invalid {
+			invalidIDs[i] = inv.field.ID
+			logger.GetLoggerWithContext(ctx).Warn("deleting invalid catalog field",
+				zap.String("name", inv.field.Name),
+				zap.String("reason", inv.reason),
+				zap.Int64("id", inv.field.ID))
+		}
+		if err := db.WithContext(ctx).
+			Table("data_catalog").
+			Where("id IN ?", invalidIDs).
+			Delete(nil).Error; err != nil {
+			return fmt.Errorf("failed to delete invalid catalog fields: %w", err)
+		}
+	}
+
+	if len(valid) == 0 {
+		logger.GetLoggerWithContext(ctx).Info("no valid catalog fields to apply after validation",
+			zap.String("destination_id", destID.String()),
+			zap.String("source_id", sourceID.String()))
+		return nil
+	}
+
+	// Build ALTER TABLE with fully-qualified, quoted identifiers so field names
+	// cannot inject into the generated DDL.
+	database := databaseName(tenantID)
+	quotedDB, err := quoteSQLIdentifier(database)
+	if err != nil {
+		return fmt.Errorf("invalid database name: %w", err)
+	}
+	quotedTable, err := quoteSQLIdentifier(tableName)
+	if err != nil {
+		return fmt.Errorf("invalid table name: %w", err)
+	}
+	var colDefs []string
+	for _, f := range valid {
+		quotedCol, err := quoteSQLIdentifier(f.Name)
+		if err != nil {
+			return fmt.Errorf("invalid column name %q: %w", f.Name, err)
+		}
+		colDefs = append(colDefs, fmt.Sprintf("%s %s", quotedCol, athenaType(f.FieldType)))
+	}
+	query := fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMNS (%s)", quotedDB, quotedTable, strings.Join(colDefs, ", "))
 
 	logger.GetLoggerWithContext(ctx).Info("executing Athena ALTER TABLE",
 		zap.String("database", database),
