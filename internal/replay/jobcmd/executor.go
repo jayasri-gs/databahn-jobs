@@ -17,6 +17,7 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/ecryption"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/lookup"
+	"github.com/databahn-ai/databahn-jobs/internal/replay/metrics"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/processor"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
@@ -33,6 +34,10 @@ func ExecuteReplayJob(input model.Message) common.JobResult {
 	//	input := ReadInputData()
 	lookup.InitCache()
 	mst, _ := replaymanager.NewMetaStore(input.RequestId)
+	if err := metrics.Init(ctx); err != nil {
+		logger.GetLogger().Warn("replay metrics unavailable, continuing without recovery counters", zap.Error(err))
+	}
+	defer metrics.Shutdown(ctx)
 	if input.DestinationTopic == "" {
 		input.DestinationTopic = commConst.DataReplayTopicPrefix
 	}
