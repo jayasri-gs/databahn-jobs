@@ -5,6 +5,7 @@ import (
 
 	"github.com/databahn-ai/common-utils/configuration"
 	"github.com/databahn-ai/common-utils/utils"
+	replayconst "github.com/databahn-ai/databahn-jobs/internal/replay/constants"
 )
 
 type DataReplayConfig struct {
@@ -16,6 +17,7 @@ func newDataReplayConfig() (*DataReplayConfig, error) {
 		dataMap: make(map[string]string),
 	}
 	drc.dataMap["urls.data_plane_controller_internal_base_url"] = utils.GetEnvOrDefault("DATA_PLANE_CONTROLLER_BASE_URL", "")
+	drc.dataMap[configuration.ProcessKafkaClusterBootstrapServers] = utils.GetEnvOrDefault(replayconst.KafkaProcessingBootstrapServers, "")
 	return drc, nil
 }
 
