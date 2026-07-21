@@ -17,7 +17,6 @@ import (
 	"github.com/databahn-ai/common-utils/kafka"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/constants"
-	"github.com/databahn-ai/databahn-jobs/internal/replay/metrics"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/model"
 	"github.com/databahn-ai/databahn-jobs/internal/replay/replaymanager"
 	"github.com/databahn-ai/databahn-jobs/internal/util"
@@ -175,19 +174,9 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 			Headers: GetHeader(req),
 		}
 		throughPutController.IncrementOrWait()
-		replayTags := metrics.ReplayMetricTags(req)
-		recordReplayMetric(metrics.MetricReplayAttempted, replayTags)
-		syncFailed := false
 		producer.SendAsyncTopic(message, utils.GetDynamicTopicName(topic), func(err error) {
-			if err != nil {
-				syncFailed = true
-				logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
-				recordReplayMetric(metrics.MetricReplayFailed, replayTags)
-			}
+			logger.GetLogger().Error("error while publishing to kafka", zap.Error(err))
 		})
-		if !syncFailed {
-			recordReplayMetric(metrics.MetricReplaySucceeded, replayTags)
-		}
 
 		if lineCounter%10000 == 0 {
 			//logger.GetLogger(("lineCounter : ", lineCounter))
@@ -283,14 +272,6 @@ func GetHeader(request model.Message) []kafka.Header {
 	headers[14] = kafka.Header{Key: commConst.DestinationId, Value: []byte(destinationId)}
 	headers[15] = kafka.Header{Key: commConst.PipelineId, Value: []byte(pipelineId)}
 
-	headers = append(headers,
-		kafka.Header{Key: constants.TrafficTypeHeader, Value: []byte(constants.TrafficTypeReplay)},
-		kafka.Header{Key: constants.ReplayTypeHeader, Value: []byte(constants.ReplayTypeFromJobType(request.ReplayType))},
-	)
-	if request.RequestId != "" {
-		headers = append(headers, kafka.Header{Key: constants.ReplayJobIdHeader, Value: []byte(request.RequestId)})
-	}
-
 	return headers
 }
 
@@ -358,8 +339,4 @@ func extractRawEvent(line string, eventKind string) (string, error) {
 		"failed to unmarshal %s event to extract rawevent: rawevent must be a string or an object with msg",
 		eventKind,
 	)
-}
-
-func recordReplayMetric(metricName string, tags map[string]string) {
-	metrics.RecordCounter(metricName, tags, 1)
 }
