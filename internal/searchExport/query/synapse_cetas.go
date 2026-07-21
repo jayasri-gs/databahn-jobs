@@ -18,6 +18,10 @@ const cetasSASExpiry = 24 * time.Hour
 type CETASExecutor interface {
 	ExecDDL(ctx context.Context, ddl string) error
 	GetQueryColumns(ctx context.Context, sql, database string) ([]string, error)
+	// ExternalTableExists reports whether a CETAS external table exists. CETAS creates
+	// the table object only after the statement fully succeeds, so existence proves the
+	// staged query output is complete.
+	ExternalTableExists(ctx context.Context, tableName string) (bool, error)
 }
 
 // StagingCreds holds credential parameters for a Synapse DATABASE SCOPED CREDENTIAL.
@@ -69,14 +73,14 @@ func StagingCredsFromBlobConfig(cfg *destination.AzureBlobConfig) (*StagingCreds
 	}
 }
 
-// CETASTableName returns the Synapse external table name for a CETAS chunk.
-func CETASTableName(reportIDShort string, chunkIdx int) string {
-	return fmt.Sprintf("staging_%s_%04d", reportIDShort, chunkIdx)
+// CETASTableName returns the Synapse external table name for a report's CETAS export.
+func CETASTableName(reportIDShort string) string {
+	return fmt.Sprintf("staging_%s", reportIDShort)
 }
 
-// CETASStagingPrefix returns the blob prefix written by CETAS for a given chunk.
-func CETASStagingPrefix(reportID string, chunkIdx int) string {
-	return fmt.Sprintf("databahn_out/%s/chunk_%04d/", reportID, chunkIdx)
+// CETASStagingPrefix returns the blob prefix written by CETAS for a report.
+func CETASStagingPrefix(reportID string) string {
+	return fmt.Sprintf("databahn_out/%s/full/", reportID)
 }
 
 // CETASFileFormatName returns the Synapse file format name for a given export format.
@@ -180,6 +184,23 @@ func (e *SynapseExecutor) ExecDDL(ctx context.Context, ddl string) error {
 		return fmt.Errorf("DDL failed: %w", err)
 	}
 	return nil
+}
+
+// ExternalTableExists checks sys.external_tables for a table created by CETAS.
+// OBJECT_ID resolves the unqualified name through the caller's default schema —
+// the same resolution CREATE/DROP EXTERNAL TABLE [name] uses — so a same-named
+// table in another schema never triggers a false "complete" match.
+func (e *SynapseExecutor) ExternalTableExists(ctx context.Context, tableName string) (bool, error) {
+	if e.db == nil {
+		return false, fmt.Errorf("synapse not connected")
+	}
+	var n int
+	if err := e.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM sys.external_tables WHERE object_id = OBJECT_ID(@p1)", tableName,
+	).Scan(&n); err != nil {
+		return false, fmt.Errorf("check external table %s: %w", tableName, err)
+	}
+	return n > 0, nil
 }
 
 // escapeSQL single-quote-escapes a string for Synapse DDL.

@@ -70,7 +70,6 @@ func (r *BlobReader) StreamToUploader(
 	format string,
 	delimiter string,
 	log *zap.Logger,
-	opts StreamOptions,
 ) (int64, int64, error) {
 	return streamReadersToUploader(ctx, uploader, func(ctx context.Context, file string) (io.ReadCloser, error) {
 		resp, err := r.client.DownloadStream(ctx, r.container, file, nil)
@@ -78,7 +77,7 @@ func (r *BlobReader) StreamToUploader(
 			return nil, err
 		}
 		return resp.Body, nil
-	}, files, header, log, opts)
+	}, files, header, log)
 }
 
 // streamReadersToUploader streams staging files in fixed-size chunks (same pattern as S3 direct upload).
@@ -89,14 +88,9 @@ func streamReadersToUploader(
 	files []string,
 	header []byte,
 	log *zap.Logger,
-	opts StreamOptions,
 ) (int64, int64, error) {
 	partNum := 1
-	if opts.StartPartNumber > 1 {
-		partNum = opts.StartPartNumber
-	}
-	parts := make([]upload.PartInfo, len(opts.ExistingParts))
-	copy(parts, opts.ExistingParts)
+	var parts []upload.PartInfo
 	var totalBytes int64
 	var totalRows int64
 	var pending []byte
@@ -133,9 +127,6 @@ func streamReadersToUploader(
 	}
 
 	for i, file := range files {
-		if i < opts.StartFileIndex {
-			continue
-		}
 		if log != nil {
 			log.Info("Streaming staging file to export",
 				zap.Int("fileNumber", i+1),
@@ -146,7 +137,7 @@ func streamReadersToUploader(
 		if err != nil {
 			return totalRows, totalBytes, err
 		}
-		if i == opts.StartFileIndex && i == 0 && len(header) > 0 {
+		if i == 0 && len(header) > 0 {
 			pending = append(pending, header...)
 			if err := flushFullParts(); err != nil {
 				reader.Close()
@@ -172,9 +163,6 @@ func streamReadersToUploader(
 		}
 		if err := reader.Close(); err != nil {
 			return totalRows, totalBytes, err
-		}
-		if len(pending) == 0 && opts.OnFileCheckpoint != nil {
-			opts.OnFileCheckpoint(i+1, partNum-1, totalRows, totalBytes)
 		}
 	}
 
