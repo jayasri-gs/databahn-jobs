@@ -107,7 +107,11 @@ func (mst *MetaDataStore) UpdateMetaData(key string, status string, offset int, 
 		data.Retry = data.Retry + retry
 	}
 	if status != "" {
-		data.Status = status
+		if isTerminalExecutionStatus(data.Status) && !isTerminalExecutionStatus(status) {
+			// Ignore non-terminal status updates after COMPLETED/FAILED (e.g. shutdown FAILED → PROCESSING race).
+		} else {
+			data.Status = status
+		}
 	}
 	if errorMsg != "" {
 		data.ErrorMsg = append(data.ErrorMsg, errorMsg)

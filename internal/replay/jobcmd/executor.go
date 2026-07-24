@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,8 +29,7 @@ import (
 )
 
 var (
-	replayInterrupted  atomic.Bool
-	replayShutdownOnce sync.Once
+	replayShutdownOnce  sync.Once
 	publishReplayStatus = processor.ProduceStatus
 )
 
@@ -56,6 +54,9 @@ func ExecuteReplayJob(input model.Message) common.JobResult {
 	go closeResources(ctx, mst, input)
 	start := time.Now()
 	Process(input, mst)
+	if replaymanager.IsInterrupted() {
+		replaymanager.WaitForShutdownComplete()
+	}
 	elapsed := time.Since(start)
 	logger.GetLogger().Info("Execution Time Taken ", zap.Duration("time", elapsed))
 	return common.NewJobResultSuccess()
@@ -65,6 +66,8 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	throughPutLimit := utils.GetEnvInt(constants.THROUGHPUT_ENV_VARIABLE, constants.THROUGHPUT_DEFAULT_RATE)
 	throughPutController := util.NewThroughputController(throughPutLimit)
 	var wg sync.WaitGroup
+	replaymanager.RegisterWorkersWaitGroup(&wg)
+	defer replaymanager.RegisterWorkersWaitGroup(nil)
 	mst.UpdateMetaData(constants.Global, constants.StatusInProgress, 0, 0, 0, 0, "")
 	processList := mst.GetProcessList()
 	totalFiles := len(processList)
@@ -99,15 +102,24 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 				<-parallelCtrChan
 			}(&wg)
 			fileName := processList[i]
+			if replaymanager.IsInterrupted() {
+				return
+			}
 			metaValue, ok := mst.GetMetaData(fileName)
 			if !ok {
 				mst.UpdateMetaData(fileName, constants.StatusFailed, 0, 0, 0, 0, "metadata not found")
 				return
 			}
 			logger.GetLogger().Info("spawning thread :", zap.String("traceId", inputReq.RequestId), zap.Int("thread", i), zap.String("FileName : ", fileName))
+			if replaymanager.IsInterrupted() {
+				return
+			}
 			err, status := dbaws.FileDownloader(inputReq, i, mst, fileName, metaValue)
 			if err != nil {
 				mst.UpdateMetaData(processList[i], status, 0, 0, 0, 0, err.Error())
+				return
+			}
+			if replaymanager.IsInterrupted() {
 				return
 			}
 			err, status = processor.ReadAndProduce(fileName, metaValue.Offset, mst, inputReq.RequestId, i, inputReq.DestinationTopic, inputReq, throughPutController)
@@ -124,7 +136,7 @@ func Process(inputReq model.Message, mst *replaymanager.MetaDataStore) {
 	logger.GetLogger().Info("input message : ", zap.Reflect("Input data : ", inputReq))
 	logger.GetLogger().Info("metadata.json message : ", zap.Reflect(" JSON : ", mst.GetValuesOfMap()))
 	logger.GetLogger().Info("Headers ", zap.Reflect("Headers ", processor.GetHeader(inputReq)))
-	if !replayInterrupted.Load() {
+	if !replaymanager.IsInterrupted() {
 		processor.ProduceStatus(mst, inputReq)
 		logger.GetLogger().Info("threads jobs are completed ")
 		mst.UpdateGlobalStatus()
@@ -142,8 +154,9 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, input
 	signal.Notify(sig, syscall.SIGTERM)
 
 	<-sig
-
+	logger.GetLogger().Info("termination signal received, initiating graceful shutdown of replay job")
 	replayShutdownOnce.Do(func() {
+		logger.GetLogger().Info("calling handleReplayShutdown to mark unfinished files as failed and send alert")
 		handleReplayShutdown(ctx, mst, input)
 	})
 	cluster, err := kafka.GetKafkaCluster(constants.ClusterName)
@@ -159,14 +172,16 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, input
 }
 
 func handleReplayShutdown(ctx context.Context, mst *replaymanager.MetaDataStore, input model.Message) int {
-	replayInterrupted.Store(true)
-	logger.GetLogger().Info("replay shutdown hook triggered, marking unfinished files as failed")
+	defer replaymanager.NotifyShutdownComplete()
+	replaymanager.MarkInterrupted()
+	logger.GetLogger().Info("replay shutdown hook triggered, waiting for workers to stop")
+	replaymanager.WaitForWorkers()
+	logger.GetLogger().Info("replay workers stopped, marking unfinished files as failed")
 	interruptedFiles := mst.MarkUnfinishedExecutionsAsFailed(constants.ProcessingInterruptedErrorMsg)
-	logger.GetLogger().Info("Flushed MetaData")
 	mst.Flush()
 	sendReplayShutdownInterruptedAlert(ctx, input, interruptedFiles)
-	time.Sleep(1 * time.Second)
 	publishReplayStatus(mst, input)
+	logger.GetLogger().Info("status published after replay shutdown")
 	return interruptedFiles
 }
 
