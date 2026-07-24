@@ -202,6 +202,10 @@ func downloadFileFromS3(s3Client *s3.Client, input model.Message, fileName strin
 
 func FileDownloader(input model.Message, threadId int, mst *replaymanager.MetaDataStore, fileName string, metaValue model.MetaDataValue) (error, string) {
 
+	if replaymanager.IsInterrupted() {
+		return fmt.Errorf(constants.ProcessingInterruptedErrorMsg), constants.StatusFailed
+	}
+
 	if metaValue.Retry >= constants.MaxRetry {
 		logger.GetLogger().Info(fmt.Sprintf("max retries exceeded skipping file {%d}", threadId), zap.String("traceId", input.RequestId), zap.Int("thread ", threadId))
 		return errors.New("max retries exceeded"), ""
