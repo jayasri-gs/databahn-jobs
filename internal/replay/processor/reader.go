@@ -60,6 +60,10 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	forwardDataType := req.AdditionalConfig["forward_data_type"]
 	isParquetFile := false
 
+	if replaymanager.IsInterrupted() {
+		return fmt.Errorf(constants.ProcessingInterruptedErrorMsg), constants.StatusFailed
+	}
+
 	mst.UpdateMetaData(fileName, constants.StatusProcessing, 0, 0, stats.Size(), 0, "")
 	logger.GetLogger().Info("getting producer", zap.String("traceId", reqId), zap.Int("thread ", threadId))
 	var producer = GetProducer(reqId, topic)
@@ -154,6 +158,9 @@ func ReadAndProduce(fileName string, offsetSeek int, mst *replaymanager.MetaData
 	var byteSize int64 = 0
 
 	for scanner.Scan() {
+		if replaymanager.IsInterrupted() {
+			return fmt.Errorf(constants.ProcessingInterruptedErrorMsg), constants.StatusFailed
+		}
 		line := scanner.Text()
 		//lineSlice = lineSlice + "\n" + line
 		byteSize = byteSize + int64(len(line))
