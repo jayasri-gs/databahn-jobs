@@ -54,6 +54,9 @@ func ExecuteReplayJob(input model.Message) common.JobResult {
 	go closeResources(ctx, mst, input)
 	start := time.Now()
 	Process(input, mst)
+	if replaymanager.IsInterrupted() {
+		replaymanager.WaitForShutdownComplete()
+	}
 	elapsed := time.Since(start)
 	logger.GetLogger().Info("Execution Time Taken ", zap.Duration("time", elapsed))
 	return common.NewJobResultSuccess()
@@ -169,6 +172,7 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, input
 }
 
 func handleReplayShutdown(ctx context.Context, mst *replaymanager.MetaDataStore, input model.Message) int {
+	defer replaymanager.NotifyShutdownComplete()
 	replaymanager.MarkInterrupted()
 	logger.GetLogger().Info("replay shutdown hook triggered, waiting for workers to stop")
 	replaymanager.WaitForWorkers()
