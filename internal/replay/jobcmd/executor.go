@@ -151,8 +151,9 @@ func closeResources(ctx context.Context, mst *replaymanager.MetaDataStore, input
 	signal.Notify(sig, syscall.SIGTERM)
 
 	<-sig
-
+	logger.GetLogger().Info("termination signal received, initiating graceful shutdown of replay job")
 	replayShutdownOnce.Do(func() {
+		logger.GetLogger().Info("calling handleReplayShutdown to mark unfinished files as failed and send alert")
 		handleReplayShutdown(ctx, mst, input)
 	})
 	cluster, err := kafka.GetKafkaCluster(constants.ClusterName)
@@ -176,6 +177,7 @@ func handleReplayShutdown(ctx context.Context, mst *replaymanager.MetaDataStore,
 	mst.Flush()
 	sendReplayShutdownInterruptedAlert(ctx, input, interruptedFiles)
 	publishReplayStatus(mst, input)
+	logger.GetLogger().Info("status published after replay shutdown")
 	return interruptedFiles
 }
 
