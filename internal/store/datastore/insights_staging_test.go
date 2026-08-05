@@ -17,8 +17,9 @@ func TestParseInsightsStagingS3Config_Valid(t *testing.T) {
 	if cfg.Region != "us-east-1" {
 		t.Fatalf("region: got %q, want %q", cfg.Region, "us-east-1")
 	}
-	if cfg.Bucket != "platform-insights-bucket" {
-		t.Fatalf("bucket: got %q, want %q", cfg.Bucket, "platform-insights-bucket")
+	wantBucket := "platform-insights-bucket-parquet"
+	if cfg.Bucket != wantBucket {
+		t.Fatalf("bucket: got %q, want %q", cfg.Bucket, wantBucket)
 	}
 	if cfg.AuthType != "key_based" {
 		t.Fatalf("auth_type: got %q, want %q", cfg.AuthType, "key_based")

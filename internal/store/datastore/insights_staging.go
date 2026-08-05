@@ -17,7 +17,8 @@ type insightsAwsSecret struct {
 }
 
 // parseInsightsStagingS3Config builds an Athena staging S3Config for DATABAHN_INSIGHTS from the
-// platform search secret. Uses key-based auth with the same credentials as InsightsAthenaSearchService.
+// platform search secret. Uses the parquet bucket (search.bucket + "-parquet") consistent with
+// how databahn-jobs writes Insights parquet data via UploadFileToObjectStore/UploadFileToS3Parquet.
 func parseInsightsStagingS3Config(secret insightsAwsSecret, region string) (*destination.S3Config, error) {
 	if region == "" {
 		return nil, fmt.Errorf("region not configured for DATABAHN_INSIGHTS staging")
@@ -36,7 +37,7 @@ func parseInsightsStagingS3Config(secret insightsAwsSecret, region string) (*des
 		AccessKeyID:     secret.AccessKeyID,
 		SecretAccessKey: secret.SecretAccessKey,
 		Region:          region,
-		Bucket:          secret.Bucket,
+		Bucket:          secret.Bucket + "-parquet",
 	}, nil
 }
 
