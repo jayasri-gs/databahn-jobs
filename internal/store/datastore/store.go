@@ -143,12 +143,26 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 				return nil, err
 			}
 			result.StagingBlob = blobCfg
+		case StoreTypeDatabahnStorage:
+			stagingCfg, err := destination.LoadDatabahnStorageStagingConfig(ctx, db, *row.DestinationID, tenantID)
+			if err != nil {
+				return nil, err
+			}
+			result.StagingS3 = stagingCfg
 		}
 	}
 
 	result.QueryEngine = DeriveQueryEngine(storeType, linkedDestType, externalProvider)
 	if result.QueryEngine == "" {
 		return nil, fmt.Errorf("unsupported search_data_store: type=%s dest=%s provider=%s", storeType, linkedDestType, externalProvider)
+	}
+
+	if storeType == StoreTypeDatabahnInsights && result.StagingS3 == nil {
+		stagingCfg, err := loadInsightsStagingS3Config(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result.StagingS3 = stagingCfg
 	}
 
 	if result.QueryEngine == QueryEngineSynapse && storeCfg.AzureSynapseConfiguration != nil {

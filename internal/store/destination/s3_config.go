@@ -64,6 +64,32 @@ func parseS3ConfigFromWrapper(wrapper ConfigWrapper, credentialOverrides map[str
 	return cfg, nil
 }
 
+// parseDatabahnStorageStagingConfig builds an S3Config from a DATABAHN_STORAGE destination's
+// configuration map. The destination uses "s3Region" and "s3BucketName" keys and relies on
+// platform default credentials (IAM role), so no stored credential fields are set.
+func parseDatabahnStorageStagingConfig(cfgMap map[string]string) (*S3Config, error) {
+	region := cfgMap["s3Region"]
+	bucket := cfgMap["s3BucketName"]
+	if region == "" {
+		return nil, fmt.Errorf("s3Region not configured for DATABAHN_STORAGE destination")
+	}
+	if bucket == "" {
+		return nil, fmt.Errorf("s3BucketName not configured for DATABAHN_STORAGE destination")
+	}
+	return &S3Config{Region: region, Bucket: bucket}, nil
+}
+
+// LoadDatabahnStorageStagingConfig loads the Athena staging S3 config from a DATABAHN_STORAGE
+// destination. It uses platform default credentials (no stored keys) and derives region/bucket
+// from the "s3Region"/"s3BucketName" configuration fields.
+func LoadDatabahnStorageStagingConfig(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) (*S3Config, error) {
+	cfgMap, err := LoadMergedConfiguration(ctx, db, destID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load DATABAHN_STORAGE destination config: %w", err)
+	}
+	return parseDatabahnStorageStagingConfig(cfgMap)
+}
+
 func LoadS3Config(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) (*S3Config, error) {
 	var dest s3ConfigRow
 	err := db.WithContext(ctx).Raw(
