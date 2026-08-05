@@ -12,6 +12,7 @@ func TestDeriveQueryEngine(t *testing.T) {
 		{StoreTypeDatabahnDestination, DestTypeS3, "", QueryEngineAthena},
 		{StoreTypeDatabahnDestination, DestTypeAzureBlob, "", QueryEngineSynapse},
 		{StoreTypeDatabahnInsights, "", "", QueryEngineAthena},
+		{StoreTypeDatabahnStorage, "", "", QueryEngineAthena},
 		{StoreTypeExternalStorage, "", ExternalProviderAzureBlob, QueryEngineSynapse},
 		{StoreTypeExternalStorage, "", ExternalProviderS3, QueryEngineAthena},
 	}

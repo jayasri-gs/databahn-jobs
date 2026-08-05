@@ -111,3 +111,53 @@ func TestParseS3ConfigFromWrapper_MissingRegion(t *testing.T) {
 		t.Fatal("expected error for missing region")
 	}
 }
+
+func TestParseDatabahnStorageStagingConfig_Valid(t *testing.T) {
+	cfgMap := map[string]string{
+		"s3Region":     "ap-south-1",
+		"s3BucketName": "databahn-storage-bucket",
+	}
+	cfg, err := parseDatabahnStorageStagingConfig(cfgMap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertField(t, "region", "ap-south-1", cfg.Region, false)
+	assertField(t, "bucket", "databahn-storage-bucket", cfg.Bucket, false)
+}
+
+func TestParseDatabahnStorageStagingConfig_NoCredentials(t *testing.T) {
+	cfgMap := map[string]string{
+		"s3Region":     "us-east-1",
+		"s3BucketName": "databahn-storage-bucket",
+	}
+	cfg, err := parseDatabahnStorageStagingConfig(cfgMap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AccessKeyID != "" || cfg.SecretAccessKey != "" || cfg.RoleArn != "" {
+		t.Fatal("DATABAHN_STORAGE staging config must not contain stored credentials")
+	}
+	if cfg.AuthType != "" {
+		t.Fatalf("DATABAHN_STORAGE staging config AuthType must be empty (platform default), got %q", cfg.AuthType)
+	}
+}
+
+func TestParseDatabahnStorageStagingConfig_MissingRegion(t *testing.T) {
+	cfgMap := map[string]string{
+		"s3BucketName": "databahn-storage-bucket",
+	}
+	_, err := parseDatabahnStorageStagingConfig(cfgMap)
+	if err == nil {
+		t.Fatal("expected error for missing s3Region")
+	}
+}
+
+func TestParseDatabahnStorageStagingConfig_MissingBucket(t *testing.T) {
+	cfgMap := map[string]string{
+		"s3Region": "us-east-1",
+	}
+	_, err := parseDatabahnStorageStagingConfig(cfgMap)
+	if err == nil {
+		t.Fatal("expected error for missing s3BucketName")
+	}
+}
