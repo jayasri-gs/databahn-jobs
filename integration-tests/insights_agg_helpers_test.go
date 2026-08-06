@@ -296,7 +296,6 @@ func assertDeviceTimezoneUnset(t *testing.T, device map[string]any) {
 	}
 	if reason, ok := device["timezone_update_reason"].(string); ok && reason == insights.TimezoneUpdateReasonAgentSetting {
 		t.Fatalf("timezone_update_reason = %q, want not agent_setting", reason)
-		t.Fatalf("timezone_update_reason = %q, want not agent_setting", reason)
 	}
 	if updatedBy, ok := device["timezone_updated_by"].(string); ok && updatedBy == insights.AgentTimezoneUpdatedByUUID {
 		t.Fatalf("timezone_updated_by = agent uuid, want unset")

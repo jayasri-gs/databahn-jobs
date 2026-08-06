@@ -184,6 +184,15 @@ func validateHostname(hostname string) error {
 	return nil
 }
 
+// timezoneUpdateReasonForImport returns "manual" when setting a timezone,
+// or empty when clearing so agent detection can overwrite later.
+func timezoneUpdateReasonForImport(timezone string) string {
+	if strings.TrimSpace(timezone) == "" {
+		return ""
+	}
+	return insights.TimezoneUpdateReasonManual
+}
+
 func isBlankCSVRow(record []string) bool {
 	if len(record) == 0 {
 		return true
@@ -253,7 +262,7 @@ func bulkSetDeviceTimezones(
 			DeviceTimezone:       row.Timezone,
 			TimezoneUpdatedAt:    updatedAt,
 			TimezoneUpdatedBy:    updatedBy,
-			TimezoneUpdateReason: insights.TimezoneUpdateReasonManual,
+			TimezoneUpdateReason: timezoneUpdateReasonForImport(row.Timezone),
 			UpdatedAt:            updatedAt,
 		}
 		body, err := json.Marshal(map[string]deviceDocUpdate{"doc": doc})

@@ -388,7 +388,7 @@ func TestImportRequestProcessorClearsDeviceTimezoneWithEmptyColumn(t *testing.T)
 	device = getDeviceDocument(t, ctx, openSearch, fixture.TenantID.String(), host)
 	assertStringField(t, device, "device_timezone", "")
 	assertStringField(t, device, "timezone_updated_by", fixture.ActorID.String())
-	assertStringField(t, device, "timezone_update_reason", insights.TimezoneUpdateReasonManual)
+	assertStringField(t, device, "timezone_update_reason", "")
 	if got, ok := device["timezone_updated_at"].(float64); !ok || got <= 0 {
 		t.Fatalf("timezone_updated_at = %#v, want positive timestamp", device["timezone_updated_at"])
 	}

@@ -42,9 +42,15 @@ func isIANATimeZoneName(name string) bool {
 	if strings.HasPrefix(name, "Etc/") {
 		return strings.Contains(name, "/")
 	}
-	if !strings.Contains(name, "/") {
+	parts := strings.Split(name, "/")
+	// Area/Location and Area/Location/Region (e.g. America/Argentina/Buenos_Aires) are valid.
+	if len(parts) < 2 {
 		return false
 	}
-	parts := strings.Split(name, "/")
-	return len(parts) == 2 && parts[0] != "" && parts[1] != ""
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+	}
+	return true
 }

@@ -106,6 +106,18 @@ func TestValidateTimezone(t *testing.T) {
 	}
 }
 
+func TestTimezoneUpdateReasonForImport(t *testing.T) {
+	if got := timezoneUpdateReasonForImport("America/New_York"); got != insights.TimezoneUpdateReasonManual {
+		t.Fatalf("set timezone reason = %q, want %q", got, insights.TimezoneUpdateReasonManual)
+	}
+	if got := timezoneUpdateReasonForImport(""); got != "" {
+		t.Fatalf("clear timezone reason = %q, want empty", got)
+	}
+	if got := timezoneUpdateReasonForImport("  "); got != "" {
+		t.Fatalf("blank timezone reason = %q, want empty", got)
+	}
+}
+
 func TestApplyBulkOutcomes(t *testing.T) {
 	stats := models.ImportStats{}
 	batch := []csvRow{
