@@ -102,7 +102,6 @@ func getInsightRuleName(indexMetadata IndexMetadata) (string, error) {
 	return ruleName, nil
 }
 
-// todo: Do we need to update acc to key3, key4, key5 ?
 const sightsScript = `
 {
   "script": {
@@ -119,12 +118,16 @@ const sightsScript = `
       ctx._source.key1 = params.key1;
       ctx._source.key2 = params.key2;
       ctx._source.key3 = params.key3;
+      if (params.key4 != null && params.key4 != '') {
+        ctx._source.key4 = params.key4;
+      }
     ",
     "lang": "painless",
     "params": {
       "key1": {{.Key1 | printf "%q"}},
       "key2": {{.Key2 | printf "%q"}},
       "key3": {{.Key3 | printf "%q"}},
+      "key4": {{.Key4 | printf "%q"}},
       "source_id": "{{.SourceId}}",
       "tenant_id": "{{.TenantId}}",
       "data_plane_id": "{{.DataPlaneId}}",
@@ -139,6 +142,7 @@ const sightsScript = `
       "key1": {{.Key1 | printf "%q"}},
       "key2": {{.Key2 | printf "%q"}},
       "key3": {{.Key3 | printf "%q"}},
+      "key4": {{.Key4 | printf "%q"}},
       "tenant_id": "{{.TenantId}}",
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
@@ -300,10 +304,8 @@ func aggregateInsights(ctx context.Context, cli *opensearch.Client, index IndexM
 			doc.Key3 = bucket.Key.Key3
 			doc.Key4 = bucket.Key.Key4
 			doc.Key5 = bucket.Key.Key5
-			if index.Type == "sourcehostname" {
-				// need to use key 3 (FQDN) instead of small otherwise duplicate documents will be created
-				// keeping key generation logic same as before for backward compatibility
-				doc.Id = InsightId(bucket.Key.Key1, "", "", bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
+			if index.Type == APP_TYPE_SOURCEHOSTNAME {
+				doc.Id = InsightId(bucket.Key.Key1, "", "", "", "", bucket.Key.SourceId)
 			} else {
 				doc.Id = InsightId(bucket.Key.Key1, bucket.Key.Key2, bucket.Key.Key3, bucket.Key.Key4, bucket.Key.Key5, bucket.Key.SourceId)
 			}
@@ -600,6 +602,7 @@ func (d Doc) Sight() Sight {
 		Key1:        d.Key1,
 		Key2:        d.Key2,
 		Key3:        d.Key3,
+		Key4:        d.Key4,
 		Type:        d.Type,
 		SourceId:    d.SourceId,
 		TenantId:    d.TenantId,

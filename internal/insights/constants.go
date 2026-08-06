@@ -28,6 +28,10 @@ const REPUTATION_SILENT = "silent"
 const REPUTATION_NOISY = "noisy"
 const REPUTATION_WHISPERING = "whispering"
 
+const AgentTimezoneUpdatedByUUID = "dbdbdb00-0000-0000-0000-000000000000"
+const TimezoneUpdateReasonManual = "manual"
+const TimezoneUpdateReasonAgentSetting = "agent_setting"
+
 const HEALTH_CALCULATION_TODAY = "today"
 const HEALTH_CALCULATION_YESTERDAY = "yesterday"
 

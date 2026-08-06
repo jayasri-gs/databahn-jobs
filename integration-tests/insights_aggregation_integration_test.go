@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/databahn-ai/databahn-jobs/internal/insights"
 	"github.com/databahn-ai/pramaan-go/pramaan"
 	"github.com/google/uuid"
 )
@@ -42,6 +43,164 @@ func TestInsightsAggregationCreatesSightsFromStaging(t *testing.T) {
 	lastUniqueHost := fmt.Sprintf("host-%d", insightsAggStagingPageDocs-insightsAggMultiBucketCount-1)
 	lastUnique := getSightDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), lastUniqueHost, fixture.SourceID.String())
 	assertSightDocument(t, lastUnique, fixture, lastUniqueHost, 1_000_000+int64(insightsAggStagingPageDocs-insightsAggMultiBucketCount-1), 1_000_100+int64(insightsAggStagingPageDocs-insightsAggMultiBucketCount-1))
+}
+
+func TestInsightsAggregationSightKey4(t *testing.T) {
+	ctx := context.Background()
+	tg := pramaan.NewGoTestLogger(t)
+	job := JobPramaan()
+
+	fixture := seedInsightsTenant(t)
+	const host = "key4-host"
+	docs := buildSingleHostStagingDocs(fixture, host, 100, 300)
+	docs[0].Key4 = "America/New_York"
+	data := newInsightsAggTestData(fixture, docs)
+	cleanupInsightsTestIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), data.stagingTime)
+	indexStagingInsights(t, ctx, job.GetOpenSearch(t), data)
+
+	runInsightsAggregationJob(t, ctx, tg, job, nil)
+	refreshInsightsIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String())
+
+	sight := getSightDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), host, fixture.SourceID.String())
+	assertSightDocument(t, sight, fixture, host, 100, 300)
+	assertStringField(t, sight, "key4", "America/New_York")
+}
+
+func TestInsightsAggregationDeviceAggPreservesManualTimezone(t *testing.T) {
+	ctx := context.Background()
+	tg := pramaan.NewGoTestLogger(t)
+	job := JobPramaan()
+
+	fixture := seedInsightsTenant(t)
+	const (
+		host            = "manual-timezone-host"
+		manualTimezone  = "Europe/London"
+		stagingTimezone = "America/Chicago"
+		manualUpdatedBy = "ba5eba11-c0de-cafe-9999-aaaaaaaaaaaa"
+	)
+	manualUpdatedAt := time.Now().UTC().Add(-24 * time.Hour).UnixMilli()
+
+	docs := buildSingleHostStagingDocs(fixture, host, 100, 900)
+	docs[0].Key4 = stagingTimezone
+	data := newInsightsAggTestData(fixture, docs)
+	cleanupInsightsTestIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), data.stagingTime)
+	indexManualTimezoneDeviceDocument(
+		t, ctx, job.GetOpenSearch(t),
+		fixture.TenantID.String(), host, fixture.SourceID.String(), fixture.DataPlaneID.String(),
+		manualTimezone, manualUpdatedBy, manualUpdatedAt, 500, 600,
+	)
+	indexStagingInsights(t, ctx, job.GetOpenSearch(t), data)
+
+	runInsightsAggregationJob(t, ctx, tg, job, map[string]string{
+		"DEVICE_AGG": "AGG",
+	})
+	refreshInsightsIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String())
+
+	device := getDeviceDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), host)
+	assertInt64Field(t, device, "global_min_time", 100)
+	assertInt64Field(t, device, "global_max_time", 900)
+	assertStringField(t, device, "device_timezone", manualTimezone)
+	assertStringField(t, device, "timezone_updated_by", manualUpdatedBy)
+	assertStringField(t, device, "timezone_update_reason", insights.TimezoneUpdateReasonManual)
+	assertInt64Field(t, device, "timezone_updated_at", manualUpdatedAt)
+}
+
+func TestInsightsAggregationDeviceAggSetsTimezoneFromKey4(t *testing.T) {
+	ctx := context.Background()
+	tg := pramaan.NewGoTestLogger(t)
+	job := JobPramaan()
+	before := time.Now().UTC()
+
+	fixture := seedInsightsTenant(t)
+	const host = "agent-detected-timezone-host"
+	docs := buildSingleHostStagingDocs(fixture, host, 100, 900)
+	docs[0].Key4 = "America/Chicago"
+	data := newInsightsAggTestData(fixture, docs)
+	cleanupInsightsTestIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), data.stagingTime)
+	indexStagingInsights(t, ctx, job.GetOpenSearch(t), data)
+
+	runInsightsAggregationJob(t, ctx, tg, job, map[string]string{
+		"DEVICE_AGG": "AGG",
+	})
+	refreshInsightsIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String())
+
+	device := getDeviceDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), host)
+	assertInt64Field(t, device, "global_min_time", 100)
+	assertInt64Field(t, device, "global_max_time", 900)
+	assertAgentDetectedDeviceTimezone(t, device, "America/Chicago", before)
+	assertDeviceSourceCount(t, device, 1)
+	assertDeviceSource(t, device, fixture.SourceID.String(), 100, 900)
+}
+
+func TestInsightsAggregationDeviceAggSkipsInvalidKey4Timezone(t *testing.T) {
+	ctx := context.Background()
+	tg := pramaan.NewGoTestLogger(t)
+	job := JobPramaan()
+
+	fixture := seedInsightsTenant(t)
+	const (
+		host            = "invalid-key4-timezone-host"
+		invalidTimezone = "EST"
+	)
+	docs := buildSingleHostStagingDocs(fixture, host, 100, 900)
+	docs[0].Key4 = invalidTimezone
+	data := newInsightsAggTestData(fixture, docs)
+	cleanupInsightsTestIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), data.stagingTime)
+	indexStagingInsights(t, ctx, job.GetOpenSearch(t), data)
+
+	runInsightsAggregationJob(t, ctx, tg, job, map[string]string{
+		"DEVICE_AGG": "AGG",
+	})
+	refreshInsightsIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String())
+
+	sight := getSightDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), host, fixture.SourceID.String())
+	assertSightDocument(t, sight, fixture, host, 100, 900)
+	assertStringField(t, sight, "key4", invalidTimezone)
+
+	device := getDeviceDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), host)
+	assertInt64Field(t, device, "global_min_time", 100)
+	assertInt64Field(t, device, "global_max_time", 900)
+	assertDeviceTimezoneUnset(t, device)
+	assertDeviceSourceCount(t, device, 1)
+	assertDeviceSource(t, device, fixture.SourceID.String(), 100, 900)
+}
+
+func TestInsightsAggregationDeviceAggSkipsInvalidKey4TimezoneOnUpdate(t *testing.T) {
+	ctx := context.Background()
+	tg := pramaan.NewGoTestLogger(t)
+	job := JobPramaan()
+
+	fixture := seedInsightsTenant(t)
+	const (
+		host             = "invalid-key4-timezone-update-host"
+		invalidTimezone  = "EST"
+		existingTimezone = "America/New_York"
+		updatedKey2      = "updated-agent-id"
+	)
+	docs := buildSingleHostStagingDocs(fixture, host, 100, 900)
+	docs[0].Key4 = invalidTimezone
+	docs[0].Key2 = updatedKey2
+	data := newInsightsAggTestData(fixture, docs)
+	cleanupInsightsTestIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), data.stagingTime)
+	indexDeviceDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), host, fixture.SourceID.String(), fixture.DataPlaneID.String(), 500, 600)
+	indexStagingInsights(t, ctx, job.GetOpenSearch(t), data)
+
+	runInsightsAggregationJob(t, ctx, tg, job, map[string]string{
+		"DEVICE_AGG": "AGG",
+	})
+	refreshInsightsIndices(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String())
+
+	sight := getSightDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), host, fixture.SourceID.String())
+	assertSightDocument(t, sight, fixture, host, 100, 900)
+	assertStringField(t, sight, "key4", invalidTimezone)
+
+	device := getDeviceDocument(t, ctx, job.GetOpenSearch(t), fixture.TenantID.String(), host)
+	assertInt64Field(t, device, "global_min_time", 100)
+	assertInt64Field(t, device, "global_max_time", 900)
+	assertStringField(t, device, "key2", updatedKey2)
+	assertStringField(t, device, "device_timezone", existingTimezone)
+	assertDeviceSourceCount(t, device, 1)
+	assertDeviceSource(t, device, fixture.SourceID.String(), 100, 900)
 }
 
 func TestInsightsAggregationMergesIntoExistingSights(t *testing.T) {
