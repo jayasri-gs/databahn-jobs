@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/integration-tests/fixtures"
+	"github.com/databahn-ai/databahn-jobs/internal/insights"
 	"github.com/databahn-ai/pramaan-go/pramaan"
 	"github.com/google/uuid"
 )
@@ -128,6 +129,7 @@ func TestImportRequestProcessorUpdatesMatchingDeviceTimezone(t *testing.T) {
 	device := getDeviceDocument(t, ctx, openSearch, fixture.TenantID.String(), host)
 	assertStringField(t, device, "device_timezone", "Europe/London")
 	assertStringField(t, device, "timezone_updated_by", fixture.ActorID.String())
+	assertStringField(t, device, "timezone_update_reason", insights.TimezoneUpdateReasonManual)
 
 	updatedAt := int64(device["timezone_updated_at"].(float64))
 	if updatedAt < before.UnixMilli() {
@@ -287,6 +289,7 @@ func TestImportRequestProcessorOnlyUpdatesExistingDevices(t *testing.T) {
 	matched := getDeviceDocument(t, ctx, openSearch, fixture.TenantID.String(), matchedHost)
 	assertStringField(t, matched, "device_timezone", "Asia/Tokyo")
 	assertStringField(t, matched, "timezone_updated_by", fixture.ActorID.String())
+	assertStringField(t, matched, "timezone_update_reason", insights.TimezoneUpdateReasonManual)
 
 	untouched := getDeviceDocument(t, ctx, openSearch, fixture.TenantID.String(), untouchedHost)
 	if _, ok := untouched["device_timezone"].(string); ok {
@@ -385,6 +388,7 @@ func TestImportRequestProcessorClearsDeviceTimezoneWithEmptyColumn(t *testing.T)
 	device = getDeviceDocument(t, ctx, openSearch, fixture.TenantID.String(), host)
 	assertStringField(t, device, "device_timezone", "")
 	assertStringField(t, device, "timezone_updated_by", fixture.ActorID.String())
+	assertStringField(t, device, "timezone_update_reason", insights.TimezoneUpdateReasonManual)
 	if got, ok := device["timezone_updated_at"].(float64); !ok || got <= 0 {
 		t.Fatalf("timezone_updated_at = %#v, want positive timestamp", device["timezone_updated_at"])
 	}

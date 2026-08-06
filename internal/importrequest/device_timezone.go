@@ -32,10 +32,11 @@ type csvRow struct {
 }
 
 type deviceDocUpdate struct {
-	DeviceTimezone    string `json:"device_timezone"`
-	TimezoneUpdatedAt int64  `json:"timezone_updated_at"`
-	TimezoneUpdatedBy string `json:"timezone_updated_by"`
-	UpdatedAt         int64  `json:"updated_at"`
+	DeviceTimezone       string `json:"device_timezone"`
+	TimezoneUpdatedAt    int64  `json:"timezone_updated_at"`
+	TimezoneUpdatedBy    string `json:"timezone_updated_by"`
+	TimezoneUpdateReason string `json:"timezone_update_reason"`
+	UpdatedAt            int64  `json:"updated_at"`
 }
 
 type bulkItemOutcome struct {
@@ -83,7 +84,7 @@ func processDeviceTimezoneMapping(ctx context.Context, req models.ImportRequest,
 			continue
 		}
 		if strings.TrimSpace(row.Timezone) != "" {
-			if err := validateTimezone(row.Timezone); err != nil {
+			if err := insights.ValidateIANATimezone(row.Timezone); err != nil {
 				recordRowFailure(log, stats, row, err.Error())
 				continue
 			}
@@ -183,38 +184,6 @@ func validateHostname(hostname string) error {
 	return nil
 }
 
-func validateTimezone(timezone string) error {
-	timezone = strings.TrimSpace(timezone)
-	if timezone == "" {
-		return fmt.Errorf("timezone is required")
-	}
-	if !isIANATimeZoneName(timezone) {
-		return fmt.Errorf("invalid IANA time zone %q", timezone)
-	}
-	if _, err := time.LoadLocation(timezone); err != nil {
-		return fmt.Errorf("invalid IANA time zone %q", timezone)
-	}
-	return nil
-}
-
-func isIANATimeZoneName(name string) bool {
-	if name == "Local" {
-		return false
-	}
-	switch name {
-	case "UTC", "GMT", "Zulu":
-		return true
-	}
-	if strings.HasPrefix(name, "Etc/") {
-		return strings.Contains(name, "/")
-	}
-	if !strings.Contains(name, "/") {
-		return false
-	}
-	parts := strings.Split(name, "/")
-	return len(parts) == 2 && parts[0] != "" && parts[1] != ""
-}
-
 func isBlankCSVRow(record []string) bool {
 	if len(record) == 0 {
 		return true
@@ -281,10 +250,11 @@ func bulkSetDeviceTimezones(
 			return nil, err
 		}
 		doc := deviceDocUpdate{
-			DeviceTimezone:    row.Timezone,
-			TimezoneUpdatedAt: updatedAt,
-			TimezoneUpdatedBy: updatedBy,
-			UpdatedAt:         updatedAt,
+			DeviceTimezone:       row.Timezone,
+			TimezoneUpdatedAt:    updatedAt,
+			TimezoneUpdatedBy:    updatedBy,
+			TimezoneUpdateReason: insights.TimezoneUpdateReasonManual,
+			UpdatedAt:            updatedAt,
 		}
 		body, err := json.Marshal(map[string]deviceDocUpdate{"doc": doc})
 		if err != nil {

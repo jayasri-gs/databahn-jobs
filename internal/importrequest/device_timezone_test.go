@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/databahn-ai/databahn-jobs/internal/importrequest/models"
+	"github.com/databahn-ai/databahn-jobs/internal/insights"
 	"go.uber.org/zap"
 )
 
@@ -92,15 +93,15 @@ func TestValidateHostname(t *testing.T) {
 func TestValidateTimezone(t *testing.T) {
 	valid := []string{"UTC", "America/New_York", "Europe/London", "Asia/Kolkata", "US/Eastern"}
 	for _, tz := range valid {
-		if err := validateTimezone(tz); err != nil {
-			t.Fatalf("validateTimezone(%q) error = %v", tz, err)
+		if err := insights.ValidateIANATimezone(tz); err != nil {
+			t.Fatalf("ValidateIANATimezone(%q) error = %v", tz, err)
 		}
 	}
 
 	invalid := []string{"", "EST", "Not/AZone", "+05:30"}
 	for _, tz := range invalid {
-		if err := validateTimezone(tz); err == nil {
-			t.Fatalf("validateTimezone(%q) expected error", tz)
+		if err := insights.ValidateIANATimezone(tz); err == nil {
+			t.Fatalf("ValidateIANATimezone(%q) expected error", tz)
 		}
 	}
 }

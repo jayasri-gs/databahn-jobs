@@ -1,6 +1,9 @@
 package insights
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGetDeviceAggWriteBatch(t *testing.T) {
 	t.Setenv(deviceAggWriteBatchEnv, "150")
@@ -50,6 +53,58 @@ func TestDeviceIndexName(t *testing.T) {
 	index := DeviceIndexName("tenant-1")
 	if index != "db_insights_devices_tenant-1" {
 		t.Fatalf("unexpected index name: %s", index)
+	}
+}
+
+func TestGetDeviceUpdateRequestBodyIncludesTimezoneFromKey4(t *testing.T) {
+	body, err := getDeviceUpdateRequestBody(&DeviceDocument{
+		Id:                   "tenant-1:host1",
+		Key1:                 "host1",
+		Key4:                 "America/Chicago",
+		SourceId:             "source-1",
+		TenantId:             "tenant-1",
+		DataPlaneId:          "dp-1",
+		MinTime:              100,
+		MaxTime:              200,
+		Timestamp:            300,
+		UpdatedAt:            400,
+		TimezoneUpdatedBy:    AgentTimezoneUpdatedByUUID,
+		TimezoneUpdateReason: TimezoneUpdateReasonAgentSetting,
+	})
+	if err != nil {
+		t.Fatalf("getDeviceUpdateRequestBody() error = %v", err)
+	}
+	json := string(body)
+	for _, want := range []string{
+		"America/Chicago",
+		AgentTimezoneUpdatedByUUID,
+		TimezoneUpdateReasonAgentSetting,
+		"agent_setting",
+	} {
+		if !strings.Contains(json, want) {
+			t.Fatalf("body missing %q: %s", want, json)
+		}
+	}
+}
+
+func TestSightToDeviceDocPopulatesTimezoneFromKey4(t *testing.T) {
+	doc := sightToDeviceDoc(Sight{
+		Key1:     "host1",
+		Key4:     "America/Chicago",
+		TenantId: "tenant-1",
+		SourceId: "source-1",
+		MinTime:  100,
+		MaxTime:  200,
+	})
+
+	if doc.Key4 != "America/Chicago" {
+		t.Fatalf("key4 = %q, want America/Chicago", doc.Key4)
+	}
+	if doc.TimezoneUpdatedBy != AgentTimezoneUpdatedByUUID {
+		t.Fatalf("timezone_updated_by = %q", doc.TimezoneUpdatedBy)
+	}
+	if doc.TimezoneUpdateReason != TimezoneUpdateReasonAgentSetting {
+		t.Fatalf("timezone_update_reason = %q", doc.TimezoneUpdateReason)
 	}
 }
 
