@@ -27,6 +27,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	fieldEventSourceId  = "tags.db_event_source_id.keyword"
+	fieldNameRaw        = "name.raw"
+	errValidationFailed = "new index data validation failed"
+)
+
 func RolloverOlderStats(ctx context.Context) common.JobResult {
 	var errors []common.JobError
 
@@ -120,6 +126,7 @@ func parseConfig() (*RolloverConfig, error) {
 	s3BackupEnabled := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_S3_BACKUP_ENABLED", "true"), "true")
 	deleteExistingRolledOverIndex := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_DELETE_EXISTING_ROLLED_OVER_INDEX", "false"), "true")
 	skipValidation := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_SKIP_VALIDATION", "false"), "true")
+	skipTenantIdValidation := strings.EqualFold(utils.GetEnvOrDefault("STATS_ROLLOVER_SKIP_TENANT_ID_VALIDATION", "false"), "true")
 
 	aggQueryDuration, err := time.ParseDuration(aggQueryRange)
 	if err != nil {
@@ -162,6 +169,7 @@ func parseConfig() (*RolloverConfig, error) {
 		s3BackupEnabled:               s3BackupEnabled,
 		deleteExistingRolledOverIndex: deleteExistingRolledOverIndex,
 		skipValidation:                skipValidation,
+		skipTenantIdValidation:        skipTenantIdValidation,
 		specificTenants:               specificTenants,
 	}
 	return &rolloverConf, nil
@@ -320,7 +328,7 @@ func doRolloverAndValidate(ctx context.Context, index Index, client *opensearch.
 		}
 	}
 	if !config.skipValidation {
-		err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, config.validationRange)
+		err = validateNewData(ctx, index, client, newIndexName, minVal, maxVal, config.validationRange, config.skipTenantIdValidation)
 		if err != nil {
 			return err
 		}
@@ -518,13 +526,12 @@ func writeToBackupFile(writer *gzip.Writer, docs []map[string]any) error {
 }
 
 func validateNewData(ctx context.Context, index Index, client *opensearch.Client, newIndexName string,
-	minVal, maxVal int64, validationDuration time.Duration) error {
+	minVal, maxVal int64, validationDuration time.Duration, skipTenantId bool) error {
 	err := dbos.RefreshIndex(ctx, client, newIndexName)
 	if err != nil {
 		return err
 	}
 
-	olderIndexGroupBy := []string{"tags.db_tenant_id.keyword", "tags.db_event_source_id.keyword", "name.raw", "namespace"}
 	aggregations := []dbos.AggregationFunction{
 		dbos.AggregationFunction{
 			Name:     "total_count",
@@ -536,65 +543,108 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 	validationRanges := splitByTimeRanges(minVal, maxVal, validationDuration)
 	for _, vr := range validationRanges {
 		query := fmt.Sprintf("tags.db_ts_win:[%d TO %d}", vr.start, vr.end)
-		olderCounts := make(map[string]map[string]map[string]map[string]float64)
-		var searchAfter map[string]any = nil
-		for {
-			olderIndexTotalAgg, newSearchAfter, err := dbos.CompositePaginatedAggregate(ctx, client, 100, index.Index, query,
-				olderIndexGroupBy, aggregations, searchAfter)
-			if err != nil {
-				return err
-			}
-			if len(olderIndexTotalAgg) == 0 {
-				break
-			}
-			countStats(olderIndexTotalAgg, olderIndexGroupBy, olderCounts)
-			searchAfter = newSearchAfter
-		}
-		searchAfter = nil
-		newCounts := make(map[string]map[string]map[string]map[string]float64)
-		newIndexGroupBy := []string{"tags.db_tenant_id.keyword", "tags.db_event_source_id.keyword", "name.raw", "namespace"}
-		for {
-			newIndexTotalAgg, newSearchAfter, err := dbos.CompositePaginatedAggregate(ctx, client, 100, newIndexName, query,
-				newIndexGroupBy, aggregations, searchAfter)
-			if err != nil {
-				return err
-			}
-			if len(newIndexTotalAgg) == 0 {
-				break
-			}
-			countStats(newIndexTotalAgg, newIndexGroupBy, newCounts)
-			searchAfter = newSearchAfter
-		}
 
-		if !reflect.DeepEqual(olderCounts, newCounts) {
-			logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
-				zap.String("new_index", newIndexName), zap.Any("older_index_total_agg", olderCounts),
-				zap.Any("new_index_total_agg", newCounts), zap.Int64("timeRange.Start", vr.start),
-				zap.Int64("timeRange.End", vr.end))
-			return errors.New("new index data validation failed")
+		if skipTenantId {
+			groupBy := []string{fieldEventSourceId, fieldNameRaw, "namespace"}
+			olderCounts := make(map[string]map[string]map[string]float64)
+			newCounts := make(map[string]map[string]map[string]float64)
+			if err := paginateAgg3(ctx, client, index.Index, query, groupBy, aggregations, olderCounts); err != nil {
+				return err
+			}
+			if err := paginateAgg3(ctx, client, newIndexName, query, groupBy, aggregations, newCounts); err != nil {
+				return err
+			}
+			if !reflect.DeepEqual(olderCounts, newCounts) {
+				logger.GetLogger().Info(errValidationFailed, zap.String("index", index.Index),
+					zap.String("new_index", newIndexName), zap.Int("older_bucket_count", len(olderCounts)),
+					zap.Int("new_bucket_count", len(newCounts)), zap.Int64("timeRange.Start", vr.start),
+					zap.Int64("timeRange.End", vr.end))
+				return errors.New(errValidationFailed)
+			}
+		} else {
+			groupBy := []string{"tags.db_tenant_id.keyword", fieldEventSourceId, fieldNameRaw, "namespace"}
+			olderCounts := make(map[string]map[string]map[string]map[string]float64)
+			newCounts := make(map[string]map[string]map[string]map[string]float64)
+			if err := paginateAgg4(ctx, client, index.Index, query, groupBy, aggregations, olderCounts); err != nil {
+				return err
+			}
+			if err := paginateAgg4(ctx, client, newIndexName, query, groupBy, aggregations, newCounts); err != nil {
+				return err
+			}
+			if !reflect.DeepEqual(olderCounts, newCounts) {
+				logger.GetLogger().Info(errValidationFailed, zap.String("index", index.Index),
+					zap.String("new_index", newIndexName), zap.Int("older_bucket_count", len(olderCounts)),
+					zap.Int("new_bucket_count", len(newCounts)), zap.Int64("timeRange.Start", vr.start),
+					zap.Int64("timeRange.End", vr.end))
+				return errors.New(errValidationFailed)
+			}
 		}
 	}
 	return nil
 }
 
-func countStats(indexTotalAgg []dbos.AggResponse, newIndexGroupBy []string, counts map[string]map[string]map[string]map[string]float64) {
-	for _, agg := range indexTotalAgg {
-		tenant := agg.Key[newIndexGroupBy[0]].(string)
-		source := agg.Key[newIndexGroupBy[1]].(string)
-		name := agg.Key[newIndexGroupBy[2]].(string)
-		namespace := agg.Key[newIndexGroupBy[3]].(string)
-
-		if counts[tenant] == nil {
-			counts[tenant] = make(map[string]map[string]map[string]float64)
+func paginateAgg3(ctx context.Context, client *opensearch.Client, indexName, query string, groupBy []string, aggregations []dbos.AggregationFunction, counts map[string]map[string]map[string]float64) error {
+	var searchAfter map[string]any
+	for {
+		aggs, newSearchAfter, err := dbos.CompositePaginatedAggregate(ctx, client, 100, indexName, query, groupBy, aggregations, searchAfter)
+		if err != nil {
+			return err
 		}
-		if counts[tenant][source] == nil {
-			counts[tenant][source] = make(map[string]map[string]float64)
+		if len(aggs) == 0 {
+			break
 		}
-		if counts[tenant][source][name] == nil {
-			counts[tenant][source][name] = make(map[string]float64)
+		for _, agg := range aggs {
+			source := agg.Key[groupBy[0]].(string)
+			name := agg.Key[groupBy[1]].(string)
+			namespace := agg.Key[groupBy[2]].(string)
+			if counts[source] == nil {
+				counts[source] = make(map[string]map[string]float64)
+			}
+			if counts[source][name] == nil {
+				counts[source][name] = make(map[string]float64)
+			}
+			counts[source][name][namespace] = agg.Values["total_count"].(float64)
 		}
-		counts[tenant][source][name][namespace] = agg.Values["total_count"].(float64)
+		searchAfter = newSearchAfter
+		if newSearchAfter == nil {
+			break
+		}
 	}
+	return nil
+}
+
+func paginateAgg4(ctx context.Context, client *opensearch.Client, indexName, query string, groupBy []string, aggregations []dbos.AggregationFunction, counts map[string]map[string]map[string]map[string]float64) error {
+	var searchAfter map[string]any
+	for {
+		aggs, newSearchAfter, err := dbos.CompositePaginatedAggregate(ctx, client, 100, indexName, query, groupBy, aggregations, searchAfter)
+		if err != nil {
+			return err
+		}
+		if len(aggs) == 0 {
+			break
+		}
+		for _, agg := range aggs {
+			tenant := agg.Key[groupBy[0]].(string)
+			source := agg.Key[groupBy[1]].(string)
+			name := agg.Key[groupBy[2]].(string)
+			namespace := agg.Key[groupBy[3]].(string)
+			if counts[tenant] == nil {
+				counts[tenant] = make(map[string]map[string]map[string]float64)
+			}
+			if counts[tenant][source] == nil {
+				counts[tenant][source] = make(map[string]map[string]float64)
+			}
+			if counts[tenant][source][name] == nil {
+				counts[tenant][source][name] = make(map[string]float64)
+			}
+			counts[tenant][source][name][namespace] = agg.Values["total_count"].(float64)
+		}
+		searchAfter = newSearchAfter
+		if newSearchAfter == nil {
+			break
+		}
+	}
+	return nil
 }
 
 func buildRolloverAggRequest(start int64, end int64, after *After, batchSize int, aggWindowDuration time.Duration) RolloverAggRequest {
@@ -603,11 +653,11 @@ func buildRolloverAggRequest(start int64, end int64, after *After, batchSize int
 	rolloverRequest.Query.Range.TagsDbTsWin.Gte = start
 	rolloverRequest.Query.Range.TagsDbTsWin.Lt = end
 	rolloverRequest.Aggs.CompositeBuckets.Composite.Size = batchSize
-	requestTermsAggName := newRequestSourceTermsAgg("name.raw")
+	requestTermsAggName := newRequestSourceTermsAgg(fieldNameRaw)
 	requestSourceName := RequestSource{Name: &requestTermsAggName}
 	requestTermsAggNamespace := newRequestSourceTermsAgg("namespace")
 	requestSourceNamespace := RequestSource{Namespace: &requestTermsAggNamespace}
-	requestTermsAggSourceId := newRequestSourceTermsAgg("tags.db_event_source_id.keyword")
+	requestTermsAggSourceId := newRequestSourceTermsAgg(fieldEventSourceId)
 	requestSourceSourceId := RequestSource{SourceId: &requestTermsAggSourceId}
 	requestTermsAggDestinationId := newRequestSourceTermsAgg("tags.destination_id.keyword")
 	requestSourceDestinationId := RequestSource{DestinationId: &requestTermsAggDestinationId}
