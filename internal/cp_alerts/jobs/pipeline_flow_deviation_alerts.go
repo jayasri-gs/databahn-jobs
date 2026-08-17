@@ -458,11 +458,20 @@ func buildStageFlow(ctx context.Context, db *gorm.DB, pipelineMapping pipeline.P
 	return stages, nil
 }
 
-// isEnrichmentBeforeVC determines if enrichment should come before volume control
+// isEnrichmentBeforeVC determines if enrichment should come before volume control.
+// True when a VC rule's referenced attributes include this pipeline's enrichment
+// outputs (legacy db_enriched_* or custom names).
 func isEnrichmentBeforeVC(ctx context.Context, db *gorm.DB, pipelineID, tenantID uuid.UUID) (bool, error) {
 	rules, err := vc_rule.GetActiveVCRulesByPipelineAndTenant(pipelineID, tenantID, db)
 	if err != nil {
 		return false, err
+	}
+
+	enrichmentOutputs, err := enrichment.GetActiveEnrichmentOutputFields(ctx, db, pipelineID, tenantID)
+	if err != nil {
+		logger.GetLoggerWithContext(ctx).Warn("Error loading enrichment output fields; falling back to db_enriched_ prefix",
+			zap.Error(err))
+		enrichmentOutputs = map[string]struct{}{}
 	}
 
 	for _, rule := range rules {
@@ -475,13 +484,24 @@ func isEnrichmentBeforeVC(ctx context.Context, db *gorm.DB, pipelineID, tenantID
 		}
 
 		for _, attr := range referencedAttrs {
-			if strings.HasPrefix(attr, "db_enriched_") {
+			if referencesEnrichmentOutputField(attr, enrichmentOutputs) {
 				return true, nil
 			}
 		}
 	}
 
 	return false, nil
+}
+
+func referencesEnrichmentOutputField(fieldName string, knownOutputs map[string]struct{}) bool {
+	trimmed := strings.TrimSpace(fieldName)
+	if trimmed == "" {
+		return false
+	}
+	if _, ok := knownOutputs[trimmed]; ok {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "db_enriched_")
 }
 
 // getStageEventCount gets the event count for a specific stage
