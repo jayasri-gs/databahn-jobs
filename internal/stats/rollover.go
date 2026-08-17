@@ -27,6 +27,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	fieldEventSourceId  = "tags.db_event_source_id.keyword"
+	fieldNameRaw        = "name.raw"
+	errValidationFailed = "new index data validation failed"
+)
+
 func RolloverOlderStats(ctx context.Context) common.JobResult {
 	var errors []common.JobError
 
@@ -539,7 +545,7 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 		query := fmt.Sprintf("tags.db_ts_win:[%d TO %d}", vr.start, vr.end)
 
 		if skipTenantId {
-			groupBy := []string{"tags.db_event_source_id.keyword", "name.raw", "namespace"}
+			groupBy := []string{fieldEventSourceId, fieldNameRaw, "namespace"}
 			olderCounts := make(map[string]map[string]map[string]float64)
 			newCounts := make(map[string]map[string]map[string]float64)
 			if err := paginateAgg3(ctx, client, index.Index, query, groupBy, aggregations, olderCounts); err != nil {
@@ -549,14 +555,14 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 				return err
 			}
 			if !reflect.DeepEqual(olderCounts, newCounts) {
-				logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
+				logger.GetLogger().Info(errValidationFailed, zap.String("index", index.Index),
 					zap.String("new_index", newIndexName), zap.Int("older_bucket_count", len(olderCounts)),
 					zap.Int("new_bucket_count", len(newCounts)), zap.Int64("timeRange.Start", vr.start),
 					zap.Int64("timeRange.End", vr.end))
-				return errors.New("new index data validation failed")
+				return errors.New(errValidationFailed)
 			}
 		} else {
-			groupBy := []string{"tags.db_tenant_id.keyword", "tags.db_event_source_id.keyword", "name.raw", "namespace"}
+			groupBy := []string{"tags.db_tenant_id.keyword", fieldEventSourceId, fieldNameRaw, "namespace"}
 			olderCounts := make(map[string]map[string]map[string]map[string]float64)
 			newCounts := make(map[string]map[string]map[string]map[string]float64)
 			if err := paginateAgg4(ctx, client, index.Index, query, groupBy, aggregations, olderCounts); err != nil {
@@ -566,11 +572,11 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 				return err
 			}
 			if !reflect.DeepEqual(olderCounts, newCounts) {
-				logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
+				logger.GetLogger().Info(errValidationFailed, zap.String("index", index.Index),
 					zap.String("new_index", newIndexName), zap.Int("older_bucket_count", len(olderCounts)),
 					zap.Int("new_bucket_count", len(newCounts)), zap.Int64("timeRange.Start", vr.start),
 					zap.Int64("timeRange.End", vr.end))
-				return errors.New("new index data validation failed")
+				return errors.New(errValidationFailed)
 			}
 		}
 	}
@@ -647,11 +653,11 @@ func buildRolloverAggRequest(start int64, end int64, after *After, batchSize int
 	rolloverRequest.Query.Range.TagsDbTsWin.Gte = start
 	rolloverRequest.Query.Range.TagsDbTsWin.Lt = end
 	rolloverRequest.Aggs.CompositeBuckets.Composite.Size = batchSize
-	requestTermsAggName := newRequestSourceTermsAgg("name.raw")
+	requestTermsAggName := newRequestSourceTermsAgg(fieldNameRaw)
 	requestSourceName := RequestSource{Name: &requestTermsAggName}
 	requestTermsAggNamespace := newRequestSourceTermsAgg("namespace")
 	requestSourceNamespace := RequestSource{Namespace: &requestTermsAggNamespace}
-	requestTermsAggSourceId := newRequestSourceTermsAgg("tags.db_event_source_id.keyword")
+	requestTermsAggSourceId := newRequestSourceTermsAgg(fieldEventSourceId)
 	requestSourceSourceId := RequestSource{SourceId: &requestTermsAggSourceId}
 	requestTermsAggDestinationId := newRequestSourceTermsAgg("tags.destination_id.keyword")
 	requestSourceDestinationId := RequestSource{DestinationId: &requestTermsAggDestinationId}
