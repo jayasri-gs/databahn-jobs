@@ -30,6 +30,7 @@ type RolloverConfig struct {
 	s3BackupEnabled               bool
 	deleteExistingRolledOverIndex bool
 	skipValidation                bool
+	skipTenantIdValidation        bool
 	specificTenants               string
 }
 
