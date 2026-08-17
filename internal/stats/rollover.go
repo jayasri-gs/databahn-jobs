@@ -550,8 +550,8 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 			}
 			if !reflect.DeepEqual(olderCounts, newCounts) {
 				logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
-					zap.String("new_index", newIndexName), zap.Any("older_index_total_agg", olderCounts),
-					zap.Any("new_index_total_agg", newCounts), zap.Int64("timeRange.Start", vr.start),
+					zap.String("new_index", newIndexName), zap.Int("older_bucket_count", len(olderCounts)),
+					zap.Int("new_bucket_count", len(newCounts)), zap.Int64("timeRange.Start", vr.start),
 					zap.Int64("timeRange.End", vr.end))
 				return errors.New("new index data validation failed")
 			}
@@ -567,8 +567,8 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 			}
 			if !reflect.DeepEqual(olderCounts, newCounts) {
 				logger.GetLogger().Info("new index data validation failed", zap.String("index", index.Index),
-					zap.String("new_index", newIndexName), zap.Any("older_index_total_agg", olderCounts),
-					zap.Any("new_index_total_agg", newCounts), zap.Int64("timeRange.Start", vr.start),
+					zap.String("new_index", newIndexName), zap.Int("older_bucket_count", len(olderCounts)),
+					zap.Int("new_bucket_count", len(newCounts)), zap.Int64("timeRange.Start", vr.start),
 					zap.Int64("timeRange.End", vr.end))
 				return errors.New("new index data validation failed")
 			}
@@ -600,6 +600,9 @@ func paginateAgg3(ctx context.Context, client *opensearch.Client, indexName, que
 			counts[source][name][namespace] = agg.Values["total_count"].(float64)
 		}
 		searchAfter = newSearchAfter
+		if newSearchAfter == nil {
+			break
+		}
 	}
 	return nil
 }
@@ -631,6 +634,9 @@ func paginateAgg4(ctx context.Context, client *opensearch.Client, indexName, que
 			counts[tenant][source][name][namespace] = agg.Values["total_count"].(float64)
 		}
 		searchAfter = newSearchAfter
+		if newSearchAfter == nil {
+			break
+		}
 	}
 	return nil
 }
