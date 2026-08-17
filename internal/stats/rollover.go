@@ -524,7 +524,11 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 		return err
 	}
 
-	olderIndexGroupBy := []string{"tags.db_tenant_id.keyword", "tags.db_event_source_id.keyword", "name.raw", "namespace"}
+	// tenant_id is excluded from validation: DLQ/failure metrics land in P1 without
+	// db_tenant_id, but the rollover still aggregates them into the same P2 bucket as
+	// docs that do have it. Plain terms drops missing-field docs from the P1 side,
+	// so P2 always shows a higher counter total for the tenant bucket — permanent false positive.
+	groupBy := []string{"tags.db_event_source_id.keyword", "name.raw", "namespace"}
 	aggregations := []dbos.AggregationFunction{
 		dbos.AggregationFunction{
 			Name:     "total_count",
@@ -536,33 +540,32 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 	validationRanges := splitByTimeRanges(minVal, maxVal, validationDuration)
 	for _, vr := range validationRanges {
 		query := fmt.Sprintf("tags.db_ts_win:[%d TO %d}", vr.start, vr.end)
-		olderCounts := make(map[string]map[string]map[string]map[string]float64)
+		olderCounts := make(map[string]map[string]map[string]float64)
 		var searchAfter map[string]any = nil
 		for {
 			olderIndexTotalAgg, newSearchAfter, err := dbos.CompositePaginatedAggregate(ctx, client, 100, index.Index, query,
-				olderIndexGroupBy, aggregations, searchAfter)
+				groupBy, aggregations, searchAfter)
 			if err != nil {
 				return err
 			}
 			if len(olderIndexTotalAgg) == 0 {
 				break
 			}
-			countStats(olderIndexTotalAgg, olderIndexGroupBy, olderCounts)
+			countStats(olderIndexTotalAgg, groupBy, olderCounts)
 			searchAfter = newSearchAfter
 		}
 		searchAfter = nil
-		newCounts := make(map[string]map[string]map[string]map[string]float64)
-		newIndexGroupBy := []string{"tags.db_tenant_id.keyword", "tags.db_event_source_id.keyword", "name.raw", "namespace"}
+		newCounts := make(map[string]map[string]map[string]float64)
 		for {
 			newIndexTotalAgg, newSearchAfter, err := dbos.CompositePaginatedAggregate(ctx, client, 100, newIndexName, query,
-				newIndexGroupBy, aggregations, searchAfter)
+				groupBy, aggregations, searchAfter)
 			if err != nil {
 				return err
 			}
 			if len(newIndexTotalAgg) == 0 {
 				break
 			}
-			countStats(newIndexTotalAgg, newIndexGroupBy, newCounts)
+			countStats(newIndexTotalAgg, groupBy, newCounts)
 			searchAfter = newSearchAfter
 		}
 
@@ -577,23 +580,19 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 	return nil
 }
 
-func countStats(indexTotalAgg []dbos.AggResponse, newIndexGroupBy []string, counts map[string]map[string]map[string]map[string]float64) {
+func countStats(indexTotalAgg []dbos.AggResponse, groupBy []string, counts map[string]map[string]map[string]float64) {
 	for _, agg := range indexTotalAgg {
-		tenant := agg.Key[newIndexGroupBy[0]].(string)
-		source := agg.Key[newIndexGroupBy[1]].(string)
-		name := agg.Key[newIndexGroupBy[2]].(string)
-		namespace := agg.Key[newIndexGroupBy[3]].(string)
+		source := agg.Key[groupBy[0]].(string)
+		name := agg.Key[groupBy[1]].(string)
+		namespace := agg.Key[groupBy[2]].(string)
 
-		if counts[tenant] == nil {
-			counts[tenant] = make(map[string]map[string]map[string]float64)
+		if counts[source] == nil {
+			counts[source] = make(map[string]map[string]float64)
 		}
-		if counts[tenant][source] == nil {
-			counts[tenant][source] = make(map[string]map[string]float64)
+		if counts[source][name] == nil {
+			counts[source][name] = make(map[string]float64)
 		}
-		if counts[tenant][source][name] == nil {
-			counts[tenant][source][name] = make(map[string]float64)
-		}
-		counts[tenant][source][name][namespace] = agg.Values["total_count"].(float64)
+		counts[source][name][namespace] = agg.Values["total_count"].(float64)
 	}
 }
 
