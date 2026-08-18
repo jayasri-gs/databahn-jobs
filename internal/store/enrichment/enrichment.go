@@ -8,6 +8,16 @@ import (
 	"gorm.io/gorm"
 )
 
+// GetActiveEnrichments returns active enrichment rows for a pipeline.
+func GetActiveEnrichments(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID, tenantID uuid.UUID) ([]dbmodels.Enrichment, error) {
+	var enrichments []dbmodels.Enrichment
+	err := db.WithContext(ctx).Table("enrichment").
+		Where("pipeline_id = ? AND tenant_id = ? AND status = ?",
+			pipelineID, tenantID, "ACTIVE").
+		Find(&enrichments).Error
+	return enrichments, err
+}
+
 // HasActiveEnrichment checks if a pipeline has any active enrichment configurations
 func HasActiveEnrichment(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID, tenantID uuid.UUID) (bool, int64, error) {
 	var count int64
@@ -19,18 +29,9 @@ func HasActiveEnrichment(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID,
 	return count > 0, count, err
 }
 
-// GetActiveEnrichmentOutputFields returns mapping source_field names written by
-// active enrichments on the pipeline (legacy db_enriched_N and custom names).
-func GetActiveEnrichmentOutputFields(ctx context.Context, db *gorm.DB, pipelineID uuid.UUID, tenantID uuid.UUID) (map[string]struct{}, error) {
-	var enrichments []dbmodels.Enrichment
-	err := db.WithContext(ctx).Table("enrichment").
-		Where("pipeline_id = ? AND tenant_id = ? AND status = ?",
-			pipelineID, tenantID, "ACTIVE").
-		Find(&enrichments).Error
-	if err != nil {
-		return nil, err
-	}
-
+// OutputFieldsFromEnrichments returns mapping source_field names written by
+// enrichments (legacy db_enriched_N and custom names).
+func OutputFieldsFromEnrichments(enrichments []dbmodels.Enrichment) map[string]struct{} {
 	fields := make(map[string]struct{})
 	for _, e := range enrichments {
 		for _, name := range e.GetEnrichmentAttributes() {
@@ -40,5 +41,5 @@ func GetActiveEnrichmentOutputFields(ctx context.Context, db *gorm.DB, pipelineI
 			fields[name] = struct{}{}
 		}
 	}
-	return fields, nil
+	return fields
 }
