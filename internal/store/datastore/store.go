@@ -204,7 +204,11 @@ func resolveExternalAthenaS3(ctx context.Context, db *gorm.DB, dataStoreID, tena
 		if err != nil {
 			return nil, err
 		}
-		merged = mergeStringMaps(merged, overrides)
+		for _, credKey := range []string{"access_key_id", "secret_access_key", "role_arn", "external_id"} {
+			if v, ok := overrides[credKey]; ok && v != "" {
+				merged[credKey] = v
+			}
+		}
 	}
 	region := strings.TrimSpace(merged["region"])
 	bucket := strings.TrimSpace(merged["bucket"])
@@ -213,6 +217,19 @@ func resolveExternalAthenaS3(ctx context.Context, db *gorm.DB, dataStoreID, tena
 	}
 	if bucket == "" {
 		return nil, fmt.Errorf("bucket not configured for external Athena data store %s", dataStoreID)
+	}
+	authType := strings.TrimSpace(merged["auth_type"])
+	switch authType {
+	case "role_based":
+		if strings.TrimSpace(merged["role_arn"]) == "" {
+			return nil, fmt.Errorf("role_arn not configured for role_based external Athena data store %s", dataStoreID)
+		}
+	case "key_based":
+		if strings.TrimSpace(merged["access_key_id"]) == "" || strings.TrimSpace(merged["secret_access_key"]) == "" {
+			return nil, fmt.Errorf("access_key_id/secret_access_key not configured for key_based external Athena data store %s", dataStoreID)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported or missing auth_type %q for external Athena data store %s", authType, dataStoreID)
 	}
 	return &destination.S3Config{
 		AuthType:        merged["auth_type"],

@@ -70,6 +70,59 @@ func TestResolveExternalAthenaS3_MissingBucket(t *testing.T) {
 	}
 }
 
+func TestResolveExternalAthenaS3_KeyBasedMissingCredentials(t *testing.T) {
+	storeCfg := dataStoreConfiguration{
+		ExternalSearchDataStoreConfiguration: &externalStoreConfigJSON{
+			ExternalSearchProvider: ExternalProviderS3,
+			ConnectorConfig: map[string]string{
+				"region":    testExternalAthenaRegion,
+				"bucket":    testExternalAthenaBucket,
+				"auth_type": "key_based",
+			},
+		},
+	}
+
+	_, err := resolveExternalAthenaS3(context.Background(), nil, uuid.Nil, uuid.Nil, storeCfg)
+	if err == nil || !strings.Contains(err.Error(), "access_key_id/secret_access_key not configured") {
+		t.Fatalf("expected key_based credentials error, got %v", err)
+	}
+}
+
+func TestResolveExternalAthenaS3_RoleBasedMissingRoleArn(t *testing.T) {
+	storeCfg := dataStoreConfiguration{
+		ExternalSearchDataStoreConfiguration: &externalStoreConfigJSON{
+			ExternalSearchProvider: ExternalProviderS3,
+			ConnectorConfig: map[string]string{
+				"region":    testExternalAthenaRegion,
+				"bucket":    testExternalAthenaBucket,
+				"auth_type": "role_based",
+			},
+		},
+	}
+
+	_, err := resolveExternalAthenaS3(context.Background(), nil, uuid.Nil, uuid.Nil, storeCfg)
+	if err == nil || !strings.Contains(err.Error(), "role_arn not configured") {
+		t.Fatalf("expected role_based role_arn error, got %v", err)
+	}
+}
+
+func TestResolveExternalAthenaS3_UnsupportedAuthType(t *testing.T) {
+	storeCfg := dataStoreConfiguration{
+		ExternalSearchDataStoreConfiguration: &externalStoreConfigJSON{
+			ExternalSearchProvider: ExternalProviderS3,
+			ConnectorConfig: map[string]string{
+				"region": testExternalAthenaRegion,
+				"bucket": testExternalAthenaBucket,
+			},
+		},
+	}
+
+	_, err := resolveExternalAthenaS3(context.Background(), nil, uuid.Nil, uuid.Nil, storeCfg)
+	if err == nil || !strings.Contains(err.Error(), "unsupported or missing auth_type") {
+		t.Fatalf("expected unsupported auth_type error, got %v", err)
+	}
+}
+
 func TestResolveExternalAthenaS3_NilExternalConfig(t *testing.T) {
 	_, err := resolveExternalAthenaS3(context.Background(), nil, uuid.Nil, uuid.Nil, dataStoreConfiguration{})
 	if err == nil || !strings.Contains(err.Error(), "external search data store configuration is required") {
