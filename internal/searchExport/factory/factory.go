@@ -117,7 +117,11 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 			}
 			staging = store.StagingS3
 			if staging == nil {
-				staging, err = destination.LoadS3Config(ctx, db, destID, tenantID)
+				if store.Type == datastore.StoreTypeDatabahnStorage {
+					staging, err = destination.LoadS3Config(ctx, db, destID, tenantID)
+				} else {
+					return nil, fmt.Errorf("athena staging S3 config not resolved for store type %s", store.Type)
+				}
 			}
 		}
 		if err != nil || staging == nil {
