@@ -54,19 +54,33 @@ const deviceScript = `
       ctx._source.data_plane_id = params.data_plane_id;
       ctx._source.timestamp = params.timestamp;
       ctx._source.updated_at = params.updated_at;
+      if (params.key4 != null && params.key4 != '') {
+        if (ctx._source.timezone_update_reason == null || ctx._source.timezone_update_reason != 'manual') {
+          def currentTz = ctx._source.device_timezone;
+          if (currentTz == null || currentTz != params.key4) {
+            ctx._source.device_timezone = params.key4;
+            ctx._source.timezone_updated_at = params.updated_at;
+            ctx._source.timezone_updated_by = params.timezone_updated_by;
+            ctx._source.timezone_update_reason = params.timezone_update_reason;
+          }
+        }
+      }
     ",
     "lang": "painless",
     "params": {
       "key1": {{.Key1 | printf "%q"}},
       "key2": {{.Key2 | printf "%q"}},
       "key3": {{.Key3 | printf "%q"}},
+      "key4": {{.Key4 | printf "%q"}},
       "source_id": "{{.SourceId}}",
       "tenant_id": "{{.TenantId}}",
       "data_plane_id": "{{.DataPlaneId}}",
       "min_time": {{.MinTime}},
       "max_time": {{.MaxTime}},
       "timestamp": {{.Timestamp}},
-      "updated_at": {{.UpdatedAt}}
+      "updated_at": {{.UpdatedAt}},
+      "timezone_updated_by": "{{.TimezoneUpdatedBy}}",
+      "timezone_update_reason": "{{.TimezoneUpdateReason}}"
     }
   },
   "upsert": {
@@ -80,7 +94,11 @@ const deviceScript = `
     "global_max_time": {{.MaxTime}},
     "timestamp": {{.Timestamp}},
     "updated_at": {{.UpdatedAt}},
-    "sources": [
+{{if .Key4}}    "device_timezone": {{.Key4 | printf "%q"}},
+    "timezone_updated_at": {{.UpdatedAt}},
+    "timezone_updated_by": "{{.TimezoneUpdatedBy}}",
+    "timezone_update_reason": "{{.TimezoneUpdateReason}}",
+{{end}}    "sources": [
       {
         "source_id": "{{.SourceId}}",
         "min_time": {{.MinTime}},
@@ -92,17 +110,20 @@ const deviceScript = `
 `
 
 type DeviceDocument struct {
-	Id          string `json:"id"`
-	Key1        string `json:"key1"`
-	Key2        string `json:"key2,omitempty"`
-	Key3        string `json:"key3,omitempty"`
-	SourceId    string `json:"source_id"`
-	TenantId    string `json:"tenant_id"`
-	DataPlaneId string `json:"data_plane_id"`
-	MinTime     int64  `json:"min_time"`
-	MaxTime     int64  `json:"max_time"`
-	Timestamp   int64  `json:"timestamp"`
-	UpdatedAt   int64  `json:"updated_at"`
+	Id                   string `json:"id"`
+	Key1                 string `json:"key1"`
+	Key2                 string `json:"key2,omitempty"`
+	Key3                 string `json:"key3,omitempty"`
+	Key4                 string `json:"key4,omitempty"`
+	SourceId             string `json:"source_id"`
+	TenantId             string `json:"tenant_id"`
+	DataPlaneId          string `json:"data_plane_id"`
+	MinTime              int64  `json:"min_time"`
+	MaxTime              int64  `json:"max_time"`
+	Timestamp            int64  `json:"timestamp"`
+	UpdatedAt            int64  `json:"updated_at"`
+	TimezoneUpdatedBy    string `json:"timezone_updated_by,omitempty"`
+	TimezoneUpdateReason string `json:"timezone_update_reason,omitempty"`
 }
 
 func backfillDevicesFromSights(ctx context.Context, parallelism int) []JobError {
@@ -286,7 +307,7 @@ func sightToDeviceDoc(s Sight) DeviceDocument {
 	if ts == 0 {
 		ts = now
 	}
-	return DeviceDocument{
+	doc := DeviceDocument{
 		Id:          DeviceId(s.TenantId, s.Key1),
 		Key1:        s.Key1,
 		Key2:        s.Key2,
@@ -299,11 +320,13 @@ func sightToDeviceDoc(s Sight) DeviceDocument {
 		Timestamp:   ts,
 		UpdatedAt:   now,
 	}
+	populateAgentDetectedTimezone(&doc, s.Key4)
+	return doc
 }
 
 func docToDeviceDoc(d Doc) DeviceDocument {
 	now := time.Now().UnixMilli()
-	return DeviceDocument{
+	doc := DeviceDocument{
 		Id:          DeviceId(d.TenantId, d.Key1),
 		Key1:        d.Key1,
 		Key2:        d.Key2,
@@ -316,6 +339,18 @@ func docToDeviceDoc(d Doc) DeviceDocument {
 		Timestamp:   d.Timestamp,
 		UpdatedAt:   now,
 	}
+	populateAgentDetectedTimezone(&doc, d.Key4)
+	return doc
+}
+
+func populateAgentDetectedTimezone(doc *DeviceDocument, key4 string) {
+	key4 = strings.TrimSpace(key4)
+	if key4 == "" || !IsValidIANATimezone(key4) {
+		return
+	}
+	doc.Key4 = key4
+	doc.TimezoneUpdatedBy = AgentTimezoneUpdatedByUUID
+	doc.TimezoneUpdateReason = TimezoneUpdateReasonAgentSetting
 }
 
 func docsToDeviceDocuments(docs []Doc) []DeviceDocument {

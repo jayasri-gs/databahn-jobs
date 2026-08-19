@@ -33,6 +33,7 @@ type stagingInsightsDoc struct {
 	Key1        string
 	Key2        string
 	Key3        string
+	Key4        string
 	SourceID    string
 	TenantID    string
 	DataPlaneID string
@@ -168,7 +169,7 @@ func stagingDocBody(doc stagingInsightsDoc) map[string]any {
 		"key1":          doc.Key1,
 		"key2":          doc.Key2,
 		"key3":          doc.Key3,
-		"key4":          "",
+		"key4":          doc.Key4,
 		"key5":          "",
 		"source_id":     doc.SourceID,
 		"data_plane_id": doc.DataPlaneID,
@@ -210,15 +211,16 @@ func indexDeviceDocument(t *testing.T, ctx context.Context, openSearch *pramaan.
 	now := time.Now().UTC().UnixMilli()
 	docID := deviceDocumentID(tenantID, key1)
 	doc := map[string]any{
-		"id":              docID,
-		"key1":            key1,
-		"tenant_id":       tenantID,
-		"data_plane_id":   dataPlaneID,
-		"global_min_time": minTime,
-		"global_max_time": maxTime,
-		"timestamp":       now,
-		"updated_at":      now,
-		"device_timezone": "America/New_York",
+		"id":                     docID,
+		"key1":                   key1,
+		"tenant_id":              tenantID,
+		"data_plane_id":          dataPlaneID,
+		"global_min_time":        minTime,
+		"global_max_time":        maxTime,
+		"timestamp":              now,
+		"updated_at":             now,
+		"device_timezone":        "America/New_York",
+		"timezone_update_reason": insights.TimezoneUpdateReasonManual,
 		"sources": []map[string]any{
 			{
 				"source_id": sourceID,
@@ -232,6 +234,72 @@ func indexDeviceDocument(t *testing.T, ctx context.Context, openSearch *pramaan.
 		t.Fatalf("index device document: %v", err)
 	}
 	refreshIndex(t, ctx, openSearch, index)
+}
+
+func indexManualTimezoneDeviceDocument(
+	t *testing.T,
+	ctx context.Context,
+	openSearch *pramaan.OpenSearchPramaan,
+	tenantID, key1, sourceID, dataPlaneID, deviceTimezone, timezoneUpdatedBy string,
+	timezoneUpdatedAt, minTime, maxTime int64,
+) {
+	t.Helper()
+	now := time.Now().UTC().UnixMilli()
+	docID := deviceDocumentID(tenantID, key1)
+	doc := map[string]any{
+		"id":                     docID,
+		"key1":                   key1,
+		"tenant_id":              tenantID,
+		"data_plane_id":          dataPlaneID,
+		"global_min_time":        minTime,
+		"global_max_time":        maxTime,
+		"timestamp":              now,
+		"updated_at":             now,
+		"device_timezone":        deviceTimezone,
+		"timezone_updated_at":    timezoneUpdatedAt,
+		"timezone_updated_by":    timezoneUpdatedBy,
+		"timezone_update_reason": insights.TimezoneUpdateReasonManual,
+		"sources": []map[string]any{
+			{
+				"source_id": sourceID,
+				"min_time":  minTime,
+				"max_time":  maxTime,
+			},
+		},
+	}
+	index := devicesIndexName(tenantID)
+	if err := openSearch.IndexDocument(ctx, index, docID, doc); err != nil {
+		t.Fatalf("index manual timezone device document: %v", err)
+	}
+	refreshIndex(t, ctx, openSearch, index)
+}
+
+func assertAgentDetectedDeviceTimezone(t *testing.T, device map[string]any, wantTimezone string, before time.Time) {
+	t.Helper()
+	assertStringField(t, device, "device_timezone", wantTimezone)
+	assertStringField(t, device, "timezone_updated_by", insights.AgentTimezoneUpdatedByUUID)
+	assertStringField(t, device, "timezone_update_reason", insights.TimezoneUpdateReasonAgentSetting)
+
+	updatedAt, ok := device["timezone_updated_at"].(float64)
+	if !ok || updatedAt <= 0 {
+		t.Fatalf("timezone_updated_at = %#v, want positive timestamp", device["timezone_updated_at"])
+	}
+	if int64(updatedAt) < before.UnixMilli() {
+		t.Fatalf("timezone_updated_at %d is before test start %d", int64(updatedAt), before.UnixMilli())
+	}
+}
+
+func assertDeviceTimezoneUnset(t *testing.T, device map[string]any) {
+	t.Helper()
+	if tz, ok := device["device_timezone"].(string); ok && tz != "" {
+		t.Fatalf("device_timezone = %q, want unset", tz)
+	}
+	if reason, ok := device["timezone_update_reason"].(string); ok && reason == insights.TimezoneUpdateReasonAgentSetting {
+		t.Fatalf("timezone_update_reason = %q, want not agent_setting", reason)
+	}
+	if updatedBy, ok := device["timezone_updated_by"].(string); ok && updatedBy == insights.AgentTimezoneUpdatedByUUID {
+		t.Fatalf("timezone_updated_by = agent uuid, want unset")
+	}
 }
 
 func bulkIndexDocuments(t *testing.T, ctx context.Context, openSearch *pramaan.OpenSearchPramaan, indexName string, docs []map[string]any) {
