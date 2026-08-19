@@ -4,18 +4,24 @@ import (
 	"testing"
 )
 
+const (
+	testInsightsSecretAccessKey = "secret-value"
+	testInsightsBucket          = "platform-insights-bucket"
+	testInsightsRegion          = "us-east-1"
+)
+
 func TestParseInsightsStagingS3Config_Valid(t *testing.T) {
 	secret := insightsAwsSecret{
 		AccessKeyID:     "AKIATEST",
-		SecretAccessKey: "secret-value",
-		Bucket:          "platform-insights-bucket",
+		SecretAccessKey: testInsightsSecretAccessKey,
+		Bucket:          testInsightsBucket,
 	}
-	cfg, err := parseInsightsStagingS3Config(secret, "us-east-1")
+	cfg, err := parseInsightsStagingS3Config(secret, testInsightsRegion)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Region != "us-east-1" {
-		t.Fatalf("region: got %q, want %q", cfg.Region, "us-east-1")
+	if cfg.Region != testInsightsRegion {
+		t.Fatalf("region: got %q, want %q", cfg.Region, testInsightsRegion)
 	}
 	wantBucket := "platform-insights-bucket-parquet"
 	if cfg.Bucket != wantBucket {
@@ -27,7 +33,7 @@ func TestParseInsightsStagingS3Config_Valid(t *testing.T) {
 	if cfg.AccessKeyID != "AKIATEST" {
 		t.Fatal("AccessKeyID mismatch")
 	}
-	if cfg.SecretAccessKey != "secret-value" {
+	if cfg.SecretAccessKey != testInsightsSecretAccessKey {
 		t.Fatal("SecretAccessKey mismatch")
 	}
 }
@@ -35,10 +41,10 @@ func TestParseInsightsStagingS3Config_Valid(t *testing.T) {
 func TestParseInsightsStagingS3Config_NoRoleArn(t *testing.T) {
 	secret := insightsAwsSecret{
 		AccessKeyID:     "AKIATEST",
-		SecretAccessKey: "secret-value",
-		Bucket:          "platform-insights-bucket",
+		SecretAccessKey: testInsightsSecretAccessKey,
+		Bucket:          testInsightsBucket,
 	}
-	cfg, err := parseInsightsStagingS3Config(secret, "us-east-1")
+	cfg, err := parseInsightsStagingS3Config(secret, testInsightsRegion)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,9 +56,9 @@ func TestParseInsightsStagingS3Config_NoRoleArn(t *testing.T) {
 func TestParseInsightsStagingS3Config_MissingBucket(t *testing.T) {
 	secret := insightsAwsSecret{
 		AccessKeyID:     "AKIATEST",
-		SecretAccessKey: "secret-value",
+		SecretAccessKey: testInsightsSecretAccessKey,
 	}
-	_, err := parseInsightsStagingS3Config(secret, "us-east-1")
+	_, err := parseInsightsStagingS3Config(secret, testInsightsRegion)
 	if err == nil {
 		t.Fatal("expected error for missing bucket")
 	}
@@ -61,8 +67,8 @@ func TestParseInsightsStagingS3Config_MissingBucket(t *testing.T) {
 func TestParseInsightsStagingS3Config_MissingRegion(t *testing.T) {
 	secret := insightsAwsSecret{
 		AccessKeyID:     "AKIATEST",
-		SecretAccessKey: "secret-value",
-		Bucket:          "platform-insights-bucket",
+		SecretAccessKey: testInsightsSecretAccessKey,
+		Bucket:          testInsightsBucket,
 	}
 	_, err := parseInsightsStagingS3Config(secret, "")
 	if err == nil {
@@ -72,10 +78,10 @@ func TestParseInsightsStagingS3Config_MissingRegion(t *testing.T) {
 
 func TestParseInsightsStagingS3Config_MissingAccessKeyID(t *testing.T) {
 	secret := insightsAwsSecret{
-		SecretAccessKey: "secret-value",
-		Bucket:          "platform-insights-bucket",
+		SecretAccessKey: testInsightsSecretAccessKey,
+		Bucket:          testInsightsBucket,
 	}
-	_, err := parseInsightsStagingS3Config(secret, "us-east-1")
+	_, err := parseInsightsStagingS3Config(secret, testInsightsRegion)
 	if err == nil {
 		t.Fatal("expected error for missing AccessKeyID")
 	}
@@ -84,9 +90,9 @@ func TestParseInsightsStagingS3Config_MissingAccessKeyID(t *testing.T) {
 func TestParseInsightsStagingS3Config_MissingSecretAccessKey(t *testing.T) {
 	secret := insightsAwsSecret{
 		AccessKeyID: "AKIATEST",
-		Bucket:      "platform-insights-bucket",
+		Bucket:      testInsightsBucket,
 	}
-	_, err := parseInsightsStagingS3Config(secret, "us-east-1")
+	_, err := parseInsightsStagingS3Config(secret, testInsightsRegion)
 	if err == nil {
 		t.Fatal("expected error for missing SecretAccessKey")
 	}
