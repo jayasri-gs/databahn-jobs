@@ -383,11 +383,13 @@ func buildStageFlow(ctx context.Context, db *gorm.DB, pipelineMapping pipeline.P
 		return nil, fmt.Errorf("error checking active rules: %w", err)
 	}
 
-	// Check for active enrichment configurations
-	hasEnrichment, _, err := enrichment.HasActiveEnrichment(ctx, db, pipelineMapping.Pipeline.ID, pipelineMapping.Pipeline.TenantID)
+	// Load active enrichments once: used both for presence and VC ordering.
+	activeEnrichments, err := enrichment.GetActiveEnrichments(ctx, db, pipelineMapping.Pipeline.ID, pipelineMapping.Pipeline.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("error checking active enrichment: %w", err)
 	}
+	hasEnrichment := len(activeEnrichments) > 0
+	enrichmentOutputs := enrichment.OutputFieldsFromEnrichments(activeEnrichments)
 
 	// Check for active transformation configurations
 	hasTransformation, _, err := data_transformation.HasActiveTransformation(ctx, db, pipelineMapping.Pipeline.ID, pipelineMapping.Pipeline.TenantID)
@@ -405,10 +407,9 @@ func buildStageFlow(ctx context.Context, db *gorm.DB, pipelineMapping pipeline.P
 	}
 
 	if hasVC && hasEnrichment {
-		isEnrichmentBefore, err := isEnrichmentBeforeVC(ctx, db, pipelineMapping.Pipeline.ID, pipelineMapping.Pipeline.TenantID)
+		isEnrichmentBefore, err := isEnrichmentBeforeVC(ctx, db, pipelineMapping.Pipeline.ID, pipelineMapping.Pipeline.TenantID, enrichmentOutputs)
 		if err != nil {
-			logger.GetLoggerWithContext(ctx).Warn("Error checking enrichment order, defaulting to VC first", zap.Error(err))
-			isEnrichmentBefore = false
+			return nil, fmt.Errorf("error checking enrichment order: %w", err)
 		}
 
 		if isEnrichmentBefore {
@@ -458,8 +459,10 @@ func buildStageFlow(ctx context.Context, db *gorm.DB, pipelineMapping pipeline.P
 	return stages, nil
 }
 
-// isEnrichmentBeforeVC determines if enrichment should come before volume control
-func isEnrichmentBeforeVC(ctx context.Context, db *gorm.DB, pipelineID, tenantID uuid.UUID) (bool, error) {
+// isEnrichmentBeforeVC determines if enrichment should come before volume control.
+// True when a VC rule's referenced attributes include this pipeline's enrichment
+// outputs (legacy db_enriched_* or custom names).
+func isEnrichmentBeforeVC(ctx context.Context, db *gorm.DB, pipelineID, tenantID uuid.UUID, enrichmentOutputs map[string]struct{}) (bool, error) {
 	rules, err := vc_rule.GetActiveVCRulesByPipelineAndTenant(pipelineID, tenantID, db)
 	if err != nil {
 		return false, err
@@ -475,13 +478,24 @@ func isEnrichmentBeforeVC(ctx context.Context, db *gorm.DB, pipelineID, tenantID
 		}
 
 		for _, attr := range referencedAttrs {
-			if strings.HasPrefix(attr, "db_enriched_") {
+			if referencesEnrichmentOutputField(attr, enrichmentOutputs) {
 				return true, nil
 			}
 		}
 	}
 
 	return false, nil
+}
+
+func referencesEnrichmentOutputField(fieldName string, knownOutputs map[string]struct{}) bool {
+	trimmed := strings.TrimSpace(fieldName)
+	if trimmed == "" {
+		return false
+	}
+	if _, ok := knownOutputs[trimmed]; ok {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "db_enriched_")
 }
 
 // getStageEventCount gets the event count for a specific stage
