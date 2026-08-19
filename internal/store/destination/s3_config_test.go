@@ -4,6 +4,8 @@ import (
 	"testing"
 )
 
+const testDatabahnStorageBucket = "databahn-storage-bucket"
+
 func TestS3Config_AthenaOutputLocation(t *testing.T) {
 	cfg := &S3Config{Bucket: "my-bucket"}
 	if got := cfg.AthenaOutputLocation(); got != "s3://my-bucket/.databahn_out" {
@@ -115,20 +117,20 @@ func TestParseS3ConfigFromWrapper_MissingRegion(t *testing.T) {
 func TestParseDatabahnStorageStagingConfig_Valid(t *testing.T) {
 	cfgMap := map[string]string{
 		"s3Region":     "ap-south-1",
-		"s3BucketName": "databahn-storage-bucket",
+		"s3BucketName": testDatabahnStorageBucket,
 	}
 	cfg, err := parseDatabahnStorageStagingConfig(cfgMap)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	assertField(t, "region", "ap-south-1", cfg.Region, false)
-	assertField(t, "bucket", "databahn-storage-bucket", cfg.Bucket, false)
+	assertField(t, "bucket", testDatabahnStorageBucket, cfg.Bucket, false)
 }
 
 func TestParseDatabahnStorageStagingConfig_NoCredentials(t *testing.T) {
 	cfgMap := map[string]string{
 		"s3Region":     "us-east-1",
-		"s3BucketName": "databahn-storage-bucket",
+		"s3BucketName": testDatabahnStorageBucket,
 	}
 	cfg, err := parseDatabahnStorageStagingConfig(cfgMap)
 	if err != nil {
@@ -144,7 +146,7 @@ func TestParseDatabahnStorageStagingConfig_NoCredentials(t *testing.T) {
 
 func TestParseDatabahnStorageStagingConfig_MissingRegion(t *testing.T) {
 	cfgMap := map[string]string{
-		"s3BucketName": "databahn-storage-bucket",
+		"s3BucketName": testDatabahnStorageBucket,
 	}
 	_, err := parseDatabahnStorageStagingConfig(cfgMap)
 	if err == nil {
