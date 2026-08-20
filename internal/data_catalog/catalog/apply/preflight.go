@@ -3,10 +3,11 @@ package apply
 import (
 	"context"
 	"fmt"
+	"sort"
 
-	athenastore "github.com/databahn-ai/databahn-jobs/internal/store/athena"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	"github.com/databahn-ai/databahn-jobs/internal/data_catalog/catalog/model"
+	athenastore "github.com/databahn-ai/databahn-jobs/internal/store/athena"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -20,9 +21,9 @@ type SchemaOps struct {
 
 // PreflightParams groups inputs for WithPreflight.
 type PreflightParams struct {
-	DestID, SourceID, TenantID uuid.UUID
-	DispenserType              string
-	Valid                      []model.Field
+	DestID, SourceID, TenantID  uuid.UUID
+	DispenserType               string
+	Valid                       []model.Field
 	Database, TableName, Region string
 }
 
@@ -46,6 +47,12 @@ func WithPreflight(ctx context.Context, p PreflightParams, ops SchemaOps) error 
 		return fmt.Errorf("failed to DESCRIBE %s.%s: %w", database, tableName, err)
 	}
 
+	existingNames := make([]string, 0, len(existingCols))
+	for name := range existingCols {
+		existingNames = append(existingNames, name)
+	}
+	sort.Strings(existingNames)
+
 	log.Info("Athena table schema fetched",
 		append(groupFields,
 			zap.String("database", database),
@@ -53,18 +60,13 @@ func WithPreflight(ctx context.Context, p PreflightParams, ops SchemaOps) error 
 			zap.String("region", region),
 			zap.String("describe_execution_id", executionID),
 			zap.Int("existing_column_count", len(existingCols)),
+			zap.Strings("existing_column_names", existingNames),
 		)...)
 
 	if len(existingCols) == 0 {
 		log.Warn("DESCRIBE returned zero columns — table may be empty or parse issue",
 			append(groupFields, zap.String("database", database), zap.String("table", tableName))...)
 	}
-
-	existingNames := make([]string, 0, len(existingCols))
-	for name := range existingCols {
-		existingNames = append(existingNames, name)
-	}
-	log.Debug("existing Athena columns", append(groupFields, zap.Strings("column_names", existingNames))...)
 
 	alreadyPresent, missing := PartitionByPresence(valid, existingCols)
 	log.Info("catalog fields partitioned by Athena presence",

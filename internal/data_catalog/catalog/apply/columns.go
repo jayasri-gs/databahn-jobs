@@ -34,7 +34,7 @@ func MarkApplied(ctx context.Context, ids []int64, phase string) error {
 }
 
 var (
-	markCatalogApplied     = defaultMarkCatalogApplied
+	markCatalogApplied       = defaultMarkCatalogApplied
 	updateCatalogAppliedRows = defaultUpdateCatalogAppliedRows
 )
 
