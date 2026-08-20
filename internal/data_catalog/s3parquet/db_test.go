@@ -72,13 +72,13 @@ func TestDefaultResolveS3ParquetTarget_WithMockDB(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"search_configuration"}).AddRow(string(cfg)))
 	mock.ExpectQuery(`SELECT id, tenant_id, configuration FROM destination`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "configuration"}).
-			AddRow(destID, tenantID, destinationConfigJSON("us-west-2", "cust-bucket")))
+			AddRow(destID, tenantID, destinationConfigJSON(testRegionWest, "cust-bucket")))
 
 	target, err := resolveS3ParquetTarget(context.Background(), destID, sourceID, tenantID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target.tableName != "events" || target.destConfig.Region != "us-west-2" {
+	if target.tableName != "events" || target.destConfig.Region != testRegionWest {
 		t.Fatalf("unexpected target: %+v", target)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
