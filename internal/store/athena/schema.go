@@ -71,11 +71,11 @@ func parseDescribeResultRows(rows []types.Row, skipHeader bool) map[string]struc
 		if len(row.Data) == 0 {
 			continue
 		}
-		name := strings.TrimSpace(datumString(row.Data[0]))
+		name := parseDescribeColumnName(datumString(row.Data[0]))
 		if name == "" || strings.HasPrefix(name, "#") {
 			continue
 		}
-		columns[strings.ToLower(name)] = struct{}{}
+		columns[name] = struct{}{}
 	}
 	return columns
 }
@@ -85,6 +85,21 @@ func datumString(d types.Datum) string {
 		return ""
 	}
 	return *d.VarCharValue
+}
+
+// parseDescribeColumnName extracts the column name from a DESCRIBE result cell.
+// Athena may return name and type in separate columns, or as one tab-separated value
+// (e.g. "accountname         \tstring").
+func parseDescribeColumnName(raw string) string {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return ""
+	}
+	if idx := strings.IndexByte(name, '\t'); idx >= 0 {
+		name = strings.TrimSpace(name[:idx])
+	}
+	name = strings.Trim(name, "`")
+	return strings.ToLower(name)
 }
 
 func mergeDescribeColumns(dest, src map[string]struct{}) {

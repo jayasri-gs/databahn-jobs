@@ -72,6 +72,43 @@ func TestParseDescribeResultRows_Empty(t *testing.T) {
 	}
 }
 
+func TestParseDescribeColumnName_TabSeparatedCell(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{"accountname         \tstring", "accountname"},
+		{"customstring55      \tstring", "customstring55"},
+		{"db_edge_ts          \tdouble", "db_edge_ts"},
+		{"`AccountName`\tstring", "accountname"},
+		{"  src_ip  ", "src_ip"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := parseDescribeColumnName(tt.raw); got != tt.want {
+			t.Fatalf("parseDescribeColumnName(%q) = %q, want %q", tt.raw, got, tt.want)
+		}
+	}
+}
+
+func TestParseDescribeResultRows_SingleCellTabSeparated(t *testing.T) {
+	rows := []types.Row{
+		row("col_name             \tdata_type"),
+		row("accountname         \tstring"),
+		row("db_edge_ts          \tdouble"),
+	}
+	cols := parseDescribeResultRows(rows, true)
+	if len(cols) != 2 {
+		t.Fatalf("expected 2 columns, got %d: %v", len(cols), cols)
+	}
+	if _, ok := cols["accountname"]; !ok {
+		t.Fatal("expected accountname")
+	}
+	if _, ok := cols["db_edge_ts"]; !ok {
+		t.Fatal("expected db_edge_ts")
+	}
+}
+
 func TestParseDescribeResultRows_EmptyColNameSkipped(t *testing.T) {
 	rows := []types.Row{
 		row("col_name", "data_type", "comment"),
