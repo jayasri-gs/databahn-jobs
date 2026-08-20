@@ -46,11 +46,11 @@ func mockOps() apply.SchemaOps {
 func TestDestinationConfigWrapper_getString(t *testing.T) {
 	w := destinationConfigWrapper{
 		Configuration: map[string]interface{}{
-			"region": "us-east-1",
+			"region": testRegionEast,
 			"count":  42,
 		},
 	}
-	if w.getString("region") != "us-east-1" {
+	if w.getString("region") != testRegionEast {
 		t.Fatal("expected region string")
 	}
 	if w.getString("count") != "42" {
@@ -100,14 +100,14 @@ func TestProcessGroup_SuccessWithMockOps(t *testing.T) {
 	resolveS3ParquetTarget = func(ctx context.Context, destID, sourceID, tenantID uuid.UUID) (s3ParquetTarget, error) {
 		return s3ParquetTarget{
 			tableName:      "events",
-			outputLocation: "s3://cust/.databahn_out/",
-			destConfig:     &destinationConfig{AuthType: "key_based", Region: "us-west-2", Bucket: "cust"},
+			outputLocation: testOutputLocation,
+			destConfig:     &destinationConfig{AuthType: "key_based", Region: testRegionWest, Bucket: "cust"},
 		}, nil
 	}
 	cleanFields = func(ctx context.Context, destID, sourceID, tenantID uuid.UUID, dispenserType string, fields []model.Field) ([]model.Field, error) {
 		return fields, nil
 	}
-	runPreflight = func(ctx context.Context, destID, sourceID, tenantID uuid.UUID, dispenserType string, valid []model.Field, database, tableName, region string, ops apply.SchemaOps) error {
+	runPreflight = func(ctx context.Context, p apply.PreflightParams, ops apply.SchemaOps) error {
 		return nil
 	}
 	t.Cleanup(func() {
@@ -146,8 +146,8 @@ func TestProcessGroup_CreateClientError(t *testing.T) {
 	resolveS3ParquetTarget = func(ctx context.Context, destID, sourceID, tenantID uuid.UUID) (s3ParquetTarget, error) {
 		return s3ParquetTarget{
 			tableName:      "events",
-			outputLocation: "s3://cust/.databahn_out/",
-			destConfig:     &destinationConfig{AuthType: "key_based", Region: "us-west-2"},
+			outputLocation: testOutputLocation,
+			destConfig:     &destinationConfig{AuthType: "key_based", Region: testRegionWest},
 		}, nil
 	}
 	cleanFields = func(ctx context.Context, destID, sourceID, tenantID uuid.UUID, dispenserType string, fields []model.Field) ([]model.Field, error) {
@@ -191,21 +191,21 @@ func TestParseS3ParquetTableName_Success(t *testing.T) {
 	var sc model.SearchConfig
 	sc.S3Configuration.AthenaTable = "events"
 	cfg, _ := json.Marshal(sc)
-	name, err := parseS3ParquetTableName("store-1", uuid.New(), string(cfg))
+	name, err := parseS3ParquetTableName(testStoreID, uuid.New(), string(cfg))
 	if err != nil || name != "events" {
 		t.Fatalf("unexpected result: name=%q err=%v", name, err)
 	}
 }
 
 func TestParseS3ParquetTableName_EmptyTable(t *testing.T) {
-	_, err := parseS3ParquetTableName("store-1", uuid.New(), `{}`)
+	_, err := parseS3ParquetTableName(testStoreID, uuid.New(), `{}`)
 	if !model.IsTableNotFound(err) {
 		t.Fatalf("expected table not found, got %v", err)
 	}
 }
 
 func TestParseS3ParquetTableName_InvalidJSON(t *testing.T) {
-	_, err := parseS3ParquetTableName("store-1", uuid.New(), "bad")
+	_, err := parseS3ParquetTableName(testStoreID, uuid.New(), "bad")
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -216,7 +216,7 @@ func TestCreateCustomerAthenaClient_StaticCredentials(t *testing.T) {
 		AuthType:    "key_based",
 		AccessKeyID: "AKIATEST",
 		SecretKey:   "secret",
-		Region:      "us-east-1",
+		Region:      testRegionEast,
 	})
 	if err != nil || client == nil {
 		t.Fatalf("expected client, got err=%v client=%v", err, client)
@@ -228,7 +228,7 @@ func TestCreateCustomerAthenaClient_RoleBased(t *testing.T) {
 		AuthType:   "role_based",
 		RoleArn:    "arn:aws:iam::123456789012:role/TestRole",
 		ExternalID: "ext-123",
-		Region:     "us-east-1",
+		Region:     testRegionEast,
 	})
 	if err != nil || client == nil {
 		t.Fatalf("expected client, got err=%v client=%v", err, client)
@@ -242,14 +242,14 @@ func TestProcessGroup_PreflightError(t *testing.T) {
 	resolveS3ParquetTarget = func(ctx context.Context, destID, sourceID, tenantID uuid.UUID) (s3ParquetTarget, error) {
 		return s3ParquetTarget{
 			tableName:      "events",
-			outputLocation: "s3://cust/.databahn_out/",
-			destConfig:     &destinationConfig{Region: "us-west-2"},
+			outputLocation: testOutputLocation,
+			destConfig:     &destinationConfig{Region: testRegionWest},
 		}, nil
 	}
 	cleanFields = func(ctx context.Context, destID, sourceID, tenantID uuid.UUID, dispenserType string, fields []model.Field) ([]model.Field, error) {
 		return fields, nil
 	}
-	runPreflight = func(ctx context.Context, destID, sourceID, tenantID uuid.UUID, dispenserType string, valid []model.Field, database, tableName, region string, ops apply.SchemaOps) error {
+	runPreflight = func(ctx context.Context, p apply.PreflightParams, ops apply.SchemaOps) error {
 		return errors.New("preflight failed")
 	}
 	t.Cleanup(func() {

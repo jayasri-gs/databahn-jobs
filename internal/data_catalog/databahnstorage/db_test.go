@@ -8,7 +8,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/databahn-ai/databahn-jobs/internal/data_catalog/catalog/model"
 	"github.com/databahn-ai/databahn-jobs/internal/data_catalog/dbtest"
-	"github.com/google/uuid"
 )
 
 func useDefaultDBDeps(t *testing.T) {
@@ -27,9 +26,7 @@ func TestDefaultQueryUnappliedFields_WithMockDB(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	sourceID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, sourceID, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT .* FROM "data_catalog"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "field_type", "source_id", "destination_id", "tenant_id"}).
@@ -51,8 +48,7 @@ func TestDefaultResolveDatabahnStorageTarget_WithMockDB(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	sourceID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	destID, sourceID, _ := testIDs()
 
 	var sc model.SearchConfig
 	sc.S3Configuration.AthenaTable = "events"
@@ -81,8 +77,7 @@ func TestDefaultResolveDatabahnStorageTarget_StoreNotFound(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	sourceID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	destID, sourceID, _ := testIDs()
 
 	mock.ExpectQuery(`SELECT id FROM search_data_store`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))

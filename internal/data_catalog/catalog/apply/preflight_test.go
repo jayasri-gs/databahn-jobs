@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const testRegion = "us-east-1"
+
 func testIDs() (destID, sourceID, tenantID uuid.UUID) {
 	return uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		uuid.MustParse("22222222-2222-2222-2222-222222222222"),
@@ -34,12 +36,24 @@ func mockOps(
 	}
 }
 
+func testPreflightParams(destID, sourceID, tenantID uuid.UUID, fields []model.Field) PreflightParams {
+	return PreflightParams{
+		DestID:        destID,
+		SourceID:      sourceID,
+		TenantID:      tenantID,
+		DispenserType: model.DispenserDatabahnStorage,
+		Valid:         fields,
+		Database:      "db",
+		TableName:     "tbl",
+		Region:        testRegion,
+	}
+}
+
 func TestWithPreflight_DescribeTableNotFound(t *testing.T) {
 	destID, sourceID, tenantID := testIDs()
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "col", FieldType: "string"}},
-		"db", "tbl", "us-east-1",
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "col", FieldType: "string"}}),
 		mockOps(nil, &athenastore.TableNotFoundError{Msg: "TABLE_NOT_FOUND"}, nil),
 	)
 	if !model.IsTableNotFound(err) {
@@ -50,9 +64,8 @@ func TestWithPreflight_DescribeTableNotFound(t *testing.T) {
 func TestWithPreflight_DescribeError(t *testing.T) {
 	destID, sourceID, tenantID := testIDs()
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "col", FieldType: "string"}},
-		"db", "tbl", "us-east-1",
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "col", FieldType: "string"}}),
 		mockOps(nil, errors.New("connection refused"), nil),
 	)
 	if err == nil || model.IsTableNotFound(err) {
@@ -69,9 +82,8 @@ func TestWithPreflight_AllAlreadyPresent(t *testing.T) {
 	})
 	destID, sourceID, tenantID := testIDs()
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "existing_col", FieldType: "string"}},
-		"db", "tbl", "us-east-1",
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "existing_col", FieldType: "string"}}),
 		mockOps(map[string]struct{}{"existing_col": {}}, nil, nil),
 	)
 	if err != nil {
@@ -97,9 +109,9 @@ func TestWithPreflight_AddsMissingColumns(t *testing.T) {
 		},
 	}
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "new_col", FieldType: "long"}},
-		"db", "tbl", "us-east-1", ops,
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "new_col", FieldType: "long"}}),
+		ops,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -115,9 +127,8 @@ func TestWithPreflight_AddsMissingColumns(t *testing.T) {
 func TestWithPreflight_DDLFailure(t *testing.T) {
 	destID, sourceID, tenantID := testIDs()
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "new_col", FieldType: "string"}},
-		"db", "tbl", "us-east-1",
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "new_col", FieldType: "string"}}),
 		mockOps(map[string]struct{}{}, nil, errors.New("ddl failed")),
 	)
 	if err == nil {
@@ -129,9 +140,8 @@ func TestWithPreflight_EmptyDescribeColumns(t *testing.T) {
 	withMarkStub(t, func(ctx context.Context, ids []int64, phase string) error { return nil })
 	destID, sourceID, tenantID := testIDs()
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "col", FieldType: "string"}},
-		"db", "tbl", "us-east-1",
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "col", FieldType: "string"}}),
 		mockOps(map[string]struct{}{}, nil, nil),
 	)
 	if err != nil {
@@ -145,9 +155,8 @@ func TestWithPreflight_MarkAppliedFailure(t *testing.T) {
 	})
 	destID, sourceID, tenantID := testIDs()
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "col", FieldType: "string"}},
-		"db", "tbl", "us-east-1",
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "col", FieldType: "string"}}),
 		mockOps(map[string]struct{}{"col": {}}, nil, nil),
 	)
 	if err == nil {
@@ -156,7 +165,7 @@ func TestWithPreflight_MarkAppliedFailure(t *testing.T) {
 }
 
 func TestPlatformOps_ReturnsHandlers(t *testing.T) {
-	ops := PlatformOps("us-east-1", "db", "tbl", "s3://bucket/out/")
+	ops := PlatformOps(testRegion, "db", "tbl", "s3://bucket/out/")
 	if ops.Describe == nil || ops.RunDDL == nil {
 		t.Fatal("expected non-nil handlers")
 	}
@@ -173,9 +182,8 @@ func TestWithPreflight_MarkAfterDDLFails(t *testing.T) {
 	})
 	destID, sourceID, tenantID := testIDs()
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "new_col", FieldType: "string"}},
-		"db", "tbl", "us-east-1",
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "new_col", FieldType: "string"}}),
 		mockOps(map[string]struct{}{}, nil, nil),
 	)
 	if err == nil {
@@ -189,9 +197,8 @@ func TestWithPreflight_MarkAfterDDLFails(t *testing.T) {
 func TestWithPreflight_InvalidColumnDDL(t *testing.T) {
 	destID, sourceID, tenantID := testIDs()
 	err := WithPreflight(
-		context.Background(), destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		[]model.Field{{ID: 1, Name: "bad-name", FieldType: "string"}},
-		"db", "tbl", "us-east-1",
+		context.Background(),
+		testPreflightParams(destID, sourceID, tenantID, []model.Field{{ID: 1, Name: "bad-name", FieldType: "string"}}),
 		mockOps(map[string]struct{}{}, nil, nil),
 	)
 	if err == nil {

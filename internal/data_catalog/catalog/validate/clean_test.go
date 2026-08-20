@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const unexpectedValidFmt = "unexpected valid: %v"
+
 func testIDs() (destID, sourceID, tenantID uuid.UUID) {
 	return uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		uuid.MustParse("22222222-2222-2222-2222-222222222222"),
@@ -41,7 +43,7 @@ func TestCleanFields_ValidOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(valid) != 1 || valid[0].Name != "src_ip" {
-		t.Fatalf("unexpected valid: %v", valid)
+		t.Fatalf(unexpectedValidFmt, valid)
 	}
 }
 
@@ -66,7 +68,7 @@ func TestCleanFields_DeletesInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(valid) != 1 || valid[0].Name != "good_col" {
-		t.Fatalf("unexpected valid: %v", valid)
+		t.Fatalf(unexpectedValidFmt, valid)
 	}
 	if len(deleted) != 1 || deleted[0] != 1 {
 		t.Fatalf("expected invalid id 1 deleted, got %v", deleted)
@@ -90,7 +92,7 @@ func TestCleanFields_DuplicateAgainstApplied(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(valid) != 1 || valid[0].Name != "new_col" {
-		t.Fatalf("unexpected valid: %v", valid)
+		t.Fatalf(unexpectedValidFmt, valid)
 	}
 }
 

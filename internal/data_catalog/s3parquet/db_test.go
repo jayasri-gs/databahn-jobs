@@ -14,6 +14,14 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	testStoreID        = "store-1"
+	testBucketA        = "bucket-a"
+	testRegionEast     = "us-east-1"
+	testRegionWest     = "us-west-2"
+	testOutputLocation = "s3://cust/.databahn_out/"
+)
+
 func useDefaultDBDeps(t *testing.T) {
 	t.Helper()
 	oldQuery := queryUnappliedFields
@@ -33,9 +41,7 @@ func TestDefaultQueryUnappliedS3ParquetFields_WithMockDB(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	sourceID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, sourceID, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT .* FROM "data_catalog"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "field_type", "source_id", "destination_id", "tenant_id"}).
@@ -54,16 +60,14 @@ func TestDefaultResolveS3ParquetTarget_WithMockDB(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	sourceID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, sourceID, tenantID := testIDs()
 
 	var sc model.SearchConfig
 	sc.S3Configuration.AthenaTable = "events"
 	cfg, _ := json.Marshal(sc)
 
 	mock.ExpectQuery(`SELECT id FROM search_data_store`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("store-1"))
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testStoreID))
 	mock.ExpectQuery(`SELECT search_configuration FROM search_data_set`).
 		WillReturnRows(sqlmock.NewRows([]string{"search_configuration"}).AddRow(string(cfg)))
 	mock.ExpectQuery(`SELECT id, tenant_id, configuration FROM destination`).
@@ -86,18 +90,17 @@ func TestGetDestinationConfig_WithMockDB(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, _, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT id, tenant_id, configuration FROM destination`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "configuration"}).
-			AddRow(destID, tenantID, destinationConfigJSON("eu-west-1", "bucket-a")))
+			AddRow(destID, tenantID, destinationConfigJSON("eu-west-1", testBucketA)))
 
 	cfg, err := getDestinationConfig(context.Background(), destID, tenantID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Region != "eu-west-1" || cfg.Bucket != "bucket-a" {
+	if cfg.Region != "eu-west-1" || cfg.Bucket != testBucketA {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }
@@ -106,9 +109,7 @@ func TestDefaultResolveS3ParquetTarget_StoreNotFound(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	sourceID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, sourceID, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT id FROM search_data_store`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
@@ -123,12 +124,10 @@ func TestDefaultResolveS3ParquetTarget_DatasetNotFound(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	sourceID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, sourceID, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT id FROM search_data_store`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("store-1"))
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testStoreID))
 	mock.ExpectQuery(`SELECT search_configuration FROM search_data_set`).
 		WillReturnRows(sqlmock.NewRows([]string{"search_configuration"}))
 
@@ -142,16 +141,14 @@ func TestDefaultResolveS3ParquetTarget_EmptyRegion(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	sourceID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, sourceID, tenantID := testIDs()
 
 	var sc model.SearchConfig
 	sc.S3Configuration.AthenaTable = "events"
 	cfg, _ := json.Marshal(sc)
 
 	mock.ExpectQuery(`SELECT id FROM search_data_store`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("store-1"))
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testStoreID))
 	mock.ExpectQuery(`SELECT search_configuration FROM search_data_set`).
 		WillReturnRows(sqlmock.NewRows([]string{"search_configuration"}).AddRow(string(cfg)))
 	mock.ExpectQuery(`SELECT id, tenant_id, configuration FROM destination`).
@@ -189,8 +186,7 @@ func TestGetDestinationConfig_EmptyConfiguration(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, _, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT id, tenant_id, configuration FROM destination`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "configuration"}).
@@ -206,8 +202,7 @@ func TestGetDestinationConfig_NotFound(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, _, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT id, tenant_id, configuration FROM destination`).
 		WillReturnError(sqlmock.ErrCancelled)
@@ -234,12 +229,11 @@ func TestGetDestinationConfig_SecretLookupFailure(t *testing.T) {
 	useDefaultDBDeps(t)
 	_, mock := dbtest.MockPostgres(t)
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, _, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT id, tenant_id, configuration FROM destination`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "configuration"}).
-			AddRow(destID, tenantID, destinationConfigWithSecretJSON("secret-ref", "us-east-1", "bucket-a")))
+			AddRow(destID, tenantID, destinationConfigWithSecretJSON("secret-ref", testRegionEast, testBucketA)))
 	mock.ExpectQuery(`SELECT backend_secret_id FROM secrets`).
 		WillReturnRows(sqlmock.NewRows([]string{"backend_secret_id"}))
 
@@ -259,18 +253,17 @@ func TestGetDestinationConfig_SecretMergeSuccess(t *testing.T) {
 		secret := `{"access_key_id":"AKIA","secret_access_key":"SECRET","role_arn":"arn:aws:iam::1:role/R"}`
 		return &secretsmanager.GetSecretValueOutput{SecretString: &secret}, nil
 	}
-	appRegion = func() string { return "us-east-1" }
+	appRegion = func() string { return testRegionEast }
 	t.Cleanup(func() {
 		readSecretByName = oldRead
 		appRegion = oldRegion
 	})
 
-	destID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	tenantID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	destID, _, tenantID := testIDs()
 
 	mock.ExpectQuery(`SELECT id, tenant_id, configuration FROM destination`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "configuration"}).
-			AddRow(destID, tenantID, destinationConfigWithSecretJSON("secret-ref", "us-east-1", "bucket-a")))
+			AddRow(destID, tenantID, destinationConfigWithSecretJSON("secret-ref", testRegionEast, testBucketA)))
 	mock.ExpectQuery(`SELECT backend_secret_id FROM secrets`).
 		WillReturnRows(sqlmock.NewRows([]string{"backend_secret_id"}).AddRow("backend-secret"))
 

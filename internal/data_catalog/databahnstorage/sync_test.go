@@ -28,7 +28,7 @@ func mockOps() apply.SchemaOps {
 	}
 }
 
-func withSyncStubs(t *testing.T, resolve func(context.Context, uuid.UUID, uuid.UUID) (databahnStorageTarget, error), clean func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, []model.Field) ([]model.Field, error), preflight func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, []model.Field, string, string, string, apply.SchemaOps) error) {
+func withSyncStubs(t *testing.T, resolve func(context.Context, uuid.UUID, uuid.UUID) (databahnStorageTarget, error), clean func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, []model.Field) ([]model.Field, error), preflight func(context.Context, apply.PreflightParams, apply.SchemaOps) error) {
 	t.Helper()
 	oldResolve, oldClean, oldPreflight := resolveDatabahnStorageTarget, cleanFields, runPreflight
 	resolveDatabahnStorageTarget = resolve
@@ -102,7 +102,7 @@ func TestProcessGroup_Success(t *testing.T) {
 		func(ctx context.Context, destID, sourceID, tenantID uuid.UUID, dispenserType string, fields []model.Field) ([]model.Field, error) {
 			return fields, nil
 		},
-		func(ctx context.Context, destID, sourceID, tenantID uuid.UUID, dispenserType string, valid []model.Field, database, tableName, region string, ops apply.SchemaOps) error {
+		func(ctx context.Context, p apply.PreflightParams, ops apply.SchemaOps) error {
 			return nil
 		},
 	)

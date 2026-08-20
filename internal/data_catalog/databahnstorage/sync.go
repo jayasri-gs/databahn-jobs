@@ -87,10 +87,16 @@ func processGroup(ctx context.Context, destID, sourceID, tenantID uuid.UUID, fie
 		defaultOps := apply.PlatformOps(target.region, database, target.tableName, target.outputLocation)
 		schemaOps = &defaultOps
 	}
-	return runPreflight(
-		ctx, destID, sourceID, tenantID, model.DispenserDatabahnStorage,
-		valid, database, target.tableName, target.region, *schemaOps,
-	)
+	return runPreflight(ctx, apply.PreflightParams{
+		DestID:        destID,
+		SourceID:      sourceID,
+		TenantID:      tenantID,
+		DispenserType: model.DispenserDatabahnStorage,
+		Valid:         valid,
+		Database:      database,
+		TableName:     target.tableName,
+		Region:        target.region,
+	}, *schemaOps)
 }
 
 var (

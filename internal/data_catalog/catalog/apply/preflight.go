@@ -18,16 +18,21 @@ type SchemaOps struct {
 	RunDDL   func(ctx context.Context, query string) error
 }
 
+// PreflightParams groups inputs for WithPreflight.
+type PreflightParams struct {
+	DestID, SourceID, TenantID uuid.UUID
+	DispenserType              string
+	Valid                      []model.Field
+	Database, TableName, Region string
+}
+
 // WithPreflight validates Athena presence, marks already-present rows,
 // runs ALTER TABLE for missing columns, then marks newly-added rows.
-func WithPreflight(
-	ctx context.Context,
-	destID, sourceID, tenantID uuid.UUID,
-	dispenserType string,
-	valid []model.Field,
-	database, tableName, region string,
-	ops SchemaOps,
-) error {
+func WithPreflight(ctx context.Context, p PreflightParams, ops SchemaOps) error {
+	destID, sourceID, tenantID := p.DestID, p.SourceID, p.TenantID
+	dispenserType := p.DispenserType
+	valid := p.Valid
+	database, tableName, region := p.Database, p.TableName, p.Region
 	log := logger.GetLoggerWithContext(ctx)
 	groupFields := model.GroupFields(destID, sourceID, tenantID, dispenserType)
 
