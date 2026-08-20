@@ -19,22 +19,25 @@ const (
 	StoreTypeDatabahnInsights    = "DATABAHN_INSIGHTS"
 	StoreTypeDatabahnStorage     = "DATABAHN_STORAGE"
 	StoreTypeExternalStorage     = "EXTERNAL_STORAGE"
+	StoreTypeDerivedDatastore    = "DERIVED_DATASTORE"
 
 	DestTypeS3                   = "S3"
 	DestTypeS3Parquet            = "S3_PARQUET"
 	DestTypeAzureBlob            = "AZURE_BLOB"
+	DestTypeAWSSecurityLake      = "AWS_SECURITY_LAKE"
 	ExternalProviderS3           = "S3"
 	ExternalProviderSecurityLake = "SECURITY_LAKE"
 	ExternalProviderAzureBlob    = "AZURE_BLOB"
 )
 
 type ExportDataStore struct {
-	ID          uuid.UUID
-	Type        string
-	QueryEngine string
-	StagingS3   *destination.S3Config
-	StagingBlob *destination.AzureBlobConfig
-	SynapseSQL  *SynapseSQLConfig
+	ID                     uuid.UUID
+	Type                   string
+	QueryEngine            string
+	ExternalSearchProvider string
+	StagingS3              *destination.S3Config
+	StagingBlob            *destination.AzureBlobConfig
+	SynapseSQL             *SynapseSQLConfig
 }
 
 type SynapseSQLConfig struct {
@@ -73,14 +76,14 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider string) strin
 	switch storeType {
 	case StoreTypeDatabahnDestination:
 		switch linkedDestType {
-		case DestTypeS3, DestTypeS3Parquet:
+		case DestTypeS3, DestTypeS3Parquet, DestTypeAWSSecurityLake:
 			return QueryEngineAthena
 		case DestTypeAzureBlob:
 			return QueryEngineSynapse
 		}
 	case StoreTypeDatabahnInsights, StoreTypeDatabahnStorage:
 		return QueryEngineAthena
-	case StoreTypeExternalStorage:
+	case StoreTypeExternalStorage, StoreTypeDerivedDatastore:
 		switch externalProvider {
 		case ExternalProviderS3, ExternalProviderSecurityLake:
 			return QueryEngineAthena
@@ -89,6 +92,19 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider string) strin
 		}
 	}
 	return ""
+}
+
+// IsExternalAthenaProvider reports whether the store uses Athena over an external/derived sink.
+// Legacy stores may declare provider=S3 with connectorConfig.security_lake=true.
+func IsExternalAthenaProvider(provider string, connector map[string]string) bool {
+	switch strings.ToUpper(strings.TrimSpace(provider)) {
+	case ExternalProviderS3, ExternalProviderSecurityLake:
+		return true
+	}
+	if connector != nil && strings.EqualFold(strings.TrimSpace(connector["security_lake"]), "true") {
+		return true
+	}
+	return false
 }
 
 func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID uuid.UUID) (*ExportDataStore, error) {
@@ -112,13 +128,27 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 	}
 
 	externalProvider := ""
+	var connector map[string]string
+	var secretID string
 	if storeCfg.ExternalSearchDataStoreConfiguration != nil {
-		externalProvider = strings.ToUpper(storeCfg.ExternalSearchDataStoreConfiguration.ExternalSearchProvider)
+		ext := storeCfg.ExternalSearchDataStoreConfiguration
+		externalProvider = strings.ToUpper(ext.ExternalSearchProvider)
+		connector = ext.ConnectorConfig
+		secretID = ext.SecretID
+		// Legacy Security Lake stores may still advertise provider=S3.
+		if externalProvider == ExternalProviderS3 &&
+			strings.EqualFold(strings.TrimSpace(connector["security_lake"]), "true") {
+			externalProvider = ExternalProviderSecurityLake
+		}
 	}
 
 	linkedDestType := ""
 	storeType := strings.ToUpper(row.Type)
-	result := &ExportDataStore{ID: row.ID, Type: storeType}
+	result := &ExportDataStore{
+		ID:                     row.ID,
+		Type:                   storeType,
+		ExternalSearchProvider: externalProvider,
+	}
 
 	if row.DestinationID != nil {
 		var destType string
@@ -137,6 +167,13 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 				return nil, err
 			}
 			result.StagingS3 = s3Cfg
+		case DestTypeAWSSecurityLake:
+			s3Cfg, err := destination.LoadPipelineSecurityLakeS3Config(ctx, db, *row.DestinationID, tenantID)
+			if err != nil {
+				return nil, err
+			}
+			result.StagingS3 = s3Cfg
+			result.ExternalSearchProvider = ExternalProviderSecurityLake
 		case DestTypeAzureBlob:
 			blobCfg, err := destination.LoadAzureBlobConfig(ctx, db, *row.DestinationID, tenantID)
 			if err != nil {
@@ -151,6 +188,16 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 		return nil, fmt.Errorf("unsupported search_data_store: type=%s dest=%s provider=%s", storeType, linkedDestType, externalProvider)
 	}
 
+	if result.QueryEngine == QueryEngineAthena &&
+		(storeType == StoreTypeExternalStorage || storeType == StoreTypeDerivedDatastore) &&
+		IsExternalAthenaProvider(externalProvider, connector) {
+		staging, err := loadExternalAthenaStaging(ctx, db, dataStoreID, tenantID, secretID, connector)
+		if err != nil {
+			return nil, err
+		}
+		result.StagingS3 = staging
+	}
+
 	if result.QueryEngine == QueryEngineSynapse && storeCfg.AzureSynapseConfiguration != nil {
 		s := storeCfg.AzureSynapseConfiguration
 		result.SynapseSQL = &SynapseSQLConfig{
@@ -162,4 +209,25 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 	}
 
 	return result, nil
+}
+
+func loadExternalAthenaStaging(
+	ctx context.Context,
+	db *gorm.DB,
+	dataStoreID, tenantID uuid.UUID,
+	secretID string,
+	connector map[string]string,
+) (*destination.S3Config, error) {
+	staging := destination.S3ConfigFromExternalConnector(connector)
+	if staging == nil {
+		return nil, fmt.Errorf("external Athena store %s has empty connectorConfig", dataStoreID)
+	}
+	if secretID != "" {
+		overrides, err := destination.ResolveCredentialOverrides(ctx, db, secretID, dataStoreID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve external store secret: %w", err)
+		}
+		destination.ApplyS3CredentialOverrides(staging, overrides)
+	}
+	return staging, nil
 }

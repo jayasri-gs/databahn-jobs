@@ -117,22 +117,25 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 			}
 			staging = store.StagingS3
 			if staging == nil {
+				if isExternalAthenaStore(store) {
+					return nil, fmt.Errorf("external Athena store %s missing staging credentials", dataStoreID)
+				}
 				staging, err = destination.LoadS3Config(ctx, db, destID, tenantID)
+			}
+			if log != nil && store.ExternalSearchProvider != "" {
+				log.Info("Resolved external Athena export store",
+					zap.String("dataStoreType", store.Type),
+					zap.String("externalSearchProvider", store.ExternalSearchProvider))
 			}
 		}
 		if err != nil || staging == nil {
 			return nil, fmt.Errorf("athena staging S3 config is required: %w", err)
 		}
-		athenaExec := query.NewAthenaExecutor(query.AthenaConfig{
-			Region:          staging.Region,
-			Workgroup:       "primary",
-			OutputLocation:  staging.AthenaOutputLocation(),
-			AuthType:        staging.AuthType,
-			AccessKeyID:     staging.AccessKeyID,
-			SecretAccessKey: staging.SecretAccessKey,
-			RoleArn:         staging.RoleArn,
-			ExternalID:      staging.ExternalID,
-		})
+		athenaCfg, err := resolveAthenaClientConfig(cfg, staging)
+		if err != nil {
+			return nil, err
+		}
+		athenaExec := query.NewAthenaExecutor(athenaCfg)
 		athenaExec.SetLogger(log)
 		deps.Athena = athenaExec
 	case models.QueryEngineSynapse:
@@ -180,6 +183,54 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func isExternalAthenaStore(store *datastore.ExportDataStore) bool {
+	if store == nil {
+		return false
+	}
+	switch store.Type {
+	case datastore.StoreTypeExternalStorage, datastore.StoreTypeDerivedDatastore:
+		return datastore.IsExternalAthenaProvider(store.ExternalSearchProvider, nil)
+	case datastore.StoreTypeDatabahnDestination:
+		return store.ExternalSearchProvider == datastore.ExternalProviderSecurityLake
+	default:
+		return false
+	}
+}
+
+// resolveAthenaClientConfig builds Athena client settings from store credentials,
+// preferring region and output location from the export config when present.
+func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destination.S3Config) (query.AthenaConfig, error) {
+	if staging == nil {
+		return query.AthenaConfig{}, fmt.Errorf("athena staging config is required")
+	}
+	region := strings.TrimSpace(staging.Region)
+	if cfg != nil && strings.TrimSpace(cfg.Region) != "" {
+		region = strings.TrimSpace(cfg.Region)
+	}
+	if region == "" {
+		return query.AthenaConfig{}, fmt.Errorf("athena region is required")
+	}
+
+	outputLocation := staging.AthenaOutputLocation()
+	if cfg != nil && strings.TrimSpace(cfg.AthenaOutputLocation) != "" {
+		outputLocation = strings.TrimSpace(cfg.AthenaOutputLocation)
+	}
+	if outputLocation == "" {
+		return query.AthenaConfig{}, fmt.Errorf("athena output location is required")
+	}
+
+	return query.AthenaConfig{
+		Region:          region,
+		Workgroup:       "primary",
+		OutputLocation:  outputLocation,
+		AuthType:        staging.AuthType,
+		AccessKeyID:     staging.AccessKeyID,
+		SecretAccessKey: staging.SecretAccessKey,
+		RoleArn:         staging.RoleArn,
+		ExternalID:      staging.ExternalID,
+	}, nil
 }
 
 // IsSupportedExportMatrix reports whether a query engine and export destination type can be wired together.

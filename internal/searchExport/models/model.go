@@ -59,6 +59,11 @@ type SearchExportConfig struct {
 	SynapseDataSourceName string `json:"synapseDataSourceName,omitempty"`
 	QueryExecutionID      string `json:"queryExecutionId,omitempty"`
 
+	// External Athena (Security Lake / external S3) — additive; null on older audit rows.
+	ExternalSearchProvider string `json:"externalSearchProvider,omitempty"`
+	AthenaOutputLocation   string `json:"athenaOutputLocation,omitempty"`
+	Region                 string `json:"region,omitempty"`
+
 	// Runtime fields — written by jobs worker, ignored by backend-service
 	AthenaExecutionID  string     `json:"athenaExecutionId,omitempty"`
 	ExecutionStartedAt *time.Time `json:"executionStartedAt,omitempty"`
