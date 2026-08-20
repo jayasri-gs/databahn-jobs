@@ -8,7 +8,8 @@ import (
 
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/alert"
 	"github.com/databahn-ai/databahn-jobs/internal/cp_alerts/jobs/vc"
-	"github.com/databahn-ai/databahn-jobs/internal/data_catalog"
+	"github.com/databahn-ai/databahn-jobs/internal/data_catalog/databahnstorage"
+	"github.com/databahn-ai/databahn-jobs/internal/data_catalog/s3parquet"
 	"github.com/databahn-ai/databahn-jobs/internal/transformationCheckerUtility"
 	"github.com/databahn-ai/databahn-jobs/internal/unparsedReport"
 	"github.com/databahn-ai/db-models/alerts_async"
@@ -122,9 +123,9 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 	case common.SANDBOX_CLEANUP:
 		result = sandbox.CleanupSandboxStorage(ctx)
 	case common.DATABAHN_STORAGE_SCHEMA_SYNC:
-		result = data_catalog.ApplyDataCatalogToAthena(ctx)
+		result = databahnstorage.ApplyDataCatalogToAthena(ctx)
 	case common.S3_PARQUET_SCHEMA_SYNC:
-		result = data_catalog.ApplyS3ParquetCatalogToAthena(ctx)
+		result = s3parquet.ApplyS3ParquetCatalogToAthena(ctx)
 	case common.SEARCH_EXPORT_PROCESSOR:
 		result = searchExport.GenerateSearchExport(ctx)
 	case common.IMPORT_REQUEST_PROCESSOR:
