@@ -29,8 +29,8 @@ func (w ConfigWrapper) getString(key string) string {
 func ResolveCredentialOverrides(ctx context.Context, db *gorm.DB, secretRefID string, destID, tenantID uuid.UUID) (map[string]string, error) {
 	var backendSecretID string
 	err := db.WithContext(ctx).Raw(
-		"SELECT backend_secret_id FROM secrets WHERE id = ? LIMIT 1",
-		secretRefID,
+		"SELECT backend_secret_id FROM secrets WHERE id = ? AND tenant_id = ? LIMIT 1",
+		secretRefID, tenantID,
 	).Scan(&backendSecretID).Error
 	if err != nil || backendSecretID == "" {
 		return nil, fmt.Errorf("failed to look up backend_secret_id: secret reference not found or inaccessible (destination=%s, tenant=%s)", destID, tenantID)
