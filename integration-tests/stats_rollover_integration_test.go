@@ -46,7 +46,10 @@ func TestStatsRolloverPreservesPerOperatorCounts(t *testing.T) {
 	// Rolled index needs the same mappings (name.raw, tags.operator_id, etc.) for validation aggs.
 	createStatsTestIndex(t, ctx, openSearch, newIndexName)
 
-	config := stats.NewIntegrationRolloverConfig(time.Hour)
+	config, err := stats.NewIntegrationRolloverConfig(time.Hour)
+	if err != nil {
+		t.Fatalf("integration rollover config: %v", err)
+	}
 	if err := stats.RollOverIndex(ctx, sourceIndex, openSearch.GetClient(), config, newIndexName); err != nil {
 		t.Fatalf("rollover index: %v", err)
 	}
@@ -103,7 +106,10 @@ func TestStatsRolloverKeepsLegacyStatsWithoutOperatorIdSeparate(t *testing.T) {
 	// Rolled index needs the same mappings (name.raw, tags.operator_id, etc.) for validation aggs.
 	createStatsTestIndex(t, ctx, openSearch, newIndexName)
 
-	config := stats.NewIntegrationRolloverConfig(time.Hour)
+	config, err := stats.NewIntegrationRolloverConfig(time.Hour)
+	if err != nil {
+		t.Fatalf("integration rollover config: %v", err)
+	}
 	if err := stats.RollOverIndex(ctx, sourceIndex, openSearch.GetClient(), config, newIndexName); err != nil {
 		t.Fatalf("rollover index: %v", err)
 	}

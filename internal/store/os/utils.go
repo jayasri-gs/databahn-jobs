@@ -236,10 +236,8 @@ func CompositePaginatedAggregate(ctx context.Context, cli *opensearch.Client, si
 	return compositePaginatedAggregate(ctx, cli, size, indexName, query, groupBy, nil, aggregations, after)
 }
 
-// CompositePaginatedAggregateWithNAMissing uses a painless script for listed groupBy fields so
-// documents missing that field bucket as "N/A", matching stats rollover aggregation behavior
-// (see newRequestSourceTermsAgg in internal/stats). Native missing_bucket could avoid scripts
-// but would need response-key translation and rollover-path alignment in a separate change.
+// CompositePaginatedAggregateWithNAMissing applies the same painless missing-field → "N/A"
+// convention as stats rollover (see newRequestSourceTermsAgg in internal/stats/common.go).
 func CompositePaginatedAggregateWithNAMissing(ctx context.Context, cli *opensearch.Client, size int, indexName, query string, groupBy []string, missingAsNA []string, aggregations []AggregationFunction, after map[string]any) ([]AggResponse, map[string]any, error) {
 	return compositePaginatedAggregate(ctx, cli, size, indexName, query, groupBy, missingAsNA, aggregations, after)
 }

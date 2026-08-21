@@ -2,6 +2,7 @@ package stats
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/opensearch-project/opensearch-go/v2"
@@ -19,7 +20,10 @@ func RollOverIndex(ctx context.Context, index Index, client *opensearch.Client, 
 }
 
 // NewIntegrationRolloverConfig returns a RolloverConfig aligned with lifecycle jobs (hourly or daily buckets).
-func NewIntegrationRolloverConfig(bucket time.Duration) *RolloverConfig {
+func NewIntegrationRolloverConfig(bucket time.Duration) (*RolloverConfig, error) {
+	if bucket <= 0 {
+		return nil, fmt.Errorf("integration rollover bucket must be positive, got %s", bucket)
+	}
 	return &RolloverConfig{
 		aggBatchSize:                  500,
 		aggQueryRange:                 bucket,
@@ -28,5 +32,5 @@ func NewIntegrationRolloverConfig(bucket time.Duration) *RolloverConfig {
 		deleteExistingRolledOverIndex: false,
 		skipValidation:                false,
 		skipTenantIdValidation:        false,
-	}
+	}, nil
 }

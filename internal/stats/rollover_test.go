@@ -1155,6 +1155,22 @@ func TestIsDayDifferenceMoreThanYearTransitions(t *testing.T) {
 	}
 }
 
+func TestNewIntegrationRolloverConfig_RejectsNonPositiveBucket(t *testing.T) {
+	if _, err := NewIntegrationRolloverConfig(0); err == nil {
+		t.Fatal("expected error for zero bucket")
+	}
+	if _, err := NewIntegrationRolloverConfig(-time.Hour); err == nil {
+		t.Fatal("expected error for negative bucket")
+	}
+	cfg, err := NewIntegrationRolloverConfig(time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error for valid bucket: %v", err)
+	}
+	if cfg.aggWindow != time.Hour {
+		t.Fatalf("aggWindow = %s, want 1h", cfg.aggWindow)
+	}
+}
+
 func TestValidateRolloverDurations_RejectsNonPositive(t *testing.T) {
 	cfg := &RolloverConfig{
 		aggQueryRange:   0,
