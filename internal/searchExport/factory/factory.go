@@ -117,8 +117,10 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 			}
 			staging = store.StagingS3
 			if staging == nil {
-				if store.Type == datastore.StoreTypeDatabahnStorage {
-					staging, err = destination.LoadS3Config(ctx, db, destID, tenantID)
+				if store.Type == datastore.StoreTypeDatabahnStorage && store.DestinationID != nil {
+					staging, err = destination.LoadDatabahnStorageStagingConfig(ctx, db, *store.DestinationID, tenantID)
+				} else if store.Type == datastore.StoreTypeDatabahnStorage {
+					return nil, fmt.Errorf("athena staging S3 config not resolved: DATABAHN_STORAGE data store has no linked destination")
 				} else {
 					return nil, fmt.Errorf("athena staging S3 config not resolved for store type %s", store.Type)
 				}
