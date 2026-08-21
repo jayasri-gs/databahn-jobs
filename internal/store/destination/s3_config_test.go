@@ -154,6 +154,17 @@ func TestParseDatabahnStorageStagingConfig_MissingRegion(t *testing.T) {
 	}
 }
 
+func TestParseDatabahnStorageStagingConfig_IgnoresGenericRegionKey(t *testing.T) {
+	cfgMap := map[string]string{
+		"region":       "eu-west-1",
+		"s3BucketName": testDatabahnStorageBucket,
+	}
+	_, err := parseDatabahnStorageStagingConfig(cfgMap)
+	if err == nil {
+		t.Fatal("expected error when only generic region is set; DATABAHN_STORAGE requires s3Region")
+	}
+}
+
 func TestParseDatabahnStorageStagingConfig_MissingBucket(t *testing.T) {
 	cfgMap := map[string]string{
 		"s3Region": "us-east-1",

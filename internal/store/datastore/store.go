@@ -29,12 +29,13 @@ const (
 )
 
 type ExportDataStore struct {
-	ID          uuid.UUID
-	Type        string
-	QueryEngine string
-	StagingS3   *destination.S3Config
-	StagingBlob *destination.AzureBlobConfig
-	SynapseSQL  *SynapseSQLConfig
+	ID            uuid.UUID
+	Type          string
+	QueryEngine   string
+	DestinationID *uuid.UUID
+	StagingS3     *destination.S3Config
+	StagingBlob   *destination.AzureBlobConfig
+	SynapseSQL    *SynapseSQLConfig
 }
 
 type SynapseSQLConfig struct {
@@ -118,7 +119,7 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 
 	linkedDestType := ""
 	storeType := strings.ToUpper(row.Type)
-	result := &ExportDataStore{ID: row.ID, Type: storeType}
+	result := &ExportDataStore{ID: row.ID, Type: storeType, DestinationID: row.DestinationID}
 
 	switch storeType {
 	case StoreTypeExternalStorage:
