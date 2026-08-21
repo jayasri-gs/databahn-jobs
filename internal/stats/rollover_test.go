@@ -1155,6 +1155,17 @@ func TestIsDayDifferenceMoreThanYearTransitions(t *testing.T) {
 	}
 }
 
+func TestValidateRolloverDurations_RejectsNonPositive(t *testing.T) {
+	cfg := &RolloverConfig{
+		aggQueryRange:   0,
+		validationRange: time.Hour,
+		aggWindow:       time.Hour,
+	}
+	if err := validateRolloverDurations(cfg); err == nil {
+		t.Fatal("expected error for non-positive aggQueryRange")
+	}
+}
+
 func TestBuildRolloverAggRequest_IncludesOperatorIdCompositeSource(t *testing.T) {
 	req := buildRolloverAggRequest(1_700_000_000_000, 1_700_003_600_000, nil, 100, time.Hour)
 	if len(req.Aggs.CompositeBuckets.Composite.Sources) != 8 {

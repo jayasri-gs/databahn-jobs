@@ -264,7 +264,18 @@ func rollover(ctx context.Context, index Index, client *opensearch.Client, confi
 	return nil
 }
 
+func validateRolloverDurations(config *RolloverConfig) error {
+	if config.aggQueryRange <= 0 || config.validationRange <= 0 || config.aggWindow <= 0 {
+		return fmt.Errorf("rollover durations must be positive (aggQueryRange=%s validationRange=%s aggWindow=%s)",
+			config.aggQueryRange, config.validationRange, config.aggWindow)
+	}
+	return nil
+}
+
 func doRolloverAndValidate(ctx context.Context, index Index, client *opensearch.Client, config *RolloverConfig, newIndexName string) error {
+	if err := validateRolloverDurations(config); err != nil {
+		return err
+	}
 	logger.GetLoggerWithContext(ctx).Info("rolling over index", zap.String("index", index.Index))
 	minVal, maxVal, err := findMinMaxTimestamp(ctx, index, client)
 	if err != nil {
@@ -551,6 +562,7 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 	}
 
 	validationRanges := splitByTimeRanges(minVal, maxVal, validationDuration)
+	sawAnySourceBuckets := false
 	for _, vr := range validationRanges {
 		query := fmt.Sprintf("tags.db_ts_win:[%d TO %d}", vr.start, vr.end)
 
@@ -564,8 +576,11 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 			if err := paginateAgg4(ctx, client, newIndexName, query, groupBy, aggregations, newCounts); err != nil {
 				return err
 			}
-			if minVal > 0 && len(olderCounts) == 0 {
-				return errors.New(errValidationFailed + ": source index returned no aggregation buckets")
+			if len(olderCounts) > 0 {
+				sawAnySourceBuckets = true
+			}
+			if len(olderCounts) == 0 && len(newCounts) == 0 {
+				continue
 			}
 			if !reflect.DeepEqual(olderCounts, newCounts) {
 				logger.GetLogger().Info(errValidationFailed, zap.String("index", index.Index),
@@ -584,8 +599,11 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 			if err := paginateAgg5(ctx, client, newIndexName, query, groupBy, aggregations, newCounts); err != nil {
 				return err
 			}
-			if minVal > 0 && len(olderCounts) == 0 {
-				return errors.New(errValidationFailed + ": source index returned no aggregation buckets")
+			if len(olderCounts) > 0 {
+				sawAnySourceBuckets = true
+			}
+			if len(olderCounts) == 0 && len(newCounts) == 0 {
+				continue
 			}
 			if !reflect.DeepEqual(olderCounts, newCounts) {
 				logger.GetLogger().Info(errValidationFailed, zap.String("index", index.Index),
@@ -595,6 +613,9 @@ func validateNewData(ctx context.Context, index Index, client *opensearch.Client
 				return errors.New(errValidationFailed)
 			}
 		}
+	}
+	if minVal > 0 && !sawAnySourceBuckets {
+		return errors.New(errValidationFailed + ": source index returned no aggregation buckets")
 	}
 	return nil
 }
