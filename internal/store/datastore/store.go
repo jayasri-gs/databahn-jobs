@@ -15,6 +15,7 @@ const (
 	QueryEngineAthena   = "ATHENA"
 	QueryEngineSynapse  = "SYNAPSE"
 	QueryEngineKustoADX = "KUSTO_ADX"
+	QueryEngineKustoLAW = "KUSTO_LAW"
 
 	StoreTypeDatabahnDestination = "DATABAHN_DESTINATION"
 	StoreTypeDatabahnInsights    = "DATABAHN_INSIGHTS"
@@ -31,6 +32,7 @@ const (
 	ExternalProviderSecurityLake = "SECURITY_LAKE"
 	ExternalProviderAzureBlob    = "AZURE_BLOB"
 	ExternalProviderADX          = "AZURE_DATA_EXPLORER"
+	ExternalProviderSentinel     = "AZURE_SENTINEL"
 )
 
 type ExportDataStore struct {
@@ -42,6 +44,7 @@ type ExportDataStore struct {
 	StagingBlob            *destination.AzureBlobConfig
 	SynapseSQL             *SynapseSQLConfig
 	ADX                    *destination.ADXConfig
+	Sentinel               *destination.SentinelConfig
 }
 
 type SynapseSQLConfig struct {
@@ -97,6 +100,11 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider string) strin
 			return QueryEngineSynapse
 		case ExternalProviderADX:
 			return QueryEngineKustoADX
+		case ExternalProviderSentinel:
+			// Both Sentinel tiers resolve to KUSTO_LAW here; the connectorConfig's
+			// storage_tier decides, and loadSentinelConfig rejects LAKE with a message
+			// naming the tier rather than an opaque "unsupported engine".
+			return QueryEngineKustoLAW
 		}
 	}
 	return ""
@@ -221,6 +229,14 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 		result.ADX = adxCfg
 	}
 
+	if result.QueryEngine == QueryEngineKustoLAW {
+		sentinelCfg, err := loadSentinelConfig(ctx, db, dataStoreID, tenantID, secretID, connector)
+		if err != nil {
+			return nil, err
+		}
+		result.Sentinel = sentinelCfg
+	}
+
 	if result.QueryEngine == QueryEngineSynapse && storeCfg.AzureSynapseConfiguration != nil {
 		s := storeCfg.AzureSynapseConfiguration
 		result.SynapseSQL = &SynapseSQLConfig{
@@ -279,6 +295,34 @@ func loadADXConfig(
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("ADX store %s: %w", dataStoreID, err)
+	}
+	return cfg, nil
+}
+
+// loadSentinelConfig resolves Microsoft Sentinel workspace credentials for an
+// EXTERNAL_STORAGE store, overlaying azure_client_secret from Secrets Manager when the store
+// references one. Mirrors loadADXConfig — the two providers share an Entra app credential
+// shape and the same single confidential attribute.
+func loadSentinelConfig(
+	ctx context.Context,
+	db *gorm.DB,
+	dataStoreID, tenantID uuid.UUID,
+	secretID string,
+	connector map[string]string,
+) (*destination.SentinelConfig, error) {
+	cfg := destination.SentinelConfigFromExternalConnector(connector)
+	if cfg == nil {
+		return nil, fmt.Errorf("Sentinel store %s has empty connectorConfig", dataStoreID)
+	}
+	if secretID != "" {
+		overrides, err := destination.ResolveCredentialOverrides(ctx, db, secretID, dataStoreID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve Sentinel store secret: %w", err)
+		}
+		destination.ApplySentinelCredentialOverrides(cfg, overrides)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("Sentinel store %s: %w", dataStoreID, err)
 	}
 	return cfg, nil
 }

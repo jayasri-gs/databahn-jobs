@@ -23,7 +23,7 @@ import (
 type ExportDeps struct {
 	QueryEngine       string
 	Unload            query.UnloadExecutor
-	Synapse           query.RowStreamExecutor
+	RowStream         query.RowStreamExecutor
 	Uploader          upload.CloudUploader
 	ExportBucket      string
 	LegacyMode        bool
@@ -167,6 +167,34 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		// .export stages into the export destination's own container; the pipeline reads
 		// the staged blobs back from there and cleans them up afterwards.
 		deps.StagingBlobConfig = exportBlob
+	case models.QueryEngineKustoLAW:
+		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dataStoreId: %w", err)
+		}
+		store, err := datastore.LoadExportDataStore(ctx, db, dataStoreID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if store.Sentinel == nil {
+			return nil, fmt.Errorf("Sentinel store %s missing workspace credentials", dataStoreID)
+		}
+		sentinelExec, err := query.NewSentinelExecutor(query.SentinelConfig{
+			WorkspaceID:  store.Sentinel.WorkspaceID,
+			StorageTier:  firstNonEmpty(cfg.StorageTier, store.Sentinel.StorageTier),
+			TenantID:     store.Sentinel.TenantID,
+			ClientID:     store.Sentinel.ClientID,
+			ClientSecret: store.Sentinel.ClientSecret,
+			QueryTimeout: query.SentinelStreamOptionsFromEnv().QueryTimeout,
+			MaxRetries:   query.SentinelMaxRetriesFromEnv(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		sentinelExec.SetLogger(log)
+		deps.RowStream = sentinelExec
+		// No staging: Sentinel has no server-side export, so rows are pulled over the query
+		// API and uploaded straight to the export destination — S3 or Azure Blob alike.
 	case models.QueryEngineSynapse:
 		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
 		if err != nil {
@@ -196,7 +224,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 			DataSourceName: dataSource,
 		})
 		synapseExec.SetLogger(log)
-		deps.Synapse = synapseExec
+		deps.RowStream = synapseExec
 		deps.StagingBlobConfig = exportBlob
 	default:
 		return nil, fmt.Errorf("unsupported query engine: %s", queryEngine)
@@ -276,6 +304,14 @@ func IsSupportedExportMatrix(queryEngine, destType string) bool {
 		// ADX .export writes into the export destination's own blob container,
 		// so Azure Blob is the only supported export destination.
 		return dest == models.DestTypeAzureBlob
+	case models.QueryEngineKustoLAW:
+		// Sentinel rows are encoded in the worker and uploaded client-side, so any
+		// destination the uploader supports works.
+		switch dest {
+		case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
+			return true
+		}
+		return false
 	default:
 		return false
 	}

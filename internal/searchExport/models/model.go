@@ -14,6 +14,7 @@ const (
 	QueryEngineAthena   = "ATHENA"
 	QueryEngineSynapse  = "SYNAPSE"
 	QueryEngineKustoADX = "KUSTO_ADX"
+	QueryEngineKustoLAW = "KUSTO_LAW"
 	DestTypeS3          = "S3"
 	DestTypeS3Parquet   = "S3_PARQUET"
 	DestTypeAzureBlob   = "AZURE_BLOB"
@@ -56,9 +57,16 @@ type SearchExportConfig struct {
 	GlobalDestinationID string `json:"globalDestinationId,omitempty"`
 
 	QueryEngine           string `json:"queryEngine,omitempty"`
+	StorageTier           string `json:"storageTier,omitempty"`
 	DestinationType       string `json:"destinationType,omitempty"`
 	SynapseDataSourceName string `json:"synapseDataSourceName,omitempty"`
 	QueryExecutionID      string `json:"queryExecutionId,omitempty"`
+
+	// Sentinel — written by backend-service, unread by the worker today. They are what a
+	// future chunked export needs to insert a per-window time filter after the table
+	// reference; see query.PlanSentinelQueries.
+	KqlTable      string `json:"kqlTable,omitempty"`
+	KqlTimeColumn string `json:"kqlTimeColumn,omitempty"`
 
 	// External Athena (Security Lake / external S3) — additive; null on older audit rows.
 	ExternalSearchProvider string `json:"externalSearchProvider,omitempty"`

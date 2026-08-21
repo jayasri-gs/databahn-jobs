@@ -16,6 +16,9 @@ const (
 	EngineAthena  = "ATHENA"
 	EngineSynapse = "SYNAPSE"
 	EngineADX     = "KUSTO_ADX"
+	// EngineSentinelLAW is the Sentinel analytics tier (Log Analytics workspace). The lake
+	// tier would be KUSTO_LAKE; it has no export transport yet.
+	EngineSentinelLAW = "KUSTO_LAW"
 )
 
 type UnloadResult struct {
@@ -64,4 +67,5 @@ var (
 	_ UnloadExecutor    = (*AthenaExecutor)(nil)
 	_ UnloadExecutor    = (*ADXExecutor)(nil)
 	_ RowStreamExecutor = (*SynapseExecutor)(nil)
+	_ RowStreamExecutor = (*SentinelExecutor)(nil)
 )

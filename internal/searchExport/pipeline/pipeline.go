@@ -37,14 +37,14 @@ type Pipeline struct {
 	reportID       string
 	exportName     string
 	unloadExec     query.UnloadExecutor
-	synapse        query.RowStreamExecutor
+	rowStream      query.RowStreamExecutor
 	cetasExec      query.CETASExecutor
 	stagingBlobCfg *destination.AzureBlobConfig
 	uploader       upload.CloudUploader
 	log            *zap.Logger
 }
 
-func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, unloadExec query.UnloadExecutor, synapse query.RowStreamExecutor, uploader upload.CloudUploader, stagingBlobCfg *destination.AzureBlobConfig, log *zap.Logger) *Pipeline {
+func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, unloadExec query.UnloadExecutor, rowStream query.RowStreamExecutor, uploader upload.CloudUploader, stagingBlobCfg *destination.AzureBlobConfig, log *zap.Logger) *Pipeline {
 	if log == nil {
 		log = logging.GetLogger()
 	}
@@ -54,13 +54,13 @@ func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExpo
 		reportID:       reportID,
 		exportName:     exportName,
 		unloadExec:     unloadExec,
-		synapse:        synapse,
+		rowStream:      rowStream,
 		uploader:       uploader,
 		stagingBlobCfg: stagingBlobCfg,
 		log:            log,
 	}
 	if stagingBlobCfg != nil {
-		if ce, ok := synapse.(query.CETASExecutor); ok {
+		if ce, ok := rowStream.(query.CETASExecutor); ok {
 			p.cetasExec = ce
 		}
 	}
@@ -92,15 +92,19 @@ func normalizeBlobStagingPrefix(path string) string {
 func (p *Pipeline) Run(ctx context.Context, destBucket string, onQueryStart func(executionID string) error) (*PipelineResult, error) {
 	p.log.Info("Starting export pipeline", zap.String("destBucket", destBucket))
 
-	if p.synapse != nil {
-		if err := p.synapse.Connect(ctx); err != nil {
+	if p.rowStream != nil {
+		if err := p.rowStream.Connect(ctx); err != nil {
 			return nil, fmt.Errorf("failed to connect: %w", err)
 		}
-		defer p.synapse.Close()
+		defer p.rowStream.Close()
+		switch p.rowStream.Engine() {
+		case query.EngineSentinelLAW:
+			return p.runSentinelStreamExport(ctx, destBucket, p.rowStream)
+		}
 		if p.cetasExec != nil && p.stagingBlobCfg != nil {
 			return p.runSynapseCETASExport(ctx, destBucket, p.cetasExec, p.stagingBlobCfg)
 		}
-		return p.runSynapseStreamExport(ctx, destBucket, p.synapse)
+		return p.runSynapseStreamExport(ctx, destBucket, p.rowStream)
 	}
 
 	if p.unloadExec == nil {
@@ -146,13 +150,14 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onQueryStart func
 	return p.runUploadPhase(ctx, destBucket, unloadResult, directUpload)
 }
 
-// ResumeRun picks up a stale PROCESSING job. Synapse exports always restart from
-// scratch: Synapse has no execution ID or status API — queries run synchronously
-// over JDBC and die with the connection. Athena exports reattach to the query
-// execution recorded in the DB when it is still running or already succeeded.
+// ResumeRun picks up a stale PROCESSING job. Row-stream exports always restart from
+// scratch: neither Synapse nor Sentinel has an execution ID or status API — a Synapse
+// query runs synchronously over JDBC and dies with the connection, and Log Analytics runs
+// the query inside the HTTP request. Athena and ADX exports reattach to the execution
+// recorded in the DB when it is still running or already succeeded.
 // The upload to the final destination always restarts from the beginning.
 func (p *Pipeline) ResumeRun(ctx context.Context, destBucket, queryExecutionID string, onQueryStart func(executionID string) error) (*PipelineResult, error) {
-	if p.synapse != nil || queryExecutionID == "" {
+	if p.rowStream != nil || queryExecutionID == "" {
 		return p.Run(ctx, destBucket, onQueryStart)
 	}
 	if p.unloadExec == nil {

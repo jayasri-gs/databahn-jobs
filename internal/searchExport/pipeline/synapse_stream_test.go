@@ -48,8 +48,8 @@ func TestPipelineRun_UsesSynapseBranch(t *testing.T) {
 		Format: "csv",
 	}, nil, mock, nil, nil, nil)
 
-	if p.synapse == nil {
-		t.Fatal("expected synapse executor")
+	if p.rowStream == nil {
+		t.Fatal("expected row-stream executor")
 	}
 	if p.unloadExec != nil {
 		t.Fatal("unloadExec should be nil for synapse pipeline")

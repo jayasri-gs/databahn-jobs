@@ -53,3 +53,30 @@ func StreamRowsOptionsFromEnv() StreamRowsOptions {
 		HourBatchRows:     int64(utils.GetEnvInt("SEARCH_EXPORT_SYNAPSE_HOUR_BATCH_ROWS", 10_000)),
 	}
 }
+
+// Sentinel export defaults. The query timeout matches the Log Analytics service ceiling —
+// there is no way to ask for longer than ten minutes.
+const (
+	defaultSentinelQueryTimeoutSeconds = 600
+	defaultSentinelMaxRetries          = 3
+	defaultSentinelMaxRows             = 500_000
+)
+
+// SentinelStreamOptionsFromEnv builds the row-stream options for a Sentinel export.
+//
+// MaxRows is a defensive backstop, not the real limit: backend-service caps the query with a
+// `take` sized to keep one response inside the service's 500k-row / ~64 MB budget. This only
+// stops a stream that somehow exceeds it.
+func SentinelStreamOptionsFromEnv() StreamRowsOptions {
+	return StreamRowsOptions{
+		MaxRows:       int64(utils.GetEnvInt("SEARCH_EXPORT_SENTINEL_MAX_ROWS", defaultSentinelMaxRows)),
+		QueryTimeout:  time.Duration(utils.GetEnvInt("SEARCH_EXPORT_SENTINEL_QUERY_TIMEOUT_SECONDS", defaultSentinelQueryTimeoutSeconds)) * time.Second,
+		ProgressEvery: synapseProgressInterval,
+		SkipPreflight: true,
+	}
+}
+
+// SentinelMaxRetriesFromEnv is the retry budget for throttled Log Analytics requests.
+func SentinelMaxRetriesFromEnv() int {
+	return utils.GetEnvInt("SEARCH_EXPORT_SENTINEL_MAX_RETRIES", defaultSentinelMaxRetries)
+}

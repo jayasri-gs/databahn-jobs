@@ -1,6 +1,7 @@
 package format
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -55,10 +56,27 @@ func (e *ExcelEncoder) WriteRow(row []interface{}) error {
 
 	for i, val := range row {
 		cell, _ := excelize.CoordinatesToCellName(i+1, e.rowNum)
-		e.file.SetCellValue(e.curSheet, cell, val)
+		e.file.SetCellValue(e.curSheet, cell, excelCellValue(val))
 	}
 	e.rowNum++
 	return nil
+}
+
+// excelCellValue maps the value types excelize does not recognise onto ones it does.
+// json.RawMessage and json.Number are named types, so excelize's own type switch misses
+// them and would render a `dynamic` column as a list of byte values.
+func excelCellValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case json.RawMessage:
+		return string(val)
+	case json.Number:
+		if f, err := val.Float64(); err == nil {
+			return f
+		}
+		return val.String()
+	default:
+		return v
+	}
 }
 
 func (e *ExcelEncoder) Finalize() error {

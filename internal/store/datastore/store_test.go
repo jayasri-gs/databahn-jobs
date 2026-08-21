@@ -21,6 +21,10 @@ func TestDeriveQueryEngine(t *testing.T) {
 		{StoreTypeDerivedDatastore, "", ExternalProviderADX, QueryEngineKustoADX},
 		{StoreTypeDatabahnDestination, DestTypeAzureBlob, ExternalProviderADX, QueryEngineSynapse},
 		{StoreTypeDatabahnDestination, DestTypeAzureDataExplorer, "", QueryEngineKustoADX},
+		// Both Sentinel tiers derive KUSTO_LAW; storage_tier decides, and loadSentinelConfig
+		// rejects LAKE by name.
+		{StoreTypeExternalStorage, "", ExternalProviderSentinel, QueryEngineKustoLAW},
+		{StoreTypeDerivedDatastore, "", ExternalProviderSentinel, QueryEngineKustoLAW},
 	}
 	for _, tc := range tests {
 		got := DeriveQueryEngine(tc.storeType, tc.destType, tc.extProvider)
