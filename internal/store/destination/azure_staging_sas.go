@@ -3,6 +3,7 @@ package destination
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -57,18 +58,29 @@ func GenerateContainerWriteSAS(ctx context.Context, cfg *AzureBlobConfig, expiry
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(expiry)
-	permissions := (&sas.ContainerPermissions{Read: true, Add: true, Create: true, Write: true, List: true, Delete: true}).String()
+	// Only what `.export` needs to create and write blobs. Read, List and Delete are
+	// deliberately absent: the worker reads the staged blobs and deletes them afterwards with
+	// the destination's own credentials (see unload.BlobReader), never with this token.
+	permissions := (&sas.ContainerPermissions{Add: true, Create: true, Write: true}).String()
 
 	switch authType {
 	case "AUTH_CONNECTION_STRING":
 		accountName, accountKey, keyErr := ParseBlobConnectionString(cfg.ConnectionString)
 		if keyErr != nil {
-			// SAS-only connection string: no account key to sign with, reuse the given token.
+			// SAS-only connection string: there is no account key to sign a fresh token with,
+			// so the configured one is reused — but only after checking it can actually do the
+			// job. Forwarding it blind would hand ADX a token that is already expired, expires
+			// mid-export, or lacks write permission, and the export would fail inside Kusto
+			// with an opaque storage error instead of here.
 			sasAccount, sasToken, sasErr := ParseSASConnectionString(cfg.ConnectionString)
 			if sasErr != nil {
 				return nil, fmt.Errorf("parse connection string: %w", keyErr)
 			}
-			return &BlobStagingSAS{AccountName: sasAccount, Container: cfg.Container, SASToken: strings.TrimPrefix(sasToken, "?")}, nil
+			token := strings.TrimPrefix(sasToken, "?")
+			if err := validateStagingSASToken(token, expiresAt); err != nil {
+				return nil, err
+			}
+			return &BlobStagingSAS{AccountName: sasAccount, Container: cfg.Container, SASToken: token}, nil
 		}
 		cred, err := azblob.NewSharedKeyCredential(accountName, accountKey)
 		if err != nil {
@@ -175,4 +187,37 @@ func ParseSASConnectionString(connStr string) (accountName, sasToken string, err
 		return "", "", fmt.Errorf("connection string missing AccountName")
 	}
 	return accountName, sasToken, nil
+}
+
+// validateStagingSASToken checks a pre-configured SAS is usable for an ADX export: it must
+// still be valid when the export is expected to finish, and it must permit writing.
+func validateStagingSASToken(token string, needsUntil time.Time) error {
+	values, err := url.ParseQuery(token)
+	if err != nil {
+		return fmt.Errorf("configured staging SAS is not a valid token: %w", err)
+	}
+
+	expiry := values.Get("se")
+	if expiry == "" {
+		return fmt.Errorf("configured staging SAS has no expiry (se)")
+	}
+	expiresAt, err := time.Parse(time.RFC3339, expiry)
+	if err != nil {
+		return fmt.Errorf("configured staging SAS has an unparseable expiry %q: %w", expiry, err)
+	}
+	if expiresAt.Before(needsUntil) {
+		return fmt.Errorf(
+			"configured staging SAS expires at %s, before the export window ends at %s",
+			expiresAt.UTC().Format(time.RFC3339), needsUntil.UTC().Format(time.RFC3339))
+	}
+
+	// sp is an unordered set of permission letters; w (write) is the one .export requires.
+	perms := values.Get("sp")
+	if perms == "" {
+		return fmt.Errorf("configured staging SAS has no permissions (sp)")
+	}
+	if !strings.Contains(perms, "w") {
+		return fmt.Errorf("configured staging SAS permissions %q do not include write", perms)
+	}
+	return nil
 }

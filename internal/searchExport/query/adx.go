@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -25,6 +26,11 @@ const (
 	adxStagingSASExpiry = 24 * time.Hour
 	adxHTTPTimeout      = 5 * time.Minute
 	adxPollInterval     = 5 * time.Second
+
+	// maxKustoResponseBytes bounds a control-command response. These carry operation status
+	// and the exported blob list, never row data, so this is a guard against a runaway or
+	// hostile response rather than a working limit.
+	maxKustoResponseBytes int64 = 64 << 20
 )
 
 // ADXConfig holds everything needed to run an .export against an Azure Data Explorer
@@ -55,6 +61,9 @@ type ADXExecutor struct {
 	httpClient *http.Client
 	token      azcore.AccessToken
 	log        *zap.Logger
+
+	// newStagingReader is overridden in tests; production always uses NewStagingReader.
+	newStagingReader func(tempDir string) (unload.StagingReader, error)
 }
 
 func NewADXExecutor(cfg ADXConfig) *ADXExecutor {
@@ -123,6 +132,15 @@ func (e *ADXExecutor) ExecuteUnloadAsync(ctx context.Context, query, database, o
 	if e.cfg.StagingBlob == nil {
 		return "", fmt.Errorf("ADX staging blob config is required")
 	}
+	// namePrefix is stable across retries so a resumed job can find the blobs its first
+	// attempt wrote. That also means a failed attempt's partial blobs are still sitting under
+	// it: the upload phase lists the whole prefix, so leaving them would concatenate stale
+	// output with this export's. Clear the prefix before starting a fresh one. The resume path
+	// never reaches here, so reattaching to a running export is unaffected.
+	if err := e.clearStagingPrefix(ctx); err != nil {
+		return "", fmt.Errorf("clear ADX staging prefix: %w", err)
+	}
+
 	staging, err := destination.GenerateContainerWriteSAS(ctx, e.cfg.StagingBlob, adxStagingSASExpiry)
 	if err != nil {
 		return "", fmt.Errorf("ADX staging SAS: %w", err)
@@ -147,6 +165,29 @@ func (e *ADXExecutor) ExecuteUnloadAsync(ctx context.Context, query, database, o
 	}
 	e.log.Info("Started async ADX export", zap.String("adxOperationId", operationID))
 	return operationID, nil
+}
+
+// clearStagingPrefix removes blobs a previous attempt left under this report's name prefix.
+func (e *ADXExecutor) clearStagingPrefix(ctx context.Context) error {
+	newReader := e.newStagingReader
+	if newReader == nil {
+		newReader = e.NewStagingReader
+	}
+	reader, err := newReader(os.TempDir())
+	if err != nil {
+		return err
+	}
+	stale, err := reader.ListFiles(ctx, e.cfg.NamePrefix)
+	if err != nil {
+		return err
+	}
+	if len(stale) == 0 {
+		return nil
+	}
+	e.log.Info("Removing staged blobs left by a previous export attempt",
+		zap.String("namePrefix", e.cfg.NamePrefix),
+		zap.Int("blobCount", len(stale)))
+	return reader.DeleteFiles(ctx, stale)
 }
 
 // CheckQueryStatus maps the Kusto operation state onto a pipeline query state.
@@ -309,9 +350,12 @@ func (e *ADXExecutor) do(ctx context.Context, path, database, csl string) ([]byt
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxKustoResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read kusto response: %w", err)
+	}
+	if int64(len(body)) > maxKustoResponseBytes {
+		return nil, fmt.Errorf("kusto response exceeds %d bytes", maxKustoResponseBytes)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("kusto returned %d: %s", resp.StatusCode, ParseADXError(body))

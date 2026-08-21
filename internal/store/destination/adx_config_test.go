@@ -41,7 +41,7 @@ func TestApplyADXCredentialOverrides(t *testing.T) {
 }
 
 func TestADXConfigValidate(t *testing.T) {
-	complete := ADXConfig{ClusterURI: "https://c", Database: "db", TenantID: "t", ClientID: "c", ClientSecret: "s"}
+	complete := ADXConfig{ClusterURI: "https://cluster.eastus.kusto.windows.net", Database: "db", TenantID: "t", ClientID: "c", ClientSecret: "s"}
 	if err := complete.Validate(); err != nil {
 		t.Fatalf("complete config rejected: %v", err)
 	}
@@ -63,5 +63,46 @@ func TestADXConfigValidate(t *testing.T) {
 	var nilCfg *ADXConfig
 	if err := nilCfg.Validate(); err == nil {
 		t.Fatal("nil config should fail validation")
+	}
+}
+
+// The cluster URI becomes the base URL for requests carrying an Entra bearer token, so it is
+// constrained to real Azure Data Explorer hosts rather than anywhere a data store names.
+func TestValidateADXClusterURI(t *testing.T) {
+	valid := []string{
+		"https://cluster.eastus.kusto.windows.net",
+		"https://cluster.eastus.kusto.windows.net/",
+		"https://help.kusto.windows.net",
+		"https://ws.kusto.azuresynapse.net",
+		"https://c.kusto.chinacloudapi.cn",
+		"https://c.kusto.usgovcloudapi.net",
+	}
+	for _, uri := range valid {
+		if err := ValidateADXClusterURI(uri); err != nil {
+			t.Fatalf("ValidateADXClusterURI(%q) = %v, want nil", uri, err)
+		}
+	}
+
+	invalid := []struct{ name, uri string }{
+		{"plain http", "http://cluster.eastus.kusto.windows.net"},
+		{"attacker host", "https://attacker.example.com"},
+		{"kusto as a subdomain of an attacker host", "https://kusto.windows.net.attacker.example.com"},
+		{"bare suffix with no cluster", "https://kusto.windows.net"},
+		{"loopback", "https://127.0.0.1"},
+		{"loopback name", "https://localhost"},
+		{"link-local metadata", "https://169.254.169.254"},
+		{"private range", "https://10.0.0.5"},
+		{"ipv6 loopback", "https://[::1]"},
+		{"embedded credentials", "https://user:pass@cluster.eastus.kusto.windows.net"},
+		{"no host", "https://"},
+		{"empty", ""},
+		{"not a url", "://"},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateADXClusterURI(tc.uri); err == nil {
+				t.Fatalf("ValidateADXClusterURI(%q) = nil, want an error", tc.uri)
+			}
+		})
 	}
 }

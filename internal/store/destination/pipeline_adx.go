@@ -33,6 +33,11 @@ func LoadPipelineADXConfig(ctx context.Context, db *gorm.DB, destID, tenantID uu
 	if err != nil {
 		return nil, fmt.Errorf("pipeline ADX destination %s: %w", destID, err)
 	}
+	// The external-store path validates through loadADXConfig; this one had no check at all,
+	// so the cluster endpoint reached the HTTP client unvalidated.
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("pipeline ADX destination %s: %w", destID, err)
+	}
 	return cfg, nil
 }
 

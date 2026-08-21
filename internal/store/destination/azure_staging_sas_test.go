@@ -2,6 +2,7 @@ package destination
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +43,7 @@ func TestGenerateContainerWriteSAS_SASConnectionString(t *testing.T) {
 	cfg := &AzureBlobConfig{
 		AuthType:         "AUTH_CONNECTION_STRING",
 		Container:        "exports",
-		ConnectionString: "BlobEndpoint=https://acct.blob.core.windows.net;SharedAccessSignature=sv=2024-11-04&sig=given",
+		ConnectionString: "BlobEndpoint=https://acct.blob.core.windows.net;SharedAccessSignature=" + usableSASToken(),
 	}
 	staging, err := GenerateContainerWriteSAS(context.Background(), cfg, time.Hour)
 	if err != nil {
@@ -51,7 +52,7 @@ func TestGenerateContainerWriteSAS_SASConnectionString(t *testing.T) {
 	if staging.AccountName != "acct" {
 		t.Fatalf("account name = %q", staging.AccountName)
 	}
-	if staging.SASToken != "sv=2024-11-04&sig=given" {
+	if staging.SASToken != usableSASToken() {
 		t.Fatalf("SAS token = %q", staging.SASToken)
 	}
 }
@@ -87,5 +88,63 @@ func TestParseBlobConnectionStrings(t *testing.T) {
 	}
 	if _, _, err := ParseSASConnectionString("AccountName=acct"); err == nil {
 		t.Fatal("missing SAS should error")
+	}
+}
+
+// usableSASToken is a pre-configured token that can actually carry an export: write
+// permission, and an expiry well beyond the requested window.
+func usableSASToken() string {
+	return "sv=2024-11-04&sp=racw&se=" + time.Now().UTC().Add(48*time.Hour).Format(time.RFC3339) + "&sig=given"
+}
+
+// A SAS-only connection string has no account key to sign a fresh token with, so the
+// configured one is reused — but only if it can do the job. Forwarding an unusable token
+// would surface as an opaque storage error inside Kusto instead of here.
+func TestGenerateContainerWriteSAS_RejectsUnusableConfiguredToken(t *testing.T) {
+	cases := []struct{ name, token string }{
+		{"expired", "sv=2024-11-04&sp=racw&se=" + time.Now().UTC().Add(-time.Hour).Format(time.RFC3339) + "&sig=given"},
+		{"expires before the export window ends", "sv=2024-11-04&sp=racw&se=" + time.Now().UTC().Add(10*time.Minute).Format(time.RFC3339) + "&sig=given"},
+		{"read only", "sv=2024-11-04&sp=rl&se=" + time.Now().UTC().Add(48*time.Hour).Format(time.RFC3339) + "&sig=given"},
+		{"no expiry", "sv=2024-11-04&sp=racw&sig=given"},
+		{"no permissions", "sv=2024-11-04&se=" + time.Now().UTC().Add(48*time.Hour).Format(time.RFC3339) + "&sig=given"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &AzureBlobConfig{
+				AuthType:         "AUTH_CONNECTION_STRING",
+				Container:        "exports",
+				ConnectionString: "BlobEndpoint=https://acct.blob.core.windows.net;SharedAccessSignature=" + tc.token,
+			}
+			if _, err := GenerateContainerWriteSAS(context.Background(), cfg, time.Hour); err == nil {
+				t.Fatalf("token %q was accepted", tc.token)
+			}
+		})
+	}
+}
+
+// .export only needs to create and write blobs; the worker reads and deletes the staged
+// output with the destination's own credentials.
+func TestGenerateContainerWriteSAS_GrantsOnlyWritePermissions(t *testing.T) {
+	cfg := &AzureBlobConfig{
+		AuthType:         "AUTH_CONNECTION_STRING",
+		Container:        "exports",
+		ConnectionString: "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=dGVzdGtleQ==;EndpointSuffix=core.windows.net",
+	}
+	staging, err := GenerateContainerWriteSAS(context.Background(), cfg, time.Hour)
+	if err != nil {
+		t.Fatalf("GenerateContainerWriteSAS: %v", err)
+	}
+	values, err := url.ParseQuery(staging.SASToken)
+	if err != nil {
+		t.Fatalf("parse SAS: %v", err)
+	}
+	perms := values.Get("sp")
+	for _, denied := range []string{"d", "l", "r"} {
+		if strings.Contains(perms, denied) {
+			t.Fatalf("permissions %q still include %q", perms, denied)
+		}
+	}
+	if !strings.Contains(perms, "w") || !strings.Contains(perms, "c") {
+		t.Fatalf("permissions %q must allow create and write", perms)
 	}
 }

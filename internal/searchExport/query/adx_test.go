@@ -115,7 +115,7 @@ func TestADXRequestDatabaseFallback(t *testing.T) {
 		t.Fatalf("GetQueryColumns: %v", err)
 	}
 	if gotDB != "OverrideDb" {
-		t.Fatalf("request database = %q, want the report's database to win", gotDB)
+		t.Fatalf("request database = %q, want the override database %q to win", gotDB, "OverrideDb")
 	}
 
 	exec.cfg.Database = ""
