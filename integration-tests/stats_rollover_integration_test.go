@@ -4,11 +4,66 @@ package integrationtests
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/databahn-ai/databahn-jobs/internal/stats"
 )
+
+func TestStatsRolloverHappyPath(t *testing.T) {
+	ctx := context.Background()
+	openSearch := JobPramaan().GetOpenSearch(t)
+	fixture := newStatsRolloverFixture()
+
+	createStatsTestIndex(t, ctx, openSearch, fixture.index)
+	t.Cleanup(func() {
+		deleteStatsTestIndex(t, ctx, openSearch, fixture.index)
+	})
+
+	// Single legacy-style doc: no operator_id, coarse metric total only.
+	indexStatsDocuments(t, ctx, openSearch, fixture.index, []map[string]any{
+		statsDocBody(fixture, statsMetricDelivered, "", 75, fixture.tsWin+30*60*1000),
+	})
+
+	sourceIndex := stats.Index{
+		Index:  fixture.index,
+		Tenant: fixture.tenantID,
+		Year:   2024,
+		Day:    166,
+		Schema: stats.Schema_V2,
+		Phase:  stats.Phase_P1,
+	}
+	newIndexName, err := sourceIndex.NewIndexNameForRollover(time.Hour)
+	if err != nil {
+		t.Fatalf("build rolled index name: %v", err)
+	}
+	wantRolledIndex := fmt.Sprintf("rolled_over_1h_db_statistics_%s_v2_p2_y2024_d166", fixture.tenantID)
+	if newIndexName != wantRolledIndex {
+		t.Fatalf("rolled index name = %q, want %q", newIndexName, wantRolledIndex)
+	}
+	t.Cleanup(func() {
+		deleteStatsTestIndex(t, ctx, openSearch, newIndexName)
+	})
+
+	createStatsTestIndex(t, ctx, openSearch, newIndexName)
+
+	config, err := stats.NewIntegrationRolloverConfig(time.Hour)
+	if err != nil {
+		t.Fatalf("integration rollover config: %v", err)
+	}
+	if err := stats.RollOverIndex(ctx, sourceIndex, openSearch.GetClient(), config, newIndexName); err != nil {
+		t.Fatalf("rollover index: %v", err)
+	}
+	refreshIndex(t, ctx, openSearch, newIndexName)
+
+	if got := countIndexDocuments(t, ctx, openSearch, newIndexName); got == 0 {
+		t.Fatalf("rolled index %s has no documents after rollover", newIndexName)
+	}
+
+	totals := sumStatsByMetric(t, ctx, openSearch, newIndexName)
+	assertMetricTotal(t, totals, statsMetricDelivered, 75)
+}
 
 func TestStatsRolloverPreservesPerOperatorCounts(t *testing.T) {
 	ctx := context.Background()

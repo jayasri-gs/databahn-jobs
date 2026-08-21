@@ -209,6 +209,50 @@ func sumStatsByMetricAndOperator(
 	return totals
 }
 
+func sumStatsByMetric(
+	t *testing.T,
+	ctx context.Context,
+	openSearch *pramaan.OpenSearchPramaan,
+	indexName string,
+) map[string]float64 {
+	t.Helper()
+
+	aggregations := []dbos.AggregationFunction{
+		{Name: "total_count", Field: "counter.value", Function: "sum"},
+	}
+	groupBy := []string{"name.raw"}
+	query := "*:*"
+
+	totals := make(map[string]float64)
+	var after map[string]any
+	for {
+		aggs, newAfter, err := dbos.CompositePaginatedAggregate(ctx, openSearch.GetClient(), 100, indexName, query, groupBy, aggregations, after)
+		if err != nil {
+			t.Fatalf("composite aggregate on %s: %v", indexName, err)
+		}
+		if len(aggs) == 0 {
+			break
+		}
+		for _, agg := range aggs {
+			metricName, _ := agg.Key["name.raw"].(string)
+			totals[metricName] = agg.Values["total_count"].(float64)
+		}
+		after = newAfter
+		if newAfter == nil {
+			break
+		}
+	}
+	return totals
+}
+
+func assertMetricTotal(t *testing.T, totals map[string]float64, metricName string, want float64) {
+	t.Helper()
+	got := totals[metricName]
+	if got != want {
+		t.Fatalf("%s total = %v, want %v (all totals: %+v)", metricName, got, want, totals)
+	}
+}
+
 func assertStatsTotal(
 	t *testing.T,
 	totals map[statsOperatorMetric]float64,
