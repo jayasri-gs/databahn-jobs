@@ -38,3 +38,32 @@ func TestS3ConfigFromExternalConnector_prefersOutputBucket(t *testing.T) {
 		t.Fatalf("athena output = %q", cfg.AthenaOutputLocation())
 	}
 }
+
+// A partial or malformed secret must not erase working inline credentials: assigning a blank
+// override would fail the export at authentication instead.
+func TestApplyS3CredentialOverridesIgnoresBlanks(t *testing.T) {
+	cfg := &S3Config{
+		AccessKeyID:     "inline-key",
+		SecretAccessKey: "inline-secret",
+		RoleArn:         "arn:aws:iam::1234:role/inline",
+		ExternalID:      "inline-external",
+	}
+	ApplyS3CredentialOverrides(cfg, map[string]string{
+		"access_key_id":     "",
+		"secret_access_key": "",
+		"role_arn":          "",
+		"external_id":       "",
+	})
+	if cfg.AccessKeyID != "inline-key" || cfg.SecretAccessKey != "inline-secret" {
+		t.Fatalf("blank overrides erased key credentials: %+v", cfg)
+	}
+	if cfg.RoleArn != "arn:aws:iam::1234:role/inline" || cfg.ExternalID != "inline-external" {
+		t.Fatalf("blank overrides erased role credentials: %+v", cfg)
+	}
+
+	// Non-empty overrides still win.
+	ApplyS3CredentialOverrides(cfg, map[string]string{"access_key_id": "from-secret"})
+	if cfg.AccessKeyID != "from-secret" {
+		t.Fatalf("accessKeyID = %q, want the override applied", cfg.AccessKeyID)
+	}
+}

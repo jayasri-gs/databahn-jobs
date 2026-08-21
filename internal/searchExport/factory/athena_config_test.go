@@ -13,7 +13,7 @@ func TestResolveAthenaClientConfig_prefersExportConfigOverrides(t *testing.T) {
 		RoleArn:    "arn:aws:iam::123:role/store",
 		ExternalID: "ext",
 		Region:     "eu-west-1",
-		Bucket:     "fallback-bucket",
+		Bucket:     "sl-athena-out",
 	}
 	cfg := &models.SearchExportConfig{
 		Region:                 "us-east-1",
@@ -28,6 +28,8 @@ func TestResolveAthenaClientConfig_prefersExportConfigOverrides(t *testing.T) {
 	if got.Region != "us-east-1" {
 		t.Fatalf("region = %q, want us-east-1", got.Region)
 	}
+	// The output location is derived from staging.Bucket, never from the export config —
+	// see athenaOutputLocationFor. The config value below is ignored.
 	if got.OutputLocation != "s3://sl-athena-out/.databahn_out" {
 		t.Fatalf("outputLocation = %q", got.OutputLocation)
 	}

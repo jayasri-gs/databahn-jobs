@@ -51,12 +51,19 @@ func S3ConfigFromExternalConnector(connector map[string]string) *S3Config {
 }
 
 // ApplyS3CredentialOverrides overlays AWS Secrets Manager fields onto an S3Config.
-// Same behavior as parseS3ConfigFromWrapper for destination credentials.
+//
+// Blank values are ignored rather than assigned: a partial or malformed secret that carries
+// a recognised key with an empty value would otherwise erase working inline credentials and
+// fail the export at authentication. This matches how resolveExternalAthenaS3 merges the
+// same four fields.
 func ApplyS3CredentialOverrides(cfg *S3Config, credentialOverrides map[string]string) {
 	if cfg == nil {
 		return
 	}
 	for k, v := range credentialOverrides {
+		if v == "" {
+			continue
+		}
 		switch k {
 		case "access_key_id":
 			cfg.AccessKeyID = v

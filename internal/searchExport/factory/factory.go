@@ -3,6 +3,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -256,8 +257,9 @@ func isExternalAthenaStore(store *datastore.ExportDataStore) bool {
 	}
 }
 
-// resolveAthenaClientConfig builds Athena client settings from store credentials,
-// preferring region and output location from the export config when present.
+// resolveAthenaClientConfig builds Athena client settings from store credentials, preferring
+// the region from the export config when present. The output location is always derived
+// locally — see athenaOutputLocationFor.
 func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destination.S3Config) (query.AthenaConfig, error) {
 	if staging == nil {
 		return query.AthenaConfig{}, fmt.Errorf("athena staging config is required")
@@ -270,12 +272,9 @@ func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destinat
 		return query.AthenaConfig{}, fmt.Errorf("athena region is required")
 	}
 
-	outputLocation := staging.AthenaOutputLocation()
-	if cfg != nil && strings.TrimSpace(cfg.AthenaOutputLocation) != "" {
-		outputLocation = strings.TrimSpace(cfg.AthenaOutputLocation)
-	}
-	if outputLocation == "" {
-		return query.AthenaConfig{}, fmt.Errorf("athena output location is required")
+	outputLocation, err := athenaOutputLocationFor(staging)
+	if err != nil {
+		return query.AthenaConfig{}, err
 	}
 
 	return query.AthenaConfig{
@@ -315,6 +314,34 @@ func IsSupportedExportMatrix(queryEngine, destType string) bool {
 	default:
 		return false
 	}
+}
+
+// databahnAthenaOutputPrefix is the key Athena writes query results under, matching
+// destination.S3Config.AthenaOutputLocation and backend AWSConstants.ATHENA_OUTPUT_PATH.
+const databahnAthenaOutputPrefix = ".databahn_out"
+
+// athenaOutputBucket is AWS's bucket naming rule: 3-63 characters of lowercase
+// alphanumerics, dots and hyphens, starting and ending alphanumeric.
+var athenaOutputBucket = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$`)
+
+// athenaOutputLocationFor builds the S3 URI Athena writes query results to, from the data
+// store's own staging configuration.
+//
+// searchExportConfig.athenaOutputLocation is deliberately not read. backend-service derives
+// that field from connectorConfig.output_bucket, which is the same key staging.Bucket
+// resolves from, so it can only ever repeat the value computed here — while being an
+// untrusted field that reaches the Athena client and is interpolated into
+// `UNLOAD (...) TO '<location>'` as a single-quoted SQL literal. Deriving the location
+// locally removes that input from the path entirely rather than trying to sanitize it.
+//
+// The bucket is still checked, because it too comes from the database and lands in that same
+// SQL literal; a name outside AWS's grammar cannot contain a quote or whitespace.
+func athenaOutputLocationFor(staging *destination.S3Config) (string, error) {
+	bucket := strings.TrimSpace(staging.Bucket)
+	if !athenaOutputBucket.MatchString(bucket) {
+		return "", fmt.Errorf("athena staging bucket %q is not a valid S3 bucket name", bucket)
+	}
+	return "s3://" + bucket + "/" + databahnAthenaOutputPrefix, nil
 }
 
 func awsConfigFromS3(ctx context.Context, cfg *destination.S3Config) (aws.Config, error) {
