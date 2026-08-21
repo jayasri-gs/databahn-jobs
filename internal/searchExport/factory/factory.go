@@ -22,7 +22,7 @@ import (
 
 type ExportDeps struct {
 	QueryEngine       string
-	Athena            query.UnloadExecutor
+	Unload            query.UnloadExecutor
 	Synapse           query.RowStreamExecutor
 	Uploader          upload.CloudUploader
 	ExportBucket      string
@@ -137,7 +137,36 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		}
 		athenaExec := query.NewAthenaExecutor(athenaCfg)
 		athenaExec.SetLogger(log)
-		deps.Athena = athenaExec
+		deps.Unload = athenaExec
+	case models.QueryEngineKustoADX:
+		if exportBlob == nil {
+			return nil, fmt.Errorf("ADX export requires an Azure Blob destination, got %s", destType)
+		}
+		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dataStoreId: %w", err)
+		}
+		store, err := datastore.LoadExportDataStore(ctx, db, dataStoreID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if store.ADX == nil {
+			return nil, fmt.Errorf("ADX store %s missing cluster credentials", dataStoreID)
+		}
+		adxExec := query.NewADXExecutor(query.ADXConfig{
+			ClusterURI:   store.ADX.ClusterURI,
+			Database:     firstNonEmpty(cfg.Database, store.ADX.Database),
+			TenantID:     store.ADX.TenantID,
+			ClientID:     store.ADX.ClientID,
+			ClientSecret: store.ADX.ClientSecret,
+			NamePrefix:   query.ADXNamePrefix(reportID),
+			StagingBlob:  exportBlob,
+		})
+		adxExec.SetLogger(log)
+		deps.Unload = adxExec
+		// .export stages into the export destination's own container; the pipeline reads
+		// the staged blobs back from there and cleans them up afterwards.
+		deps.StagingBlobConfig = exportBlob
 	case models.QueryEngineSynapse:
 		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
 		if err != nil {
@@ -235,14 +264,18 @@ func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destinat
 
 // IsSupportedExportMatrix reports whether a query engine and export destination type can be wired together.
 func IsSupportedExportMatrix(queryEngine, destType string) bool {
+	dest := strings.ToUpper(destType)
 	switch strings.ToUpper(queryEngine) {
 	case models.QueryEngineAthena, models.QueryEngineSynapse:
-	default:
+		switch dest {
+		case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
+			return true
+		}
 		return false
-	}
-	switch strings.ToUpper(destType) {
-	case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
-		return true
+	case models.QueryEngineKustoADX:
+		// ADX .export writes into the export destination's own blob container,
+		// so Azure Blob is the only supported export destination.
+		return dest == models.DestTypeAzureBlob
 	default:
 		return false
 	}

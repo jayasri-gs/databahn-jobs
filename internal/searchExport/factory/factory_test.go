@@ -16,6 +16,7 @@ func TestIsSupportedExportMatrix(t *testing.T) {
 		{models.QueryEngineAthena, models.DestTypeAzureBlob},
 		{models.QueryEngineSynapse, models.DestTypeS3},
 		{models.QueryEngineSynapse, models.DestTypeAzureBlob},
+		{models.QueryEngineKustoADX, models.DestTypeAzureBlob},
 	}
 	for _, tc := range valid {
 		if !IsSupportedExportMatrix(tc.engine, tc.dest) {
@@ -28,6 +29,15 @@ func TestIsSupportedExportMatrix(t *testing.T) {
 	}
 	if IsSupportedExportMatrix(models.QueryEngineAthena, "GCS") {
 		t.Fatal("unsupported destination should fail")
+	}
+	// ADX .export stages into the destination's own blob container, so S3 is out.
+	for _, dest := range []string{models.DestTypeS3, models.DestTypeS3Parquet} {
+		if IsSupportedExportMatrix(models.QueryEngineKustoADX, dest) {
+			t.Fatalf("ADX export to %s should not be supported", dest)
+		}
+	}
+	if !IsSupportedExportMatrix("kusto_adx", "azure_blob") {
+		t.Fatal("engine and destination matching should be case-insensitive")
 	}
 }
 

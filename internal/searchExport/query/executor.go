@@ -15,6 +15,7 @@ const (
 
 	EngineAthena  = "ATHENA"
 	EngineSynapse = "SYNAPSE"
+	EngineADX     = "KUSTO_ADX"
 )
 
 type UnloadResult struct {
@@ -57,3 +58,10 @@ type RowStreamExecutor interface {
 
 // QueryExecutor is an alias kept for Athena UNLOAD wiring.
 type QueryExecutor = UnloadExecutor
+
+// Compile-time assertions that each executor satisfies the interface it is wired through.
+var (
+	_ UnloadExecutor    = (*AthenaExecutor)(nil)
+	_ UnloadExecutor    = (*ADXExecutor)(nil)
+	_ RowStreamExecutor = (*SynapseExecutor)(nil)
+)

@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	QueryEngineAthena  = "ATHENA"
-	QueryEngineSynapse = "SYNAPSE"
+	QueryEngineAthena   = "ATHENA"
+	QueryEngineSynapse  = "SYNAPSE"
+	QueryEngineKustoADX = "KUSTO_ADX"
 
 	StoreTypeDatabahnDestination = "DATABAHN_DESTINATION"
 	StoreTypeDatabahnInsights    = "DATABAHN_INSIGHTS"
@@ -28,6 +29,7 @@ const (
 	ExternalProviderS3           = "S3"
 	ExternalProviderSecurityLake = "SECURITY_LAKE"
 	ExternalProviderAzureBlob    = "AZURE_BLOB"
+	ExternalProviderADX          = "AZURE_DATA_EXPLORER"
 )
 
 type ExportDataStore struct {
@@ -38,6 +40,7 @@ type ExportDataStore struct {
 	StagingS3              *destination.S3Config
 	StagingBlob            *destination.AzureBlobConfig
 	SynapseSQL             *SynapseSQLConfig
+	ADX                    *destination.ADXConfig
 }
 
 type SynapseSQLConfig struct {
@@ -89,6 +92,8 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider string) strin
 			return QueryEngineAthena
 		case ExternalProviderAzureBlob:
 			return QueryEngineSynapse
+		case ExternalProviderADX:
+			return QueryEngineKustoADX
 		}
 	}
 	return ""
@@ -198,6 +203,14 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 		result.StagingS3 = staging
 	}
 
+	if result.QueryEngine == QueryEngineKustoADX {
+		adxCfg, err := loadADXConfig(ctx, db, dataStoreID, tenantID, secretID, connector)
+		if err != nil {
+			return nil, err
+		}
+		result.ADX = adxCfg
+	}
+
 	if result.QueryEngine == QueryEngineSynapse && storeCfg.AzureSynapseConfiguration != nil {
 		s := storeCfg.AzureSynapseConfiguration
 		result.SynapseSQL = &SynapseSQLConfig{
@@ -230,4 +243,30 @@ func loadExternalAthenaStaging(
 		destination.ApplyS3CredentialOverrides(staging, overrides)
 	}
 	return staging, nil
+}
+
+// loadADXConfig resolves Azure Data Explorer cluster credentials for an EXTERNAL_STORAGE
+// store, overlaying azure_client_secret from Secrets Manager when the store references one.
+func loadADXConfig(
+	ctx context.Context,
+	db *gorm.DB,
+	dataStoreID, tenantID uuid.UUID,
+	secretID string,
+	connector map[string]string,
+) (*destination.ADXConfig, error) {
+	cfg := destination.ADXConfigFromExternalConnector(connector)
+	if cfg == nil {
+		return nil, fmt.Errorf("ADX store %s has empty connectorConfig", dataStoreID)
+	}
+	if secretID != "" {
+		overrides, err := destination.ResolveCredentialOverrides(ctx, db, secretID, dataStoreID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve ADX store secret: %w", err)
+		}
+		destination.ApplyADXCredentialOverrides(cfg, overrides)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("ADX store %s: %w", dataStoreID, err)
+	}
+	return cfg, nil
 }

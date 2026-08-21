@@ -17,6 +17,9 @@ func TestDeriveQueryEngine(t *testing.T) {
 		{StoreTypeExternalStorage, "", ExternalProviderS3, QueryEngineAthena},
 		{StoreTypeExternalStorage, "", ExternalProviderSecurityLake, QueryEngineAthena},
 		{StoreTypeDerivedDatastore, "", ExternalProviderSecurityLake, QueryEngineAthena},
+		{StoreTypeExternalStorage, "", ExternalProviderADX, QueryEngineKustoADX},
+		{StoreTypeDerivedDatastore, "", ExternalProviderADX, QueryEngineKustoADX},
+		{StoreTypeDatabahnDestination, DestTypeAzureBlob, ExternalProviderADX, QueryEngineSynapse},
 	}
 	for _, tc := range tests {
 		got := DeriveQueryEngine(tc.storeType, tc.destType, tc.extProvider)
@@ -35,5 +38,11 @@ func TestIsExternalAthenaProvider(t *testing.T) {
 	}
 	if IsExternalAthenaProvider(ExternalProviderAzureBlob, nil) {
 		t.Fatal("AZURE_BLOB should not be external Athena")
+	}
+}
+
+func TestIsExternalAthenaProvider_ADX(t *testing.T) {
+	if IsExternalAthenaProvider(ExternalProviderADX, nil) {
+		t.Fatal("AZURE_DATA_EXPLORER must not be treated as external Athena")
 	}
 }

@@ -51,7 +51,7 @@ func TestPipelineRun_UsesSynapseBranch(t *testing.T) {
 	if p.synapse == nil {
 		t.Fatal("expected synapse executor")
 	}
-	if p.athena != nil {
-		t.Fatal("athena should be nil for synapse pipeline")
+	if p.unloadExec != nil {
+		t.Fatal("unloadExec should be nil for synapse pipeline")
 	}
 }
