@@ -276,6 +276,13 @@ func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destinat
 	if err != nil {
 		return query.AthenaConfig{}, err
 	}
+	// Validate at this assignment site, not only inside the builder: the URI is
+	// passed to the Athena client and interpolated into UNLOAD SQL, so it must
+	// be a canonical s3:// location for the staging bucket with no quotes or
+	// control characters before it leaves this function.
+	if err := validateAthenaOutputLocation(outputLocation, athenaOutputBucket.FindString(strings.TrimSpace(staging.Bucket))); err != nil {
+		return query.AthenaConfig{}, err
+	}
 
 	return query.AthenaConfig{
 		Region:          region,
@@ -324,24 +331,51 @@ const databahnAthenaOutputPrefix = ".databahn_out"
 // alphanumerics, dots and hyphens, starting and ending alphanumeric.
 var athenaOutputBucket = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$`)
 
-// athenaOutputLocationFor builds the S3 URI Athena writes query results to, from the data
-// store's own staging configuration.
-//
-// searchExportConfig.athenaOutputLocation is deliberately not read. backend-service derives
-// that field from connectorConfig.output_bucket, which is the same key staging.Bucket
-// resolves from, so it can only ever repeat the value computed here — while being an
-// untrusted field that reaches the Athena client and is interpolated into
-// `UNLOAD (...) TO '<location>'` as a single-quoted SQL literal. Deriving the location
-// locally removes that input from the path entirely rather than trying to sanitize it.
-//
-// The bucket is still checked, because it too comes from the database and lands in that same
-// SQL literal; a name outside AWS's grammar cannot contain a quote or whitespace.
+// athenaOutputLocation matches a canonical s3://<bucket>/<key> URI. The bucket
+// capture is AWS's naming rule; the optional key cannot contain whitespace,
+// quotes, backticks, or backslashes.
+var athenaOutputLocation = regexp.MustCompile(`^s3://([a-z0-9][a-z0-9.\-]{1,61}[a-z0-9])(/[^\s"'` + "`" + `\\]*)?$`)
+
+// athenaOutputLocationFor builds the S3 URI Athena writes query results to from the
+// data store's own staging bucket. searchExportConfig.athenaOutputLocation is not
+// read — the location is reconstructed from the allowlisted bucket match so the
+// original string cannot carry quotes or control characters into the Athena client
+// or the UNLOAD SQL literal.
 func athenaOutputLocationFor(staging *destination.S3Config) (string, error) {
-	bucket := strings.TrimSpace(staging.Bucket)
-	if !athenaOutputBucket.MatchString(bucket) {
-		return "", fmt.Errorf("athena staging bucket %q is not a valid S3 bucket name", bucket)
+	if staging == nil {
+		return "", fmt.Errorf("athena staging config is required")
 	}
-	return "s3://" + bucket + "/" + databahnAthenaOutputPrefix, nil
+	safeBucket := athenaOutputBucket.FindString(strings.TrimSpace(staging.Bucket))
+	if safeBucket == "" {
+		return "", fmt.Errorf("athena staging bucket %q is not a valid S3 bucket name", staging.Bucket)
+	}
+	location := "s3://" + safeBucket + "/" + databahnAthenaOutputPrefix
+	if err := validateAthenaOutputLocation(location, safeBucket); err != nil {
+		return "", err
+	}
+	return location, nil
+}
+
+func validateAthenaOutputLocation(location, authorizedBucket string) error {
+	if strings.ContainsFunc(location, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return fmt.Errorf("athena output location contains control characters")
+	}
+	if strings.ContainsAny(location, `'"\`) {
+		return fmt.Errorf("athena output location contains quotes or escape characters")
+	}
+	match := athenaOutputLocation.FindStringSubmatch(location)
+	if match == nil {
+		return fmt.Errorf("athena output location %q is not a canonical s3://bucket/key URI", location)
+	}
+	if authorizedBucket == "" {
+		return fmt.Errorf("cannot authorize athena output location %q: staging bucket is not configured", location)
+	}
+	if match[1] != authorizedBucket {
+		return fmt.Errorf(
+			"athena output location %q targets bucket %q, which is not the authorized staging bucket %q",
+			location, match[1], authorizedBucket)
+	}
+	return nil
 }
 
 func awsConfigFromS3(ctx context.Context, cfg *destination.S3Config) (aws.Config, error) {

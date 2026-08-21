@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/databahn-ai/databahn-jobs/internal/searchExport/models"
@@ -71,6 +72,76 @@ func TestResolveAthenaClientConfigIgnoresReportConfiguredOutputLocation(t *testi
 		if got.OutputLocation != want {
 			t.Fatalf("outputLocation = %q, want the derived %q", got.OutputLocation, want)
 		}
+	}
+}
+
+func TestValidateAthenaOutputLocation(t *testing.T) {
+	valid := []struct{ location, bucket string }{
+		{"s3://amazon-security-lake-us-east-1/.databahn_out", "amazon-security-lake-us-east-1"},
+		{"s3://my-bucket/.databahn_out", "my-bucket"},
+		{"s3://my.bucket.with.dots/prefix/nested", "my.bucket.with.dots"},
+		{"s3://abc", "abc"},
+		{"s3://my-bucket", "my-bucket"},
+		{"s3://my-bucket/", "my-bucket"},
+	}
+	for _, tc := range valid {
+		if err := validateAthenaOutputLocation(tc.location, tc.bucket); err != nil {
+			t.Fatalf("validateAthenaOutputLocation(%q, %q) = %v, want nil", tc.location, tc.bucket, err)
+		}
+	}
+
+	invalid := []struct {
+		name     string
+		location string
+	}{
+		{"empty", ""},
+		{"wrong scheme", "https://my-bucket/.databahn_out"},
+		{"no scheme", "my-bucket/.databahn_out"},
+		{"file scheme", "file:///etc/passwd"},
+		{"uppercase bucket", "s3://My-Bucket/out"},
+		{"underscore in bucket", "s3://my_bucket/out"},
+		{"bucket too short", "s3://ab"},
+		{"leading dot in bucket", "s3://.bucket/out"},
+		{"trailing dot in bucket", "s3://bucket./out"},
+		{"embedded space", "s3://my-bucket/out put"},
+		{"single quote", "s3://my-bucket/out'ration"},
+		{"double quote", `s3://my-bucket/out"put`},
+		{"backslash", `s3://my-bucket/out\put`},
+		{"newline", "s3://my-bucket/out\nput"},
+		{"carriage return", "s3://my-bucket/out\rput"},
+		{"null byte", "s3://my-bucket/out\x00put"},
+		{"del character", "s3://my-bucket/out\x7fput"},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateAthenaOutputLocation(tc.location, "my-bucket"); err == nil {
+				t.Fatalf("validateAthenaOutputLocation(%q) = nil, want an error", tc.location)
+			}
+		})
+	}
+}
+
+func TestValidateAthenaOutputLocationBindsToStagingBucket(t *testing.T) {
+	const staging = "authorized-staging-bucket"
+
+	if err := validateAthenaOutputLocation("s3://"+staging+"/.databahn_out", staging); err != nil {
+		t.Fatalf("matching bucket rejected: %v", err)
+	}
+
+	err := validateAthenaOutputLocation("s3://attacker-bucket/.databahn_out", staging)
+	if err == nil {
+		t.Fatal("expected an unauthorized bucket to be rejected")
+	}
+	if !strings.Contains(err.Error(), "authorized staging bucket") {
+		t.Fatalf("error = %v, want it to name the authorized bucket", err)
+	}
+
+	if err := validateAthenaOutputLocation("s3://"+staging+"-evil/out", staging); err == nil {
+		t.Fatal("expected a prefix-matching bucket to be rejected")
+	}
+
+	if err := validateAthenaOutputLocation("s3://any-bucket/out", ""); err == nil {
+		t.Fatal("expected an empty authorized bucket to be rejected")
 	}
 }
 
