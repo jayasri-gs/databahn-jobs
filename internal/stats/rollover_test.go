@@ -1,6 +1,8 @@
 package stats
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1150,5 +1152,90 @@ func TestIsDayDifferenceMoreThanYearTransitions(t *testing.T) {
 					tt.x, tt.yearThis, tt.dayThis, tt.yearThat, tt.dayThat, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestBuildRolloverAggRequest_IncludesOperatorIdCompositeSource(t *testing.T) {
+	req := buildRolloverAggRequest(1_700_000_000_000, 1_700_003_600_000, nil, 100, time.Hour)
+	if len(req.Aggs.CompositeBuckets.Composite.Sources) != 8 {
+		t.Fatalf("expected 8 composite sources, got %d", len(req.Aggs.CompositeBuckets.Composite.Sources))
+	}
+
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal rollover request: %v", err)
+	}
+	body := string(payload)
+	if !strings.Contains(body, `"operator_id"`) {
+		t.Fatalf("expected operator_id composite source in request body: %s", body)
+	}
+	if !strings.Contains(body, fieldOperatorId) {
+		t.Fatalf("expected %q field in request body: %s", fieldOperatorId, body)
+	}
+}
+
+func TestKey_newDocKey_DifferentOperatorIdsProduceDifferentHashes(t *testing.T) {
+	base := Key{
+		Name:                 "total_events_delivered",
+		Namespace:            "freeform-pipeline-executor",
+		SourceId:             "source-1",
+		DestinationId:        "N/A",
+		RuleId:               "N/A",
+		FleetNodeId:          "N/A",
+		TimeHistogramBuckets: 1_700_000_000_000,
+	}
+	opA := base
+	opA.OperatorId = "parse-abc"
+	opB := base
+	opB.OperatorId = "transform-xyz"
+
+	hashA := opA.newDocKey("db_statistics_v2_p1_tenant_y2024_d100")
+	hashB := opB.newDocKey("db_statistics_v2_p1_tenant_y2024_d100")
+	if hashA == hashB {
+		t.Fatalf("expected different doc keys for different operator ids, got %q", hashA)
+	}
+}
+
+func TestAggKeyString_NormalizesMissingOperatorId(t *testing.T) {
+	tests := []struct {
+		name     string
+		key      map[string]any
+		expected string
+	}{
+		{
+			name:     "missing key",
+			key:      map[string]any{},
+			expected: missingOperatorTagValue,
+		},
+		{
+			name:     "empty string",
+			key:      map[string]any{fieldOperatorId: ""},
+			expected: missingOperatorTagValue,
+		},
+		{
+			name:     "present operator",
+			key:      map[string]any{fieldOperatorId: "parse-abc"},
+			expected: "parse-abc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := aggKeyString(tt.key, fieldOperatorId)
+			if got != tt.expected {
+				t.Fatalf("aggKeyString() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNewRequestSourceTermsAgg_UsesMissingValueForAbsentTag(t *testing.T) {
+	agg := newRequestSourceTermsAgg(fieldOperatorId)
+	script := agg.Terms.Script.Source
+	if !strings.Contains(script, fieldOperatorId) {
+		t.Fatalf("expected painless script to reference %q, got %q", fieldOperatorId, script)
+	}
+	if !strings.Contains(script, `'N/A'`) {
+		t.Fatalf("expected painless script to default missing values to N/A, got %q", script)
 	}
 }

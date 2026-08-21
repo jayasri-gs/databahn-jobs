@@ -233,13 +233,34 @@ func Search(ctx context.Context, client *opensearch.Client, index string, query 
 }
 
 func CompositePaginatedAggregate(ctx context.Context, cli *opensearch.Client, size int, indexName, query string, groupBy []string, aggregations []AggregationFunction, after map[string]any) ([]AggResponse, map[string]any, error) {
+	return compositePaginatedAggregate(ctx, cli, size, indexName, query, groupBy, nil, aggregations, after)
+}
+
+// CompositePaginatedAggregateWithNAMissing uses a painless script for listed groupBy fields so
+// documents missing that field bucket as "N/A", matching stats rollover aggregation behavior.
+func CompositePaginatedAggregateWithNAMissing(ctx context.Context, cli *opensearch.Client, size int, indexName, query string, groupBy []string, missingAsNA []string, aggregations []AggregationFunction, after map[string]any) ([]AggResponse, map[string]any, error) {
+	return compositePaginatedAggregate(ctx, cli, size, indexName, query, groupBy, missingAsNA, aggregations, after)
+}
+
+func compositePaginatedAggregate(ctx context.Context, cli *opensearch.Client, size int, indexName, query string, groupBy []string, missingAsNA []string, aggregations []AggregationFunction, after map[string]any) ([]AggResponse, map[string]any, error) {
+	missingAsNASet := make(map[string]bool, len(missingAsNA))
+	for _, field := range missingAsNA {
+		missingAsNASet[field] = true
+	}
+
 	req := CompositeAggRequest{}
 	req.Size = 0
 	req.Query.QueryString.Query = query
 	req.Aggs.GroupBy.Composite.Sources = make([]map[string]SourceTerms, 0)
 	for _, group := range groupBy {
 		src := make(map[string]SourceTerms)
-		src[group] = SourceTerms{Terms: Field{Field: group}}
+		if missingAsNASet[group] {
+			src[group] = sourceTermsMissingAsNA(group)
+		} else {
+			terms := SourceTerms{}
+			terms.Terms.Field = group
+			src[group] = terms
+		}
 		req.Aggs.GroupBy.Composite.Sources = append(req.Aggs.GroupBy.Composite.Sources, src)
 	}
 	req.Aggs.GroupBy.Composite.After = after
@@ -459,8 +480,21 @@ type Sort struct {
 
 type SourceTerms struct {
 	Terms struct {
-		Field string `json:"field"`
+		Field  string       `json:"field,omitempty"`
+		Script *ScriptTerms `json:"script,omitempty"`
 	} `json:"terms"`
+}
+
+type ScriptTerms struct {
+	Source string `json:"source"`
+	Lang   string `json:"lang"`
+}
+
+func sourceTermsMissingAsNA(field string) SourceTerms {
+	script := fmt.Sprintf("if ((!doc.containsKey('%s')) || doc['%s'].size() == 0) { return 'N/A'; } else { return doc['%s'].value; }", field, field, field)
+	terms := SourceTerms{}
+	terms.Terms.Script = &ScriptTerms{Source: script, Lang: "painless"}
+	return terms
 }
 
 type Field struct {
