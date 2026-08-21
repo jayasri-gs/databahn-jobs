@@ -26,6 +26,7 @@ const (
 	DestTypeS3Parquet            = "S3_PARQUET"
 	DestTypeAzureBlob            = "AZURE_BLOB"
 	DestTypeAWSSecurityLake      = "AWS_SECURITY_LAKE"
+	DestTypeAzureDataExplorer    = "AZURE_DATA_EXPLORER"
 	ExternalProviderS3           = "S3"
 	ExternalProviderSecurityLake = "SECURITY_LAKE"
 	ExternalProviderAzureBlob    = "AZURE_BLOB"
@@ -83,6 +84,8 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider string) strin
 			return QueryEngineAthena
 		case DestTypeAzureBlob:
 			return QueryEngineSynapse
+		case DestTypeAzureDataExplorer:
+			return QueryEngineKustoADX
 		}
 	case StoreTypeDatabahnInsights, StoreTypeDatabahnStorage:
 		return QueryEngineAthena
@@ -185,6 +188,13 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 				return nil, err
 			}
 			result.StagingBlob = blobCfg
+		case DestTypeAzureDataExplorer:
+			adxCfg, err := destination.LoadPipelineADXConfig(ctx, db, *row.DestinationID, tenantID)
+			if err != nil {
+				return nil, err
+			}
+			result.ADX = adxCfg
+			result.ExternalSearchProvider = ExternalProviderADX
 		}
 	}
 
@@ -203,7 +213,7 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 		result.StagingS3 = staging
 	}
 
-	if result.QueryEngine == QueryEngineKustoADX {
+	if result.QueryEngine == QueryEngineKustoADX && result.ADX == nil {
 		adxCfg, err := loadADXConfig(ctx, db, dataStoreID, tenantID, secretID, connector)
 		if err != nil {
 			return nil, err
@@ -247,6 +257,8 @@ func loadExternalAthenaStaging(
 
 // loadADXConfig resolves Azure Data Explorer cluster credentials for an EXTERNAL_STORAGE
 // store, overlaying azure_client_secret from Secrets Manager when the store references one.
+// Pipeline (DATABAHN_DESTINATION) ADX stores take their credentials from the linked
+// destination instead — see destination.LoadPipelineADXConfig.
 func loadADXConfig(
 	ctx context.Context,
 	db *gorm.DB,

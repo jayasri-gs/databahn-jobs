@@ -20,6 +20,7 @@ func TestDeriveQueryEngine(t *testing.T) {
 		{StoreTypeExternalStorage, "", ExternalProviderADX, QueryEngineKustoADX},
 		{StoreTypeDerivedDatastore, "", ExternalProviderADX, QueryEngineKustoADX},
 		{StoreTypeDatabahnDestination, DestTypeAzureBlob, ExternalProviderADX, QueryEngineSynapse},
+		{StoreTypeDatabahnDestination, DestTypeAzureDataExplorer, "", QueryEngineKustoADX},
 	}
 	for _, tc := range tests {
 		got := DeriveQueryEngine(tc.storeType, tc.destType, tc.extProvider)
