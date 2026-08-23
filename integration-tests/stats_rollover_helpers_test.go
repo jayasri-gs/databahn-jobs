@@ -86,6 +86,9 @@ func statsIndexMappings() map[string]any {
 	}
 }
 
+// createStatsTestIndex tries explicit index creation for local OpenSearch clusters.
+// CI clusters often block the create-index API (FORBIDDEN/10); in that case we rely on
+// the db_statistics index template registered in TestMain and auto-create on bulk index.
 func createStatsTestIndex(t *testing.T, ctx context.Context, openSearch *pramaan.OpenSearchPramaan, indexName string) {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{"mappings": statsIndexMappings()})
@@ -103,9 +106,11 @@ func createStatsTestIndex(t *testing.T, ctx context.Context, openSearch *pramaan
 	defer resp.Body.Close()
 	if resp.IsError() {
 		raw, _ := io.ReadAll(resp.Body)
-		if !bytes.Contains(raw, []byte("resource_already_exists_exception")) {
-			t.Fatalf("create stats index %s failed, status %d: %s", indexName, resp.StatusCode, string(raw))
+		if bytes.Contains(raw, []byte("resource_already_exists_exception")) ||
+			bytes.Contains(raw, []byte("index_create_block_exception")) {
+			return
 		}
+		t.Fatalf("create stats index %s failed, status %d: %s", indexName, resp.StatusCode, string(raw))
 	}
 }
 
