@@ -8,7 +8,12 @@ import (
 	"github.com/databahn-ai/databahn-jobs/internal/store/destination"
 )
 
-const testStagingBucket = "authorized-staging-bucket"
+const (
+	testStagingBucket = "authorized-staging-bucket"
+	testBucket        = "my-bucket"
+	// Reuses the production constant so the tests cannot drift from the real key.
+	testOutputSuffix = "/" + databahnAthenaOutputPrefix
+)
 
 func testStaging() *destination.S3Config {
 	return &destination.S3Config{Region: "us-east-1", Bucket: testStagingBucket}
@@ -19,7 +24,7 @@ func TestAthenaOutputLocationForDerivesFromStaging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("athenaOutputLocationFor: %v", err)
 	}
-	if want := "s3://" + testStagingBucket + "/.databahn_out"; got != want {
+	if want := "s3://" + testStagingBucket + testOutputSuffix; got != want {
 		t.Fatalf("location = %q, want %q", got, want)
 	}
 }
@@ -61,7 +66,7 @@ func TestResolveAthenaClientConfigIgnoresReportConfiguredOutputLocation(t *testi
 		"s3://" + testStagingBucket + "/out\nX-Injected: true",
 		"s3://" + testStagingBucket + "/out\x00",
 	}
-	want := "s3://" + testStagingBucket + "/.databahn_out"
+	want := "s3://" + testStagingBucket + testOutputSuffix
 
 	for _, location := range hostile {
 		got, err := resolveAthenaClientConfig(
@@ -78,11 +83,11 @@ func TestResolveAthenaClientConfigIgnoresReportConfiguredOutputLocation(t *testi
 func TestValidateAthenaOutputLocation(t *testing.T) {
 	valid := []struct{ location, bucket string }{
 		{"s3://amazon-security-lake-us-east-1/.databahn_out", "amazon-security-lake-us-east-1"},
-		{"s3://my-bucket/.databahn_out", "my-bucket"},
+		{"s3://" + testBucket + testOutputSuffix, testBucket},
 		{"s3://my.bucket.with.dots/prefix/nested", "my.bucket.with.dots"},
 		{"s3://abc", "abc"},
-		{"s3://my-bucket", "my-bucket"},
-		{"s3://my-bucket/", "my-bucket"},
+		{"s3://my-bucket", testBucket},
+		{"s3://my-bucket/", testBucket},
 	}
 	for _, tc := range valid {
 		if err := validateAthenaOutputLocation(tc.location, tc.bucket); err != nil {
@@ -114,7 +119,7 @@ func TestValidateAthenaOutputLocation(t *testing.T) {
 	}
 	for _, tc := range invalid {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := validateAthenaOutputLocation(tc.location, "my-bucket"); err == nil {
+			if err := validateAthenaOutputLocation(tc.location, testBucket); err == nil {
 				t.Fatalf("validateAthenaOutputLocation(%q) = nil, want an error", tc.location)
 			}
 		})
@@ -124,7 +129,7 @@ func TestValidateAthenaOutputLocation(t *testing.T) {
 func TestValidateAthenaOutputLocationBindsToStagingBucket(t *testing.T) {
 	const staging = "authorized-staging-bucket"
 
-	if err := validateAthenaOutputLocation("s3://"+staging+"/.databahn_out", staging); err != nil {
+	if err := validateAthenaOutputLocation("s3://"+staging+testOutputSuffix, staging); err != nil {
 		t.Fatalf("matching bucket rejected: %v", err)
 	}
 
@@ -153,7 +158,7 @@ func TestResolveAthenaClientConfigStillHonoursRegionOverride(t *testing.T) {
 	if got.Region != "eu-west-1" {
 		t.Fatalf("region = %q, want the override applied", got.Region)
 	}
-	if want := "s3://" + testStagingBucket + "/.databahn_out"; got.OutputLocation != want {
+	if want := "s3://" + testStagingBucket + testOutputSuffix; got.OutputLocation != want {
 		t.Fatalf("outputLocation = %q, want %q", got.OutputLocation, want)
 	}
 }

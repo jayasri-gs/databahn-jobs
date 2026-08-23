@@ -7,7 +7,7 @@ func TestApplyS3CredentialOverrides_overlaysSecretFields(t *testing.T) {
 		AuthType: "role_based",
 		RoleArn:  "********",
 		Region:   "us-east-1",
-		Bucket:   "sl-athena-out",
+		Bucket:   testAthenaOutBucket,
 	}
 	ApplyS3CredentialOverrides(cfg, map[string]string{
 		"role_arn":          "arn:aws:iam::999:role/lake",
@@ -29,9 +29,9 @@ func TestS3ConfigFromExternalConnector_prefersOutputBucket(t *testing.T) {
 		"role_arn":      "arn:aws:iam::123:role/test",
 		"region":        "us-east-1",
 		"bucket":        "lake-bucket",
-		"output_bucket": "sl-athena-out",
+		"output_bucket": testAthenaOutBucket,
 	})
-	if cfg.Bucket != "sl-athena-out" {
+	if cfg.Bucket != testAthenaOutBucket {
 		t.Fatalf("bucket = %q, want sl-athena-out", cfg.Bucket)
 	}
 	if cfg.AthenaOutputLocation() != "s3://sl-athena-out/.databahn_out" {

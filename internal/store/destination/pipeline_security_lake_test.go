@@ -4,18 +4,18 @@ import "testing"
 
 func TestPipelineSecurityLakeConnector_mapsDestinationKeys(t *testing.T) {
 	connector, err := pipelineSecurityLakeConnector(map[string]string{
-		pipelineAWSRegion:            "us-east-1",
+		pipelineAWSRegion:            testAWSRegion,
 		pipelineSecurityLakeRoleARN:  "arn:aws:iam::123456789012:role/sl-role",
 		pipelineAWSExternalID:        "ext-123",
 		pipelineCustomSourceLocation: "s3://custom-lake-bucket/custom-source/",
 		pipelineAWSAccountID:         "123456789012",
 		pipelineOCSFID:               "4002",
-		connectorOutputBucket:        "sl-athena-out",
+		connectorOutputBucket:        testAthenaOutBucket,
 	})
 	if err != nil {
 		t.Fatalf("pipelineSecurityLakeConnector: %v", err)
 	}
-	if connector[connectorRegion] != "us-east-1" {
+	if connector[connectorRegion] != testAWSRegion {
 		t.Fatalf("region = %q", connector[connectorRegion])
 	}
 	if connector[connectorRoleARN] != "arn:aws:iam::123456789012:role/sl-role" {
@@ -24,12 +24,12 @@ func TestPipelineSecurityLakeConnector_mapsDestinationKeys(t *testing.T) {
 	if connector[connectorBucket] != "custom-lake-bucket" {
 		t.Fatalf("bucket = %q", connector[connectorBucket])
 	}
-	if connector[connectorOutputBucket] != "sl-athena-out" {
+	if connector[connectorOutputBucket] != testAthenaOutBucket {
 		t.Fatalf("output_bucket = %q", connector[connectorOutputBucket])
 	}
 
 	staging := S3ConfigFromExternalConnector(connector)
-	if staging.Bucket != "sl-athena-out" {
+	if staging.Bucket != testAthenaOutBucket {
 		t.Fatalf("staging bucket = %q", staging.Bucket)
 	}
 	if staging.AthenaOutputLocation() != "s3://sl-athena-out/.databahn_out" {
@@ -45,7 +45,7 @@ func TestResolvePipelineSecurityLakeBucket_defaultsFromRegion(t *testing.T) {
 }
 
 func TestResolvePipelineSecurityLakeBucket_rejectsQuotedCustomSource(t *testing.T) {
-	got := resolvePipelineSecurityLakeBucket(map[string]string{}, "us-east-1", "s3://evil'/custom-source/")
+	got := resolvePipelineSecurityLakeBucket(map[string]string{}, testAWSRegion, "s3://evil'/custom-source/")
 	if got != "aws-security-data-lake-us-east-1" {
 		t.Fatalf("bucket = %q, want the region default", got)
 	}

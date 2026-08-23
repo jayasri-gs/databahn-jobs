@@ -28,7 +28,7 @@ func TestParseS3ConfigFromWrapper_InlineCredentials(t *testing.T) {
 			"auth_type":         "key_based",
 			"access_key_id":     "test-access-key-id",
 			"secret_access_key": "test-secret-value",
-			"region":            "us-east-1",
+			"region":            testAWSRegion,
 			"bucket":            "test-bucket",
 		},
 	}
@@ -40,7 +40,7 @@ func TestParseS3ConfigFromWrapper_InlineCredentials(t *testing.T) {
 	assertField(t, "auth_type", "key_based", cfg.AuthType, false)
 	assertField(t, "access_key_id", "test-access-key-id", cfg.AccessKeyID, true)
 	assertField(t, "secret_access_key", "test-secret-value", cfg.SecretAccessKey, true)
-	assertField(t, "region", "us-east-1", cfg.Region, false)
+	assertField(t, "region", testAWSRegion, cfg.Region, false)
 	assertField(t, "bucket", "test-bucket", cfg.Bucket, false)
 }
 
@@ -91,7 +91,7 @@ func TestParseS3ConfigFromWrapper_SecretOverlay(t *testing.T) {
 func TestParseS3ConfigFromWrapper_MissingBucket(t *testing.T) {
 	wrapper := ConfigWrapper{
 		Configuration: map[string]string{
-			"region": "us-east-1",
+			"region": testAWSRegion,
 		},
 	}
 	_, err := parseS3ConfigFromWrapper(wrapper, nil)

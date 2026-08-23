@@ -30,7 +30,7 @@ func TestDecodeLogAnalyticsResponse(t *testing.T) {
 
 	columns, rows, n, err := collect(t, body)
 	if err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatalf(errDecodeResponse, err)
 	}
 	if n != 2 || len(rows) != 2 {
 		t.Fatalf("rows = %d, decoded %d", n, len(rows))
@@ -95,14 +95,14 @@ func TestDecodeLogAnalyticsResponseEmptyResult(t *testing.T) {
 	body := `{"tables":[{"name":"PrimaryResult","columns":[{"name":"A","type":"string"}],"rows":[]}]}`
 	columns, rows, n, err := collect(t, body)
 	if err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatalf(errDecodeResponse, err)
 	}
 	if n != 0 || len(rows) != 0 {
 		t.Fatalf("expected no rows, got %d", n)
 	}
 	// Columns still arrive, so an empty export writes a header rather than failing.
 	if !sameColumns(columns, []string{"A"}) {
-		t.Fatalf("columns = %v", columns)
+		t.Fatalf(gotColumns, columns)
 	}
 }
 
@@ -113,13 +113,13 @@ func TestDecodeLogAnalyticsResponseIgnoresExtraTables(t *testing.T) {
 		`{"name":"QueryStatistics","columns":[{"name":"B","type":"long"}],"rows":[[1],[2]]}]}`
 	columns, rows, n, err := collect(t, body)
 	if err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatalf(errDecodeResponse, err)
 	}
 	if n != 1 || len(rows) != 1 || rows[0][0] != "one" {
 		t.Fatalf("rows = %v (n=%d)", rows, n)
 	}
 	if !sameColumns(columns, []string{"A"}) {
-		t.Fatalf("columns = %v", columns)
+		t.Fatalf(gotColumns, columns)
 	}
 }
 
@@ -129,13 +129,13 @@ func TestDecodeLogAnalyticsResponseRowsBeforeColumns(t *testing.T) {
 	body := `{"tables":[{"name":"PrimaryResult","rows":[["one"]],"columns":[{"name":"A","type":"string"}]}]}`
 	columns, rows, n, err := collect(t, body)
 	if err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatalf(errDecodeResponse, err)
 	}
 	if n != 1 || len(rows) != 1 || rows[0][0] != "one" {
 		t.Fatalf("rows = %v (n=%d)", rows, n)
 	}
 	if !sameColumns(columns, []string{"A"}) {
-		t.Fatalf("columns = %v", columns)
+		t.Fatalf(gotColumns, columns)
 	}
 }
 

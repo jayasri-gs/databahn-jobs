@@ -91,7 +91,7 @@ func TestADXGetQueryColumnsUsesQueryEndpoint(t *testing.T) {
 		t.Fatalf("GetQueryColumns: %v", err)
 	}
 	if len(cols) != 2 || cols[0] != "Timestamp" {
-		t.Fatalf("columns = %v", cols)
+		t.Fatalf(gotColumns, cols)
 	}
 	if gotPath != "/v1/rest/query" {
 		t.Fatalf("path = %q", gotPath)
@@ -135,7 +135,7 @@ func TestADXGetExecutionResultReturnsNamePrefix(t *testing.T) {
 		t.Fatalf("GetExecutionResult: %v", err)
 	}
 	if result.OutputLocation != "databahn_export_ab" {
-		t.Fatalf("output location = %q", result.OutputLocation)
+		t.Fatalf(gotOutputLocation, result.OutputLocation)
 	}
 }
 
@@ -152,7 +152,7 @@ func TestADXGetExecutionResultToleratesDetailsFailure(t *testing.T) {
 		t.Fatalf("GetExecutionResult should tolerate a details failure: %v", err)
 	}
 	if result.OutputLocation != "databahn_export_ab" {
-		t.Fatalf("output location = %q", result.OutputLocation)
+		t.Fatalf(gotOutputLocation, result.OutputLocation)
 	}
 }
 

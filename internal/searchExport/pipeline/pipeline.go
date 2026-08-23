@@ -44,7 +44,16 @@ type Pipeline struct {
 	log            *zap.Logger
 }
 
-func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, unloadExec query.UnloadExecutor, rowStream query.RowStreamExecutor, uploader upload.CloudUploader, stagingBlobCfg *destination.AzureBlobConfig, log *zap.Logger) *Pipeline {
+// Deps are the collaborators a run needs. Exactly one of Unload and RowStream is set,
+// depending on the engine the report selected.
+type Deps struct {
+	Unload      query.UnloadExecutor
+	RowStream   query.RowStreamExecutor
+	Uploader    upload.CloudUploader
+	StagingBlob *destination.AzureBlobConfig
+}
+
+func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExportConfig, deps Deps, log *zap.Logger) *Pipeline {
 	if log == nil {
 		log = logging.GetLogger()
 	}
@@ -53,14 +62,14 @@ func New(cfg PipelineConfig, reportID, exportName string, req *models.SearchExpo
 		request:        req,
 		reportID:       reportID,
 		exportName:     exportName,
-		unloadExec:     unloadExec,
-		rowStream:      rowStream,
-		uploader:       uploader,
-		stagingBlobCfg: stagingBlobCfg,
+		unloadExec:     deps.Unload,
+		rowStream:      deps.RowStream,
+		uploader:       deps.Uploader,
+		stagingBlobCfg: deps.StagingBlob,
 		log:            log,
 	}
-	if stagingBlobCfg != nil {
-		if ce, ok := rowStream.(query.CETASExecutor); ok {
+	if deps.StagingBlob != nil {
+		if ce, ok := deps.RowStream.(query.CETASExecutor); ok {
 			p.cetasExec = ce
 		}
 	}

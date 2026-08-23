@@ -29,7 +29,7 @@ func newTestSentinelExecutor(t *testing.T, handler http.HandlerFunc) *SentinelEx
 		MaxRetries:  2,
 	})
 	if err != nil {
-		t.Fatalf("NewSentinelExecutor: %v", err)
+		t.Fatalf(errNewSentinelExecutor, err)
 	}
 	transport := exec.transport.(*logAnalyticsTransport)
 	transport.cfg.Endpoint = srv.URL
@@ -57,12 +57,12 @@ func TestSentinelExecutorSendsQueryRequest(t *testing.T) {
 	var columns []string
 	var rows [][]interface{}
 	opts := StreamRowsOptions{OnColumns: func(cols []string) error { columns = cols; return nil }}
-	n, err := exec.StreamRows(context.Background(), "SecurityEvent | take 10", opts, func(row []interface{}) error {
+	n, err := exec.StreamRows(context.Background(), testSentinelQuery, opts, func(row []interface{}) error {
 		rows = append(rows, row)
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("StreamRows: %v", err)
+		t.Fatalf(errStreamRows, err)
 	}
 
 	if n != 2 || len(rows) != 2 {
@@ -78,7 +78,7 @@ func TestSentinelExecutorSendsQueryRequest(t *testing.T) {
 		t.Fatalf("prefer = %q, want the ten-minute service ceiling", gotPrefer)
 	}
 	// The KQL arrives fully planned and must run verbatim.
-	if gotQuery != "SecurityEvent | take 10" {
+	if gotQuery != testSentinelQuery {
 		t.Fatalf("query = %q", gotQuery)
 	}
 	// No timespan: the time filter is already in the query, and a server-side timespan
@@ -87,7 +87,7 @@ func TestSentinelExecutorSendsQueryRequest(t *testing.T) {
 		t.Fatalf("request should not carry a timespan: %v", gotBody)
 	}
 	if !sameColumns(columns, []string{"TimeGenerated", "Account"}) {
-		t.Fatalf("columns = %v", columns)
+		t.Fatalf(gotColumns, columns)
 	}
 	if rows[1][1] != "bob" {
 		t.Fatalf("row = %v", rows[1])
@@ -101,7 +101,7 @@ func TestSentinelExecutorRunsOneQueryPerExport(t *testing.T) {
 		_, _ = w.Write([]byte(sentinelTwoRowResponse))
 	})
 	if _, err := exec.StreamRows(context.Background(), "SecurityEvent", StreamRowsOptions{}, func([]interface{}) error { return nil }); err != nil {
-		t.Fatalf("StreamRows: %v", err)
+		t.Fatalf(errStreamRows, err)
 	}
 	if requests != 1 {
 		t.Fatalf("issued %d requests, want 1 — chunking is deliberately not enabled", requests)
@@ -137,7 +137,7 @@ func TestSentinelExecutorRetriesThrottling(t *testing.T) {
 
 	n, err := exec.StreamRows(context.Background(), "SecurityEvent", StreamRowsOptions{}, func([]interface{}) error { return nil })
 	if err != nil {
-		t.Fatalf("StreamRows: %v", err)
+		t.Fatalf(errStreamRows, err)
 	}
 	if attempts != 2 {
 		t.Fatalf("attempts = %d, want a retry after 429", attempts)
@@ -214,14 +214,14 @@ func TestSentinelExecutorEmptyResultStillResolvesColumns(t *testing.T) {
 	opts := StreamRowsOptions{OnColumns: func(cols []string) error { columns = cols; return nil }}
 	n, err := exec.StreamRows(context.Background(), "SecurityEvent", opts, func([]interface{}) error { return nil })
 	if err != nil {
-		t.Fatalf("StreamRows: %v", err)
+		t.Fatalf(errStreamRows, err)
 	}
 	if n != 0 {
 		t.Fatalf("rows = %d", n)
 	}
 	// An empty export must still write a header rather than fail for missing columns.
 	if !sameColumns(columns, []string{"A"}) {
-		t.Fatalf("columns = %v", columns)
+		t.Fatalf(gotColumns, columns)
 	}
 }
 
@@ -239,7 +239,7 @@ func TestSentinelExecutorGetQueryColumnsUsesTakeZero(t *testing.T) {
 		t.Fatalf("GetQueryColumns: %v", err)
 	}
 	if !sameColumns(cols, []string{"A"}) {
-		t.Fatalf("columns = %v", cols)
+		t.Fatalf(gotColumns, cols)
 	}
 	if !strings.HasSuffix(gotQuery, "| take 0") {
 		t.Fatalf("query = %q, want a schema-only probe", gotQuery)
@@ -259,7 +259,7 @@ func TestNewSentinelExecutorRejectsLakeTier(t *testing.T) {
 func TestNewSentinelExecutorDefaults(t *testing.T) {
 	exec, err := NewSentinelExecutor(SentinelConfig{WorkspaceID: "ws"})
 	if err != nil {
-		t.Fatalf("NewSentinelExecutor: %v", err)
+		t.Fatalf(errNewSentinelExecutor, err)
 	}
 	if exec.Engine() != EngineSentinelLAW {
 		t.Fatalf("engine = %q", exec.Engine())
@@ -279,7 +279,7 @@ func TestNewSentinelExecutorDefaults(t *testing.T) {
 func TestSentinelExecutorValidateExportQuery(t *testing.T) {
 	exec, err := NewSentinelExecutor(SentinelConfig{WorkspaceID: "ws"})
 	if err != nil {
-		t.Fatalf("NewSentinelExecutor: %v", err)
+		t.Fatalf(errNewSentinelExecutor, err)
 	}
 	if err := exec.ValidateExportQuery(context.Background(), "  "); err == nil {
 		t.Fatal("blank query should be rejected")
@@ -298,7 +298,7 @@ func TestPlanSentinelQueriesIsSingleRequest(t *testing.T) {
 	if len(plans) != 1 {
 		t.Fatalf("plans = %d, want 1", len(plans))
 	}
-	if plans[0].KQL != "SecurityEvent | take 10" {
+	if plans[0].KQL != testSentinelQuery {
 		t.Fatalf("kql = %q, want the planned query verbatim", plans[0].KQL)
 	}
 }

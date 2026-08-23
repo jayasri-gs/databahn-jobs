@@ -143,7 +143,12 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		zap.String("engine", deps.QueryEngine),
 		zap.Bool("legacyMode", deps.LegacyMode))
 
-	p := pipeline.New(cfg, reportID, report.Name, exportConfig, deps.Unload, deps.RowStream, deps.Uploader, deps.StagingBlobConfig, log)
+	p := pipeline.New(cfg, reportID, report.Name, exportConfig, pipeline.Deps{
+		Unload:      deps.Unload,
+		RowStream:   deps.RowStream,
+		Uploader:    deps.Uploader,
+		StagingBlob: deps.StagingBlobConfig,
+	}, log)
 
 	// queryExecutionID starts as whatever the report row carried (set for a resumed job)
 	// and is replaced by the id this attempt starts, so cleanup can cancel the right one.

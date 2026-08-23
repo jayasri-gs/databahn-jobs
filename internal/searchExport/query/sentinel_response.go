@@ -16,6 +16,14 @@ import (
 // memory or ~64 MB result limit returns HTTP 200 with *both* an "error" object and a
 // truncated "tables" array — see sentinelResultError.
 
+// Wrap messages for the streaming decoder, kept as constants because each is used at several
+// points in the walk.
+const (
+	errParseLAWResponse = "parse Log Analytics response: %w"
+	errParseLAWTables   = "parse Log Analytics tables: %w"
+	errParseLAWTable    = "parse Log Analytics table: %w"
+)
+
 type lawColumn struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
@@ -89,7 +97,7 @@ func decodeLogAnalyticsResponse(r io.Reader, onColumns func([]string) error, onR
 	dec.UseNumber()
 
 	if err := expectDelim(dec, '{'); err != nil {
-		return 0, fmt.Errorf("parse Log Analytics response: %w", err)
+		return 0, fmt.Errorf(errParseLAWResponse, err)
 	}
 
 	var apiErr *lawError
@@ -99,7 +107,7 @@ func decodeLogAnalyticsResponse(r io.Reader, onColumns func([]string) error, onR
 	for dec.More() {
 		key, err := objectKey(dec)
 		if err != nil {
-			return rows, fmt.Errorf("parse Log Analytics response: %w", err)
+			return rows, fmt.Errorf(errParseLAWResponse, err)
 		}
 		switch key {
 		case "tables":
@@ -114,7 +122,7 @@ func decodeLogAnalyticsResponse(r io.Reader, onColumns func([]string) error, onR
 			}
 		default:
 			if err := skipValue(dec); err != nil {
-				return rows, fmt.Errorf("parse Log Analytics response: %w", err)
+				return rows, fmt.Errorf(errParseLAWResponse, err)
 			}
 		}
 	}
@@ -124,13 +132,13 @@ func decodeLogAnalyticsResponse(r io.Reader, onColumns func([]string) error, onR
 
 func decodeLAWTables(dec *json.Decoder, tableIndex *int, onColumns func([]string) error, onRow func([]interface{}) error) (int64, error) {
 	if err := expectDelim(dec, '['); err != nil {
-		return 0, fmt.Errorf("parse Log Analytics tables: %w", err)
+		return 0, fmt.Errorf(errParseLAWTables, err)
 	}
 	var rows int64
 	for dec.More() {
 		if *tableIndex > 0 {
 			if err := skipValue(dec); err != nil {
-				return rows, fmt.Errorf("parse Log Analytics tables: %w", err)
+				return rows, fmt.Errorf(errParseLAWTables, err)
 			}
 			*tableIndex++
 			continue
@@ -143,14 +151,14 @@ func decodeLAWTables(dec *json.Decoder, tableIndex *int, onColumns func([]string
 		}
 	}
 	if err := expectDelim(dec, ']'); err != nil {
-		return rows, fmt.Errorf("parse Log Analytics tables: %w", err)
+		return rows, fmt.Errorf(errParseLAWTables, err)
 	}
 	return rows, nil
 }
 
 func decodeLAWTable(dec *json.Decoder, onColumns func([]string) error, onRow func([]interface{}) error) (int64, error) {
 	if err := expectDelim(dec, '{'); err != nil {
-		return 0, fmt.Errorf("parse Log Analytics table: %w", err)
+		return 0, fmt.Errorf(errParseLAWTable, err)
 	}
 
 	var columns []string
@@ -167,7 +175,7 @@ func decodeLAWTable(dec *json.Decoder, onColumns func([]string) error, onRow fun
 	for dec.More() {
 		key, err := objectKey(dec)
 		if err != nil {
-			return rows, fmt.Errorf("parse Log Analytics table: %w", err)
+			return rows, fmt.Errorf(errParseLAWTable, err)
 		}
 		switch key {
 		case "columns":
@@ -212,13 +220,13 @@ func decodeLAWTable(dec *json.Decoder, onColumns func([]string) error, onRow fun
 			}
 		default:
 			if err := skipValue(dec); err != nil {
-				return rows, fmt.Errorf("parse Log Analytics table: %w", err)
+				return rows, fmt.Errorf(errParseLAWTable, err)
 			}
 		}
 	}
 
 	if err := expectDelim(dec, '}'); err != nil {
-		return rows, fmt.Errorf("parse Log Analytics table: %w", err)
+		return rows, fmt.Errorf(errParseLAWTable, err)
 	}
 	if len(pending) > 0 {
 		return rows, fmt.Errorf("Log Analytics response contained rows without a column schema")

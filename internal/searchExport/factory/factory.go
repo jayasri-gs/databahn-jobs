@@ -301,7 +301,11 @@ func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destinat
 func IsSupportedExportMatrix(queryEngine, destType string) bool {
 	dest := strings.ToUpper(destType)
 	switch strings.ToUpper(queryEngine) {
-	case models.QueryEngineAthena, models.QueryEngineSynapse:
+	// These engines never write through the export destination while the query runs: Athena
+	// and Synapse stage into their own storage, and Sentinel rows are encoded in the worker
+	// and uploaded client-side. The destination is only the write target, so any type the
+	// uploader supports works.
+	case models.QueryEngineAthena, models.QueryEngineSynapse, models.QueryEngineKustoLAW:
 		switch dest {
 		case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
 			return true
@@ -311,14 +315,6 @@ func IsSupportedExportMatrix(queryEngine, destType string) bool {
 		// ADX .export writes into the export destination's own blob container,
 		// so Azure Blob is the only supported export destination.
 		return dest == models.DestTypeAzureBlob
-	case models.QueryEngineKustoLAW:
-		// Sentinel rows are encoded in the worker and uploaded client-side, so any
-		// destination the uploader supports works.
-		switch dest {
-		case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
-			return true
-		}
-		return false
 	default:
 		return false
 	}

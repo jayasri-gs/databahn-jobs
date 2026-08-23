@@ -103,7 +103,7 @@ func (m *mockSentinel) StreamRows(_ context.Context, kql string, opts query.Stre
 func newSentinelPipeline(t *testing.T, exec query.RowStreamExecutor, up upload.CloudUploader, cfg *models.SearchExportConfig) *Pipeline {
 	t.Helper()
 	return New(PipelineConfig{MaxSegmentSizeMB: 1, PresignExpiry: time.Hour},
-		"report-1", "Search Export - 2026-08-20 10:00:00", cfg, nil, exec, up, nil, nil)
+		testReportID, "Search Export - 2026-08-20 10:00:00", cfg, Deps{RowStream: exec, Uploader: up}, nil)
 }
 
 func TestPipelineRun_UsesSentinelBranch(t *testing.T) {
@@ -120,13 +120,13 @@ func TestPipelineRun_UsesSentinelBranch(t *testing.T) {
 
 	result, err := p.Run(context.Background(), "exports", nil)
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf(errPipelineRun, err)
 	}
 	if !mock.connected {
 		t.Fatal("executor was not connected")
 	}
 	if result.TotalRows != 2 {
-		t.Fatalf("totalRows = %d", result.TotalRows)
+		t.Fatalf(gotTotalRows, result.TotalRows)
 	}
 	if !up.completed || up.aborted {
 		t.Fatalf("upload completed=%v aborted=%v", up.completed, up.aborted)
@@ -160,7 +160,7 @@ func TestPipelineSentinelExport_DynamicColumns(t *testing.T) {
 		p := newSentinelPipeline(t, &mockSentinel{columns: []string{"Account", "Props"}, rows: rows}, up,
 			&models.SearchExportConfig{Query: "SecurityEvent", Format: "csv"})
 		if _, err := p.Run(context.Background(), "exports", nil); err != nil {
-			t.Fatalf("Run: %v", err)
+			t.Fatalf(errPipelineRun, err)
 		}
 		if !strings.Contains(up.buf.String(), `"{""ip"":""10.0.0.1""}"`) {
 			t.Fatalf("csv = %q, want the dynamic column as JSON text", up.buf.String())
@@ -172,7 +172,7 @@ func TestPipelineSentinelExport_DynamicColumns(t *testing.T) {
 		p := newSentinelPipeline(t, &mockSentinel{columns: []string{"Account", "Props"}, rows: rows}, up,
 			&models.SearchExportConfig{Query: "SecurityEvent", Format: "json"})
 		if _, err := p.Run(context.Background(), "exports", nil); err != nil {
-			t.Fatalf("Run: %v", err)
+			t.Fatalf(errPipelineRun, err)
 		}
 		var record map[string]interface{}
 		if err := json.Unmarshal(bytes.TrimSpace(up.buf.Bytes()), &record); err != nil {
@@ -193,10 +193,10 @@ func TestPipelineSentinelExport_EmptyResult(t *testing.T) {
 
 	result, err := p.Run(context.Background(), "exports", nil)
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf(errPipelineRun, err)
 	}
 	if result.TotalRows != 0 {
-		t.Fatalf("totalRows = %d", result.TotalRows)
+		t.Fatalf(gotTotalRows, result.TotalRows)
 	}
 	if strings.TrimSpace(up.buf.String()) != "Account" {
 		t.Fatalf("expected a header-only export, got %q", up.buf.String())
@@ -236,7 +236,7 @@ func TestPipelineResumeRun_SentinelRestarts(t *testing.T) {
 		t.Fatalf("ResumeRun: %v", err)
 	}
 	if result.TotalRows != 1 {
-		t.Fatalf("totalRows = %d", result.TotalRows)
+		t.Fatalf(gotTotalRows, result.TotalRows)
 	}
 	if len(mock.queries) != 1 {
 		t.Fatalf("expected the query to be re-run, got %d executions", len(mock.queries))

@@ -81,7 +81,9 @@ func TestSentinelConfigValidate(t *testing.T) {
 		mutate  func(*SentinelConfig)
 		wantErr string
 	}{
-		{"valid", func(*SentinelConfig) {}, ""},
+		{"valid", func(*SentinelConfig) {
+			// Nothing to change: this case asserts the complete config validates.
+		}, ""},
 		{"missing workspace", func(c *SentinelConfig) { c.WorkspaceID = "" }, "workspace_id is required in connector configuration"},
 		{"missing tenant", func(c *SentinelConfig) { c.TenantID = "" }, "azure_tenant_id is required"},
 		{"missing client", func(c *SentinelConfig) { c.ClientID = "" }, "azure_client_id is required"},

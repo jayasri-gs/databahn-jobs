@@ -38,9 +38,8 @@ func (m *mockADX) NewStagingReader(string) (unload.StagingReader, error) {
 }
 
 func newADXPipeline(format, delimiter string) *Pipeline {
-	return New(PipelineConfig{TempDir: "/tmp"}, "report-1", "Search Export - 2026-07-15 10:00:00",
-		&models.SearchExportConfig{Query: "Logs | take 10", Format: format, Delimiter: delimiter},
-		&mockADX{}, nil, &mockUploader{}, nil, zap.NewNop())
+	return New(PipelineConfig{TempDir: "/tmp"}, testReportID, "Search Export - 2026-07-15 10:00:00",
+		&models.SearchExportConfig{Query: "Logs | take 10", Format: format, Delimiter: delimiter}, Deps{Unload: &mockADX{}, Uploader: &mockUploader{}}, zap.NewNop())
 }
 
 func TestADXUnloadOptions(t *testing.T) {
@@ -72,9 +71,8 @@ func TestADXUnloadOptions(t *testing.T) {
 }
 
 func TestAthenaUnloadOptionsUnchangedByADXBranch(t *testing.T) {
-	p := New(PipelineConfig{TempDir: "/tmp"}, "report-1", "Search Export - 2026-07-15 10:00:00",
-		&models.SearchExportConfig{Query: "SELECT 1", Format: "csv", Delimiter: ","},
-		&mockAthena{}, nil, &mockUploader{}, nil, zap.NewNop())
+	p := New(PipelineConfig{TempDir: "/tmp"}, testReportID, "Search Export - 2026-07-15 10:00:00",
+		&models.SearchExportConfig{Query: "SELECT 1", Format: "csv", Delimiter: ","}, Deps{Unload: &mockAthena{}, Uploader: &mockUploader{}}, zap.NewNop())
 	opts := p.unloadOptions()
 	if opts.Format != "textfile" {
 		t.Fatalf("athena csv unload format = %q, want textfile", opts.Format)
@@ -105,7 +103,7 @@ func TestCleanupADXStaging_CancelsOperationAndDeletesStagedBlobs(t *testing.T) {
 func TestCleanupADXStaging_WithoutOperationIDSkipsCancel(t *testing.T) {
 	exec := &mockADX{stagingReader: &mockStagingReader{}}
 
-	CleanupADXStaging(context.Background(), exec, "report-1", "", "/tmp", zap.NewNop())
+	CleanupADXStaging(context.Background(), exec, testReportID, "", "/tmp", zap.NewNop())
 
 	if exec.connected {
 		t.Error("no operation id means nothing to cancel, so no connection is needed")
@@ -119,5 +117,5 @@ func TestCleanupADXStaging_WithoutOperationIDSkipsCancel(t *testing.T) {
 }
 
 func TestCleanupADXStaging_NilExecutorIsNoop(t *testing.T) {
-	CleanupADXStaging(context.Background(), nil, "report-1", "op", "/tmp", zap.NewNop())
+	CleanupADXStaging(context.Background(), nil, testReportID, "op", "/tmp", zap.NewNop())
 }

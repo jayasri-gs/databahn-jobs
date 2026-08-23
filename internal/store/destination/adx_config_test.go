@@ -13,7 +13,7 @@ func TestADXConfigFromExternalConnector(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("expected config")
 	}
-	if cfg.ClusterURI != "https://cluster.eastus.kusto.windows.net" {
+	if cfg.ClusterURI != testADXClusterURI {
 		t.Fatalf("cluster uri = %q", cfg.ClusterURI)
 	}
 	if cfg.Database != "SecurityLogs" {
@@ -25,7 +25,7 @@ func TestADXConfigFromExternalConnector(t *testing.T) {
 }
 
 func TestApplyADXCredentialOverrides(t *testing.T) {
-	cfg := &ADXConfig{ClusterURI: "https://c", Database: "db", TenantID: "t", ClientID: "c"}
+	cfg := &ADXConfig{ClusterURI: testShortURI, Database: "db", TenantID: "t", ClientID: "c"}
 	ApplyADXCredentialOverrides(cfg, map[string]string{
 		"azure_client_secret": "shhh",
 		"azure_client_id":     "overridden",
@@ -41,17 +41,17 @@ func TestApplyADXCredentialOverrides(t *testing.T) {
 }
 
 func TestADXConfigValidate(t *testing.T) {
-	complete := ADXConfig{ClusterURI: "https://cluster.eastus.kusto.windows.net", Database: "db", TenantID: "t", ClientID: "c", ClientSecret: "s"}
+	complete := ADXConfig{ClusterURI: testADXClusterURI, Database: "db", TenantID: "t", ClientID: "c", ClientSecret: "s"}
 	if err := complete.Validate(); err != nil {
 		t.Fatalf("complete config rejected: %v", err)
 	}
 
 	missing := map[string]ADXConfig{
 		"adx_cluster_uri":     {Database: "db", TenantID: "t", ClientID: "c", ClientSecret: "s"},
-		"adx_database":        {ClusterURI: "https://c", TenantID: "t", ClientID: "c", ClientSecret: "s"},
-		"azure_tenant_id":     {ClusterURI: "https://c", Database: "db", ClientID: "c", ClientSecret: "s"},
-		"azure_client_id":     {ClusterURI: "https://c", Database: "db", TenantID: "t", ClientSecret: "s"},
-		"azure_client_secret": {ClusterURI: "https://c", Database: "db", TenantID: "t", ClientID: "c"},
+		"adx_database":        {ClusterURI: testShortURI, TenantID: "t", ClientID: "c", ClientSecret: "s"},
+		"azure_tenant_id":     {ClusterURI: testShortURI, Database: "db", ClientID: "c", ClientSecret: "s"},
+		"azure_client_id":     {ClusterURI: testShortURI, Database: "db", TenantID: "t", ClientSecret: "s"},
+		"azure_client_secret": {ClusterURI: testShortURI, Database: "db", TenantID: "t", ClientID: "c"},
 	}
 	for field, cfg := range missing {
 		err := cfg.Validate()
@@ -70,7 +70,7 @@ func TestADXConfigValidate(t *testing.T) {
 // constrained to real Azure Data Explorer hosts rather than anywhere a data store names.
 func TestValidateADXClusterURI(t *testing.T) {
 	valid := []string{
-		"https://cluster.eastus.kusto.windows.net",
+		testADXClusterURI,
 		"https://cluster.eastus.kusto.windows.net/",
 		"https://help.kusto.windows.net",
 		"https://ws.kusto.azuresynapse.net",

@@ -27,7 +27,7 @@ func TestGenerateContainerWriteSAS_SharedKey(t *testing.T) {
 	}
 	staging, err := GenerateContainerWriteSAS(context.Background(), cfg, time.Hour)
 	if err != nil {
-		t.Fatalf("GenerateContainerWriteSAS: %v", err)
+		t.Fatalf(errGenerateSAS, err)
 	}
 	if staging.AccountName != "acct" || staging.Container != "exports" {
 		t.Fatalf("staging = %+v", staging)
@@ -49,7 +49,7 @@ func TestGenerateContainerWriteSAS_SASConnectionString(t *testing.T) {
 	}
 	staging, err := GenerateContainerWriteSAS(context.Background(), cfg, time.Hour)
 	if err != nil {
-		t.Fatalf("GenerateContainerWriteSAS: %v", err)
+		t.Fatalf(errGenerateSAS, err)
 	}
 	if staging.AccountName != "acct" {
 		t.Fatalf("account name = %q", staging.AccountName)
@@ -96,7 +96,7 @@ func TestParseBlobConnectionStrings(t *testing.T) {
 // usableSASToken is a pre-configured token that can actually carry an export: write
 // permission, and an expiry well beyond the requested window.
 func usableSASToken() string {
-	return "sv=2024-11-04&sp=racw&se=" + time.Now().UTC().Add(48*time.Hour).Format(time.RFC3339) + "&sig=given"
+	return testSASPrefix + testSASExpiry() + testSASSignature
 }
 
 // A SAS-only connection string has no account key to sign a fresh token with, so the
@@ -104,11 +104,11 @@ func usableSASToken() string {
 // would surface as an opaque storage error inside Kusto instead of here.
 func TestGenerateContainerWriteSAS_RejectsUnusableConfiguredToken(t *testing.T) {
 	cases := []struct{ name, token string }{
-		{"expired", "sv=2024-11-04&sp=racw&se=" + time.Now().UTC().Add(-time.Hour).Format(time.RFC3339) + "&sig=given"},
-		{"expires before the export window ends", "sv=2024-11-04&sp=racw&se=" + time.Now().UTC().Add(10*time.Minute).Format(time.RFC3339) + "&sig=given"},
-		{"read only", "sv=2024-11-04&sp=rl&se=" + time.Now().UTC().Add(48*time.Hour).Format(time.RFC3339) + "&sig=given"},
-		{"no expiry", "sv=2024-11-04&sp=racw&sig=given"},
-		{"no permissions", "sv=2024-11-04&se=" + time.Now().UTC().Add(48*time.Hour).Format(time.RFC3339) + "&sig=given"},
+		{"expired", testSASPrefix + time.Now().UTC().Add(-time.Hour).Format(time.RFC3339) + testSASSignature},
+		{"expires before the export window ends", testSASPrefix + time.Now().UTC().Add(10*time.Minute).Format(time.RFC3339) + testSASSignature},
+		{"read only", "sv=2024-11-04&sp=rl&se=" + testSASExpiry() + testSASSignature},
+		{"no expiry", "sv=2024-11-04&sp=racw" + testSASSignature},
+		{"no permissions", "sv=2024-11-04&se=" + testSASExpiry() + testSASSignature},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestGenerateContainerWriteSAS_GrantsOnlyWritePermissions(t *testing.T) {
 	}
 	staging, err := GenerateContainerWriteSAS(context.Background(), cfg, time.Hour)
 	if err != nil {
-		t.Fatalf("GenerateContainerWriteSAS: %v", err)
+		t.Fatalf(errGenerateSAS, err)
 	}
 	values, err := url.ParseQuery(staging.SASToken)
 	if err != nil {

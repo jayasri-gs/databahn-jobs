@@ -148,7 +148,7 @@ func TestParseADXOperationStatus(t *testing.T) {
 	body := []byte(`{"Tables":[{"TableName":"Table_0","Columns":[{"ColumnName":"OperationId"},{"ColumnName":"State"},{"ColumnName":"Status"}],"Rows":[["op","Failed","Query execution has exceeded memory limit"]]}]}`)
 	state, status, err := ParseADXOperationStatus(body)
 	if err != nil {
-		t.Fatalf("ParseADXOperationStatus: %v", err)
+		t.Fatalf(errParseADXOpStatus, err)
 	}
 	if state != "Failed" || status != "Query execution has exceeded memory limit" {
 		t.Fatalf("state=%q status=%q", state, status)
@@ -179,7 +179,7 @@ func TestParseADXSchemaColumns(t *testing.T) {
 		t.Fatalf("ParseADXSchemaColumns: %v", err)
 	}
 	if len(cols) != 3 || cols[0] != "Timestamp" || cols[2] != "Level" {
-		t.Fatalf("columns = %v", cols)
+		t.Fatalf(gotColumns, cols)
 	}
 }
 
@@ -208,7 +208,7 @@ func TestParseADXOperationStatus_MultipleRows(t *testing.T) {
 	body := []byte(`{"Tables":[{"TableName":"Table_0","Columns":[{"ColumnName":"State"},{"ColumnName":"Status"}],"Rows":[["Failed","node lost"],["InProgress",""]]}]}`)
 	state, _, err := ParseADXOperationStatus(body)
 	if err != nil {
-		t.Fatalf("ParseADXOperationStatus: %v", err)
+		t.Fatalf(errParseADXOpStatus, err)
 	}
 	if MapADXOperationState(state) != QueryStateRunning {
 		t.Fatalf("state = %q, want a running state", state)
@@ -218,7 +218,7 @@ func TestParseADXOperationStatus_MultipleRows(t *testing.T) {
 	body = []byte(`{"Tables":[{"TableName":"Table_0","Columns":[{"ColumnName":"State"},{"ColumnName":"Status"}],"Rows":[["Failed","first"],["Completed",""]]}]}`)
 	state, _, err = ParseADXOperationStatus(body)
 	if err != nil {
-		t.Fatalf("ParseADXOperationStatus: %v", err)
+		t.Fatalf(errParseADXOpStatus, err)
 	}
 	if MapADXOperationState(state) != QueryStateSucceeded {
 		t.Fatalf("state = %q, want SUCCEEDED", state)
