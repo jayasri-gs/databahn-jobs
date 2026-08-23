@@ -92,7 +92,24 @@ func (e *AthenaExecutor) Connect(ctx context.Context) error {
 	return nil
 }
 
-func buildUnloadSQL(query, s3OutputPath string, opts UnloadOptions) string {
+func quoteAthenaUnloadURI(s3OutputPath string) (string, error) {
+	if strings.ContainsFunc(s3OutputPath, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return "", fmt.Errorf("athena unload path contains control characters")
+	}
+	if strings.ContainsAny(s3OutputPath, `'"\`) {
+		return "", fmt.Errorf("athena unload path contains quotes or escape characters")
+	}
+	if !strings.HasPrefix(s3OutputPath, "s3://") {
+		return "", fmt.Errorf("athena unload path must be an s3 URI")
+	}
+	return "'" + s3OutputPath + "'", nil
+}
+
+func buildUnloadSQL(query, s3OutputPath string, opts UnloadOptions) (string, error) {
+	location, err := quoteAthenaUnloadURI(s3OutputPath)
+	if err != nil {
+		return "", err
+	}
 	switch opts.Format {
 	case "textfile":
 		delim := opts.Delimiter
@@ -100,16 +117,16 @@ func buildUnloadSQL(query, s3OutputPath string, opts UnloadOptions) string {
 			delim = ","
 		}
 		return fmt.Sprintf(
-			"UNLOAD (%s) TO '%s' WITH (format = 'TEXTFILE', field_delimiter = '%s')",
-			query, s3OutputPath, strings.ReplaceAll(delim, "'", "''"),
-		)
+			"UNLOAD (%s) TO %s WITH (format = 'TEXTFILE', field_delimiter = '%s')",
+			query, location, strings.ReplaceAll(delim, "'", "''"),
+		), nil
 	case "json":
-		return fmt.Sprintf("UNLOAD (%s) TO '%s' WITH (format = 'JSON')", query, s3OutputPath)
+		return fmt.Sprintf("UNLOAD (%s) TO %s WITH (format = 'JSON')", query, location), nil
 	default:
 		return fmt.Sprintf(
-			"UNLOAD (%s) TO '%s' WITH (format = 'PARQUET', compression = 'SNAPPY')",
-			query, s3OutputPath,
-		)
+			"UNLOAD (%s) TO %s WITH (format = 'PARQUET', compression = 'SNAPPY')",
+			query, location,
+		), nil
 	}
 }
 
@@ -120,7 +137,10 @@ func (e *AthenaExecutor) NewStagingReader(tempDir string) (unload.StagingReader,
 }
 
 func (e *AthenaExecutor) ExecuteUnloadAsync(ctx context.Context, query, database, s3OutputPath string, opts UnloadOptions) (string, error) {
-	unloadQuery := buildUnloadSQL(query, s3OutputPath, opts)
+	unloadQuery, err := buildUnloadSQL(query, s3OutputPath, opts)
+	if err != nil {
+		return "", err
+	}
 	e.log.Info("Starting async UNLOAD query",
 		zap.String("database", database),
 		zap.String("outputPath", s3OutputPath),

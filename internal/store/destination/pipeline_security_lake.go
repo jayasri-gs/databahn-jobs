@@ -30,7 +30,8 @@ const (
 	connectorSecurityLake        = "security_lake"
 )
 
-var pipelineS3URIPrefix = regexp.MustCompile(`(?i)^s3://([^/]+)(?:/(.*))?$`)
+var pipelineS3URIPrefix = regexp.MustCompile(`(?i)^s3://([a-z0-9][a-z0-9.\-]{1,61}[a-z0-9])(?:/.*)?$`)
+var pipelineS3BucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$`)
 
 // LoadPipelineSecurityLakeS3Config resolves Athena staging credentials for a pipeline
 // AWS_SECURITY_LAKE destination (DATABAHN_DESTINATION search stores).
@@ -120,7 +121,7 @@ func requirePipelineConfig(config map[string]string, key, label string) (string,
 }
 
 func resolvePipelineSecurityLakeBucket(config map[string]string, region, customSourceLocation string) string {
-	if bucket := strings.TrimSpace(config[connectorBucket]); bucket != "" {
+	if bucket := strings.TrimSpace(config[connectorBucket]); pipelineS3BucketName.MatchString(bucket) {
 		return bucket
 	}
 	if matches := pipelineS3URIPrefix.FindStringSubmatch(strings.TrimSpace(customSourceLocation)); len(matches) > 1 {

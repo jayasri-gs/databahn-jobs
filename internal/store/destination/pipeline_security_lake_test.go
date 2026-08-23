@@ -43,3 +43,10 @@ func TestResolvePipelineSecurityLakeBucket_defaultsFromRegion(t *testing.T) {
 		t.Fatalf("bucket = %q", got)
 	}
 }
+
+func TestResolvePipelineSecurityLakeBucket_rejectsQuotedCustomSource(t *testing.T) {
+	got := resolvePipelineSecurityLakeBucket(map[string]string{}, "us-east-1", "s3://evil'/custom-source/")
+	if got != "aws-security-data-lake-us-east-1" {
+		t.Fatalf("bucket = %q, want the region default", got)
+	}
+}
