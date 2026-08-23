@@ -1,6 +1,6 @@
 # Object Service
 
-A unified object storage service supporting **S3** and **Azure Blob Storage** as backends. Use a single interface for Get, Put, Post, and Delete operations regardless of the underlying storage.
+A unified object storage service supporting **S3**, **Azure Blob Storage**, and **Google Cloud Storage** as backends. Use a single interface for Get, Put, Post, and Delete operations regardless of the underlying storage.
 
 ## Native Authentication
 
@@ -8,6 +8,7 @@ When keys are not provided in config, both backends use native/cloud auth:
 
 - **S3**: Uses AWS default credential chain (IAM role, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env, `~/.aws/credentials`, etc.)
 - **Blob**: Uses `DefaultAzureCredential` (managed identity, Azure CLI, service principal env vars, etc.)
+- **GCS**: Uses Application Default Credentials (GCE/GKE workload identity, `GOOGLE_APPLICATION_CREDENTIALS`, gcloud ADC, etc.)
 
 For Blob, `account_name` (or `AZURE_STORAGE_ACCOUNT` env) is still required to build the service URL. Omit `account_key` and `connection_string` to use native auth.
 
@@ -17,6 +18,7 @@ Set `object.backend` to choose the backend:
 
 - `s3` - Amazon S3 or S3-compatible storage (MinIO, LocalStack, etc.)
 - `blob` - Azure Blob Storage
+- `gcs` - Google Cloud Storage
 
 ### S3 Configuration
 
@@ -37,6 +39,14 @@ Set `object.backend` to choose the backend:
 | `object.blob.account_name` | Storage account name (or `AZURE_STORAGE_ACCOUNT` env) | - |
 | `object.blob.account_key` | Account key (omit for **native auth**: managed identity, Azure CLI, etc.) | - |
 | `object.blob.connection_string` | Full connection string (or `AZURE_STORAGE_CONNECTION_STRING` env) | - |
+
+### Google Cloud Storage Configuration
+
+| Key | Description |
+|-----|-------------|
+| `object.gcs.project_id` | GCP project id (or `GOOGLE_CLOUD_PROJECT` env) | - |
+| `object.gcs.credentials_path` | Service account JSON path (or `GOOGLE_APPLICATION_CREDENTIALS` env); omit for ADC | - |
+| `object.gcs.emulator_host` | GCS emulator host (or `STORAGE_EMULATOR_HOST` env), e.g. `localhost:4443` | - |
 
 ## Usage
 
@@ -89,6 +99,12 @@ store, err := objectstore.NewBlobBackend(ctx, "", "mystorageaccount", "accountKe
 
 // Azure Blob (DefaultAzureCredential)
 store, err := objectstore.NewBlobBackend(ctx, "", "mystorageaccount", "")
+
+// GCS (ADC)
+store, err := objectstore.NewGcsBackend(ctx, "my-gcp-project", "", "")
+
+// GCS (emulator)
+store, err := objectstore.NewGcsBackend(ctx, "test-project", "", "localhost:4443")
 ```
 
 ### Mock Store for Testing
@@ -169,11 +185,15 @@ Sample config (app.yaml or object_example.yaml):
 
 ```yaml
 object:
-  backend: blob  # or "s3"
+  backend: gcs  # or "s3" / "blob"
   events:
-    collection: my-events-bucket  # bucket (S3) or container (Blob)
+    collection: my-events-bucket  # bucket (S3/GCS) or container (Blob)
   artifacts:
     collection: my-artifacts-bucket
+
+  gcs:
+    project_id: my-gcp-project
+    # credentials_path: /path/to/sa.json  # omit for workload identity / ADC
 
   s3:
     region: us-east-1

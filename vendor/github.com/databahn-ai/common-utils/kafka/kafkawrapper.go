@@ -79,12 +79,28 @@ type ProducerConfig struct {
 	Name       string
 	Topic      string
 	ExtraParam map[string]any
+	// OnDeliveryError, if set, is invoked for every asynchronous delivery failure observed on the
+	// producer's Events() channel (per-message topic errors and cluster-level errors). It lets a
+	// service surface these failures as a metric/alert instead of them being log-only. Optional and
+	// nil-safe; runs on a dedicated dispatcher goroutine (decoupled from the shared events-draining
+	// loop), but keep it cheap and non-blocking since that goroutine is single-threaded per producer.
+	OnDeliveryError func(topic string, err error)
 }
 
 type Producer struct {
-	Producer *kafka.Producer
-	Config   ProducerConfig
+	Producer        *kafka.Producer
+	Config          ProducerConfig
+	deliveryErrChan chan deliveryErrEvent
 }
+
+type deliveryErrEvent struct {
+	topic string
+	err   error
+}
+
+// deliveryErrDispatchBuffer bounds how many pending OnDeliveryError callbacks can queue before
+// new ones are dropped (and logged) rather than blocking the shared producer events-draining loop.
+const deliveryErrDispatchBuffer = 256
 
 type Consumer struct {
 	quit   chan struct{}
@@ -171,6 +187,18 @@ func (c Cluster) NewProducer(ctx context.Context, config ProducerConfig) (*Produ
 		}
 	}
 
+	deliveryErrChan := make(chan deliveryErrEvent, deliveryErrDispatchBuffer)
+	if config.OnDeliveryError != nil {
+		// Dispatch the callback on a dedicated goroutine, decoupled from the shared events-draining
+		// loop below, so slow callback logic (logging, alerting, metrics I/O) cannot stall delivery
+		// confirmation processing for this producer.
+		go func(name string, onErr func(topic string, err error)) {
+			for evt := range deliveryErrChan {
+				callDeliveryErrCallback(name, onErr, evt)
+			}
+		}(config.Name, config.OnDeliveryError)
+	}
+
 	go func(name string) {
 		for e := range producer.Events() {
 			switch ev := e.(type) {
@@ -178,10 +206,20 @@ func (c Cluster) NewProducer(ctx context.Context, config ProducerConfig) (*Produ
 				if ev.TopicPartition.Error != nil {
 					logger.GetLoggerWithContext(ctx).Error("Failed to send to Kafka topic", zap.Error(ev.TopicPartition.Error),
 						zap.String("producerName", name), zap.String("Topic", config.Topic))
+					if config.OnDeliveryError != nil {
+						topic := config.Topic
+						if ev.TopicPartition.Topic != nil {
+							topic = *ev.TopicPartition.Topic
+						}
+						dispatchDeliveryErr(deliveryErrChan, topic, ev.TopicPartition.Error, name)
+					}
 				}
 			case kafka.Error:
 				logger.GetLoggerWithContext(ctx).Error("Failed to send to Kafka cluster", zap.Error(ev),
 					zap.String("producerName", name), zap.String("Topic", config.Topic))
+				if config.OnDeliveryError != nil {
+					dispatchDeliveryErr(deliveryErrChan, config.Topic, ev, name)
+				}
 			case *kafka.Stats:
 				var stats map[string]interface{}
 				err := json.Unmarshal([]byte(e.String()), &stats)
@@ -196,9 +234,37 @@ func (c Cluster) NewProducer(ctx context.Context, config ProducerConfig) (*Produ
 	}(config.Name)
 
 	return &Producer{
-		Producer: producer,
-		Config:   config,
+		Producer:        producer,
+		Config:          config,
+		deliveryErrChan: deliveryErrChan,
 	}, nil
+}
+
+// dispatchDeliveryErr enqueues a delivery failure for async callback dispatch without blocking the
+// caller (the shared producer events-draining loop). If the dispatch queue is full — meaning the
+// callback is not keeping up — the notification is dropped and logged rather than backing up event
+// draining; the failure itself was already logged synchronously by the caller.
+func dispatchDeliveryErr(ch chan deliveryErrEvent, topic string, err error, producerName string) {
+	select {
+	case ch <- deliveryErrEvent{topic: topic, err: err}:
+	default:
+		logger.GetLogger().Warn("delivery error callback queue full, dropping notification (error already logged)",
+			zap.String("producerName", producerName), zap.String("topic", topic))
+	}
+}
+
+// callDeliveryErrCallback invokes the caller-supplied OnDeliveryError callback with panic
+// protection, mirroring the recover() pattern used around consumer message processing elsewhere
+// in this file. The dispatcher goroutine that calls this runs for the lifetime of the producer, so
+// an unrecovered panic in caller code would otherwise crash the whole process.
+func callDeliveryErrCallback(producerName string, onErr func(topic string, err error), evt deliveryErrEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.GetLogger().Error("recovered from panic in OnDeliveryError callback",
+				zap.String("producerName", producerName), zap.String("topic", evt.topic), zap.Any("recovered", r))
+		}
+	}()
+	onErr(evt.topic, evt.err)
 }
 
 func (c Cluster) GetProducer(ctx context.Context, name string) (*Producer, error) {
@@ -215,26 +281,40 @@ func (p Producer) SendSync(ctx context.Context, message Message) error {
 }
 
 func (p Producer) SendSyncTopic(ctx context.Context, message Message, topic string) error {
-	report := make(chan kafka.Event)
-	defer close(report)
+	// Buffered (cap 1) and deliberately never closed: librdkafka delivers exactly one event here
+	// for a successfully enqueued message, and if ctx is canceled below before that arrives, this
+	// function returns while the delivery is still in flight. A buffered slot lets that late write
+	// land without blocking or panicking (unlike an unbuffered channel closed via defer); the
+	// channel is then garbage collected once both sides are done with it.
+	report := make(chan kafka.Event, 1)
 	kafkaMessage := adaptMessage(message, topic)
 	err := p.Producer.Produce(kafkaMessage, report)
 	if err != nil {
-		return nil
+		// A local enqueue failure (e.g. queue full, message too large, producer closed) means the
+		// message was never handed to the broker. Surface it so a "sync" send genuinely confirms
+		// delivery instead of silently reporting success on a dropped message.
+		return err
 	}
-	e := <-report
-	switch ev := e.(type) {
-	case *kafka.Message:
-		if ev.TopicPartition.Error != nil {
-			return ev.TopicPartition.Error
-		} else {
+	select {
+	case e := <-report:
+		switch ev := e.(type) {
+		case *kafka.Message:
+			if ev.TopicPartition.Error != nil {
+				return ev.TopicPartition.Error
+			} else {
+				return nil
+			}
+		case kafka.Error:
+			return ev
+		default:
+			logger.GetLoggerWithContext(ctx).Info("Ignored kafka producer result", zap.String("producerName", p.Config.Name), zap.Any("Result", ev))
 			return nil
 		}
-	case kafka.Error:
-		return ev
-	default:
-		logger.GetLoggerWithContext(ctx).Info("Ignored kafka producer result", zap.String("producerName", p.Config.Name), zap.Any("Result", ev))
-		return nil
+	case <-ctx.Done():
+		// Without this, ctx was accepted but never actually honored: the caller could block here
+		// indefinitely (bounded only by librdkafka's own message.timeout.ms) regardless of the
+		// caller's own deadline/cancellation.
+		return ctx.Err()
 	}
 }
 
@@ -382,6 +462,13 @@ func (c Cluster) startConsumerThreads(ctx context.Context, config ConsumerConfig
 func (p Producer) Close(ctx context.Context) {
 	p.Producer.Flush(5000)
 	p.Producer.Close()
+	// deliveryErrChan is deliberately left open rather than closed here: the events-draining
+	// goroutine drains producer.Events() asynchronously in the background after Close() returns
+	// (librdkafka closes that channel once fully flushed), and it may still be mid-send to
+	// deliveryErrChan via dispatchDeliveryErr when this method returns. Closing the channel here
+	// would race with that send and could panic. Producers are long-lived (one per registered
+	// name; NewProducer rejects re-registration), so Close is called once at service shutdown and
+	// the dispatcher goroutine exiting with the process is an acceptable trade-off for correctness.
 	logger.GetLoggerWithContext(ctx).Info("Closed producer", zap.String("producerName", p.Config.Name))
 }
 

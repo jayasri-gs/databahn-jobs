@@ -5,7 +5,6 @@ package integrationtests
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"testing"
@@ -41,76 +40,6 @@ func newStatsRolloverFixture() statsRolloverFixture {
 		index:     fmt.Sprintf("db_statistics_%s_v2_p1_y2024_d166", tenantID),
 		hourStart: hourStart,
 		tsWin:     hourStart.UnixMilli(),
-	}
-}
-
-// statsTextKeywordField mirrors production stats indices: string tags are text with a
-// .keyword subfield, which rollover/validation aggregations reference (e.g. tags.operator_id.keyword).
-func statsTextKeywordField() map[string]any {
-	return map[string]any{
-		"type": "text",
-		"fields": map[string]any{
-			"keyword": map[string]any{"type": "keyword"},
-		},
-	}
-}
-
-func statsIndexMappings() map[string]any {
-	tagKeywordField := statsTextKeywordField()
-	return map[string]any{
-		"properties": map[string]any{
-			"name": map[string]any{
-				"type": "text",
-				"fields": map[string]any{
-					"raw": map[string]any{"type": "keyword"},
-				},
-			},
-			"namespace": map[string]any{"type": "keyword"},
-			"counter": map[string]any{
-				"properties": map[string]any{
-					"value": map[string]any{"type": "double"},
-				},
-			},
-			"tags": map[string]any{
-				"properties": map[string]any{
-					"db_tenant_id":       tagKeywordField,
-					"db_event_source_id": tagKeywordField,
-					"operator_id":        tagKeywordField,
-					"destination_id":     tagKeywordField,
-					"rule_id":            tagKeywordField,
-					"db_node_id":         tagKeywordField,
-					"db_ts_win":          map[string]any{"type": "long"},
-				},
-			},
-		},
-	}
-}
-
-// createStatsTestIndex tries explicit index creation for local OpenSearch clusters.
-// CI clusters often block the create-index API (FORBIDDEN/10); in that case we rely on
-// the db_statistics index template registered in TestMain and auto-create on bulk index.
-func createStatsTestIndex(t *testing.T, ctx context.Context, openSearch *pramaan.OpenSearchPramaan, indexName string) {
-	t.Helper()
-	body, err := json.Marshal(map[string]any{"mappings": statsIndexMappings()})
-	if err != nil {
-		t.Fatalf("marshal stats index mappings: %v", err)
-	}
-	req := opensearchapi.IndicesCreateRequest{
-		Index: indexName,
-		Body:  bytes.NewReader(body),
-	}
-	resp, err := req.Do(ctx, openSearch.GetClient())
-	if err != nil {
-		t.Fatalf("create stats index %s: %v", indexName, err)
-	}
-	defer resp.Body.Close()
-	if resp.IsError() {
-		raw, _ := io.ReadAll(resp.Body)
-		if bytes.Contains(raw, []byte("resource_already_exists_exception")) ||
-			bytes.Contains(raw, []byte("index_create_block_exception")) {
-			return
-		}
-		t.Fatalf("create stats index %s failed, status %d: %s", indexName, resp.StatusCode, string(raw))
 	}
 }
 

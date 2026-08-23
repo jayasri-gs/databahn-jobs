@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -34,7 +32,6 @@ func TestMain(m *testing.M) {
 	tg := pramaan.NewDbTestLogger("TestMain")
 
 	jobTest = pramaan.NewJobMainPramaanBuilder(tg).
-		WithOpenSearchTemplateDirs(openSearchTemplateDir()).
 		WithKafka().
 		WithKafkaTopics([]pramaan.TopicDetails{
 			{Topic: EmailNotificationTopic, Partitions: 1},
@@ -78,14 +75,6 @@ func initDatabase(ctx context.Context, job *pramaan.JobPramaan) {
 		panic(fmt.Sprintf("seed databahn tenant: %v", err))
 	}
 	gormTest = gormDB
-}
-
-func openSearchTemplateDir() string {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		return "integration-tests/templates"
-	}
-	return filepath.Join(filepath.Dir(filename), "templates")
 }
 
 func ensureAlertIndices(ctx context.Context, openSearch *pramaan.OpenSearchPramaan) {
