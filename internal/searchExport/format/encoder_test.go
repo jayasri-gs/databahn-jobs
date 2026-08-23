@@ -58,10 +58,19 @@ func TestExcelCellValue(t *testing.T) {
 	if got := excelCellValue(json.RawMessage(`{"a":1}`)); got != `{"a":1}` {
 		t.Fatalf("dynamic = %#v, want JSON text", got)
 	}
-	if got := excelCellValue(json.Number("42")); got != float64(42) {
-		t.Fatalf("number = %#v, want a numeric cell", got)
+	if got := excelCellValue(json.Number("42")); got != int64(42) {
+		t.Fatalf("number = %#v, want an exact integer cell", got)
 	}
-	// Integers beyond float64's exact range stay text rather than losing digits silently.
+	if got := excelCellValue(json.Number("1.5")); got != 1.5 {
+		t.Fatalf("float = %#v, want a numeric cell", got)
+	}
+	// Excel stores numbers as float64, so integers beyond 2^53 keep their exact digits as
+	// text rather than silently rounding — 9007199254740993 would otherwise land as ...992.
+	for _, exact := range []string{"9007199254740993", "-9007199254740993", "18446744073709551615"} {
+		if got := excelCellValue(json.Number(exact)); got != exact {
+			t.Fatalf("excelCellValue(%s) = %#v, want the exact digits as text", exact, got)
+		}
+	}
 	if got := excelCellValue(json.Number("not-a-number")); got != "not-a-number" {
 		t.Fatalf("unparseable number = %#v", got)
 	}

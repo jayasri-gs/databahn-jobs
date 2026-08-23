@@ -253,7 +253,9 @@ func rawToExportValue(raw json.RawMessage) interface{} {
 		}
 		return s
 	case '{', '[':
-		return json.RawMessage(compactJSON(trimmed))
+		// Already validated by the decoder, and both encoders accept it as-is: CSV renders the
+		// literal text and NDJSON inlines it. Re-compacting would copy every dynamic cell.
+		return json.RawMessage(trimmed)
 	case 't':
 		return true
 	case 'f':
@@ -261,14 +263,6 @@ func rawToExportValue(raw json.RawMessage) interface{} {
 	default:
 		return json.Number(trimmed)
 	}
-}
-
-func compactJSON(raw []byte) []byte {
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, raw); err != nil {
-		return raw
-	}
-	return buf.Bytes()
 }
 
 // ParseLogAnalyticsError extracts a readable message from a non-2xx response body.
@@ -313,7 +307,34 @@ func objectKey(dec *json.Decoder) (string, error) {
 	return key, nil
 }
 
+// skipValue discards the next value without materialising it. Decoding into a RawMessage
+// would allocate the whole of an ignored table or metadata block, which defeats the point of
+// streaming the response in the first place.
 func skipValue(dec *json.Decoder) error {
-	var discard json.RawMessage
-	return dec.Decode(&discard)
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	open, ok := tok.(json.Delim)
+	if !ok {
+		return nil // a scalar; the token above consumed it
+	}
+	if open != '{' && open != '[' {
+		return fmt.Errorf("unexpected delimiter %q while skipping a value", open)
+	}
+	for depth := 1; depth > 0; {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if delim, ok := tok.(json.Delim); ok {
+			switch delim {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+			}
+		}
+	}
+	return nil
 }

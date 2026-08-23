@@ -60,6 +60,10 @@ const (
 	defaultSentinelQueryTimeoutSeconds = 600
 	defaultSentinelMaxRetries          = 3
 	defaultSentinelMaxRows             = 500_000
+
+	// maxSentinelRetries bounds the retry budget. Each throttled attempt waits up to 60s, so
+	// an unbounded count read from the environment would park the job indefinitely.
+	maxSentinelRetries = 10
 )
 
 // SentinelStreamOptionsFromEnv builds the row-stream options for a Sentinel export.
@@ -70,13 +74,34 @@ const (
 func SentinelStreamOptionsFromEnv() StreamRowsOptions {
 	return StreamRowsOptions{
 		MaxRows:       int64(utils.GetEnvInt("SEARCH_EXPORT_SENTINEL_MAX_ROWS", defaultSentinelMaxRows)),
-		QueryTimeout:  time.Duration(utils.GetEnvInt("SEARCH_EXPORT_SENTINEL_QUERY_TIMEOUT_SECONDS", defaultSentinelQueryTimeoutSeconds)) * time.Second,
+		QueryTimeout:  sentinelQueryTimeout(),
 		ProgressEvery: synapseProgressInterval,
 		SkipPreflight: true,
 	}
 }
 
-// SentinelMaxRetriesFromEnv is the retry budget for throttled Log Analytics requests.
+// sentinelQueryTimeout clamps the configured timeout to the Log Analytics service ceiling.
+// Waiting longer than the service will ever take just holds the request context open.
+func sentinelQueryTimeout() time.Duration {
+	seconds := utils.GetEnvInt("SEARCH_EXPORT_SENTINEL_QUERY_TIMEOUT_SECONDS", defaultSentinelQueryTimeoutSeconds)
+	if seconds < 1 {
+		seconds = defaultSentinelQueryTimeoutSeconds
+	}
+	if seconds > defaultSentinelQueryTimeoutSeconds {
+		seconds = defaultSentinelQueryTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// SentinelMaxRetriesFromEnv is the retry budget for throttled Log Analytics requests,
+// clamped so a misconfigured environment cannot stall the job.
 func SentinelMaxRetriesFromEnv() int {
-	return utils.GetEnvInt("SEARCH_EXPORT_SENTINEL_MAX_RETRIES", defaultSentinelMaxRetries)
+	retries := utils.GetEnvInt("SEARCH_EXPORT_SENTINEL_MAX_RETRIES", defaultSentinelMaxRetries)
+	if retries < 0 {
+		return 0
+	}
+	if retries > maxSentinelRetries {
+		return maxSentinelRetries
+	}
+	return retries
 }

@@ -21,15 +21,18 @@ func newTestSentinelExecutor(t *testing.T, handler http.HandlerFunc) *SentinelEx
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
+	// The endpoint is checked against an allowlist of Azure Monitor Logs hosts, so the stub
+	// server is injected into the transport rather than passed through config as an
+	// arbitrary URL.
 	exec, err := NewSentinelExecutor(SentinelConfig{
 		WorkspaceID: "ws-guid",
-		Endpoint:    srv.URL,
 		MaxRetries:  2,
 	})
 	if err != nil {
 		t.Fatalf("NewSentinelExecutor: %v", err)
 	}
 	transport := exec.transport.(*logAnalyticsTransport)
+	transport.cfg.Endpoint = srv.URL
 	transport.token = azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}
 	return exec
 }
@@ -354,5 +357,40 @@ func TestLogAnalyticsScopeFollowsEndpoint(t *testing.T) {
 	sov := newLogAnalyticsTransport(SentinelConfig{WorkspaceID: "ws", Endpoint: "https://api.loganalytics.us/"}, nil)
 	if sov.scope() != "https://api.loganalytics.us/.default" {
 		t.Fatalf("sovereign scope = %q", sov.scope())
+	}
+}
+
+// The endpoint receives an Entra bearer token minted for its own scope, so it is restricted
+// to approved Azure Monitor Logs hosts rather than anywhere a configuration names.
+func TestNewSentinelExecutorValidatesEndpoint(t *testing.T) {
+	valid := []string{
+		"",
+		"https://api.loganalytics.io",
+		"https://api.loganalytics.io/",
+		"https://api.loganalytics.us",
+		"https://api.loganalytics.azure.cn",
+	}
+	for _, endpoint := range valid {
+		if _, err := NewSentinelExecutor(SentinelConfig{WorkspaceID: "ws", Endpoint: endpoint}); err != nil {
+			t.Fatalf("endpoint %q rejected: %v", endpoint, err)
+		}
+	}
+
+	invalid := []struct{ name, endpoint string }{
+		{"plain http", "http://api.loganalytics.io"},
+		{"attacker host", "https://attacker.example.com"},
+		{"approved host as a subdomain", "https://api.loganalytics.io.attacker.example.com"},
+		{"loopback", "https://127.0.0.1:8080"},
+		{"loopback name", "https://localhost"},
+		{"link-local metadata", "https://169.254.169.254"},
+		{"embedded credentials", "https://user:pass@api.loganalytics.io"},
+		{"not a url", "://"},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := NewSentinelExecutor(SentinelConfig{WorkspaceID: "ws", Endpoint: tc.endpoint}); err == nil {
+				t.Fatalf("endpoint %q was accepted", tc.endpoint)
+			}
+		})
 	}
 }

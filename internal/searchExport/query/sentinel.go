@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -33,8 +34,9 @@ type SentinelConfig struct {
 	ClientID     string
 	ClientSecret string
 
-	// Endpoint overrides the Azure public-cloud query host. Empty in production; set by
-	// tests and, in future, by sovereign-cloud deployments. The Entra scope follows it.
+	// Endpoint overrides the Azure public-cloud query host for sovereign-cloud deployments.
+	// Empty in production. It must name an approved Log Analytics host: the Entra scope
+	// follows it, so an arbitrary value would send a bearer token wherever it points.
 	Endpoint string
 
 	QueryTimeout time.Duration
@@ -60,6 +62,9 @@ type SentinelExecutor struct {
 func NewSentinelExecutor(cfg SentinelConfig) (*SentinelExecutor, error) {
 	if strings.TrimSpace(cfg.WorkspaceID) == "" {
 		return nil, fmt.Errorf("workspace_id is required in connector configuration")
+	}
+	if err := validateLogAnalyticsEndpoint(cfg.Endpoint); err != nil {
+		return nil, err
 	}
 	if cfg.QueryTimeout <= 0 {
 		cfg.QueryTimeout = defaultSentinelQueryTimeout
@@ -209,6 +214,38 @@ func (e *SentinelExecutor) StreamRows(ctx context.Context, kql string, opts Stre
 	}
 
 	return total, nil
+}
+
+// logAnalyticsHosts are the Azure Monitor Logs query endpoints an export may target.
+var logAnalyticsHosts = map[string]bool{
+	"api.loganalytics.io":       true, // Azure public
+	"api.loganalytics.us":       true, // US Gov
+	"api.loganalytics.azure.cn": true, // China
+}
+
+// validateLogAnalyticsEndpoint constrains where the worker will send an Entra bearer token.
+//
+// The token is minted for the endpoint's own scope, so an unconstrained host would let a
+// crafted configuration collect it. An empty endpoint means the Azure public default.
+func validateLogAnalyticsEndpoint(endpoint string) error {
+	trimmed := strings.TrimSpace(endpoint)
+	if trimmed == "" {
+		return nil
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("sentinel endpoint %q is not a valid URL: %w", trimmed, err)
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return fmt.Errorf("sentinel endpoint must use https, got %q", parsed.Scheme)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("sentinel endpoint must not embed credentials")
+	}
+	if !logAnalyticsHosts[strings.ToLower(parsed.Hostname())] {
+		return fmt.Errorf("sentinel endpoint host %q is not an Azure Monitor Logs endpoint", parsed.Hostname())
+	}
+	return nil
 }
 
 func sameColumns(a, b []string) bool {

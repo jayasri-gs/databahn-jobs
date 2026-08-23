@@ -63,9 +63,12 @@ func (p *Pipeline) runSentinelStreamExport(ctx context.Context, destBucket strin
 		return &PipelineResult{TotalRows: totalRows, TotalBytes: 0}, nil
 	}
 
+	// Not a warning: processExportRequest stores this as the report's download_link, so
+	// returning an empty one marks the export COMPLETED with nothing to download. Failing
+	// instead lets the job retry, and the retry overwrites the same object key.
 	presignedURL, err := p.uploader.GeneratePresignedURL(ctx, p.config.PresignExpiry)
 	if err != nil {
-		p.log.Warn("Failed to generate presigned URL", zap.Error(err))
+		return nil, fmt.Errorf("generate download URL for completed export: %w", err)
 	}
 
 	return &PipelineResult{

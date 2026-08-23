@@ -167,7 +167,9 @@ func TestRawToExportValue(t *testing.T) {
 		{`"quote \" inside"`, `quote " inside`},
 		{`true`, true},
 		{`false`, false},
-		{`{ "a" : 1 }`, json.RawMessage(`{"a":1}`)},
+		// Returned as-is: the decoder has already validated it, and re-compacting would copy
+		// every dynamic cell in the response.
+		{`{"a":1}`, json.RawMessage(`{"a":1}`)},
 	}
 	for _, tc := range cases {
 		got := rawToExportValue(json.RawMessage(tc.raw))
