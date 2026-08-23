@@ -3,6 +3,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -336,11 +337,9 @@ var athenaOutputBucket = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$
 // quotes, backticks, or backslashes.
 var athenaOutputLocation = regexp.MustCompile(`^s3://([a-z0-9][a-z0-9.\-]{1,61}[a-z0-9])(/[^\s"'` + "`" + `\\]*)?$`)
 
-// athenaOutputLocationFor builds the S3 URI Athena writes query results to from the
-// data store's own staging bucket. searchExportConfig.athenaOutputLocation is not
-// read — the location is reconstructed from the allowlisted bucket match so the
-// original string cannot carry quotes or control characters into the Athena client
-// or the UNLOAD SQL literal.
+// athenaOutputLocationFor builds Athena's result URI from the staging bucket name.
+// searchExportConfig.athenaOutputLocation is not read. The URI is assembled from the
+// allowlisted bucket match via net/url so the original string never enters the client.
 func athenaOutputLocationFor(staging *destination.S3Config) (string, error) {
 	if staging == nil {
 		return "", fmt.Errorf("athena staging config is required")
@@ -349,7 +348,7 @@ func athenaOutputLocationFor(staging *destination.S3Config) (string, error) {
 	if safeBucket == "" {
 		return "", fmt.Errorf("athena staging bucket %q is not a valid S3 bucket name", staging.Bucket)
 	}
-	location := "s3://" + safeBucket + "/" + databahnAthenaOutputPrefix
+	location := (&url.URL{Scheme: "s3", Host: safeBucket, Path: "/" + databahnAthenaOutputPrefix}).String()
 	if err := validateAthenaOutputLocation(location, safeBucket); err != nil {
 		return "", err
 	}
