@@ -32,7 +32,7 @@ func TestApplyADXCredentialOverrides(t *testing.T) {
 		"unrelated_key":       "ignored",
 	})
 	if cfg.ClientSecret != "shhh" {
-		t.Fatalf("client secret = %q", cfg.ClientSecret)
+		t.Fatal("client secret was not taken from the override")
 	}
 	if cfg.ClientID != "overridden" {
 		t.Fatalf("client id = %q", cfg.ClientID)

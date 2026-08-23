@@ -60,7 +60,7 @@ func TestApplySentinelCredentialOverrides(t *testing.T) {
 		t.Fatalf("overrides not applied: %+v", cfg)
 	}
 	if cfg.ClientSecret != "from-secrets-manager" {
-		t.Fatalf("clientSecret = %q", cfg.ClientSecret)
+		t.Fatal("clientSecret was not taken from the override")
 	}
 	ApplySentinelCredentialOverrides(nil, map[string]string{"azure_client_id": "x"})
 }

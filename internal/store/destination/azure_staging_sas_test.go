@@ -34,11 +34,13 @@ func TestGenerateContainerWriteSAS_SharedKey(t *testing.T) {
 	}
 	for _, want := range []string{"sig=", "sp=", "se="} {
 		if !strings.Contains(staging.SASToken, want) {
-			t.Fatalf("SAS token missing %q: %s", want, staging.SASToken)
+			t.Fatalf("SAS token missing parameter %q", want)
 		}
 	}
 }
 
+// Failure messages here identify the case rather than echoing token material: a SAS is
+// credential material, and printing it into test output is the same pattern as logging it.
 func TestGenerateContainerWriteSAS_SASConnectionString(t *testing.T) {
 	cfg := &AzureBlobConfig{
 		AuthType:         "AUTH_CONNECTION_STRING",
@@ -53,7 +55,7 @@ func TestGenerateContainerWriteSAS_SASConnectionString(t *testing.T) {
 		t.Fatalf("account name = %q", staging.AccountName)
 	}
 	if staging.SASToken != usableSASToken() {
-		t.Fatalf("SAS token = %q", staging.SASToken)
+		t.Fatal("configured SAS token was not passed through unchanged")
 	}
 }
 
@@ -84,7 +86,7 @@ func TestParseBlobConnectionStrings(t *testing.T) {
 	}
 	name, token, err := ParseSASConnectionString("AccountName=acct;SharedAccessSignature=sv=1&sig=2")
 	if err != nil || name != "acct" || token != "sv=1&sig=2" {
-		t.Fatalf("name=%q token=%q err=%v", name, token, err)
+		t.Fatalf("name=%q err=%v tokenMatched=%v", name, err, token == "sv=1&sig=2")
 	}
 	if _, _, err := ParseSASConnectionString("AccountName=acct"); err == nil {
 		t.Fatal("missing SAS should error")
@@ -116,7 +118,7 @@ func TestGenerateContainerWriteSAS_RejectsUnusableConfiguredToken(t *testing.T) 
 				ConnectionString: "BlobEndpoint=https://acct.blob.core.windows.net;SharedAccessSignature=" + tc.token,
 			}
 			if _, err := GenerateContainerWriteSAS(context.Background(), cfg, time.Hour); err == nil {
-				t.Fatalf("token %q was accepted", tc.token)
+				t.Fatalf("%s token was accepted", tc.name)
 			}
 		})
 	}
