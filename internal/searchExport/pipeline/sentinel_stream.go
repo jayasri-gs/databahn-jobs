@@ -23,7 +23,7 @@ func (p *Pipeline) runSentinelStreamExport(ctx context.Context, destBucket strin
 		return nil, err
 	}
 
-	opts := query.SentinelStreamOptionsFromEnv()
+	opts := query.SentinelStreamOptionsForTier(exec.Engine())
 	var columns []string
 	opts.OnColumns = func(cols []string) error {
 		columns = cols

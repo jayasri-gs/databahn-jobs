@@ -2,6 +2,7 @@ package query
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/databahn-ai/common-utils/utils"
@@ -64,6 +65,9 @@ const (
 	// maxSentinelRetries bounds the retry budget. Each throttled attempt waits up to 60s, so
 	// an unbounded count read from the environment would park the job indefinitely.
 	maxSentinelRetries = 10
+
+	// sentinelLakeMaxTimeout matches the servertimeout the lake query API is given.
+	sentinelLakeMaxTimeout = 4 * time.Minute
 )
 
 // SentinelStreamOptionsFromEnv builds the row-stream options for a Sentinel export.
@@ -91,6 +95,19 @@ func sentinelQueryTimeout() time.Duration {
 		seconds = defaultSentinelQueryTimeoutSeconds
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// SentinelStreamOptionsForTier picks the per-tier limits. The lake API takes a 4-minute
+// servertimeout rather than the analytics tier's 10-minute ceiling, so waiting longer than
+// that just holds the request context open.
+func SentinelStreamOptionsForTier(tier string) StreamRowsOptions {
+	opts := SentinelStreamOptionsFromEnv()
+	if strings.EqualFold(tier, "LAKE") || tier == "KUSTO_LAKE" {
+		if opts.QueryTimeout > sentinelLakeMaxTimeout {
+			opts.QueryTimeout = sentinelLakeMaxTimeout
+		}
+	}
+	return opts
 }
 
 // SentinelMaxRetriesFromEnv is the retry budget for throttled Log Analytics requests,

@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	QueryEngineAthena   = "ATHENA"
-	QueryEngineSynapse  = "SYNAPSE"
-	QueryEngineKustoADX = "KUSTO_ADX"
-	QueryEngineKustoLAW = "KUSTO_LAW"
+	QueryEngineAthena    = "ATHENA"
+	QueryEngineSynapse   = "SYNAPSE"
+	QueryEngineKustoADX  = "KUSTO_ADX"
+	QueryEngineKustoLAW  = "KUSTO_LAW"
+	QueryEngineKustoLake = "KUSTO_LAKE"
 
 	StoreTypeDatabahnDestination = "DATABAHN_DESTINATION"
 	StoreTypeDatabahnInsights    = "DATABAHN_INSIGHTS"
@@ -79,7 +80,9 @@ type externalStoreConfigJSON struct {
 	ConnectorConfig        map[string]string `json:"connectorConfig"`
 }
 
-func DeriveQueryEngine(storeType, linkedDestType, externalProvider string) string {
+// DeriveQueryEngine maps a data store onto its export engine. storageTier is read only for
+// Sentinel stores, where it separates the analytics and lake tiers.
+func DeriveQueryEngine(storeType, linkedDestType, externalProvider, storageTier string) string {
 	switch storeType {
 	case StoreTypeDatabahnDestination:
 		switch linkedDestType {
@@ -101,9 +104,11 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider string) strin
 		case ExternalProviderADX:
 			return QueryEngineKustoADX
 		case ExternalProviderSentinel:
-			// Both Sentinel tiers resolve to KUSTO_LAW here; the connectorConfig's
-			// storage_tier decides, and loadSentinelConfig rejects LAKE with a message
-			// naming the tier rather than an opaque "unsupported engine".
+			// The connectorConfig's storage_tier decides which Sentinel tier this is; the
+			// two engines use different endpoints, scopes and response formats.
+			if destination.NormalizeSentinelTier(storageTier) == destination.SentinelTierLake {
+				return QueryEngineKustoLake
+			}
 			return QueryEngineKustoLAW
 		}
 	}
@@ -206,7 +211,7 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 		}
 	}
 
-	result.QueryEngine = DeriveQueryEngine(storeType, linkedDestType, externalProvider)
+	result.QueryEngine = DeriveQueryEngine(storeType, linkedDestType, externalProvider, connector["storage_tier"])
 	if result.QueryEngine == "" {
 		return nil, fmt.Errorf("unsupported search_data_store: type=%s dest=%s provider=%s", storeType, linkedDestType, externalProvider)
 	}

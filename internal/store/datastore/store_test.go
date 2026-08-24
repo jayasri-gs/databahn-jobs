@@ -7,29 +7,34 @@ func TestDeriveQueryEngine(t *testing.T) {
 		storeType   string
 		destType    string
 		extProvider string
+		storageTier string
 		want        string
 	}{
-		{StoreTypeDatabahnDestination, DestTypeS3, "", QueryEngineAthena},
-		{StoreTypeDatabahnDestination, DestTypeAWSSecurityLake, "", QueryEngineAthena},
-		{StoreTypeDatabahnDestination, DestTypeAzureBlob, "", QueryEngineSynapse},
-		{StoreTypeDatabahnInsights, "", "", QueryEngineAthena},
-		{StoreTypeExternalStorage, "", ExternalProviderAzureBlob, QueryEngineSynapse},
-		{StoreTypeExternalStorage, "", ExternalProviderS3, QueryEngineAthena},
-		{StoreTypeExternalStorage, "", ExternalProviderSecurityLake, QueryEngineAthena},
-		{StoreTypeDerivedDatastore, "", ExternalProviderSecurityLake, QueryEngineAthena},
-		{StoreTypeExternalStorage, "", ExternalProviderADX, QueryEngineKustoADX},
-		{StoreTypeDerivedDatastore, "", ExternalProviderADX, QueryEngineKustoADX},
-		{StoreTypeDatabahnDestination, DestTypeAzureBlob, ExternalProviderADX, QueryEngineSynapse},
-		{StoreTypeDatabahnDestination, DestTypeAzureDataExplorer, "", QueryEngineKustoADX},
-		// Both Sentinel tiers derive KUSTO_LAW; storage_tier decides, and loadSentinelConfig
-		// rejects LAKE by name.
-		{StoreTypeExternalStorage, "", ExternalProviderSentinel, QueryEngineKustoLAW},
-		{StoreTypeDerivedDatastore, "", ExternalProviderSentinel, QueryEngineKustoLAW},
+		{StoreTypeDatabahnDestination, DestTypeS3, "", "", QueryEngineAthena},
+		{StoreTypeDatabahnDestination, DestTypeAWSSecurityLake, "", "", QueryEngineAthena},
+		{StoreTypeDatabahnDestination, DestTypeAzureBlob, "", "", QueryEngineSynapse},
+		{StoreTypeDatabahnInsights, "", "", "", QueryEngineAthena},
+		{StoreTypeDatabahnStorage, "", "", "", QueryEngineAthena},
+		{StoreTypeExternalStorage, "", ExternalProviderAzureBlob, "", QueryEngineSynapse},
+		{StoreTypeExternalStorage, "", ExternalProviderS3, "", QueryEngineAthena},
+		{StoreTypeExternalStorage, "", ExternalProviderSecurityLake, "", QueryEngineAthena},
+		{StoreTypeDerivedDatastore, "", ExternalProviderSecurityLake, "", QueryEngineAthena},
+		{StoreTypeExternalStorage, "", ExternalProviderADX, "", QueryEngineKustoADX},
+		{StoreTypeDerivedDatastore, "", ExternalProviderADX, "", QueryEngineKustoADX},
+		{StoreTypeDatabahnDestination, DestTypeAzureBlob, ExternalProviderADX, "", QueryEngineSynapse},
+		{StoreTypeDatabahnDestination, DestTypeAzureDataExplorer, "", "", QueryEngineKustoADX},
+		// storage_tier separates the two Sentinel engines: they use different endpoints,
+		// Entra scopes and response formats. A blank tier means analytics.
+		{StoreTypeExternalStorage, "", ExternalProviderSentinel, "", QueryEngineKustoLAW},
+		{StoreTypeExternalStorage, "", ExternalProviderSentinel, "ANALYTICS", QueryEngineKustoLAW},
+		{StoreTypeDerivedDatastore, "", ExternalProviderSentinel, "", QueryEngineKustoLAW},
+		{StoreTypeExternalStorage, "", ExternalProviderSentinel, "LAKE", QueryEngineKustoLake},
+		{StoreTypeDerivedDatastore, "", ExternalProviderSentinel, "lake", QueryEngineKustoLake},
 	}
 	for _, tc := range tests {
-		got := DeriveQueryEngine(tc.storeType, tc.destType, tc.extProvider)
+		got := DeriveQueryEngine(tc.storeType, tc.destType, tc.extProvider, tc.storageTier)
 		if got != tc.want {
-			t.Fatalf("DeriveQueryEngine(%q,%q,%q) = %q, want %q", tc.storeType, tc.destType, tc.extProvider, got, tc.want)
+			t.Fatalf("DeriveQueryEngine(%q,%q,%q,%q) = %q, want %q", tc.storeType, tc.destType, tc.extProvider, tc.storageTier, got, tc.want)
 		}
 	}
 }

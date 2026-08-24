@@ -90,7 +90,12 @@ func (c *SentinelConfig) Validate() error {
 	switch NormalizeSentinelTier(c.StorageTier) {
 	case SentinelTierAnalytics:
 	case SentinelTierLake:
-		return fmt.Errorf("Sentinel data lake export is not supported yet (storage_tier=LAKE); only the analytics tier can be exported")
+		// The lake KQL API addresses the workspace by a composite name, not the GUID, so a
+		// lake store without workspace_name cannot be queried at all. Failing here names the
+		// missing key; failing later surfaces as an opaque API error.
+		if c.WorkspaceName == "" {
+			return fmt.Errorf("workspace_name is required in connector configuration when storage_tier is LAKE")
+		}
 	default:
 		return fmt.Errorf("unsupported Sentinel storage_tier: %s", c.StorageTier)
 	}
@@ -104,4 +109,14 @@ func (c *SentinelConfig) Validate() error {
 		return fmt.Errorf("azure_client_secret is required")
 	}
 	return nil
+}
+
+// LakeDatabase is the database identifier the Sentinel lake KQL API expects: the workspace
+// name and its GUID joined by a hyphen, not the GUID alone. Mirrors backend-service
+// SentinelLakeKqlSupport.requireLakeKqlDatabase.
+func (c *SentinelConfig) LakeDatabase() string {
+	if c == nil || c.WorkspaceName == "" || c.WorkspaceID == "" {
+		return ""
+	}
+	return c.WorkspaceName + "-" + c.WorkspaceID
 }

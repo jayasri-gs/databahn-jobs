@@ -246,13 +246,61 @@ func TestSentinelExecutorGetQueryColumnsUsesTakeZero(t *testing.T) {
 	}
 }
 
-func TestNewSentinelExecutorRejectsLakeTier(t *testing.T) {
-	_, err := NewSentinelExecutor(SentinelConfig{WorkspaceID: "ws", StorageTier: destination.SentinelTierLake})
-	if err == nil {
-		t.Fatal("lake tier should be rejected until it has a transport")
+// The lake tier addresses the workspace by a composite name, so a store without
+// workspace_name cannot be queried and is refused where the key is named.
+func TestNewSentinelExecutorLakeTier(t *testing.T) {
+	exec, err := NewSentinelExecutor(SentinelConfig{
+		WorkspaceID:   "ws-guid",
+		WorkspaceName: "prod-sentinel",
+		StorageTier:   destination.SentinelTierLake,
+	})
+	if err != nil {
+		t.Fatalf(errNewSentinelExecutor, err)
 	}
-	if !strings.Contains(err.Error(), "storage_tier=LAKE") {
-		t.Fatalf("error = %q, want the tier named", err)
+	if exec.Engine() != EngineSentinelLake {
+		t.Fatalf("engine = %q, want %q", exec.Engine(), EngineSentinelLake)
+	}
+	lake, ok := exec.transport.(*sentinelLakeTransport)
+	if !ok {
+		t.Fatalf("transport = %T, want the lake transport", exec.transport)
+	}
+	if lake.Tier() != SentinelTierLake {
+		t.Fatalf("tier = %q", lake.Tier())
+	}
+	// db is workspaceName-workspaceId, not the GUID alone.
+	if lake.database != "prod-sentinel-ws-guid" {
+		t.Fatalf("database = %q", lake.database)
+	}
+
+	_, err = NewSentinelExecutor(SentinelConfig{WorkspaceID: "ws", StorageTier: destination.SentinelTierLake})
+	if err == nil {
+		t.Fatal("lake tier without workspace_name should be rejected")
+	}
+	if !strings.Contains(err.Error(), "workspace_name") {
+		t.Fatalf("error = %v, want it to name workspace_name", err)
+	}
+}
+
+// Each tier accepts only its own service's host: the Entra scope differs, so a lake endpoint
+// on the analytics tier would send a token minted for the wrong audience.
+func TestSentinelEndpointAllowlistIsPerTier(t *testing.T) {
+	lakeHost := "https://api.securityplatform.microsoft.com"
+	analyticsHost := "https://api.loganalytics.io"
+
+	if err := validateSentinelEndpoint(SentinelTierLake, lakeHost); err != nil {
+		t.Fatalf("lake host rejected for lake tier: %v", err)
+	}
+	if err := validateSentinelEndpoint(SentinelTierAnalytics, analyticsHost); err != nil {
+		t.Fatalf("analytics host rejected for analytics tier: %v", err)
+	}
+	if err := validateSentinelEndpoint(SentinelTierLake, analyticsHost); err == nil {
+		t.Fatal("analytics host should not be valid for the lake tier")
+	}
+	if err := validateSentinelEndpoint(SentinelTierAnalytics, lakeHost); err == nil {
+		t.Fatal("lake host should not be valid for the analytics tier")
+	}
+	if err := validateSentinelEndpoint(SentinelTierLake, "http://api.securityplatform.microsoft.com"); err == nil {
+		t.Fatal("plain http should be rejected")
 	}
 }
 

@@ -107,7 +107,7 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onQueryStart func
 		}
 		defer p.rowStream.Close()
 		switch p.rowStream.Engine() {
-		case query.EngineSentinelLAW:
+		case query.EngineSentinelLAW, query.EngineSentinelLake:
 			return p.runSentinelStreamExport(ctx, destBucket, p.rowStream)
 		}
 		if p.cetasExec != nil && p.stagingBlobCfg != nil {

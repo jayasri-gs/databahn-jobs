@@ -89,9 +89,17 @@ func TestSentinelConfigValidate(t *testing.T) {
 		{"missing client", func(c *SentinelConfig) { c.ClientID = "" }, "azure_client_id is required"},
 		{"missing secret", func(c *SentinelConfig) { c.ClientSecret = "" }, "azure_client_secret is required"},
 		{
-			"lake tier rejected by name",
+			"lake tier without workspace_name",
 			func(c *SentinelConfig) { c.StorageTier = SentinelTierLake },
-			"Sentinel data lake export is not supported yet (storage_tier=LAKE); only the analytics tier can be exported",
+			"workspace_name is required in connector configuration when storage_tier is LAKE",
+		},
+		{
+			"lake tier with workspace_name",
+			func(c *SentinelConfig) {
+				c.StorageTier = SentinelTierLake
+				c.WorkspaceName = "prod-sentinel"
+			},
+			"",
 		},
 		{"unknown tier", func(c *SentinelConfig) { c.StorageTier = "GLACIER" }, "unsupported Sentinel storage_tier: GLACIER"},
 	}
@@ -116,5 +124,22 @@ func TestSentinelConfigValidate(t *testing.T) {
 	var nilCfg *SentinelConfig
 	if err := nilCfg.Validate(); err == nil {
 		t.Fatal("nil config should not validate")
+	}
+}
+
+// The lake KQL API addresses the workspace by name and GUID joined, not the GUID alone.
+func TestSentinelConfigLakeDatabase(t *testing.T) {
+	cfg := &SentinelConfig{WorkspaceID: "ws-guid", WorkspaceName: "prod-sentinel"}
+	if got := cfg.LakeDatabase(); got != "prod-sentinel-ws-guid" {
+		t.Fatalf("LakeDatabase = %q", got)
+	}
+	for _, incomplete := range []*SentinelConfig{
+		nil,
+		{WorkspaceID: "ws-guid"},
+		{WorkspaceName: "prod-sentinel"},
+	} {
+		if got := incomplete.LakeDatabase(); got != "" {
+			t.Fatalf("LakeDatabase = %q, want empty for %+v", got, incomplete)
+		}
 	}
 }
