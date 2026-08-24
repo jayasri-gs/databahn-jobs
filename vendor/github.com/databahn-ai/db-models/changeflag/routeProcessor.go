@@ -18,11 +18,16 @@ type FlagRouteProcessor struct {
 	OverrideDestinationType   string            `json:"override_destination_type"`
 	OverrideConfiguration     map[string]string `json:"override_configuration"`
 	SecretId                  string            `json:"secret_id"`
+	SecretVersion             string            `json:"secret_version"`
 	OverrideForwardDataType   int               `json:"override_forward_data_type"`
 }
 
 func (frp FlagRouteProcessor) GetSecretId() string {
 	return frp.SecretId
+}
+
+func (frp FlagRouteProcessor) GetSecretVersion() string {
+	return frp.SecretVersion
 }
 
 func (frp FlagRouteProcessor) AddConfig(extraConfig map[string]string) {

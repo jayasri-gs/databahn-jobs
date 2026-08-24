@@ -17,6 +17,7 @@ const (
 	SecretBackendAWS   = "aws"
 	SecretBackendVault = "vault"
 	SecretBackendAzure = "azure"
+	SecretBackendGCP   = "gcp"
 
 	DatabaseName       = "database.database"
 	DatabaseSchema     = "database.schema"
@@ -54,9 +55,10 @@ const (
 	ControlPlaneBaseUrl = "urls.control_plane_base_url"
 	KsqlDbUrl           = configs.KSqlDbUrl
 	// DataBahnApiUrl used to get the api url from app config
-	DataBahnApiUrl      = "urls.databahn_api"
-	DataBahnAppUrl      = "urls.databahn_app"
-	DataBahnRegistryUrl = "urls.registry_url"
+	DataBahnApiUrl             = "urls.databahn_api"
+	DataBahnAppUrl             = "urls.databahn_app"
+	DataBahnRegistryUrl        = "urls.registry_url"
+	DataPlaneControllerBaseUrl = "urls.data_plane_controller_internal_base_url"
 
 	// AuthenticationUrl identity urls
 	AuthenticationUrl = configs.AuthenticationUrl
@@ -94,13 +96,22 @@ const (
 	AzureInfraKeyVaultUrl    = "azure.secrets.infra.url"
 	AzureCustomerKeyVaultUrl = "azure.secrets.customer.url"
 
-	EmailBackend        = "email.backend"
-	EmailFrom           = "email.from"
-	EmailRegion         = "email.region"
-	EmailReplyTo        = "email.reply_to"
-	AzureACSEndpoint    = "email.azure.endpoint"
-	EmailBackendSES     = "ses"
-	EmailBackendACS     = "acs"
+	GcpInfraProjectId    = "gcp.secrets.infra.project-id"
+	GcpCustomerProjectId = "gcp.secrets.customer.project-id"
+
+	EmailBackend       = "email.backend"
+	EmailFrom          = "email.from"
+	EmailRegion        = "email.region"
+	EmailReplyTo       = "email.reply_to"
+	AzureACSEndpoint   = "email.azure.endpoint"
+	EmailSMTPHost      = "email.smtp.host"
+	EmailSMTPPort      = "email.smtp.port"
+	EmailSMTPUsername  = "email.smtp.username"
+	EmailSMTPPassword  = "email.smtp.password"
+	EmailSMTPUseTLS    = "email.smtp.use_tls"
+	EmailBackendSES    = "ses"
+	EmailBackendACS    = "acs"
+	EmailBackendSMTP   = "smtp"
 	DefaultEmailReplyTo = "support@databahn.ai"
 
 	// Object storage configuration
@@ -115,6 +126,8 @@ const (
 	ObjectBlobAccountName      = "object.blob.account_name"
 	ObjectBlobAccountKey       = "object.blob.account_key"
 	ObjectBlobConnectionString = "object.blob.connection_string"
+	ObjectGcsProjectID         = "object.gcs.project_id"
+	ObjectGcsCredentialsPath   = "object.gcs.credentials_path"
 
 	SearchSecretNameKey = "search.secret_name"
 )

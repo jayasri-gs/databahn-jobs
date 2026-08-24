@@ -31,6 +31,7 @@ type FlagSource struct {
 	Status                 int                      `json:"status"`
 	Config                 map[string]string        `json:"config"`
 	SecretId               string                   `json:"secret_id"`
+	SecretVersion          string                   `json:"secret_version"`
 	PullMechanism          string                   `json:"pullMechanism"`
 	AdvancedConfig         FlagSourceAdvancedConfig `json:"advanced_configuration"`
 	ApplicationName        string                   `json:"application_name"`
@@ -42,12 +43,14 @@ type FlagSource struct {
 	SchemaLessConfig       *SchemaLessConfig        `json:"schemaless_configuration"`
 	IsCloudFilterEnabled   bool                     `json:"is_cloud_filter_enabled"`
 	TimeZoneConfiguration  *TimeZoneConfiguration   `json:"time_zone_configuration"`
+	EdgeProduct            string                   `json:"edge_product"`
 }
 
 type TimeZoneConfiguration struct {
-	Enabled               bool   `json:"enabled"`
-	SourceTimeZone        string `json:"sourceTimeZone"`
-	NormalizationTimeZone string `json:"normalizationTimeZone"`
+	Enabled                    bool   `json:"enabled"`
+	SourceTimeZone             string `json:"sourceTimeZone"`
+	NormalizationTimeZone      string `json:"normalizationTimeZone"`
+	DeviceLevelOverrideEnabled bool   `json:"deviceLevelOverrideEnabled"`
 }
 
 // FlagSourceAdvancedConfig holds advanced configuration for the source
@@ -136,6 +139,10 @@ type ReplaceFunction struct {
 
 func (fd FlagSource) GetSecretId() string {
 	return fd.SecretId
+}
+
+func (fd FlagSource) GetSecretVersion() string {
+	return fd.SecretVersion
 }
 
 func (fd FlagSource) AddConfig(extraConfig map[string]string) {

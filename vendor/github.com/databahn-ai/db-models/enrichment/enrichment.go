@@ -34,9 +34,10 @@ func (e Enrichment) GetEnrichmentAttributes() []string {
 }
 
 type EnrichmentConfig struct {
-	Schema   string    `json:"schema"`
-	Match    Mapping   `json:"match"`
-	Mappings []Mapping `json:"mappings"`
+	Schema     string    `json:"schema"`
+	Match      Mapping   `json:"match"`
+	Mappings   []Mapping `json:"mappings"`
+	MultiMatch []Mapping `json:"multi_match"`
 }
 
 type Mapping struct {

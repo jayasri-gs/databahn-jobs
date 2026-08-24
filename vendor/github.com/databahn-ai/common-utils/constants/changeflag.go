@@ -21,6 +21,7 @@ const (
 	EntityChronicleUdmDestination       = "destination_chronicle_udm"
 	EntityDevoDestination               = "destination_devo"
 	EntitySentinelDestination           = "destination_azure_sentinel"
+	EntityAzureSentinelDataLake         = "destination_azure_sentinel_data_lake"
 	EntityAzureDataExplorer             = "destination_azure_data_explorer"
 	EntitySumologicDestination          = "destination_sumologic"
 	EntityGooglePubSubDestination       = "destination_google_pubsub"

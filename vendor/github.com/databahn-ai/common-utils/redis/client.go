@@ -443,3 +443,8 @@ func (c *Client) LIndex(ctx context.Context, key string, index int64) (string, e
 	cmd := c.cli.LIndex(ctx, key, index)
 	return cmd.Result()
 }
+
+// NewClientForTest wires an existing UniversalClient for unit tests.
+func NewClientForTest(cli redis.UniversalClient) *Client {
+	return &Client{cli: cli}
+}

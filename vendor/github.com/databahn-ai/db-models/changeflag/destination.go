@@ -16,6 +16,7 @@ type FlagDestination struct {
 	Scope               string            `json:"scope"`
 	Config              map[string]string `json:"config"`
 	SecretId            string            `json:"secret_id"`
+	SecretVersion       string            `json:"secret_version"`
 	PipelineId          string            `json:"pipeline_id"`
 	DestinationOverride bool              `json:"destination_override"`
 	BackupDestinationId string            `json:"backup_destination_id"`
@@ -33,6 +34,10 @@ func (fd FlagDestination) GetSecretId() string {
 		zap.Bool("hasSecretId", hasSecret),
 		zap.Bool("willPOSTDataPlaneControllerSecrets", hasSecret))
 	return fd.SecretId
+}
+
+func (fd FlagDestination) GetSecretVersion() string {
+	return fd.SecretVersion
 }
 
 func (fd FlagDestination) AddConfig(extraConfig map[string]string) {

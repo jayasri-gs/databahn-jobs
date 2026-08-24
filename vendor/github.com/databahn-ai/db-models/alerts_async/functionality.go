@@ -41,6 +41,7 @@ var (
 	SchemaLessNormalization = functionalityEnum{value: "schema_less_normalization"}
 	CustomNormalization     = functionalityEnum{value: "custom_normalization"}
 	Pipeline                = functionalityEnum{value: "pipeline"}
+	FreeformPipeline        = functionalityEnum{value: "freeform_pipeline"}
 )
 
 func GetAllFunctionalities() []Functionality {
