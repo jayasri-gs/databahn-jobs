@@ -183,7 +183,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		}
 		sentinelExec, err := query.NewSentinelExecutor(query.SentinelConfig{
 			WorkspaceID:  store.Sentinel.WorkspaceID,
-			StorageTier:  firstNonEmpty(cfg.StorageTier, store.Sentinel.StorageTier),
+			StorageTier:  firstNonEmpty(cfg.SentinelStorageTier(), store.Sentinel.StorageTier),
 			TenantID:     store.Sentinel.TenantID,
 			ClientID:     store.Sentinel.ClientID,
 			ClientSecret: store.Sentinel.ClientSecret,
@@ -266,8 +266,8 @@ func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destinat
 		return query.AthenaConfig{}, fmt.Errorf("athena staging config is required")
 	}
 	region := strings.TrimSpace(staging.Region)
-	if cfg != nil && strings.TrimSpace(cfg.Region) != "" {
-		region = strings.TrimSpace(cfg.Region)
+	if cfg != nil && strings.TrimSpace(cfg.AthenaRegion()) != "" {
+		region = strings.TrimSpace(cfg.AthenaRegion())
 	}
 	if region == "" {
 		return query.AthenaConfig{}, fmt.Errorf("athena region is required")

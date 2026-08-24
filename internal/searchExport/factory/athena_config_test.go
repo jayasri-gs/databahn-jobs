@@ -16,9 +16,11 @@ func TestResolveAthenaClientConfig_prefersExportConfigOverrides(t *testing.T) {
 		Bucket:     "sl-athena-out",
 	}
 	cfg := &models.SearchExportConfig{
-		Region:                 "us-east-1",
-		AthenaOutputLocation:   "s3://sl-athena-out/.databahn_out",
 		ExternalSearchProvider: "SECURITY_LAKE",
+		Athena: &models.AthenaExportConfig{
+			Region:         "us-east-1",
+			OutputLocation: "s3://sl-athena-out/.databahn_out",
+		},
 	}
 
 	got, err := resolveAthenaClientConfig(cfg, staging)

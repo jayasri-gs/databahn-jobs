@@ -57,25 +57,46 @@ type SearchExportConfig struct {
 	GlobalDestinationID string `json:"globalDestinationId,omitempty"`
 
 	QueryEngine           string `json:"queryEngine,omitempty"`
-	StorageTier           string `json:"storageTier,omitempty"`
 	DestinationType       string `json:"destinationType,omitempty"`
 	SynapseDataSourceName string `json:"synapseDataSourceName,omitempty"`
 	QueryExecutionID      string `json:"queryExecutionId,omitempty"`
 
-	// Sentinel — written by backend-service, unread by the worker today. They are what a
-	// future chunked export needs to insert a per-window time filter after the table
-	// reference; see query.PlanSentinelQueries.
-	KqlTable      string `json:"kqlTable,omitempty"`
-	KqlTimeColumn string `json:"kqlTimeColumn,omitempty"`
-
 	// External Athena (Security Lake / external S3) — additive; null on older audit rows.
-	ExternalSearchProvider string `json:"externalSearchProvider,omitempty"`
-	AthenaOutputLocation   string `json:"athenaOutputLocation,omitempty"`
-	Region                 string `json:"region,omitempty"`
+	ExternalSearchProvider string              `json:"externalSearchProvider,omitempty"`
+	Athena                 *AthenaExportConfig `json:"athena,omitempty"`
+
+	// Sentinel-only source details. KqlTable / KqlTimeColumn are unread by the worker today;
+	// they are what a future chunked export needs to insert a per-window time filter.
+	Sentinel *SentinelExportConfig `json:"sentinel,omitempty"`
 
 	// Runtime fields — written by jobs worker, ignored by backend-service
 	AthenaExecutionID  string     `json:"athenaExecutionId,omitempty"`
 	ExecutionStartedAt *time.Time `json:"executionStartedAt,omitempty"`
+}
+
+type AthenaExportConfig struct {
+	OutputLocation string `json:"outputLocation,omitempty"`
+	Region         string `json:"region,omitempty"`
+}
+
+type SentinelExportConfig struct {
+	StorageTier   string `json:"storageTier,omitempty"`
+	KqlTable      string `json:"kqlTable,omitempty"`
+	KqlTimeColumn string `json:"kqlTimeColumn,omitempty"`
+}
+
+func (c *SearchExportConfig) AthenaRegion() string {
+	if c == nil || c.Athena == nil {
+		return ""
+	}
+	return c.Athena.Region
+}
+
+func (c *SearchExportConfig) SentinelStorageTier() string {
+	if c == nil || c.Sentinel == nil {
+		return ""
+	}
+	return c.Sentinel.StorageTier
 }
 
 func (r *SearchExportReport) GetConfig() (*SearchExportConfig, error) {

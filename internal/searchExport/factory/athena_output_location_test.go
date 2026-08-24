@@ -70,7 +70,7 @@ func TestResolveAthenaClientConfigIgnoresReportConfiguredOutputLocation(t *testi
 
 	for _, location := range hostile {
 		got, err := resolveAthenaClientConfig(
-			&models.SearchExportConfig{AthenaOutputLocation: location}, testStaging())
+			&models.SearchExportConfig{Athena: &models.AthenaExportConfig{OutputLocation: location}}, testStaging())
 		if err != nil {
 			t.Fatalf("resolveAthenaClientConfig(%q) = %v, want the derived location", location, err)
 		}
@@ -151,7 +151,7 @@ func TestValidateAthenaOutputLocationBindsToStagingBucket(t *testing.T) {
 }
 
 func TestResolveAthenaClientConfigStillHonoursRegionOverride(t *testing.T) {
-	got, err := resolveAthenaClientConfig(&models.SearchExportConfig{Region: "eu-west-1"}, testStaging())
+	got, err := resolveAthenaClientConfig(&models.SearchExportConfig{Athena: &models.AthenaExportConfig{Region: "eu-west-1"}}, testStaging())
 	if err != nil {
 		t.Fatalf("resolveAthenaClientConfig: %v", err)
 	}

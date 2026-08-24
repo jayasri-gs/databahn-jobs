@@ -19,8 +19,10 @@ func TestSearchExportConfig_deserializesSecurityLakeFields(t *testing.T) {
 			"destinationId": "33333333-3333-3333-3333-333333333333",
 			"destinationType": "S3_PARQUET",
 			"externalSearchProvider": "SECURITY_LAKE",
-			"athenaOutputLocation": "s3://sl-athena-out/.databahn_out",
-			"region": "us-east-1"
+			"athena": {
+				"outputLocation": "s3://sl-athena-out/.databahn_out",
+				"region": "us-east-1"
+			}
 		}
 	}`
 
@@ -34,20 +36,49 @@ func TestSearchExportConfig_deserializesSecurityLakeFields(t *testing.T) {
 	if cfg.ExternalSearchProvider != "SECURITY_LAKE" {
 		t.Fatalf("externalSearchProvider = %q", cfg.ExternalSearchProvider)
 	}
-	if cfg.AthenaOutputLocation != "s3://sl-athena-out/.databahn_out" {
-		t.Fatalf("athenaOutputLocation = %q", cfg.AthenaOutputLocation)
+	if cfg.Athena == nil || cfg.Athena.OutputLocation != "s3://sl-athena-out/.databahn_out" {
+		t.Fatalf("athena.outputLocation = %#v", cfg.Athena)
 	}
-	if cfg.Region != "us-east-1" {
-		t.Fatalf("region = %q", cfg.Region)
+	if cfg.Athena.Region != "us-east-1" {
+		t.Fatalf("athena.region = %q", cfg.Athena.Region)
 	}
 }
 
-func TestSearchExportConfig_omitsSecurityLakeFieldsForLegacyRows(t *testing.T) {
+func TestSearchExportConfig_deserializesSentinelFields(t *testing.T) {
+	raw := `{
+		"searchExportConfig": {
+			"query": "SecurityEvent | take 5000",
+			"queryEngine": "KUSTO_LAW",
+			"externalSearchProvider": "AZURE_SENTINEL",
+			"sentinel": {
+				"storageTier": "ANALYTICS",
+				"kqlTable": "SecurityEvent",
+				"kqlTimeColumn": "TimeGenerated"
+			}
+		}
+	}`
+
+	var report SearchExportReport
+	report.ReportConfiguration = []byte(raw)
+
+	cfg, err := report.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if cfg.SentinelStorageTier() != "ANALYTICS" {
+		t.Fatalf("sentinel.storageTier = %q", cfg.SentinelStorageTier())
+	}
+	if cfg.Sentinel.KqlTable != "SecurityEvent" || cfg.Sentinel.KqlTimeColumn != "TimeGenerated" {
+		t.Fatalf("sentinel kql fields = %#v", cfg.Sentinel)
+	}
+}
+
+func TestSearchExportConfig_omitsNestedFieldsForLegacyRows(t *testing.T) {
 	var cfg SearchExportConfig
 	if err := json.Unmarshal([]byte(`{"query":"SELECT 1","database":"db"}`), &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if cfg.ExternalSearchProvider != "" || cfg.AthenaOutputLocation != "" || cfg.Region != "" {
-		t.Fatalf("expected empty external Athena fields, got %+v", cfg)
+	if cfg.ExternalSearchProvider != "" || cfg.Athena != nil || cfg.Sentinel != nil {
+		t.Fatalf("expected empty nested export fields, got %+v", cfg)
 	}
 }
