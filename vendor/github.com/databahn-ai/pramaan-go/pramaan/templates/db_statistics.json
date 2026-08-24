@@ -1,0 +1,96 @@
+{
+  "index_patterns": [
+    "db_statistics_*",
+    "rolled_over_*"
+  ],
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": "1",
+        "number_of_replicas": "0"
+      }
+    },
+    "mappings": {
+      "properties": {
+        "name": {
+          "type": "text",
+          "fields": {
+            "raw": {
+              "type": "keyword"
+            }
+          }
+        },
+        "namespace": {
+          "type": "keyword"
+        },
+        "counter": {
+          "properties": {
+            "value": {
+              "type": "double"
+            }
+          }
+        },
+        "tags": {
+          "properties": {
+            "db_tenant_id": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "db_event_source_id": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "operator_id": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "destination_id": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "rule_id": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "db_node_id": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "db_ts_win": {
+              "type": "long"
+            }
+          }
+        },
+        "timestamp": {
+          "type": "long"
+        }
+      }
+    }
+  },
+  "composed_of": [],
+  "priority": 100
+}

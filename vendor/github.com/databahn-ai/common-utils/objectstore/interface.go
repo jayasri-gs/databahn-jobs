@@ -10,6 +10,7 @@ import (
 const (
 	BackendS3   = "s3"
 	BackendBlob = "blob"
+	BackendGcs  = "gcs"
 )
 
 // ObjectInfo contains metadata about an object in the store.
@@ -26,7 +27,7 @@ type PutOptions struct {
 }
 
 // ObjectStore defines the interface for object storage operations.
-// It supports S3 and Azure Blob Storage as backends.
+// It supports S3, Azure Blob Storage, and Google Cloud Storage as backends.
 type ObjectStore interface {
 	// Get retrieves an object from the store.
 	// container is the bucket name (S3) or container name (Azure Blob).

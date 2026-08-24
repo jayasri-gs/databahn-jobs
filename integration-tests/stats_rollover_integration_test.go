@@ -16,7 +16,6 @@ func TestStatsRolloverHappyPath(t *testing.T) {
 	openSearch := JobPramaan().GetOpenSearch(t)
 	fixture := newStatsRolloverFixture()
 
-	createStatsTestIndex(t, ctx, openSearch, fixture.index)
 	t.Cleanup(func() {
 		deleteStatsTestIndex(t, ctx, openSearch, fixture.index)
 	})
@@ -46,8 +45,6 @@ func TestStatsRolloverHappyPath(t *testing.T) {
 		deleteStatsTestIndex(t, ctx, openSearch, newIndexName)
 	})
 
-	createStatsTestIndex(t, ctx, openSearch, newIndexName)
-
 	config, err := stats.NewIntegrationRolloverConfig(time.Hour)
 	if err != nil {
 		t.Fatalf("integration rollover config: %v", err)
@@ -70,7 +67,6 @@ func TestStatsRolloverPreservesPerOperatorCounts(t *testing.T) {
 	openSearch := JobPramaan().GetOpenSearch(t)
 	fixture := newStatsRolloverFixture()
 
-	createStatsTestIndex(t, ctx, openSearch, fixture.index)
 	t.Cleanup(func() {
 		deleteStatsTestIndex(t, ctx, openSearch, fixture.index)
 	})
@@ -97,9 +93,6 @@ func TestStatsRolloverPreservesPerOperatorCounts(t *testing.T) {
 	t.Cleanup(func() {
 		deleteStatsTestIndex(t, ctx, openSearch, newIndexName)
 	})
-
-	// Rolled index needs the same mappings (name.raw, tags.operator_id, etc.) for validation aggs.
-	createStatsTestIndex(t, ctx, openSearch, newIndexName)
 
 	config, err := stats.NewIntegrationRolloverConfig(time.Hour)
 	if err != nil {
@@ -132,7 +125,6 @@ func TestStatsRolloverKeepsLegacyStatsWithoutOperatorIdSeparate(t *testing.T) {
 	openSearch := JobPramaan().GetOpenSearch(t)
 	fixture := newStatsRolloverFixture()
 
-	createStatsTestIndex(t, ctx, openSearch, fixture.index)
 	t.Cleanup(func() {
 		deleteStatsTestIndex(t, ctx, openSearch, fixture.index)
 	})
@@ -157,9 +149,6 @@ func TestStatsRolloverKeepsLegacyStatsWithoutOperatorIdSeparate(t *testing.T) {
 	t.Cleanup(func() {
 		deleteStatsTestIndex(t, ctx, openSearch, newIndexName)
 	})
-
-	// Rolled index needs the same mappings (name.raw, tags.operator_id, etc.) for validation aggs.
-	createStatsTestIndex(t, ctx, openSearch, newIndexName)
 
 	config, err := stats.NewIntegrationRolloverConfig(time.Hour)
 	if err != nil {

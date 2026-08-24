@@ -12,6 +12,7 @@ import (
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/configs"
 	"github.com/databahn-ai/common-utils/configuration"
+	"github.com/databahn-ai/common-utils/gcp"
 	"github.com/databahn-ai/common-utils/utils"
 	"github.com/databahn-ai/common-utils/vault"
 	logging "github.com/databahn-ai/go-logging/logger"
@@ -120,6 +121,17 @@ func (c *Connection) ConnectWithSecrets(ctx context.Context, useTablePrefix bool
 		dbSecrets, err = readDBSecretsFromAzureKeyVault(ctx, vaultUrl, secretName)
 		if err != nil {
 			logging.GetLoggerWithContext(ctx).Error("error while fetching database credentials from azure key vault", zap.Error(err))
+			return nil, err
+		}
+	case configuration.SecretBackendGCP:
+		logging.GetLogger().Info("loading gcp secret manager secrets", zap.String("secret name", utils.GetMaskedString(secretName, 5)))
+		projectId := appConfig.GetString(configuration.GcpInfraProjectId)
+		if projectId == "" {
+			return nil, fmt.Errorf("missing config value %s", configuration.GcpInfraProjectId)
+		}
+		dbSecrets, err = readDBSecretsFromGcpSecretManager(ctx, projectId, secretName)
+		if err != nil {
+			logging.GetLoggerWithContext(ctx).Error("error while fetching database credentials from gcp secret manager", zap.Error(err))
 			return nil, err
 		}
 	default:
@@ -245,6 +257,21 @@ func readDBSecretsFromAzureKeyVault(ctx context.Context, vaultUrl, secretName st
 	err = json.Unmarshal([]byte(*resp.Value), creds)
 	if err != nil {
 		logging.GetLoggerWithContext(ctx).Error("failed to unmarshal Azure Key Vault secret value", zap.Error(err))
+		return nil, err
+	}
+	return creds, nil
+}
+
+func readDBSecretsFromGcpSecretManager(ctx context.Context, projectId, secretName string) (*DatabaseCredentials, error) {
+	secretValue, err := gcp.ReadSecretByName(ctx, projectId, secretName)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("failed to get secret from GCP Secret Manager", zap.Error(err))
+		return nil, err
+	}
+	creds := &DatabaseCredentials{}
+	err = json.Unmarshal([]byte(secretValue), creds)
+	if err != nil {
+		logging.GetLoggerWithContext(ctx).Error("failed to unmarshal GCP Secret Manager secret value", zap.Error(err))
 		return nil, err
 	}
 	return creds, nil
