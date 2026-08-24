@@ -43,15 +43,15 @@ func TestColumnIndex_caseInsensitive(t *testing.T) {
 
 func TestPipelineRun_UsesSynapseBranch(t *testing.T) {
 	mock := &mockSynapseStream{rows: [][]interface{}{{"a"}}}
-	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, "report-1", "test_npe 2026-06-17", &models.SearchExportConfig{
+	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, testReportID, "test_npe 2026-06-17", &models.SearchExportConfig{
 		Query:  "SELECT col1 FROM t",
 		Format: "csv",
-	}, nil, mock, nil, nil, nil)
+	}, Deps{RowStream: mock}, nil)
 
-	if p.synapse == nil {
-		t.Fatal("expected synapse executor")
+	if p.rowStream == nil {
+		t.Fatal("expected row-stream executor")
 	}
-	if p.athena != nil {
-		t.Fatal("athena should be nil for synapse pipeline")
+	if p.unloadExec != nil {
+		t.Fatal("unloadExec should be nil for synapse pipeline")
 	}
 }

@@ -63,8 +63,8 @@ func (m *mockAthena) NewStagingReader(string) (unload.StagingReader, error) {
 }
 
 func newTestPipeline(athena *mockAthena) *Pipeline {
-	return New(PipelineConfig{TempDir: "/tmp"}, "report-1", "Search Export - 2026-07-15 10:00:00",
-		&models.SearchExportConfig{Query: "SELECT 1", Format: "csv"}, athena, nil, &mockUploader{}, nil, zap.NewNop())
+	return New(PipelineConfig{TempDir: "/tmp"}, testReportID, "Search Export - 2026-07-15 10:00:00",
+		&models.SearchExportConfig{Query: "SELECT 1", Format: "csv"}, Deps{Unload: athena, Uploader: &mockUploader{}}, zap.NewNop())
 }
 
 func TestResumeRun_EmptyExecutionID_RunsFresh(t *testing.T) {

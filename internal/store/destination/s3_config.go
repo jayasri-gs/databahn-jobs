@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -21,7 +22,59 @@ type S3Config struct {
 
 // AthenaOutputLocation matches backend AthenaService.athenaQueryOutputLocation.
 func (c *S3Config) AthenaOutputLocation() string {
+	if c == nil || c.Bucket == "" {
+		return ""
+	}
 	return fmt.Sprintf("s3://%s/.databahn_out", c.Bucket)
+}
+
+// S3ConfigFromExternalConnector builds Athena staging credentials from an
+// external-store connectorConfig. Prefers output_bucket over bucket for Athena
+// results, matching backend ATHENA_OUTPUT_BUCKET.
+func S3ConfigFromExternalConnector(connector map[string]string) *S3Config {
+	if len(connector) == 0 {
+		return nil
+	}
+	bucket := strings.TrimSpace(connector["output_bucket"])
+	if bucket == "" {
+		bucket = strings.TrimSpace(connector["bucket"])
+	}
+	return &S3Config{
+		AuthType:        strings.TrimSpace(connector["auth_type"]),
+		AccessKeyID:     connector["access_key_id"],
+		SecretAccessKey: connector["secret_access_key"],
+		RoleArn:         strings.TrimSpace(connector["role_arn"]),
+		ExternalID:      strings.TrimSpace(connector["external_id"]),
+		Region:          strings.TrimSpace(connector["region"]),
+		Bucket:          bucket,
+	}
+}
+
+// ApplyS3CredentialOverrides overlays AWS Secrets Manager fields onto an S3Config.
+//
+// Blank values are ignored rather than assigned: a partial or malformed secret that carries
+// a recognised key with an empty value would otherwise erase working inline credentials and
+// fail the export at authentication. This matches how resolveExternalAthenaS3 merges the
+// same four fields.
+func ApplyS3CredentialOverrides(cfg *S3Config, credentialOverrides map[string]string) {
+	if cfg == nil {
+		return
+	}
+	for k, v := range credentialOverrides {
+		if v == "" {
+			continue
+		}
+		switch k {
+		case "access_key_id":
+			cfg.AccessKeyID = v
+		case "secret_access_key":
+			cfg.SecretAccessKey = v
+		case "role_arn":
+			cfg.RoleArn = v
+		case "external_id":
+			cfg.ExternalID = v
+		}
+	}
 }
 
 type s3ConfigRow struct {
@@ -41,18 +94,7 @@ func parseS3ConfigFromWrapper(wrapper ConfigWrapper, credentialOverrides map[str
 		Bucket:          wrapper.getString("bucket"),
 	}
 
-	for k, v := range credentialOverrides {
-		switch k {
-		case "access_key_id":
-			cfg.AccessKeyID = v
-		case "secret_access_key":
-			cfg.SecretAccessKey = v
-		case "role_arn":
-			cfg.RoleArn = v
-		case "external_id":
-			cfg.ExternalID = v
-		}
-	}
+	ApplyS3CredentialOverrides(cfg, credentialOverrides)
 
 	if cfg.Bucket == "" {
 		return nil, fmt.Errorf("destination bucket is required")

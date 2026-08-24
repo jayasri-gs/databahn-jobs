@@ -22,6 +22,9 @@ func exportLogger(report models.SearchExportReport, cfg *models.SearchExportConf
 			zap.String("database", cfg.Database),
 			zap.String("query", cfg.Query),
 		)
+		if cfg.ExternalSearchProvider != "" {
+			fields = append(fields, zap.String("externalSearchProvider", cfg.ExternalSearchProvider))
+		}
 	}
 	return logging.GetLogger().With(fields...)
 }

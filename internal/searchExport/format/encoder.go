@@ -1,6 +1,7 @@
 package format
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"time"
@@ -35,6 +36,13 @@ func FormatValue(v interface{}) string {
 	switch val := v.(type) {
 	case string:
 		return val
+	// json.RawMessage carries a KQL `dynamic` column verbatim. It must be matched before
+	// []byte: a type switch compares exact types, so the []byte case below never sees it,
+	// and the default would render it as a list of byte values.
+	case json.RawMessage:
+		return string(val)
+	case json.Number:
+		return val.String()
 	case []byte:
 		return string(val)
 	case time.Time:
