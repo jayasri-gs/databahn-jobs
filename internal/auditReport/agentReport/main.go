@@ -14,6 +14,26 @@ import (
 	"go.uber.org/zap"
 )
 
+const agentTagsSubquery = `
+	SELECT
+		atm.agent_id,
+		atm.tenant_id,
+		COALESCE(STRING_AGG(DISTINCT t.name, ', ' ORDER BY t.name), '') AS tags,
+		COUNT(DISTINCT t.id) AS tags_count
+	FROM agent_tag_mapping atm
+	JOIN tag t ON t.id = atm.tag_id AND t.tenant_id = atm.tenant_id
+	GROUP BY atm.agent_id, atm.tenant_id`
+
+const agentCollectionProfilesSubquery = `
+	SELECT
+		atm.agent_id,
+		atm.tenant_id,
+		COALESCE(STRING_AGG(DISTINCT cp.name, ', ' ORDER BY cp.name), '') AS collection_profile
+	FROM agent_tag_mapping atm
+	JOIN collection_profile_tag_mapping cptm ON cptm.tag_id = atm.tag_id AND cptm.tenant_id = atm.tenant_id
+	JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = atm.tenant_id
+	GROUP BY atm.agent_id, atm.tenant_id`
+
 func WriteAgentReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
 	logging.GetLoggerWithContext(ctx).Info("writing agent report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	query, err := getQueryForAgentData(ctx, req)
@@ -104,7 +124,7 @@ func writePagedDataToFile(ctx context.Context, req models.AuditReport, query str
 		if fetchedRowsCount < pageSize {
 			break
 		}
-		offset += pageSize + 1
+		offset += pageSize
 	}
 
 	return nil
@@ -151,7 +171,6 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 
 	whereClause, _, _ := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
 
-	// Build the complete JOIN query
 	query := fmt.Sprintf(`
 		SELECT 
 			a.id,
@@ -185,23 +204,17 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 			dp.name as dataplane_name,
 			uc.email as created_by,
 			uu.email as updated_by,
-			STRING_AGG(DISTINCT t.name, ', ' ORDER BY t.name) as tags,
-			COUNT(DISTINCT t.id) as tags_count,
-			STRING_AGG(DISTINCT cp.name, ', ' ORDER BY cp.name) as collection_profile
+			COALESCE(at.tags, '') as tags,
+			COALESCE(at.tags_count, 0) as tags_count,
+			COALESCE(acp.collection_profile, '') as collection_profile
 		FROM agent_node a
-		    LEFT JOIN fleet f on a.fleet_id = f.id
+		LEFT JOIN fleet f on a.fleet_id = f.id
 		LEFT JOIN data_planes dp ON a.data_plane_id = dp.id
 		LEFT JOIN users uc ON a.created_by = uc.id
 		LEFT JOIN users uu ON a.updated_by = uu.id
-		LEFT JOIN agent_tag_mapping atm ON atm.agent_id = a.id AND atm.tenant_id = a.tenant_id
-		LEFT JOIN tag t ON t.id = atm.tag_id AND t.tenant_id = a.tenant_id
-		LEFT JOIN collection_profile_tag_mapping cptm ON cptm.tag_id = t.id AND cptm.tenant_id = a.tenant_id
-		LEFT JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = a.tenant_id
-		WHERE %s
-		GROUP BY a.id, a.name, a.description, a.hostname, a.os, a.platform, a.cpu_arch, a.cpu_count,
-			a.kernel_arch, a.kernel_version, a.version, a.private_ip, a.public_ip, a.port, a.status,
-			a.heartbeat_at, a.boot_time, a.uptime, a.is_upgrade_available, a.created_at, a.updated_at,
-			a.runners, a.runners_log_level, a.diagnostic_location, dp.name, uc.email, uu.email`, whereClause)
+		LEFT JOIN (%s) at ON at.agent_id = a.id AND at.tenant_id = a.tenant_id
+		LEFT JOIN (%s) acp ON acp.agent_id = a.id AND acp.tenant_id = a.tenant_id
+		WHERE %s`, agentTagsSubquery, agentCollectionProfilesSubquery, whereClause)
 
 	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, nil
