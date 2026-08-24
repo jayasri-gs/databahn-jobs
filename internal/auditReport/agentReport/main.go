@@ -198,10 +198,7 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 		LEFT JOIN collection_profile_tag_mapping cptm ON cptm.tag_id = t.id AND cptm.tenant_id = a.tenant_id
 		LEFT JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = a.tenant_id
 		WHERE %s
-		GROUP BY a.id, a.name, a.description, a.hostname, a.os, a.platform, a.cpu_arch, a.cpu_count,
-			a.kernel_arch, a.kernel_version, a.version, a.private_ip, a.public_ip, a.port, a.status,
-			a.heartbeat_at, a.boot_time, a.uptime, a.is_upgrade_available, a.created_at, a.updated_at,
-			a.runners, a.runners_log_level, a.diagnostic_location, dp.name, uc.email, uu.email`, whereClause)
+		GROUP BY a.id, dp.name, uc.email, uu.email`, whereClause)
 
 	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, nil
