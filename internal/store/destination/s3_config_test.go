@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/databahn-ai/databahn-jobs/internal/store/dataplane"
+	"github.com/google/uuid"
 )
 
 const testDatabahnStorageBucket = "databahn-storage-bucket"
@@ -258,6 +259,51 @@ func TestDatabahnStorageRegionFromDataPlane_MalformedJSON(t *testing.T) {
 	_, err := databahnStorageRegionFromDataPlane(dp)
 	if err == nil {
 		t.Fatal("expected error for malformed backup JSON")
+	}
+}
+
+func TestDatabahnStorageRegionFromJoinRow_NoDataPlaneID(t *testing.T) {
+	_, err := databahnStorageRegionFromJoinRow(nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error when destination has no data plane")
+	}
+	if err.Error() != "destination has no data plane" {
+		t.Fatalf("got %q", err.Error())
+	}
+}
+
+func TestDatabahnStorageRegionFromJoinRow_NilDataPlaneUUID(t *testing.T) {
+	id := uuid.Nil
+	_, err := databahnStorageRegionFromJoinRow(&id, nil, nil)
+	if err == nil || err.Error() != "destination has no data plane" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDatabahnStorageRegionFromJoinRow_DataPlaneMissing(t *testing.T) {
+	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	_, err := databahnStorageRegionFromJoinRow(&id, nil, nil)
+	if err == nil {
+		t.Fatal("expected error when dataplane row is missing")
+	}
+	want := "data plane not found with id: " + id.String()
+	if err.Error() != want {
+		t.Fatalf("got %q, want %q", err.Error(), want)
+	}
+}
+
+func TestDatabahnStorageRegionFromJoinRow_Present(t *testing.T) {
+	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	got, err := databahnStorageRegionFromJoinRow(
+		&id,
+		&id,
+		[]byte(`{"databahnStorageConfiguration":{"region":"us-west-2"}}`),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "us-west-2" {
+		t.Fatalf("got %q, want us-west-2", got)
 	}
 }
 

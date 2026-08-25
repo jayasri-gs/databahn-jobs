@@ -109,14 +109,6 @@ func GetAllDataPlanes(ctx context.Context, db *gorm.DB) ([]DataPlane, error) {
 	return dataPlanes, err
 }
 
-func GetDataPlaneByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*DataPlane, error) {
-	var dp DataPlane
-	if err := db.WithContext(ctx).Where("id = ?", id).First(&dp).Error; err != nil {
-		return nil, err
-	}
-	return &dp, nil
-}
-
 // ParseBackupConfiguration parses the backup_configuration JSON field
 func (dp *DataPlane) ParseBackupConfiguration() (*BackupConfiguration, error) {
 	if len(dp.BackupConfiguration) == 0 {

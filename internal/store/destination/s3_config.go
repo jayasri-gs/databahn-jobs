@@ -106,28 +106,35 @@ func databahnStorageRegionFromDataPlane(dp *dataplane.DataPlane) (string, error)
 	return cfg.DatabahnStorageConfiguration.Region, nil
 }
 
-func loadDatabahnStorageRegionFromDataPlane(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) (string, error) {
-	var dataPlaneID *uuid.UUID
-	err := db.WithContext(ctx).Raw(
-		"SELECT data_plane_id FROM destination WHERE id = ? AND tenant_id = ? LIMIT 1",
-		destID, tenantID,
-	).Scan(&dataPlaneID).Error
-	if err != nil {
-		return "", fmt.Errorf("failed to load destination data plane: %w", err)
-	}
+func databahnStorageRegionFromJoinRow(dataPlaneID, joinedDataPlaneID *uuid.UUID, backupJSON []byte) (string, error) {
 	if dataPlaneID == nil || *dataPlaneID == uuid.Nil {
 		return "", errors.New("destination has no data plane")
 	}
-
-	dp, err := dataplane.GetDataPlaneByID(ctx, db, *dataPlaneID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", fmt.Errorf("data plane not found with id: %s", dataPlaneID)
-		}
-		return "", fmt.Errorf("failed to load data plane: %w", err)
+	if joinedDataPlaneID == nil || *joinedDataPlaneID == uuid.Nil {
+		return "", fmt.Errorf("data plane not found with id: %s", dataPlaneID)
 	}
-
+	dp := &dataplane.DataPlane{BackupConfiguration: backupJSON}
 	return databahnStorageRegionFromDataPlane(dp)
+}
+
+func loadDatabahnStorageRegionFromDataPlane(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) (string, error) {
+	var row struct {
+		DataPlaneID         *uuid.UUID `gorm:"column:data_plane_id"`
+		JoinedDataPlaneID   *uuid.UUID `gorm:"column:joined_data_plane_id"`
+		BackupConfiguration []byte     `gorm:"column:backup_configuration"`
+	}
+	err := db.WithContext(ctx).Raw(
+		`SELECT d.data_plane_id, dp.id AS joined_data_plane_id, dp.backup_configuration
+		 FROM destination d
+		 LEFT JOIN data_planes dp ON dp.id = d.data_plane_id
+		 WHERE d.id = ? AND d.tenant_id = ?
+		 LIMIT 1`,
+		destID, tenantID,
+	).Scan(&row).Error
+	if err != nil {
+		return "", fmt.Errorf("failed to load destination data plane: %w", err)
+	}
+	return databahnStorageRegionFromJoinRow(row.DataPlaneID, row.JoinedDataPlaneID, row.BackupConfiguration)
 }
 
 // LoadDatabahnStorageStagingConfig loads the Athena staging S3 config from a DATABAHN_STORAGE
