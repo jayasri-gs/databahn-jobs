@@ -219,15 +219,15 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (agentQue
 
 func getGroupingLevel(req models.AuditReport) string {
 	if len(req.ReportConfiguration) == 0 {
-		return groupingLevelAgent
+		return groupingLevelAgentTag
 	}
 
 	var config agentReportConfiguration
 	if err := json.Unmarshal(req.ReportConfiguration, &config); err != nil {
-		return groupingLevelAgent
+		return groupingLevelAgentTag
 	}
 	if config.AgentReportConfig == nil || config.AgentReportConfig.GroupingLevel == "" {
-		return groupingLevelAgent
+		return groupingLevelAgentTag
 	}
 	return config.AgentReportConfig.GroupingLevel
 }
