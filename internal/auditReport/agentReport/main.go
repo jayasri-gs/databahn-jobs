@@ -14,6 +14,19 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	groupingLevelAgent    = "AGENT"
+	groupingLevelAgentTag = "AGENT_TAG"
+)
+
+type agentReportConfiguration struct {
+	AgentReportConfig *agentReportConfig `json:"agentReportConfig"`
+}
+
+type agentReportConfig struct {
+	GroupingLevel string `json:"groupingLevel"`
+}
+
 func WriteAgentReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
 	logging.GetLoggerWithContext(ctx).Info("writing agent report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	query, err := getQueryForAgentData(ctx, req)
@@ -151,8 +164,33 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 
 	whereClause, _, _ := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
 
-	// Build the complete JOIN query
-	query := fmt.Sprintf(`
+	groupingLevel := getGroupingLevel(req)
+	query := buildAgentLevelQuery(whereClause)
+	if groupingLevel == groupingLevelAgentTag {
+		query = buildAgentTagLevelQuery(whereClause)
+	}
+
+	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("grouping_level", groupingLevel), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	return query, nil
+}
+
+func getGroupingLevel(req models.AuditReport) string {
+	if len(req.ReportConfiguration) == 0 {
+		return groupingLevelAgent
+	}
+
+	var config agentReportConfiguration
+	if err := json.Unmarshal(req.ReportConfiguration, &config); err != nil {
+		return groupingLevelAgent
+	}
+	if config.AgentReportConfig == nil || config.AgentReportConfig.GroupingLevel == "" {
+		return groupingLevelAgent
+	}
+	return config.AgentReportConfig.GroupingLevel
+}
+
+func buildAgentLevelQuery(whereClause string) string {
+	return fmt.Sprintf(`
 		SELECT 
 			a.id,
 			a.name,
@@ -199,9 +237,54 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 		LEFT JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = a.tenant_id
 		WHERE %s
 		GROUP BY a.id, dp.name, uc.email, uu.email`, whereClause)
+}
 
-	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
-	return query, nil
+func buildAgentTagLevelQuery(whereClause string) string {
+	return fmt.Sprintf(`
+		SELECT 
+			a.id,
+			a.name,
+			a.description,
+			a.hostname,
+			a.os,
+			a.platform,
+			a.cpu_arch,
+			a.cpu_count,
+			a.kernel_arch,
+			a.kernel_version,
+			a.version,
+			a.private_ip,
+			a.public_ip,
+			a.port,
+			CASE 
+				WHEN a.status = 'DELETED' THEN 'DELETED'
+				WHEN now() - a.heartbeat_at > interval '30 minutes' THEN 'WARNING'
+				ELSE a.status
+			END as status,
+			a.boot_time,
+			a.uptime,
+			a.is_upgrade_available,
+			a.created_at,
+			a.updated_at,
+			a.heartbeat_at,
+			a.runners,
+			a.runners_log_level,
+			a.diagnostic_location,
+			dp.name as dataplane_name,
+			uc.email as created_by,
+			uu.email as updated_by,
+			t.name as tag_name,
+			cp.name as collection_profile
+		FROM agent_node a
+		    LEFT JOIN fleet f on a.fleet_id = f.id
+		LEFT JOIN data_planes dp ON a.data_plane_id = dp.id
+		LEFT JOIN users uc ON a.created_by = uc.id
+		LEFT JOIN users uu ON a.updated_by = uu.id
+		LEFT JOIN agent_tag_mapping atm ON atm.agent_id = a.id AND atm.tenant_id = a.tenant_id
+		LEFT JOIN tag t ON t.id = atm.tag_id AND t.tenant_id = a.tenant_id
+		LEFT JOIN collection_profile_tag_mapping cptm ON cptm.tag_id = t.id AND cptm.tenant_id = a.tenant_id
+		LEFT JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = a.tenant_id
+		WHERE %s`, whereClause)
 }
 func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query string, file *os.File) error {
 	err := getReportAndWriteToFile(ctx, req, query, file)
