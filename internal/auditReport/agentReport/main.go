@@ -163,9 +163,8 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 	whereClause, _, _ := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
 
 	groupingLevel := getGroupingLevel(req)
-	var query string
-	if groupingLevel == groupingLevelAgentTag {
-		query = fmt.Sprintf(`
+	tagColumns, groupByClause := agentTagColumnsAndGroupBy(groupingLevel)
+	query := fmt.Sprintf(`
 		SELECT 
 			a.id,
 			a.name,
@@ -198,55 +197,7 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 			dp.name as dataplane_name,
 			uc.email as created_by,
 			uu.email as updated_by,
-			t.name as tag_name,
-			cp.name as collection_profile
-		FROM agent_node a
-		    LEFT JOIN fleet f on a.fleet_id = f.id
-		LEFT JOIN data_planes dp ON a.data_plane_id = dp.id
-		LEFT JOIN users uc ON a.created_by = uc.id
-		LEFT JOIN users uu ON a.updated_by = uu.id
-		LEFT JOIN agent_tag_mapping atm ON atm.agent_id = a.id AND atm.tenant_id = a.tenant_id
-		LEFT JOIN tag t ON t.id = atm.tag_id AND t.tenant_id = a.tenant_id
-		LEFT JOIN collection_profile_tag_mapping cptm ON cptm.tag_id = t.id AND cptm.tenant_id = a.tenant_id
-		LEFT JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = a.tenant_id
-		WHERE %s`, whereClause)
-	} else {
-		query = fmt.Sprintf(`
-		SELECT 
-			a.id,
-			a.name,
-			a.description,
-			a.hostname,
-			a.os,
-			a.platform,
-			a.cpu_arch,
-			a.cpu_count,
-			a.kernel_arch,
-			a.kernel_version,
-			a.version,
-			a.private_ip,
-			a.public_ip,
-			a.port,
-			CASE 
-				WHEN a.status = 'DELETED' THEN 'DELETED'
-				WHEN now() - a.heartbeat_at > interval '30 minutes' THEN 'WARNING'
-				ELSE a.status
-			END as status,
-			a.boot_time,
-			a.uptime,
-			a.is_upgrade_available,
-			a.created_at,
-			a.updated_at,
-			a.heartbeat_at,
-			a.runners,
-			a.runners_log_level,
-			a.diagnostic_location,
-			dp.name as dataplane_name,
-			uc.email as created_by,
-			uu.email as updated_by,
-			STRING_AGG(DISTINCT t.name, ', ' ORDER BY t.name) as tags,
-			COUNT(DISTINCT t.id) as tags_count,
-			STRING_AGG(DISTINCT cp.name, ', ' ORDER BY cp.name) as collection_profile
+			%s
 		FROM agent_node a
 		    LEFT JOIN fleet f on a.fleet_id = f.id
 		LEFT JOIN data_planes dp ON a.data_plane_id = dp.id
@@ -257,11 +208,21 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 		LEFT JOIN collection_profile_tag_mapping cptm ON cptm.tag_id = t.id AND cptm.tenant_id = a.tenant_id
 		LEFT JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = a.tenant_id
 		WHERE %s
-		GROUP BY a.id, dp.name, uc.email, uu.email`, whereClause)
-	}
+		%s`, tagColumns, whereClause, groupByClause)
 
 	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("grouping_level", groupingLevel), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, nil
+}
+
+func agentTagColumnsAndGroupBy(groupingLevel string) (string, string) {
+	if groupingLevel == groupingLevelAgentTag {
+		return `t.name as tag_name,
+			cp.name as collection_profile`, ""
+	}
+	return `STRING_AGG(DISTINCT t.name, ', ' ORDER BY t.name) as tags,
+			COUNT(DISTINCT t.id) as tags_count,
+			STRING_AGG(DISTINCT cp.name, ', ' ORDER BY cp.name) as collection_profile`,
+		"GROUP BY a.id, dp.name, uc.email, uu.email"
 }
 
 func getGroupingLevel(req models.AuditReport) string {
