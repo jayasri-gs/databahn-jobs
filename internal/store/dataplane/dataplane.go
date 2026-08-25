@@ -38,8 +38,13 @@ func (*DataPlane) TableName() string {
 
 // BackupConfiguration represents the backup_configuration JSON structure
 type BackupConfiguration struct {
-	UnparsedConfiguration UnparsedConfig `json:"unparsedConfiguration"`
-	SandboxConfiguration  SandboxConfig  `json:"sandboxConfiguration"`
+	UnparsedConfiguration        UnparsedConfig               `json:"unparsedConfiguration"`
+	SandboxConfiguration         SandboxConfig                `json:"sandboxConfiguration"`
+	DatabahnStorageConfiguration DatabahnStorageConfiguration `json:"databahnStorageConfiguration"`
+}
+
+type DatabahnStorageConfiguration struct {
+	Region string `json:"region"`
 }
 
 // UnparsedConfig represents unparsed data configuration

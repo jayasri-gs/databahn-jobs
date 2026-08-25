@@ -2,6 +2,9 @@ package destination
 
 import (
 	"testing"
+
+	"github.com/databahn-ai/databahn-jobs/internal/store/dataplane"
+	"github.com/google/uuid"
 )
 
 const testDatabahnStorageBucket = "databahn-storage-bucket"
@@ -172,5 +175,171 @@ func TestParseDatabahnStorageStagingConfig_MissingBucket(t *testing.T) {
 	_, err := parseDatabahnStorageStagingConfig(cfgMap)
 	if err == nil {
 		t.Fatal("expected error for missing s3BucketName")
+	}
+}
+
+func TestResolveDatabahnStorageRegion_DestS3RegionWins(t *testing.T) {
+	got, err := resolveDatabahnStorageRegion("ap-south-1", "us-west-2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "ap-south-1" {
+		t.Fatalf("got %q, want dest s3Region", got)
+	}
+}
+
+func TestResolveDatabahnStorageRegion_FallbackToDataplane(t *testing.T) {
+	got, err := resolveDatabahnStorageRegion("", "us-west-2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "us-west-2" {
+		t.Fatalf("got %q, want dataplane region", got)
+	}
+}
+
+func TestResolveDatabahnStorageRegion_WhitespaceDestUsesDataplane(t *testing.T) {
+	got, err := resolveDatabahnStorageRegion("  ", "eu-central-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "eu-central-1" {
+		t.Fatalf("got %q, want dataplane region", got)
+	}
+}
+
+func TestResolveDatabahnStorageRegion_MissingBothErrors(t *testing.T) {
+	_, err := resolveDatabahnStorageRegion("", "")
+	if err == nil {
+		t.Fatal("expected error when dest and dataplane region are missing")
+	}
+	want := "Databahn Storage is not enabled for this data plane. Please contact your administrator."
+	if err.Error() != want {
+		t.Fatalf("got %q, want %q", err.Error(), want)
+	}
+}
+
+func TestResolveDatabahnStorageRegion_DoesNotReceiveGenericRegionKey(t *testing.T) {
+	// Callers pass cfgMap["s3Region"] only. Generic "region" must not be treated as dest region.
+	got, err := resolveDatabahnStorageRegion("", "ap-south-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "ap-south-1" {
+		t.Fatalf("got %q, want dataplane fallback", got)
+	}
+}
+
+func TestDatabahnStorageRegionFromDataPlane_Present(t *testing.T) {
+	dp := &dataplane.DataPlane{
+		BackupConfiguration: []byte(`{"databahnStorageConfiguration":{"region":"us-west-2"}}`),
+	}
+	got, err := databahnStorageRegionFromDataPlane(dp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "us-west-2" {
+		t.Fatalf("got %q, want us-west-2", got)
+	}
+}
+
+func TestDatabahnStorageRegionFromDataPlane_EmptyBackup(t *testing.T) {
+	dp := &dataplane.DataPlane{}
+	got, err := databahnStorageRegionFromDataPlane(dp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("got %q, want empty", got)
+	}
+}
+
+func TestDatabahnStorageRegionFromDataPlane_MalformedJSON(t *testing.T) {
+	dp := &dataplane.DataPlane{BackupConfiguration: []byte(`{`)}
+	_, err := databahnStorageRegionFromDataPlane(dp)
+	if err == nil {
+		t.Fatal("expected error for malformed backup JSON")
+	}
+}
+
+func TestDatabahnStorageRegionFromJoinRow_NoDataPlaneID(t *testing.T) {
+	_, err := databahnStorageRegionFromJoinRow(nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error when destination has no data plane")
+	}
+	if err.Error() != "destination has no data plane" {
+		t.Fatalf("got %q", err.Error())
+	}
+}
+
+func TestDatabahnStorageRegionFromJoinRow_NilDataPlaneUUID(t *testing.T) {
+	id := uuid.Nil
+	_, err := databahnStorageRegionFromJoinRow(&id, nil, nil)
+	if err == nil || err.Error() != "destination has no data plane" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDatabahnStorageRegionFromJoinRow_DataPlaneMissing(t *testing.T) {
+	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	_, err := databahnStorageRegionFromJoinRow(&id, nil, nil)
+	if err == nil {
+		t.Fatal("expected error when dataplane row is missing")
+	}
+	want := "data plane not found with id: " + id.String()
+	if err.Error() != want {
+		t.Fatalf("got %q, want %q", err.Error(), want)
+	}
+}
+
+func TestDatabahnStorageRegionFromJoinRow_Present(t *testing.T) {
+	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	got, err := databahnStorageRegionFromJoinRow(
+		&id,
+		&id,
+		[]byte(`{"databahnStorageConfiguration":{"region":"us-west-2"}}`),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "us-west-2" {
+		t.Fatalf("got %q, want us-west-2", got)
+	}
+}
+
+func TestLoadDatabahnStorageStagingConfig_FillsS3RegionThenParses(t *testing.T) {
+	cfgMap := map[string]string{
+		"s3BucketName": testDatabahnStorageBucket,
+	}
+	region, err := resolveDatabahnStorageRegion(cfgMap["s3Region"], "ap-south-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cfgMap["s3Region"] = region
+	cfg, err := parseDatabahnStorageStagingConfig(cfgMap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Region != "ap-south-1" {
+		t.Fatalf("got region %q", cfg.Region)
+	}
+}
+
+func TestLoadDatabahnStorageStagingConfig_GenericRegionStillIgnored(t *testing.T) {
+	cfgMap := map[string]string{
+		"region":       "eu-west-1",
+		"s3BucketName": testDatabahnStorageBucket,
+	}
+	region, err := resolveDatabahnStorageRegion(cfgMap["s3Region"], "ap-south-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cfgMap["s3Region"] = region
+	cfg, err := parseDatabahnStorageStagingConfig(cfgMap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Region != "ap-south-1" {
+		t.Fatalf("generic region must be ignored, got %q", cfg.Region)
 	}
 }
