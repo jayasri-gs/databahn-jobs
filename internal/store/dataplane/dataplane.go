@@ -38,8 +38,13 @@ func (*DataPlane) TableName() string {
 
 // BackupConfiguration represents the backup_configuration JSON structure
 type BackupConfiguration struct {
-	UnparsedConfiguration UnparsedConfig `json:"unparsedConfiguration"`
-	SandboxConfiguration  SandboxConfig  `json:"sandboxConfiguration"`
+	UnparsedConfiguration        UnparsedConfig               `json:"unparsedConfiguration"`
+	SandboxConfiguration         SandboxConfig                `json:"sandboxConfiguration"`
+	DatabahnStorageConfiguration DatabahnStorageConfiguration `json:"databahnStorageConfiguration"`
+}
+
+type DatabahnStorageConfiguration struct {
+	Region string `json:"region"`
 }
 
 // UnparsedConfig represents unparsed data configuration
@@ -102,6 +107,14 @@ func GetAllDataPlanes(ctx context.Context, db *gorm.DB) ([]DataPlane, error) {
 	var dataPlanes []DataPlane
 	err := db.WithContext(ctx).Find(&dataPlanes).Error
 	return dataPlanes, err
+}
+
+func GetDataPlaneByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*DataPlane, error) {
+	var dp DataPlane
+	if err := db.WithContext(ctx).Where("id = ?", id).First(&dp).Error; err != nil {
+		return nil, err
+	}
+	return &dp, nil
 }
 
 // ParseBackupConfiguration parses the backup_configuration JSON field

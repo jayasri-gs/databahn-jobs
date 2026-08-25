@@ -3,9 +3,11 @@ package destination
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/databahn-ai/databahn-jobs/internal/store/dataplane"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -80,14 +82,77 @@ func parseDatabahnStorageStagingConfig(cfgMap map[string]string) (*S3Config, err
 	return &S3Config{Region: region, Bucket: bucket}, nil
 }
 
+func resolveDatabahnStorageRegion(destS3Region, dataplaneRegion string) (string, error) {
+	if region := strings.TrimSpace(destS3Region); region != "" {
+		return region, nil
+	}
+	if region := strings.TrimSpace(dataplaneRegion); region != "" {
+		return region, nil
+	}
+	return "", errors.New("Databahn Storage is not enabled for this data plane. Please contact your administrator.")
+}
+
+func databahnStorageRegionFromDataPlane(dp *dataplane.DataPlane) (string, error) {
+	if dp == nil {
+		return "", errors.New("data plane not found")
+	}
+	cfg, err := dp.ParseBackupConfiguration()
+	if err != nil {
+		return "", fmt.Errorf("failed to parse data plane backup configuration: %w", err)
+	}
+	if cfg == nil {
+		return "", nil
+	}
+	return cfg.DatabahnStorageConfiguration.Region, nil
+}
+
+func loadDatabahnStorageRegionFromDataPlane(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) (string, error) {
+	var dataPlaneID *uuid.UUID
+	err := db.WithContext(ctx).Raw(
+		"SELECT data_plane_id FROM destination WHERE id = ? AND tenant_id = ? LIMIT 1",
+		destID, tenantID,
+	).Scan(&dataPlaneID).Error
+	if err != nil {
+		return "", fmt.Errorf("failed to load destination data plane: %w", err)
+	}
+	if dataPlaneID == nil || *dataPlaneID == uuid.Nil {
+		return "", errors.New("destination has no data plane")
+	}
+
+	dp, err := dataplane.GetDataPlaneByID(ctx, db, *dataPlaneID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", fmt.Errorf("data plane not found with id: %s", dataPlaneID)
+		}
+		return "", fmt.Errorf("failed to load data plane: %w", err)
+	}
+
+	return databahnStorageRegionFromDataPlane(dp)
+}
+
 // LoadDatabahnStorageStagingConfig loads the Athena staging S3 config from a DATABAHN_STORAGE
-// destination. It uses platform default credentials (no stored keys) and reads region/bucket
-// from destination.configuration.s3Region and s3BucketName only.
+// destination. It uses platform default credentials (no stored keys). Region comes from
+// destination.configuration.s3Region when set; otherwise from the destination dataplane's
+// backup_configuration.databahnStorageConfiguration.region. Bucket comes from s3BucketName.
 func LoadDatabahnStorageStagingConfig(ctx context.Context, db *gorm.DB, destID, tenantID uuid.UUID) (*S3Config, error) {
 	cfgMap, err := LoadMergedConfiguration(ctx, db, destID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load DATABAHN_STORAGE destination config: %w", err)
 	}
+
+	dataplaneRegion := ""
+	if strings.TrimSpace(cfgMap["s3Region"]) == "" {
+		dataplaneRegion, err = loadDatabahnStorageRegionFromDataPlane(ctx, db, destID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	region, err := resolveDatabahnStorageRegion(cfgMap["s3Region"], dataplaneRegion)
+	if err != nil {
+		return nil, err
+	}
+	cfgMap["s3Region"] = region
 	return parseDatabahnStorageStagingConfig(cfgMap)
 }
 
