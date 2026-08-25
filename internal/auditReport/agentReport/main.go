@@ -236,7 +236,11 @@ func getGroupingLevel(req models.AuditReport) string {
 	if config.AgentReportConfig == nil || config.AgentReportConfig.GroupingLevel == "" {
 		return groupingLevelAgentTag
 	}
-	return config.AgentReportConfig.GroupingLevel
+	level := config.AgentReportConfig.GroupingLevel
+	if level == groupingLevelAgent || level == groupingLevelAgentTag {
+		return level
+	}
+	return groupingLevelAgentTag
 }
 
 func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query string, file *os.File) error {
