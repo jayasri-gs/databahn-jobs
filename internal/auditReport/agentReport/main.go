@@ -104,7 +104,7 @@ func writePagedDataToFile(ctx context.Context, req models.AuditReport, query str
 		if fetchedRowsCount < pageSize {
 			break
 		}
-		offset += pageSize
+		offset += pageSize + 1
 	}
 
 	return nil
@@ -185,9 +185,8 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 			dp.name as dataplane_name,
 			uc.email as created_by,
 			uu.email as updated_by,
-			STRING_AGG(DISTINCT t.name, ', ' ORDER BY t.name) as tags,
-			COUNT(DISTINCT t.id) as tags_count,
-			STRING_AGG(DISTINCT cp.name, ', ' ORDER BY cp.name) as collection_profile
+			t.name as tag_name,
+			cp.name as collection_profile
 		FROM agent_node a
 		    LEFT JOIN fleet f on a.fleet_id = f.id
 		LEFT JOIN data_planes dp ON a.data_plane_id = dp.id
@@ -197,8 +196,7 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 		LEFT JOIN tag t ON t.id = atm.tag_id AND t.tenant_id = a.tenant_id
 		LEFT JOIN collection_profile_tag_mapping cptm ON cptm.tag_id = t.id AND cptm.tenant_id = a.tenant_id
 		LEFT JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = a.tenant_id
-		WHERE %s
-		GROUP BY a.id, dp.name, uc.email, uu.email`, whereClause)
+		WHERE %s`, whereClause)
 
 	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, nil
