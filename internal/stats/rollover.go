@@ -30,6 +30,9 @@ import (
 const (
 	fieldEventSourceId      = "tags.db_event_source_id.keyword"
 	fieldOperatorId         = "tags.operator_id.keyword"
+	fieldRuleId             = "tags.rule_id.keyword"
+	fieldTargetNodeId       = "tags.target_node_id.keyword"
+	fieldRouteKey           = "tags.route_key.keyword"
 	fieldNameRaw            = "name.raw"
 	missingOperatorTagValue = "N/A"
 	errValidationFailed     = "new index data validation failed"
@@ -333,12 +336,7 @@ func doRolloverAndValidate(ctx context.Context, index Index, client *opensearch.
 				if newSource.Tags == nil {
 					newSource.Tags = make(map[string]any)
 				}
-				newSource.Tags["db_ts_win"] = timeHistogramBucket
-				operatorID := compositeBucket.Key.OperatorId
-				if operatorID == "" {
-					operatorID = missingOperatorTagValue
-				}
-				newSource.Tags["operator_id"] = operatorID
+				applyRolloverCompositeTags(newSource.Tags, compositeBucket.Key, timeHistogramBucket)
 				sources = append(sources, newSource)
 				newIndexValues++
 			}
@@ -357,6 +355,23 @@ func doRolloverAndValidate(ctx context.Context, index Index, client *opensearch.
 		logger.GetLogger().Info("skipping validation", zap.String("index", index.Index))
 	}
 	return nil
+}
+
+// applyRolloverCompositeTags stamps composite aggregation key dimensions onto rolled stat tags.
+// Missing values use missingOperatorTagValue ("N/A"), matching newRequestSourceTermsAgg behavior.
+func applyRolloverCompositeTags(tags map[string]any, key Key, timeHistogramBucket int64) {
+	tags["db_ts_win"] = timeHistogramBucket
+	tags["operator_id"] = normalizeRolloverTagValue(key.OperatorId)
+	tags["target_node_id"] = normalizeRolloverTagValue(key.TargetNodeId)
+	tags["route_key"] = normalizeRolloverTagValue(key.RouteKey)
+	tags["rule_id"] = normalizeRolloverTagValue(key.RuleId)
+}
+
+func normalizeRolloverTagValue(value string) string {
+	if value == "" {
+		return missingOperatorTagValue
+	}
+	return value
 }
 
 func parseCounter(counterSum any) (float64, error) {
@@ -715,19 +730,23 @@ func buildRolloverAggRequest(start int64, end int64, after *After, batchSize int
 	requestSourceSourceId := RequestSource{SourceId: &requestTermsAggSourceId}
 	requestTermsAggDestinationId := newRequestSourceTermsAgg("tags.destination_id.keyword")
 	requestSourceDestinationId := RequestSource{DestinationId: &requestTermsAggDestinationId}
-	requestTermsAggRuleId := newRequestSourceTermsAgg("tags.rule_id.keyword")
+	requestTermsAggRuleId := newRequestSourceTermsAgg(fieldRuleId)
 	requestSourceRuleId := RequestSource{RuleId: &requestTermsAggRuleId}
 	requestTermsAggFleetNodeId := newRequestSourceTermsAgg("tags.db_node_id.keyword")
 	requestSourceFleetNodeId := RequestSource{FleetNodeId: &requestTermsAggFleetNodeId}
 	requestTermsAggOperatorId := newRequestSourceTermsAgg(fieldOperatorId)
 	requestSourceOperatorId := RequestSource{OperatorId: &requestTermsAggOperatorId}
+	requestTermsAggTargetNodeId := newRequestSourceTermsAgg(fieldTargetNodeId)
+	requestSourceTargetNodeId := RequestSource{TargetNodeId: &requestTermsAggTargetNodeId}
+	requestTermsAggRouteKey := newRequestSourceTermsAgg(fieldRouteKey)
+	requestSourceRouteKey := RequestSource{RouteKey: &requestTermsAggRouteKey}
 	timeHistogramBuckets := RequestSourceTimeHistogramBuckets{}
 	timeHistogramBuckets.DateHistogram.Field = "tags.db_ts_win"
 	timeHistogramBuckets.DateHistogram.FixedInterval = util.FormatDuration(aggWindowDuration)
 	timeHistogramSource := RequestSource{
 		TimeHistogramBuckets: &timeHistogramBuckets,
 	}
-	requestSources := []RequestSource{requestSourceName, requestSourceNamespace, requestSourceSourceId, requestSourceDestinationId, requestSourceRuleId, requestSourceFleetNodeId, requestSourceOperatorId, timeHistogramSource}
+	requestSources := []RequestSource{requestSourceName, requestSourceNamespace, requestSourceSourceId, requestSourceDestinationId, requestSourceRuleId, requestSourceFleetNodeId, requestSourceOperatorId, requestSourceTargetNodeId, requestSourceRouteKey, timeHistogramSource}
 	rolloverRequest.Aggs.CompositeBuckets.Composite.Sources = requestSources
 	rolloverRequest.Aggs.CompositeBuckets.Composite.After = after
 

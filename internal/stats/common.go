@@ -444,6 +444,8 @@ type After struct {
 	RuleId               string `json:"rule_id"`
 	FleetNodeId          string `json:"fleet_node_id"`
 	OperatorId           string `json:"operator_id"`
+	TargetNodeId         string `json:"target_node_id"`
+	RouteKey             string `json:"route_key"`
 	TimeHistogramBuckets int64  `json:"time_histogram_buckets"`
 }
 
@@ -485,6 +487,8 @@ type RequestSource struct {
 	RuleId               *RequestSourceTermsAgg             `json:"rule_id,omitempty"`
 	FleetNodeId          *RequestSourceTermsAgg             `json:"fleet_node_id,omitempty"`
 	OperatorId           *RequestSourceTermsAgg             `json:"operator_id,omitempty"`
+	TargetNodeId         *RequestSourceTermsAgg             `json:"target_node_id,omitempty"`
+	RouteKey             *RequestSourceTermsAgg             `json:"route_key,omitempty"`
 	TimeHistogramBuckets *RequestSourceTimeHistogramBuckets `json:"time_histogram_buckets,omitempty"`
 }
 
@@ -563,11 +567,13 @@ type Key struct {
 	RuleId               string `json:"rule_id"`
 	FleetNodeId          string `json:"fleet_node_id"`
 	OperatorId           string `json:"operator_id"`
+	TargetNodeId         string `json:"target_node_id"`
+	RouteKey             string `json:"route_key"`
 	TimeHistogramBuckets int64  `json:"time_histogram_buckets"`
 }
 
 func (k Key) newDocKey(srcIndexName string) string {
-	val := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s:%s:%d", k.Name, k.Namespace, k.SourceId, k.DestinationId, k.RuleId, k.FleetNodeId, k.OperatorId, srcIndexName, k.TimeHistogramBuckets)
+	val := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d", k.Name, k.Namespace, k.SourceId, k.DestinationId, k.RuleId, k.FleetNodeId, k.OperatorId, k.TargetNodeId, k.RouteKey, srcIndexName, k.TimeHistogramBuckets)
 	return util.Hash(val)
 }
 
