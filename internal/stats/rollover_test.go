@@ -1184,8 +1184,8 @@ func TestValidateRolloverDurations_RejectsNonPositive(t *testing.T) {
 
 func TestBuildRolloverAggRequest_IncludesOperatorIdCompositeSource(t *testing.T) {
 	req := buildRolloverAggRequest(1_700_000_000_000, 1_700_003_600_000, nil, 100, time.Hour)
-	if len(req.Aggs.CompositeBuckets.Composite.Sources) != 8 {
-		t.Fatalf("expected 8 composite sources, got %d", len(req.Aggs.CompositeBuckets.Composite.Sources))
+	if len(req.Aggs.CompositeBuckets.Composite.Sources) != 10 {
+		t.Fatalf("expected 10 composite sources, got %d", len(req.Aggs.CompositeBuckets.Composite.Sources))
 	}
 
 	payload, err := json.Marshal(req)
@@ -1199,6 +1199,83 @@ func TestBuildRolloverAggRequest_IncludesOperatorIdCompositeSource(t *testing.T)
 	if !strings.Contains(body, fieldOperatorId) {
 		t.Fatalf("expected %q field in request body: %s", fieldOperatorId, body)
 	}
+	if !strings.Contains(body, `"target_node_id"`) {
+		t.Fatalf("expected target_node_id composite source in request body: %s", body)
+	}
+	if !strings.Contains(body, fieldTargetNodeId) {
+		t.Fatalf("expected %q field in request body: %s", fieldTargetNodeId, body)
+	}
+	if !strings.Contains(body, `"route_key"`) {
+		t.Fatalf("expected route_key composite source in request body: %s", body)
+	}
+	if !strings.Contains(body, `"rule_id"`) {
+		t.Fatalf("expected rule_id composite source in request body: %s", body)
+	}
+	if !strings.Contains(body, fieldRuleId) {
+		t.Fatalf("expected %q field in request body: %s", fieldRuleId, body)
+	}
+}
+
+func TestKey_newDocKey_DifferentRuleIdsProduceDifferentHashes(t *testing.T) {
+	base := Key{
+		Name:                 "total_events_delivered",
+		Namespace:            "freeform-pipeline-executor",
+		SourceId:             "source-1",
+		DestinationId:        "N/A",
+		RuleId:               "N/A",
+		FleetNodeId:          "N/A",
+		OperatorId:           "filter-1",
+		TargetNodeId:         "sandbox-1",
+		RouteKey:             "onSuccess",
+		TimeHistogramBuckets: 1_700_000_000_000,
+	}
+	ruleA := base
+	ruleA.RuleId = "rule-uuid-1"
+	ruleB := base
+	ruleB.RuleId = "rule-uuid-2"
+
+	hashA := ruleA.newDocKey("db_statistics_v2_p1_tenant_y2024_d100")
+	hashB := ruleB.newDocKey("db_statistics_v2_p1_tenant_y2024_d100")
+	if hashA == hashB {
+		t.Fatalf("expected different doc keys for different rule ids, got %q", hashA)
+	}
+}
+
+func TestApplyRolloverCompositeTags_StampsEdgeDimensions(t *testing.T) {
+	tags := map[string]any{}
+	applyRolloverCompositeTags(tags, Key{
+		OperatorId:   "parse-abc",
+		TargetNodeId: "filter-xyz",
+		RouteKey:     "onSuccess",
+		RuleId:       "rule-uuid-1",
+	}, 1_700_000_000_000)
+
+	if tags["db_ts_win"] != int64(1_700_000_000_000) {
+		t.Fatalf("db_ts_win: got %v", tags["db_ts_win"])
+	}
+	if tags["operator_id"] != "parse-abc" {
+		t.Fatalf("operator_id: got %v", tags["operator_id"])
+	}
+	if tags["target_node_id"] != "filter-xyz" {
+		t.Fatalf("target_node_id: got %v", tags["target_node_id"])
+	}
+	if tags["route_key"] != "onSuccess" {
+		t.Fatalf("route_key: got %v", tags["route_key"])
+	}
+	if tags["rule_id"] != "rule-uuid-1" {
+		t.Fatalf("rule_id: got %v", tags["rule_id"])
+	}
+}
+
+func TestApplyRolloverCompositeTags_NormalizesMissingDimensionsToNA(t *testing.T) {
+	tags := map[string]any{}
+	applyRolloverCompositeTags(tags, Key{}, 1_700_000_000_000)
+
+	for _, field := range []string{"operator_id", "target_node_id", "route_key", "rule_id"} {
+		if tags[field] != missingOperatorTagValue {
+			t.Fatalf("%s: expected %q, got %v", field, missingOperatorTagValue, tags[field])
+		}
+	}
 }
 
 func TestKey_newDocKey_DifferentOperatorIdsProduceDifferentHashes(t *testing.T) {
@@ -1209,6 +1286,9 @@ func TestKey_newDocKey_DifferentOperatorIdsProduceDifferentHashes(t *testing.T) 
 		DestinationId:        "N/A",
 		RuleId:               "N/A",
 		FleetNodeId:          "N/A",
+		OperatorId:           "N/A",
+		TargetNodeId:         "N/A",
+		RouteKey:             "N/A",
 		TimeHistogramBuckets: 1_700_000_000_000,
 	}
 	opA := base
