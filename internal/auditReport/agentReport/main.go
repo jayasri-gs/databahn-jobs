@@ -14,6 +14,17 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	groupingLevelAgent    = "AGENT"
+	groupingLevelAgentTag = "AGENT_TAG"
+)
+
+type agentReportConfiguration struct {
+	AgentReportConfig *struct {
+		GroupingLevel string `json:"groupingLevel"`
+	} `json:"agentReportConfig"`
+}
+
 func WriteAgentReportToFile(ctx context.Context, req models.AuditReport, file *os.File) error {
 	logging.GetLoggerWithContext(ctx).Info("writing agent report to file", zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	query, err := getQueryForAgentData(ctx, req)
@@ -104,7 +115,7 @@ func writePagedDataToFile(ctx context.Context, req models.AuditReport, query str
 		if fetchedRowsCount < pageSize {
 			break
 		}
-		offset += pageSize + 1
+		offset += pageSize
 	}
 
 	return nil
@@ -151,7 +162,8 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 
 	whereClause, _, _ := common.BuildQueryFromFilters(reportConfiguration, req.TenantId, filterToDbColumnMap)
 
-	// Build the complete JOIN query
+	groupingLevel := getGroupingLevel(req)
+	tagColumns, groupByClause := agentTagColumnsAndGroupBy(groupingLevel)
 	query := fmt.Sprintf(`
 		SELECT 
 			a.id,
@@ -185,8 +197,7 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 			dp.name as dataplane_name,
 			uc.email as created_by,
 			uu.email as updated_by,
-			t.name as tag_name,
-			cp.name as collection_profile
+			%s
 		FROM agent_node a
 		    LEFT JOIN fleet f on a.fleet_id = f.id
 		LEFT JOIN data_planes dp ON a.data_plane_id = dp.id
@@ -196,11 +207,42 @@ func getQueryForAgentData(ctx context.Context, req models.AuditReport) (string, 
 		LEFT JOIN tag t ON t.id = atm.tag_id AND t.tenant_id = a.tenant_id
 		LEFT JOIN collection_profile_tag_mapping cptm ON cptm.tag_id = t.id AND cptm.tenant_id = a.tenant_id
 		LEFT JOIN collection_profile cp ON cp.id = cptm.collection_profile_id AND cp.tenant_id = a.tenant_id
-		WHERE %s`, whereClause)
+		WHERE %s
+		%s`, tagColumns, whereClause, groupByClause)
 
-	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
+	logging.GetLoggerWithContext(ctx).Info("query for agent data", zap.String("query", query), zap.String("grouping_level", groupingLevel), zap.String("request_id", req.Id.String()), zap.String("report_name", req.Name), zap.String("tenant_id", req.TenantId))
 	return query, nil
 }
+
+func agentTagColumnsAndGroupBy(groupingLevel string) (string, string) {
+	if groupingLevel == groupingLevelAgentTag {
+		return `t.name as tag_name,
+			cp.name as collection_profile`, ""
+	}
+	return `STRING_AGG(DISTINCT t.name, ', ' ORDER BY t.name) as tags,
+			COUNT(DISTINCT t.id) as tags_count,
+			STRING_AGG(DISTINCT cp.name, ', ' ORDER BY cp.name) as collection_profile`,
+		"GROUP BY a.id, dp.name, uc.email, uu.email"
+}
+
+func getGroupingLevel(req models.AuditReport) string {
+	if len(req.ReportConfiguration) == 0 {
+		return groupingLevelAgentTag
+	}
+	var config agentReportConfiguration
+	if err := json.Unmarshal(req.ReportConfiguration, &config); err != nil {
+		return groupingLevelAgentTag
+	}
+	if config.AgentReportConfig == nil || config.AgentReportConfig.GroupingLevel == "" {
+		return groupingLevelAgentTag
+	}
+	level := config.AgentReportConfig.GroupingLevel
+	if level == groupingLevelAgent || level == groupingLevelAgentTag {
+		return level
+	}
+	return groupingLevelAgentTag
+}
+
 func gatherDataAndWriteToFile(ctx context.Context, req models.AuditReport, query string, file *os.File) error {
 	err := getReportAndWriteToFile(ctx, req, query, file)
 	if err != nil {
