@@ -57,7 +57,7 @@ func FetchDueCredentials(ctx context.Context, db *gorm.DB) ([]Secret, error) {
 			WHERE s.scope IS NOT NULL
 			  AND s.expiry_date IS NOT NULL
 			  AND s.notification_triggers IS NOT NULL
-			  AND s.expiry_date <= ((now() AT TIME ZONE 'UTC')::date + ?)
+			  AND s.expiry_date <= ((now() AT TIME ZONE 'UTC')::date + ?::integer)
 			  AND (
 			        EXISTS (
 			          SELECT 1 FROM log_source ls
