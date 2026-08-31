@@ -2,6 +2,8 @@ package destination
 
 import "testing"
 
+const errPipelineSentinelConfig = "pipelineSentinelConfig: %v"
+
 func sentinelDestinationConfig() map[string]string {
 	return map[string]string{
 		"workspace_id":                            " 11111111-2222-3333-4444-555555555555 ",
@@ -31,7 +33,7 @@ func TestSentinelTierForDestinationType(t *testing.T) {
 func TestPipelineSentinelConfig(t *testing.T) {
 	cfg, err := pipelineSentinelConfig(sentinelDestinationConfig(), SentinelTierAnalytics)
 	if err != nil {
-		t.Fatalf("pipelineSentinelConfig: %v", err)
+		t.Fatalf(errPipelineSentinelConfig, err)
 	}
 	if cfg.WorkspaceID != "11111111-2222-3333-4444-555555555555" {
 		t.Fatalf("workspace id = %q", cfg.WorkspaceID)
@@ -53,7 +55,7 @@ func TestPipelineSentinelConfig(t *testing.T) {
 func TestPipelineSentinelConfigLakeTier(t *testing.T) {
 	cfg, err := pipelineSentinelConfig(sentinelDestinationConfig(), SentinelTierLake)
 	if err != nil {
-		t.Fatalf("pipelineSentinelConfig: %v", err)
+		t.Fatalf(errPipelineSentinelConfig, err)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("lake config failed validation: %v", err)
@@ -71,7 +73,7 @@ func TestPipelineSentinelConfigAnalyticsWithoutWorkspaceName(t *testing.T) {
 
 	cfg, err := pipelineSentinelConfig(config, SentinelTierAnalytics)
 	if err != nil {
-		t.Fatalf("pipelineSentinelConfig: %v", err)
+		t.Fatalf(errPipelineSentinelConfig, err)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("analytics config without workspace_name should validate: %v", err)
@@ -79,7 +81,7 @@ func TestPipelineSentinelConfigAnalyticsWithoutWorkspaceName(t *testing.T) {
 
 	lakeCfg, err := pipelineSentinelConfig(config, SentinelTierLake)
 	if err != nil {
-		t.Fatalf("pipelineSentinelConfig: %v", err)
+		t.Fatalf(errPipelineSentinelConfig, err)
 	}
 	if err := lakeCfg.Validate(); err == nil {
 		t.Fatal("lake config without workspace_name should be rejected")
