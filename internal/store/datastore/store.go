@@ -115,6 +115,13 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider, storageTier 
 	return ""
 }
 
+// IsSentinelEngine reports whether an engine is one of the two Microsoft Sentinel tiers. They
+// share a data store shape and credentials, so anything keyed on the store rather than the
+// transport must cover both.
+func IsSentinelEngine(queryEngine string) bool {
+	return queryEngine == QueryEngineKustoLAW || queryEngine == QueryEngineKustoLake
+}
+
 // IsExternalAthenaProvider reports whether the store uses Athena over an external/derived sink.
 // Legacy stores may declare provider=S3 with connectorConfig.security_lake=true.
 func IsExternalAthenaProvider(provider string, connector map[string]string) bool {
@@ -234,7 +241,10 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 		result.ADX = adxCfg
 	}
 
-	if result.QueryEngine == QueryEngineKustoLAW {
+	// Both Sentinel engines need the same workspace credentials; only the transport differs.
+	// Keying on KUSTO_LAW alone left a lake store with a nil Sentinel config, which the factory
+	// then rejected as missing credentials.
+	if IsSentinelEngine(result.QueryEngine) {
 		sentinelCfg, err := loadSentinelConfig(ctx, db, dataStoreID, tenantID, secretID, connector)
 		if err != nil {
 			return nil, err

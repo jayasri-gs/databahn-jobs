@@ -56,3 +56,28 @@ func TestIsExternalAthenaProvider_ADX(t *testing.T) {
 		t.Fatal("AZURE_DATA_EXPLORER must not be treated as external Athena")
 	}
 }
+
+// LoadExportDataStore loads Sentinel workspace credentials behind IsSentinelEngine. If the two
+// ever disagree, a Sentinel store reaches the export factory with a nil Sentinel config and the
+// job fails with "missing workspace credentials" — which is what happened when the load was
+// keyed on KUSTO_LAW alone and the lake tier was added.
+func TestIsSentinelEngineCoversEveryEngineDerivedForSentinel(t *testing.T) {
+	for _, tier := range []string{"", "ANALYTICS", "analytics", "LAKE", "lake"} {
+		for _, storeType := range []string{StoreTypeExternalStorage, StoreTypeDerivedDatastore} {
+			engine := DeriveQueryEngine(storeType, "", ExternalProviderSentinel, tier)
+			if !IsSentinelEngine(engine) {
+				t.Fatalf(
+					"DeriveQueryEngine(%q, provider=SENTINEL, tier=%q) = %q, which IsSentinelEngine rejects",
+					storeType, tier, engine)
+			}
+		}
+	}
+}
+
+func TestIsSentinelEngineRejectsOtherEngines(t *testing.T) {
+	for _, engine := range []string{QueryEngineAthena, QueryEngineSynapse, QueryEngineKustoADX, "", "SPL"} {
+		if IsSentinelEngine(engine) {
+			t.Fatalf("IsSentinelEngine(%q) = true", engine)
+		}
+	}
+}
