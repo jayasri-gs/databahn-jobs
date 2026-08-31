@@ -26,12 +26,6 @@ const (
 	lakeFrameDataTable       = "DataTable"
 	lakeFrameDataSetComplete = "DataSetCompletion"
 	lakeTableKindPrimary     = "PrimaryResult"
-
-	// Bounds for the out-of-order buffer in bufferLakeRows. Large enough to absorb any
-	// plausible frame reordering, small enough that a malformed or hostile response cannot
-	// make the decoder hold an export-sized result in memory.
-	maxBufferedLakeRows  = 1024
-	maxBufferedLakeBytes = 8 << 20
 )
 
 // lakeColumn is the v2 (and Kusto v1) column descriptor. Log Analytics uses lower-case
@@ -108,7 +102,6 @@ func decodeLakeFrame(dec *json.Decoder, emitted *bool, onColumns func([]string) 
 		frameType string
 		tableKind string
 		columns   []string
-		pending   [][]json.RawMessage
 		rows      int64
 		hasErrors bool
 		errDetail string
@@ -135,9 +128,8 @@ func decodeLakeFrame(dec *json.Decoder, emitted *bool, onColumns func([]string) 
 			}
 			columns = cols
 		case "Rows", "rows":
-			n, buffered, err := decodeLakeRows(dec, isLakePrimary(frameType, tableKind), emitted, columns, onColumns, onRow)
+			n, err := decodeLakeRows(dec, isLakePrimary(frameType, tableKind), emitted, columns, onColumns, onRow)
 			rows += n
-			pending = buffered
 			if err != nil {
 				return rows, "", err
 			}
@@ -160,15 +152,6 @@ func decodeLakeFrame(dec *json.Decoder, emitted *bool, onColumns func([]string) 
 
 	if err := expectDelim(dec, '}'); err != nil {
 		return rows, "", fmt.Errorf("parse Sentinel lake frame: %w", err)
-	}
-
-	// Rows arrived before the frame identified itself; decide now that it has.
-	if len(pending) > 0 && isLakePrimary(frameType, tableKind) && !*emitted {
-		n, err := flushLakeRows(pending, columns, emitted, onColumns, onRow)
-		rows += n
-		if err != nil {
-			return rows, "", err
-		}
 	}
 
 	if frameType == lakeFrameDataSetComplete && hasErrors {
@@ -201,8 +184,13 @@ func decodeLakeColumns(dec *json.Decoder) ([]string, error) {
 	return names, nil
 }
 
-// decodeLakeRows streams a Rows array. When the frame is not the primary result, or its
-// columns have not been seen yet, the rows are skipped or buffered rather than emitted.
+// decodeLakeRows streams a Rows array straight to onRow, emitting nothing for frames that are
+// not the primary result.
+//
+// Rows that arrive before their column schema are rejected rather than held: Kusto emits
+// Columns before Rows in a DataTable frame, so the reverse order is a response shape we do not
+// understand, and buffering it would mean materialising an export-sized result — the whole
+// thing this frame-by-frame walk exists to avoid.
 func decodeLakeRows(
 	dec *json.Decoder,
 	primary bool,
@@ -210,102 +198,35 @@ func decodeLakeRows(
 	columns []string,
 	onColumns func([]string) error,
 	onRow func([]interface{}) error,
-) (int64, [][]json.RawMessage, error) {
-	if !primary || *emitted {
-		return 0, nil, skipValue(dec)
-	}
-	if columns == nil {
-		// Columns not seen yet: buffer, and flush once the frame has been read in full.
-		buffered, err := bufferLakeRows(dec)
-		if err != nil {
-			return 0, nil, err
-		}
-		return 0, buffered, nil
-	}
-
-	if err := onColumns(columns); err != nil {
-		return 0, nil, err
-	}
-	*emitted = true
-
-	if err := expectDelim(dec, '['); err != nil {
-		return 0, nil, fmt.Errorf("parse Sentinel lake rows: %w", err)
-	}
-	var rows int64
-	for dec.More() {
-		var raw []json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
-			return rows, nil, fmt.Errorf("parse Sentinel lake row: %w", err)
-		}
-		if err := onRow(rawRowToExportValues(raw)); err != nil {
-			return rows, nil, err
-		}
-		rows++
-	}
-	if err := expectDelim(dec, ']'); err != nil {
-		return rows, nil, fmt.Errorf("parse Sentinel lake rows: %w", err)
-	}
-	return rows, nil, nil
-}
-
-// bufferLakeRows holds rows that arrived before their column schema, bounded on both count and
-// size.
-//
-// Kusto emits Columns before Rows, so this path exists only for a reordered frame. A response
-// that exceeds these bounds is not a reordering — it is a shape we do not understand — and
-// failing beats materialising the export-sized result this decoder streams precisely to avoid.
-func bufferLakeRows(dec *json.Decoder) ([][]json.RawMessage, error) {
-	if err := expectDelim(dec, '['); err != nil {
-		return nil, fmt.Errorf("parse Sentinel lake rows: %w", err)
-	}
-	var buffered [][]json.RawMessage
-	var bufferedBytes int
-	for dec.More() {
-		var raw []json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
-			return nil, fmt.Errorf("parse Sentinel lake row: %w", err)
-		}
-		if len(buffered) >= maxBufferedLakeRows {
-			return nil, fmt.Errorf(
-				"Sentinel lake response sent more than %d rows before their column schema",
-				maxBufferedLakeRows)
-		}
-		for _, cell := range raw {
-			bufferedBytes += len(cell)
-		}
-		if bufferedBytes > maxBufferedLakeBytes {
-			return nil, fmt.Errorf(
-				"Sentinel lake response sent more than %d bytes of rows before their column schema",
-				maxBufferedLakeBytes)
-		}
-		buffered = append(buffered, raw)
-	}
-	if err := expectDelim(dec, ']'); err != nil {
-		return nil, fmt.Errorf("parse Sentinel lake rows: %w", err)
-	}
-	return buffered, nil
-}
-
-func flushLakeRows(
-	buffered [][]json.RawMessage,
-	columns []string,
-	emitted *bool,
-	onColumns func([]string) error,
-	onRow func([]interface{}) error,
 ) (int64, error) {
-	if columns == nil {
-		return 0, fmt.Errorf("Sentinel lake response carried rows without a column schema")
+	if !primary || *emitted {
+		return 0, skipValue(dec)
 	}
+	if columns == nil {
+		return 0, fmt.Errorf("Sentinel lake response sent rows before their column schema")
+	}
+
 	if err := onColumns(columns); err != nil {
 		return 0, err
 	}
 	*emitted = true
+
+	if err := expectDelim(dec, '['); err != nil {
+		return 0, fmt.Errorf("parse Sentinel lake rows: %w", err)
+	}
 	var rows int64
-	for _, raw := range buffered {
+	for dec.More() {
+		var raw []json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return rows, fmt.Errorf("parse Sentinel lake row: %w", err)
+		}
 		if err := onRow(rawRowToExportValues(raw)); err != nil {
 			return rows, err
 		}
 		rows++
+	}
+	if err := expectDelim(dec, ']'); err != nil {
+		return rows, fmt.Errorf("parse Sentinel lake rows: %w", err)
 	}
 	return rows, nil
 }
