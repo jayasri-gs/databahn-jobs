@@ -29,6 +29,8 @@ const (
 	DestTypeAzureBlob            = "AZURE_BLOB"
 	DestTypeAWSSecurityLake      = "AWS_SECURITY_LAKE"
 	DestTypeAzureDataExplorer    = "AZURE_DATA_EXPLORER"
+	DestTypeAzureSentinel        = "AZURE_SENTINEL"
+	DestTypeAzureSentinelLake    = "AZURE_SENTINEL_DATA_LAKE"
 	ExternalProviderS3           = "S3"
 	ExternalProviderSecurityLake = "SECURITY_LAKE"
 	ExternalProviderAzureBlob    = "AZURE_BLOB"
@@ -93,6 +95,12 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider, storageTier 
 			return QueryEngineSynapse
 		case DestTypeAzureDataExplorer:
 			return QueryEngineKustoADX
+		case DestTypeAzureSentinel:
+			return QueryEngineKustoLAW
+		case DestTypeAzureSentinelLake:
+			// A pipeline Sentinel store has no connectorConfig of its own, so the
+			// destination type is what separates the two tiers.
+			return QueryEngineKustoLake
 		}
 	case StoreTypeDatabahnInsights, StoreTypeDatabahnStorage:
 		return QueryEngineAthena
@@ -217,6 +225,13 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 			}
 			result.ADX = adxCfg
 			result.ExternalSearchProvider = ExternalProviderADX
+		case DestTypeAzureSentinel, DestTypeAzureSentinelLake:
+			sentinelCfg, err := destination.LoadPipelineSentinelConfig(ctx, db, *row.DestinationID, tenantID, linkedDestType)
+			if err != nil {
+				return nil, err
+			}
+			result.Sentinel = sentinelCfg
+			result.ExternalSearchProvider = ExternalProviderSentinel
 		case StoreTypeDatabahnStorage:
 			stagingCfg, err := destination.LoadDatabahnStorageStagingConfig(ctx, db, *row.DestinationID, tenantID)
 			if err != nil {
@@ -252,7 +267,7 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 	// Both Sentinel engines need the same workspace credentials; only the transport differs.
 	// Keying on KUSTO_LAW alone left a lake store with a nil Sentinel config, which the factory
 	// then rejected as missing credentials.
-	if IsSentinelEngine(result.QueryEngine) {
+	if IsSentinelEngine(result.QueryEngine) && result.Sentinel == nil {
 		sentinelCfg, err := loadSentinelConfig(ctx, db, dataStoreID, tenantID, secretID, connector)
 		if err != nil {
 			return nil, err

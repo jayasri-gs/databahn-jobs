@@ -158,6 +158,11 @@ func TestDeriveQueryEngine(t *testing.T) {
 		{StoreTypeDerivedDatastore, "", ExternalProviderSentinel, "", QueryEngineKustoLAW},
 		{StoreTypeExternalStorage, "", ExternalProviderSentinel, "LAKE", QueryEngineKustoLake},
 		{StoreTypeDerivedDatastore, "", ExternalProviderSentinel, "lake", QueryEngineKustoLake},
+		// A pipeline Sentinel store carries no connectorConfig, so its tier comes from the
+		// destination type and any storage_tier on the store is irrelevant.
+		{StoreTypeDatabahnDestination, DestTypeAzureSentinel, "", "", QueryEngineKustoLAW},
+		{StoreTypeDatabahnDestination, DestTypeAzureSentinelLake, "", "", QueryEngineKustoLake},
+		{StoreTypeDatabahnDestination, DestTypeAzureSentinel, "", "LAKE", QueryEngineKustoLAW},
 	}
 	for _, tc := range tests {
 		got := DeriveQueryEngine(tc.storeType, tc.destType, tc.extProvider, tc.storageTier)
