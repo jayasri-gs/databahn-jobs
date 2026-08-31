@@ -26,6 +26,14 @@ const (
 	lakeFrameDataTable       = "DataTable"
 	lakeFrameDataSetComplete = "DataSetCompletion"
 	lakeTableKindPrimary     = "PrimaryResult"
+
+	// Wrap messages for the frame walk, kept as constants because each is used at several
+	// points in it — the same shape as errParseLAW* in the analytics decoder.
+	errParseLakeResponse = "parse Sentinel lake response: %w"
+	errParseLakeFrame    = "parse Sentinel lake frame: %w"
+	errParseLakeRows     = "parse Sentinel lake rows: %w"
+	errParseLakeRow      = "parse Sentinel lake row: %w"
+	errLakeQueryFailed   = "Sentinel lake query failed: %s"
 )
 
 // lakeColumn is the v2 (and Kusto v1) column descriptor. Log Analytics uses lower-case
@@ -53,7 +61,7 @@ func decodeSentinelLakeResponse(r io.Reader, onColumns func([]string) error, onR
 
 	tok, err := dec.Token()
 	if err != nil {
-		return 0, fmt.Errorf("parse Sentinel lake response: %w", err)
+		return 0, fmt.Errorf(errParseLakeResponse, err)
 	}
 	delim, ok := tok.(json.Delim)
 	if !ok {
@@ -82,11 +90,11 @@ func decodeLakeFrames(dec *json.Decoder, onColumns func([]string) error, onRow f
 			return rows, err
 		}
 		if failure != "" {
-			return rows, fmt.Errorf("Sentinel lake query failed: %s", failure)
+			return rows, fmt.Errorf(errLakeQueryFailed, failure)
 		}
 	}
 	if err := expectDelim(dec, ']'); err != nil {
-		return rows, fmt.Errorf("parse Sentinel lake response: %w", err)
+		return rows, fmt.Errorf(errParseLakeResponse, err)
 	}
 	return rows, nil
 }
@@ -95,7 +103,7 @@ func decodeLakeFrames(dec *json.Decoder, onColumns func([]string) error, onRow f
 // reported. emitted guards against a second data frame overwriting the export's columns.
 func decodeLakeFrame(dec *json.Decoder, emitted *bool, onColumns func([]string) error, onRow func([]interface{}) error) (int64, string, error) {
 	if err := expectDelim(dec, '{'); err != nil {
-		return 0, "", fmt.Errorf("parse Sentinel lake frame: %w", err)
+		return 0, "", fmt.Errorf(errParseLakeFrame, err)
 	}
 
 	var (
@@ -110,7 +118,7 @@ func decodeLakeFrame(dec *json.Decoder, emitted *bool, onColumns func([]string) 
 	for dec.More() {
 		key, err := objectKey(dec)
 		if err != nil {
-			return rows, "", fmt.Errorf("parse Sentinel lake frame: %w", err)
+			return rows, "", fmt.Errorf(errParseLakeFrame, err)
 		}
 		switch key {
 		case "FrameType":
@@ -145,13 +153,13 @@ func decodeLakeFrame(dec *json.Decoder, emitted *bool, onColumns func([]string) 
 			errDetail = strings.TrimSpace(string(raw))
 		default:
 			if err := skipValue(dec); err != nil {
-				return rows, "", fmt.Errorf("parse Sentinel lake frame: %w", err)
+				return rows, "", fmt.Errorf(errParseLakeFrame, err)
 			}
 		}
 	}
 
 	if err := expectDelim(dec, '}'); err != nil {
-		return rows, "", fmt.Errorf("parse Sentinel lake frame: %w", err)
+		return rows, "", fmt.Errorf(errParseLakeFrame, err)
 	}
 
 	if frameType == lakeFrameDataSetComplete && hasErrors {
@@ -212,23 +220,48 @@ func decodeLakeRows(
 	*emitted = true
 
 	if err := expectDelim(dec, '['); err != nil {
-		return 0, fmt.Errorf("parse Sentinel lake rows: %w", err)
+		return 0, fmt.Errorf(errParseLakeRows, err)
 	}
 	var rows int64
 	for dec.More() {
-		var raw []json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
-			return rows, fmt.Errorf("parse Sentinel lake row: %w", err)
+		row, err := decodeLakeRow(dec)
+		if err != nil {
+			return rows, err
 		}
-		if err := onRow(rawRowToExportValues(raw)); err != nil {
+		if err := onRow(row); err != nil {
 			return rows, err
 		}
 		rows++
 	}
 	if err := expectDelim(dec, ']'); err != nil {
-		return rows, fmt.Errorf("parse Sentinel lake rows: %w", err)
+		return rows, fmt.Errorf(errParseLakeRows, err)
 	}
 	return rows, nil
+}
+
+// decodeLakeRow converts one row, reading each cell once.
+//
+// The obvious shape — decode the row into a []json.RawMessage, then convert that into a
+// []interface{} — allocates and copies every cell before touching it, then walks the row a
+// second time. Converting as each cell is read halves the allocations and the passes, which
+// matters at export volume where this runs per row. Dynamic cells still come out as raw JSON,
+// so the encoders behave exactly as before.
+func decodeLakeRow(dec *json.Decoder) ([]interface{}, error) {
+	if err := expectDelim(dec, '['); err != nil {
+		return nil, fmt.Errorf(errParseLakeRow, err)
+	}
+	var row []interface{}
+	for dec.More() {
+		var cell json.RawMessage
+		if err := dec.Decode(&cell); err != nil {
+			return nil, fmt.Errorf(errParseLakeRow, err)
+		}
+		row = append(row, rawToExportValue(cell))
+	}
+	if err := expectDelim(dec, ']'); err != nil {
+		return nil, fmt.Errorf(errParseLakeRow, err)
+	}
+	return row, nil
 }
 
 // decodeLakeObject handles the v1 object shape, {"Tables":[{"Columns":…,"Rows":…}]}. The
@@ -240,7 +273,7 @@ func decodeLakeObject(dec *json.Decoder, onColumns func([]string) error, onRow f
 	for dec.More() {
 		key, err := objectKey(dec)
 		if err != nil {
-			return rows, fmt.Errorf("parse Sentinel lake response: %w", err)
+			return rows, fmt.Errorf(errParseLakeResponse, err)
 		}
 		switch key {
 		case "Tables", "tables":
@@ -254,7 +287,7 @@ func decodeLakeObject(dec *json.Decoder, onColumns func([]string) error, onRow f
 					return rows, err
 				}
 				if failure != "" {
-					return rows, fmt.Errorf("Sentinel lake query failed: %s", failure)
+					return rows, fmt.Errorf(errLakeQueryFailed, failure)
 				}
 			}
 			if err := expectDelim(dec, ']'); err != nil {
@@ -266,16 +299,16 @@ func decodeLakeObject(dec *json.Decoder, onColumns func([]string) error, onRow f
 				return rows, fmt.Errorf("parse Sentinel lake error: %w", err)
 			}
 			if detail := strings.TrimSpace(string(raw)); detail != "" && detail != "null" {
-				return rows, fmt.Errorf("Sentinel lake query failed: %s", detail)
+				return rows, fmt.Errorf(errLakeQueryFailed, detail)
 			}
 		default:
 			if err := skipValue(dec); err != nil {
-				return rows, fmt.Errorf("parse Sentinel lake response: %w", err)
+				return rows, fmt.Errorf(errParseLakeResponse, err)
 			}
 		}
 	}
 	if err := expectDelim(dec, '}'); err != nil {
-		return rows, fmt.Errorf("parse Sentinel lake response: %w", err)
+		return rows, fmt.Errorf(errParseLakeResponse, err)
 	}
 	return rows, nil
 }
