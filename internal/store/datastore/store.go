@@ -40,6 +40,7 @@ type ExportDataStore struct {
 	ID                     uuid.UUID
 	Type                   string
 	QueryEngine            string
+	DestinationID          *uuid.UUID
 	ExternalSearchProvider string
 	StagingS3              *destination.S3Config
 	StagingBlob            *destination.AzureBlobConfig
@@ -175,6 +176,7 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 	result := &ExportDataStore{
 		ID:                     row.ID,
 		Type:                   storeType,
+		DestinationID:          row.DestinationID,
 		ExternalSearchProvider: externalProvider,
 	}
 
@@ -215,6 +217,12 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 			}
 			result.ADX = adxCfg
 			result.ExternalSearchProvider = ExternalProviderADX
+		case StoreTypeDatabahnStorage:
+			stagingCfg, err := destination.LoadDatabahnStorageStagingConfig(ctx, db, *row.DestinationID, tenantID)
+			if err != nil {
+				return nil, err
+			}
+			result.StagingS3 = stagingCfg
 		}
 	}
 
@@ -250,6 +258,14 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 			return nil, err
 		}
 		result.Sentinel = sentinelCfg
+	}
+
+	if storeType == StoreTypeDatabahnInsights && result.StagingS3 == nil {
+		stagingCfg, err := loadInsightsStagingS3Config(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result.StagingS3 = stagingCfg
 	}
 
 	if result.QueryEngine == QueryEngineSynapse && storeCfg.AzureSynapseConfiguration != nil {
@@ -340,4 +356,53 @@ func loadSentinelConfig(
 		return nil, fmt.Errorf("Sentinel store %s: %w", dataStoreID, err)
 	}
 	return cfg, nil
+}
+
+func resolveExternalAthenaS3(ctx context.Context, db *gorm.DB, dataStoreID, tenantID uuid.UUID, storeCfg dataStoreConfiguration) (*destination.S3Config, error) {
+	if storeCfg.ExternalSearchDataStoreConfiguration == nil {
+		return nil, fmt.Errorf("external search data store configuration is required")
+	}
+	ext := storeCfg.ExternalSearchDataStoreConfiguration
+	merged := cloneStringMap(ext.ConnectorConfig)
+	if ext.SecretID != "" {
+		overrides, err := destination.ResolveCredentialOverrides(ctx, db, ext.SecretID, dataStoreID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		for _, credKey := range []string{"access_key_id", "secret_access_key", "role_arn", "external_id"} {
+			if v, ok := overrides[credKey]; ok && v != "" {
+				merged[credKey] = v
+			}
+		}
+	}
+	region := strings.TrimSpace(merged["region"])
+	bucket := strings.TrimSpace(merged["bucket"])
+	if region == "" {
+		return nil, fmt.Errorf("region not configured for external Athena data store %s", dataStoreID)
+	}
+	if bucket == "" {
+		return nil, fmt.Errorf("bucket not configured for external Athena data store %s", dataStoreID)
+	}
+	authType := strings.TrimSpace(merged["auth_type"])
+	switch authType {
+	case "role_based":
+		if strings.TrimSpace(merged["role_arn"]) == "" {
+			return nil, fmt.Errorf("role_arn not configured for role_based external Athena data store %s", dataStoreID)
+		}
+	case "key_based":
+		if strings.TrimSpace(merged["access_key_id"]) == "" || strings.TrimSpace(merged["secret_access_key"]) == "" {
+			return nil, fmt.Errorf("access_key_id/secret_access_key not configured for key_based external Athena data store %s", dataStoreID)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported or missing auth_type %q for external Athena data store %s", authType, dataStoreID)
+	}
+	return &destination.S3Config{
+		AuthType:        merged["auth_type"],
+		AccessKeyID:     merged["access_key_id"],
+		SecretAccessKey: merged["secret_access_key"],
+		RoleArn:         merged["role_arn"],
+		ExternalID:      merged["external_id"],
+		Region:          region,
+		Bucket:          bucket,
+	}, nil
 }

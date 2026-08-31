@@ -1,0 +1,32 @@
+name: CodeAnt CI Scan
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    branches:
+      - master
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codeant-scan:
+    name: Run CodeAnt CI scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run CodeAnt CI Scan
+        uses: CodeAnt-AI/codeant-ci-scan-action@v0.0.5
+        with:
+          access_token: ${{ secrets.CODEANT_TOKEN }}
+          api_base: https://api.codeant.ai
+          scanners: all
+          exclude_paths: vendor/
+          scan_timeout: '600'

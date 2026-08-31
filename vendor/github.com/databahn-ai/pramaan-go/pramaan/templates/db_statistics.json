@@ -56,22 +56,6 @@
                 }
               }
             },
-            "target_node_id": {
-              "type": "text",
-              "fields": {
-                "keyword": {
-                  "type": "keyword"
-                }
-              }
-            },
-            "route_key": {
-              "type": "text",
-              "fields": {
-                "keyword": {
-                  "type": "keyword"
-                }
-              }
-            },
             "destination_id": {
               "type": "text",
               "fields": {
