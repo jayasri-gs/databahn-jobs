@@ -63,10 +63,32 @@ func TestPipelineSentinelConfigLakeTier(t *testing.T) {
 	}
 }
 
+// The lake tier is the only consumer of workspace_name; analytics addresses the workspace by
+// GUID, so a destination without it still exports.
+func TestPipelineSentinelConfigAnalyticsWithoutWorkspaceName(t *testing.T) {
+	config := sentinelDestinationConfig()
+	delete(config, "workspace_name")
+
+	cfg, err := pipelineSentinelConfig(config, SentinelTierAnalytics)
+	if err != nil {
+		t.Fatalf("pipelineSentinelConfig: %v", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("analytics config without workspace_name should validate: %v", err)
+	}
+
+	lakeCfg, err := pipelineSentinelConfig(config, SentinelTierLake)
+	if err != nil {
+		t.Fatalf("pipelineSentinelConfig: %v", err)
+	}
+	if err := lakeCfg.Validate(); err == nil {
+		t.Fatal("lake config without workspace_name should be rejected")
+	}
+}
+
 func TestPipelineSentinelConfigRequiresEveryField(t *testing.T) {
 	for _, key := range []string{
 		"workspace_id",
-		"workspace_name",
 		"azure_sentinel_auth_azure_tenant_id",
 		"azure_sentinel_auth_azure_client_id",
 		"azure_sentinel_auth_azure_client_secret",

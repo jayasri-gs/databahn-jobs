@@ -70,13 +70,25 @@ Branch `search/sentinel-pipeline-export` (cut from `release/v5.8.45`).
 
 `factory.go` needed no change: it keys on `store.Sentinel`, not on the store shape.
 
-## Why `workspace_name` is required on both tiers
+## `workspace_name` is a lake-tier requirement only
 
-Only the lake tier uses `workspace_name` (its KQL `db` is `workspaceName-workspaceId`, not the
-GUID). The pipeline mapper nonetheless requires it for both tiers, because
-`SentinelDestinationConfigMapper.toConnectorConfig` — the interactive-search path — already
-does. A Sentinel destination without `workspace_name` cannot be searched at all, so relaxing it
-for export alone would only produce an inconsistency, not a working export.
+The lake KQL API addresses the workspace as `workspaceName-workspaceId` rather than the GUID, so
+`workspace_name` is mandatory there — enforced by `SentinelLakeKqlSupport`,
+`KqlDatasetSchemaService.requireWorkspaceNameForLake`, and `SentinelConfig.Validate` in the
+worker. **Analytics KQL never reads it**: `logAnalyticsKqlExecutor` addresses the workspace by
+GUID alone.
+
+`SentinelDestinationConfigMapper.toConnectorConfig` nevertheless `require`d it for both tiers,
+which would reject an analytics workspace that queries perfectly well. That requirement is now
+scoped to the lake tier in `toSearchMetadata`; the field is carried through when present and
+omitted when not. Because `toConnectorConfig` delegates to `toSearchMetadata`, this also relaxes
+the **interactive** analytics search path — a pipeline Sentinel destination without
+`workspace_name` now searches instead of failing at connector resolution. The lake path is
+unchanged.
+
+The worker mirrors this: `pipelineSentinelConfig` reads `workspace_name` optionally, and
+`SentinelConfig.Validate` — which already required it for `LAKE` only — is the single place the
+rule is enforced.
 
 ## Verification
 

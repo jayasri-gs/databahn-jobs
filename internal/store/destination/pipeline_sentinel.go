@@ -68,10 +68,10 @@ func pipelineSentinelConfig(config map[string]string, tier string) (*SentinelCon
 	if err != nil {
 		return nil, err
 	}
-	workspaceName, err := requirePipelineSentinelConfig(config, sentinelWorkspaceNameKey)
-	if err != nil {
-		return nil, err
-	}
+	// workspace_name matters to the lake tier only, which addresses the workspace as
+	// workspaceName-workspaceId rather than the GUID. Analytics KQL never reads it, so it is
+	// carried when present and enforced by Validate for LAKE alone.
+	workspaceName := strings.TrimSpace(config[sentinelWorkspaceNameKey])
 	tenantID, err := requirePipelineSentinelConfig(config, pipelineSentinelTenantID)
 	if err != nil {
 		return nil, err
