@@ -37,8 +37,9 @@ const credentialExpiryTemplateFile = "credential_expiry.html"
 // Flow:
 //  1. Fetch secrets whose triggers are due (indexed EXISTS join on log_source / destination).
 //  2. Group by tenant.
-//  3. For each tenant with the CREDENTIAL module enabled and at least one target,
-//     dispatch through each configured NotificationChannel.
+//  3. For each tenant, always dispatch the product (in-app) alert channel. The email
+//     channel is dispatched only when the CREDENTIAL module has at least one email
+//     target configured; otherwise it is recorded as SKIPPED for the trigger.
 //  4. Persist trigger state (SENT / FAILED / SKIPPED) inside a transaction that re-locks
 //     the row with FOR UPDATE SKIP LOCKED.
 func SendCredentialExpiryNotifications(ctx context.Context) common.JobResult {
@@ -79,10 +80,11 @@ func SendCredentialExpiryNotifications(ctx context.Context) common.JobResult {
 			continue
 		}
 		if len(targets) == 0 {
-			// Module not enabled or no targets attached — leave triggers PENDING so the
-			// tenant can opt in later without losing any threshold.
-			logger.GetLogger().Info("no CREDENTIAL targets, skipping tenant", zap.String("tenant", tenantId.String()), zap.Int("secrets", len(tenantSecrets)))
-			continue
+			// Module not enabled or no email targets attached — product (in-app) alerts
+			// still fire so users see the expiry in the Alerts UI; email is skipped.
+			logger.GetLogger().Info("no CREDENTIAL targets, product alerts only",
+				zap.String("tenant", tenantId.String()),
+				zap.Int("secrets", len(tenantSecrets)))
 		}
 
 		if err := processTenant(ctx, db, tenantId, tenantSecrets, targets, channels, today); err != nil {
@@ -144,6 +146,7 @@ func processTenant(
 	sort.Ints(dayKeys)
 
 	databahnTargets := toDatabahnTargets(tenantId, targets)
+	hasEmailTargets := len(databahnTargets) > 0
 
 	for _, days := range dayKeys {
 		batch := bucketsByDays[days]
@@ -155,9 +158,18 @@ func processTenant(
 			Targets:  databahnTargets,
 		}
 
-		// Fan out to every enabled channel. One failing channel does not abort the others.
+		// Fan out to every enabled channel. The email channel requires configured
+		// targets; if none exist it is recorded as SKIPPED and the product channel
+		// still fires so the alert surfaces in the UI. One failing channel does not
+		// abort the others.
 		channelResults := map[string]error{}
+		channelSkipped := map[string]bool{}
 		for _, ch := range channels {
+			if ch.Name() == channelNameEmail && !hasEmailTargets {
+				channelSkipped[ch.Name()] = true
+				channelResults[ch.Name()] = nil
+				continue
+			}
 			err := ch.Send(ctx, batchPayload)
 			channelResults[ch.Name()] = err
 			if err != nil {
@@ -171,7 +183,7 @@ func processTenant(
 
 		// Persist per-secret trigger state.
 		for _, entry := range batch {
-			if err := persistTriggerOutcome(ctx, db, entry, channels, channelResults, today); err != nil {
+			if err := persistTriggerOutcome(ctx, db, entry, channels, channelResults, channelSkipped, today); err != nil {
 				logger.GetLogger().Error("failed to persist trigger state",
 					zap.Error(err),
 					zap.String("secret", entry.secret.Id.String()),
@@ -191,6 +203,7 @@ func persistTriggerOutcome(
 	entry expiryDispatchEntry,
 	channels []NotificationChannel,
 	channelResults map[string]error,
+	channelSkipped map[string]bool,
 	today time.Time,
 ) error {
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -223,10 +236,18 @@ func persistTriggerOutcome(
 			return nil
 		}
 
-		// Any channel success -> mark trigger SENT so we do not re-notify the same threshold.
-		// If every channel failed, mark FAILED (auto-retry) or SKIPPED after max attempts.
+		// Any dispatched channel success -> mark trigger SENT so we do not re-notify the
+		// same threshold. Skipped channels (e.g. email when no targets configured) do not
+		// count as success or failure; if every attempted channel failed the trigger is
+		// FAILED (auto-retry) or SKIPPED after max attempts.
 		anySuccess := false
+		anyAttempted := false
 		for _, ch := range channels {
+			if channelSkipped[ch.Name()] {
+				RecordChannel(series, targetIdx, ch.Name(), CredExpiryStatusSkipped, today, nil)
+				continue
+			}
+			anyAttempted = true
 			chErr := channelResults[ch.Name()]
 			status := CredExpiryStatusSent
 			if chErr != nil {
@@ -238,8 +259,11 @@ func persistTriggerOutcome(
 		}
 		if anySuccess {
 			MarkTriggerSent(series, targetIdx, today)
-		} else {
+		} else if anyAttempted {
 			MarkTriggerFailed(series, targetIdx, fmt.Errorf("all channels failed"))
+		} else {
+			// No channels attempted (all skipped) — trigger remains PENDING for retry.
+			return nil
 		}
 
 		encoded, err := EncodeSeries(series)
@@ -335,6 +359,12 @@ func kindForDays(days int) string {
 // Channel strategy
 // -----------------------------------------------------------------------------
 
+// Channel names used in trigger.channels and for skip logic in processTenant.
+const (
+	channelNameEmail   = "email"
+	channelNameProduct = "product"
+)
+
 // NotificationChannel is a pluggable dispatch target for credential-expiry notifications.
 // Add new implementations (e.g. UI, Slack, OpsGenie) without changing job wiring or
 // jsonb schema — channel names appear in trigger.channels for observability.
@@ -374,7 +404,7 @@ func newEmailChannel(mgr *notification.NotificationManager) NotificationChannel 
 	return &emailChannel{mgr: mgr}
 }
 
-func (e *emailChannel) Name() string { return "email" }
+func (e *emailChannel) Name() string { return channelNameEmail }
 
 func (e *emailChannel) Send(ctx context.Context, batch NotificationBatch) error {
 	if len(batch.Targets) == 0 {
@@ -438,7 +468,7 @@ func newProductChannel(mgr *alert.AlertsManager) NotificationChannel {
 	return &productChannel{mgr: mgr}
 }
 
-func (p *productChannel) Name() string { return "product" }
+func (p *productChannel) Name() string { return channelNameProduct }
 
 // Send emits one alert per secret in the batch so each credential appears as an
 // individual, dismissible entry in the customer UI. Batching happens for email
