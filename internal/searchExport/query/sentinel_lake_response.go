@@ -26,6 +26,12 @@ const (
 	lakeFrameDataTable       = "DataTable"
 	lakeFrameDataSetComplete = "DataSetCompletion"
 	lakeTableKindPrimary     = "PrimaryResult"
+
+	// Bounds for the out-of-order buffer in bufferLakeRows. Large enough to absorb any
+	// plausible frame reordering, small enough that a malformed or hostile response cannot
+	// make the decoder hold an export-sized result in memory.
+	maxBufferedLakeRows  = 1024
+	maxBufferedLakeBytes = 8 << 20
 )
 
 // lakeColumn is the v2 (and Kusto v1) column descriptor. Log Analytics uses lower-case
@@ -210,9 +216,9 @@ func decodeLakeRows(
 	}
 	if columns == nil {
 		// Columns not seen yet: buffer, and flush once the frame has been read in full.
-		var buffered [][]json.RawMessage
-		if err := dec.Decode(&buffered); err != nil {
-			return 0, nil, fmt.Errorf("parse Sentinel lake rows: %w", err)
+		buffered, err := bufferLakeRows(dec)
+		if err != nil {
+			return 0, nil, err
 		}
 		return 0, buffered, nil
 	}
@@ -240,6 +246,44 @@ func decodeLakeRows(
 		return rows, nil, fmt.Errorf("parse Sentinel lake rows: %w", err)
 	}
 	return rows, nil, nil
+}
+
+// bufferLakeRows holds rows that arrived before their column schema, bounded on both count and
+// size.
+//
+// Kusto emits Columns before Rows, so this path exists only for a reordered frame. A response
+// that exceeds these bounds is not a reordering — it is a shape we do not understand — and
+// failing beats materialising the export-sized result this decoder streams precisely to avoid.
+func bufferLakeRows(dec *json.Decoder) ([][]json.RawMessage, error) {
+	if err := expectDelim(dec, '['); err != nil {
+		return nil, fmt.Errorf("parse Sentinel lake rows: %w", err)
+	}
+	var buffered [][]json.RawMessage
+	var bufferedBytes int
+	for dec.More() {
+		var raw []json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return nil, fmt.Errorf("parse Sentinel lake row: %w", err)
+		}
+		if len(buffered) >= maxBufferedLakeRows {
+			return nil, fmt.Errorf(
+				"Sentinel lake response sent more than %d rows before their column schema",
+				maxBufferedLakeRows)
+		}
+		for _, cell := range raw {
+			bufferedBytes += len(cell)
+		}
+		if bufferedBytes > maxBufferedLakeBytes {
+			return nil, fmt.Errorf(
+				"Sentinel lake response sent more than %d bytes of rows before their column schema",
+				maxBufferedLakeBytes)
+		}
+		buffered = append(buffered, raw)
+	}
+	if err := expectDelim(dec, ']'); err != nil {
+		return nil, fmt.Errorf("parse Sentinel lake rows: %w", err)
+	}
+	return buffered, nil
 }
 
 func flushLakeRows(

@@ -139,3 +139,43 @@ func TestLakeRetryDelayFallsBackToMessageBody(t *testing.T) {
 		t.Fatalf("no hint = %v, want 0 so the caller uses its ladder", got)
 	}
 }
+
+// The out-of-order buffer is bounded: it exists only to absorb a reordered frame, so a response
+// that keeps sending rows before their schema is refused rather than materialised.
+func TestDecodeSentinelLakeResponseBoundsOutOfOrderBuffer(t *testing.T) {
+	rows := make([]string, 0, maxBufferedLakeRows+1)
+	for i := 0; i <= maxBufferedLakeRows; i++ {
+		rows = append(rows, `["x"]`)
+	}
+	body := `[{"FrameType":"DataTable","Rows":[` + strings.Join(rows, ",") +
+		`],"Columns":[{"ColumnName":"A","ColumnType":"string"}],"TableKind":"PrimaryResult"}]`
+
+	_, _, _, err := collectLake(t, body)
+	if err == nil {
+		t.Fatal("expected an unbounded out-of-order buffer to be refused")
+	}
+	if !strings.Contains(err.Error(), "before their column schema") {
+		t.Fatalf("error = %v, want it to name the out-of-order buffer", err)
+	}
+}
+
+// Just under the bound still works, so a genuinely reordered frame is not broken by the guard.
+func TestDecodeSentinelLakeResponseAllowsSmallOutOfOrderBuffer(t *testing.T) {
+	rows := make([]string, 0, 8)
+	for i := 0; i < 8; i++ {
+		rows = append(rows, `["x"]`)
+	}
+	body := `[{"FrameType":"DataTable","Rows":[` + strings.Join(rows, ",") +
+		`],"Columns":[{"ColumnName":"A","ColumnType":"string"}],"TableKind":"PrimaryResult"}]`
+
+	columns, decoded, n, err := collectLake(t, body)
+	if err != nil {
+		t.Fatalf(errDecodeResponse, err)
+	}
+	if n != 8 || len(decoded) != 8 {
+		t.Fatalf("rows = %d, decoded %d", n, len(decoded))
+	}
+	if !sameColumns(columns, []string{"A"}) {
+		t.Fatalf(gotColumns, columns)
+	}
+}
