@@ -54,7 +54,7 @@ func (r *BlobReader) ListFiles(ctx context.Context, prefix string) ([]string, er
 		}
 	}
 	sort.Strings(files)
-	logging.GetLogger().Info("Found CETAS output files", zap.Int("count", len(files)))
+	logging.GetLogger().Info("Found staged blob output files", zap.Int("count", len(files)))
 	return files, nil
 }
 

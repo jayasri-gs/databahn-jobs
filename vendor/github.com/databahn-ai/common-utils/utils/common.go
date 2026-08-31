@@ -103,6 +103,14 @@ func ListContains(list []string, s string) bool {
 	return false
 }
 
+func GetKeysFromMap(m map[string]bool) []string {
+	keys := []string{}
+	for key := range m {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 func UUIDFromStringOrNil(id string) uuid.UUID {
 	id1, err := uuid.Parse(id)
 	if err != nil {

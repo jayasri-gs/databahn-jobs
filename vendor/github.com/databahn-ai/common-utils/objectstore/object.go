@@ -12,11 +12,11 @@ import (
 )
 
 // NewObjectStore creates an ObjectStore based on configuration.
-// The backend is selected via object.backend: "s3" or "blob".
+// The backend is selected via object.backend: "s3", "blob", or "gcs".
 func NewObjectStore(ctx context.Context, cfg configuration.ConfigReader) (ObjectStore, error) {
 	backend := strings.ToLower(strings.TrimSpace(cfg.GetString(configuration.ObjectBackend)))
 	if backend == "" {
-		return nil, fmt.Errorf("object.backend is required (s3 or blob)")
+		return nil, fmt.Errorf("object.backend is required (s3, blob, or gcs)")
 	}
 
 	switch backend {
@@ -24,8 +24,10 @@ func NewObjectStore(ctx context.Context, cfg configuration.ConfigReader) (Object
 		return newS3StoreFromConfig(ctx, cfg)
 	case BackendBlob:
 		return newBlobStoreFromConfig(ctx, cfg)
+	case BackendGcs:
+		return newGcsStoreFromConfig(ctx, cfg)
 	default:
-		return nil, fmt.Errorf("unsupported object backend: %q (use s3 or blob)", backend)
+		return nil, fmt.Errorf("unsupported object backend: %q (use s3, blob, or gcs)", backend)
 	}
 }
 
@@ -72,4 +74,18 @@ func newBlobStoreFromConfig(ctx context.Context, cfg configuration.ConfigReader)
 	)
 
 	return NewBlobBackend(ctx, connectionString, accountName, accountKey)
+}
+
+func newGcsStoreFromConfig(ctx context.Context, cfg configuration.ConfigReader) (ObjectStore, error) {
+	projectID := cfg.GetString(configuration.ObjectGcsProjectID)
+	credentialsPath := cfg.GetString(configuration.ObjectGcsCredentialsPath)
+
+	useADC := credentialsPath == ""
+	logging.GetLoggerWithContext(ctx).Info("creating GCS object store",
+		zap.String("project_id", projectID),
+		zap.Bool("credentials_file", credentialsPath != ""),
+		zap.Bool("native_auth", useADC),
+	)
+
+	return NewGcsBackend(ctx, projectID, credentialsPath)
 }

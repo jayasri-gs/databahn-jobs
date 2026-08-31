@@ -143,24 +143,37 @@ func processExportRequest(ctx context.Context, db *gorm.DB, report models.Search
 		zap.String("engine", deps.QueryEngine),
 		zap.Bool("legacyMode", deps.LegacyMode))
 
-	p := pipeline.New(cfg, reportID, report.Name, exportConfig, deps.Athena, deps.Synapse, deps.Uploader, deps.StagingBlobConfig, log)
+	p := pipeline.New(cfg, reportID, report.Name, exportConfig, pipeline.Deps{
+		Unload:      deps.Unload,
+		RowStream:   deps.RowStream,
+		Uploader:    deps.Uploader,
+		StagingBlob: deps.StagingBlobConfig,
+	}, log)
 
+	// queryExecutionID starts as whatever the report row carried (set for a resumed job)
+	// and is replaced by the id this attempt starts, so cleanup can cancel the right one.
+	queryExecutionID := exportConfig.QueryExecutionID
 	onQueryStart := func(executionID string) error {
+		queryExecutionID = executionID
 		return models.UpdateQueryExecutionID(db, reportID, executionID)
 	}
 
-	// stagingCleanup drops the report's CETAS objects and staged blobs on permanent
-	// failure. Reconnects because the pipeline closes its Synapse connection on exit.
+	// stagingCleanup drops the engine's staged artifacts on permanent failure.
+	// Reconnects because the pipeline closes its executor connection on exit.
 	stagingCleanup := func(cleanupCtx context.Context) {
-		ce, ok := deps.Synapse.(query.CETASExecutor)
+		if deps.Unload != nil && deps.Unload.Engine() == query.EngineADX {
+			pipeline.CleanupADXStaging(cleanupCtx, deps.Unload, reportID, queryExecutionID, cfg.TempDir, log)
+			return
+		}
+		ce, ok := deps.RowStream.(query.CETASExecutor)
 		if !ok || deps.StagingBlobConfig == nil {
 			return
 		}
-		if err := deps.Synapse.Connect(cleanupCtx); err != nil {
+		if err := deps.RowStream.Connect(cleanupCtx); err != nil {
 			log.Warn("CETAS permanent-failure cleanup: synapse connect failed", zap.Error(err))
 			return
 		}
-		defer deps.Synapse.Close()
+		defer deps.RowStream.Close()
 		blobClient, err := destination.NewAzureBlobClient(deps.StagingBlobConfig)
 		if err != nil {
 			log.Warn("CETAS permanent-failure cleanup: blob client failed", zap.Error(err))

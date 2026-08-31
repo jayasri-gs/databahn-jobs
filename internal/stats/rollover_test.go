@@ -1,6 +1,8 @@
 package stats
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1150,5 +1152,197 @@ func TestIsDayDifferenceMoreThanYearTransitions(t *testing.T) {
 					tt.x, tt.yearThis, tt.dayThis, tt.yearThat, tt.dayThat, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestNewIntegrationRolloverConfig_RejectsNonPositiveBucket(t *testing.T) {
+	if _, err := NewIntegrationRolloverConfig(0); err == nil {
+		t.Fatal("expected error for zero bucket")
+	}
+	if _, err := NewIntegrationRolloverConfig(-time.Hour); err == nil {
+		t.Fatal("expected error for negative bucket")
+	}
+	cfg, err := NewIntegrationRolloverConfig(time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error for valid bucket: %v", err)
+	}
+	if cfg.aggWindow != time.Hour {
+		t.Fatalf("aggWindow = %s, want 1h", cfg.aggWindow)
+	}
+}
+
+func TestValidateRolloverDurations_RejectsNonPositive(t *testing.T) {
+	cfg := &RolloverConfig{
+		aggQueryRange:   0,
+		validationRange: time.Hour,
+		aggWindow:       time.Hour,
+	}
+	if err := validateRolloverDurations(cfg); err == nil {
+		t.Fatal("expected error for non-positive aggQueryRange")
+	}
+}
+
+func TestBuildRolloverAggRequest_IncludesOperatorIdCompositeSource(t *testing.T) {
+	req := buildRolloverAggRequest(1_700_000_000_000, 1_700_003_600_000, nil, 100, time.Hour)
+	if len(req.Aggs.CompositeBuckets.Composite.Sources) != 10 {
+		t.Fatalf("expected 10 composite sources, got %d", len(req.Aggs.CompositeBuckets.Composite.Sources))
+	}
+
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal rollover request: %v", err)
+	}
+	body := string(payload)
+	if !strings.Contains(body, `"operator_id"`) {
+		t.Fatalf("expected operator_id composite source in request body: %s", body)
+	}
+	if !strings.Contains(body, fieldOperatorId) {
+		t.Fatalf("expected %q field in request body: %s", fieldOperatorId, body)
+	}
+	if !strings.Contains(body, `"target_node_id"`) {
+		t.Fatalf("expected target_node_id composite source in request body: %s", body)
+	}
+	if !strings.Contains(body, fieldTargetNodeId) {
+		t.Fatalf("expected %q field in request body: %s", fieldTargetNodeId, body)
+	}
+	if !strings.Contains(body, `"route_key"`) {
+		t.Fatalf("expected route_key composite source in request body: %s", body)
+	}
+	if !strings.Contains(body, `"rule_id"`) {
+		t.Fatalf("expected rule_id composite source in request body: %s", body)
+	}
+	if !strings.Contains(body, fieldRuleId) {
+		t.Fatalf("expected %q field in request body: %s", fieldRuleId, body)
+	}
+}
+
+func TestKey_newDocKey_DifferentRuleIdsProduceDifferentHashes(t *testing.T) {
+	base := Key{
+		Name:                 "total_events_delivered",
+		Namespace:            "freeform-pipeline-executor",
+		SourceId:             "source-1",
+		DestinationId:        "N/A",
+		RuleId:               "N/A",
+		FleetNodeId:          "N/A",
+		OperatorId:           "filter-1",
+		TargetNodeId:         "sandbox-1",
+		RouteKey:             "onSuccess",
+		TimeHistogramBuckets: 1_700_000_000_000,
+	}
+	ruleA := base
+	ruleA.RuleId = "rule-uuid-1"
+	ruleB := base
+	ruleB.RuleId = "rule-uuid-2"
+
+	hashA := ruleA.newDocKey("db_statistics_v2_p1_tenant_y2024_d100")
+	hashB := ruleB.newDocKey("db_statistics_v2_p1_tenant_y2024_d100")
+	if hashA == hashB {
+		t.Fatalf("expected different doc keys for different rule ids, got %q", hashA)
+	}
+}
+
+func TestApplyRolloverCompositeTags_StampsEdgeDimensions(t *testing.T) {
+	tags := map[string]any{}
+	applyRolloverCompositeTags(tags, Key{
+		OperatorId:   "parse-abc",
+		TargetNodeId: "filter-xyz",
+		RouteKey:     "onSuccess",
+		RuleId:       "rule-uuid-1",
+	}, 1_700_000_000_000)
+
+	if tags["db_ts_win"] != int64(1_700_000_000_000) {
+		t.Fatalf("db_ts_win: got %v", tags["db_ts_win"])
+	}
+	if tags["operator_id"] != "parse-abc" {
+		t.Fatalf("operator_id: got %v", tags["operator_id"])
+	}
+	if tags["target_node_id"] != "filter-xyz" {
+		t.Fatalf("target_node_id: got %v", tags["target_node_id"])
+	}
+	if tags["route_key"] != "onSuccess" {
+		t.Fatalf("route_key: got %v", tags["route_key"])
+	}
+	if tags["rule_id"] != "rule-uuid-1" {
+		t.Fatalf("rule_id: got %v", tags["rule_id"])
+	}
+}
+
+func TestApplyRolloverCompositeTags_NormalizesMissingDimensionsToNA(t *testing.T) {
+	tags := map[string]any{}
+	applyRolloverCompositeTags(tags, Key{}, 1_700_000_000_000)
+
+	for _, field := range []string{"operator_id", "target_node_id", "route_key", "rule_id"} {
+		if tags[field] != missingOperatorTagValue {
+			t.Fatalf("%s: expected %q, got %v", field, missingOperatorTagValue, tags[field])
+		}
+	}
+}
+
+func TestKey_newDocKey_DifferentOperatorIdsProduceDifferentHashes(t *testing.T) {
+	base := Key{
+		Name:                 "total_events_delivered",
+		Namespace:            "freeform-pipeline-executor",
+		SourceId:             "source-1",
+		DestinationId:        "N/A",
+		RuleId:               "N/A",
+		FleetNodeId:          "N/A",
+		OperatorId:           "N/A",
+		TargetNodeId:         "N/A",
+		RouteKey:             "N/A",
+		TimeHistogramBuckets: 1_700_000_000_000,
+	}
+	opA := base
+	opA.OperatorId = "parse-abc"
+	opB := base
+	opB.OperatorId = "transform-xyz"
+
+	hashA := opA.newDocKey("db_statistics_v2_p1_tenant_y2024_d100")
+	hashB := opB.newDocKey("db_statistics_v2_p1_tenant_y2024_d100")
+	if hashA == hashB {
+		t.Fatalf("expected different doc keys for different operator ids, got %q", hashA)
+	}
+}
+
+func TestAggKeyString_NormalizesMissingOperatorId(t *testing.T) {
+	tests := []struct {
+		name     string
+		key      map[string]any
+		expected string
+	}{
+		{
+			name:     "missing key",
+			key:      map[string]any{},
+			expected: missingOperatorTagValue,
+		},
+		{
+			name:     "empty string",
+			key:      map[string]any{fieldOperatorId: ""},
+			expected: missingOperatorTagValue,
+		},
+		{
+			name:     "present operator",
+			key:      map[string]any{fieldOperatorId: "parse-abc"},
+			expected: "parse-abc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := aggKeyString(tt.key, fieldOperatorId)
+			if got != tt.expected {
+				t.Fatalf("aggKeyString() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNewRequestSourceTermsAgg_UsesMissingValueForAbsentTag(t *testing.T) {
+	agg := newRequestSourceTermsAgg(fieldOperatorId)
+	script := agg.Terms.Script.Source
+	if !strings.Contains(script, fieldOperatorId) {
+		t.Fatalf("expected painless script to reference %q, got %q", fieldOperatorId, script)
+	}
+	if !strings.Contains(script, `'N/A'`) {
+		t.Fatalf("expected painless script to default missing values to N/A, got %q", script)
 	}
 }

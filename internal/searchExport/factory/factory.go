@@ -3,6 +3,8 @@ package factory
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -22,8 +24,8 @@ import (
 
 type ExportDeps struct {
 	QueryEngine       string
-	Athena            query.UnloadExecutor
-	Synapse           query.RowStreamExecutor
+	Unload            query.UnloadExecutor
+	RowStream         query.RowStreamExecutor
 	Uploader          upload.CloudUploader
 	ExportBucket      string
 	LegacyMode        bool
@@ -121,26 +123,87 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 					staging, err = destination.LoadDatabahnStorageStagingConfig(ctx, db, *store.DestinationID, tenantID)
 				} else if store.Type == datastore.StoreTypeDatabahnStorage {
 					return nil, fmt.Errorf("athena staging S3 config not resolved: DATABAHN_STORAGE data store has no linked destination")
+				} else if isExternalAthenaStore(store) {
+					return nil, fmt.Errorf("external Athena store %s missing staging credentials", dataStoreID)
 				} else {
 					return nil, fmt.Errorf("athena staging S3 config not resolved for store type %s", store.Type)
 				}
+			}
+			if log != nil && store.ExternalSearchProvider != "" {
+				log.Info("Resolved external Athena export store",
+					zap.String("dataStoreType", store.Type),
+					zap.String("externalSearchProvider", store.ExternalSearchProvider))
 			}
 		}
 		if err != nil || staging == nil {
 			return nil, fmt.Errorf("athena staging S3 config is required: %w", err)
 		}
-		athenaExec := query.NewAthenaExecutor(query.AthenaConfig{
-			Region:          staging.Region,
-			Workgroup:       "primary",
-			OutputLocation:  staging.AthenaOutputLocation(),
-			AuthType:        staging.AuthType,
-			AccessKeyID:     staging.AccessKeyID,
-			SecretAccessKey: staging.SecretAccessKey,
-			RoleArn:         staging.RoleArn,
-			ExternalID:      staging.ExternalID,
-		})
+		athenaCfg, err := resolveAthenaClientConfig(cfg, staging)
+		if err != nil {
+			return nil, err
+		}
+		athenaExec := query.NewAthenaExecutor(athenaCfg)
 		athenaExec.SetLogger(log)
-		deps.Athena = athenaExec
+		deps.Unload = athenaExec
+	case models.QueryEngineKustoADX:
+		if exportBlob == nil {
+			return nil, fmt.Errorf("ADX export requires an Azure Blob destination, got %s", destType)
+		}
+		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dataStoreId: %w", err)
+		}
+		store, err := datastore.LoadExportDataStore(ctx, db, dataStoreID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if store.ADX == nil {
+			return nil, fmt.Errorf("ADX store %s missing cluster credentials", dataStoreID)
+		}
+		adxExec := query.NewADXExecutor(query.ADXConfig{
+			ClusterURI:   store.ADX.ClusterURI,
+			Database:     firstNonEmpty(cfg.Database, store.ADX.Database),
+			TenantID:     store.ADX.TenantID,
+			ClientID:     store.ADX.ClientID,
+			ClientSecret: store.ADX.ClientSecret,
+			NamePrefix:   query.ADXNamePrefix(reportID),
+			StagingBlob:  exportBlob,
+		})
+		adxExec.SetLogger(log)
+		deps.Unload = adxExec
+		// .export stages into the export destination's own container; the pipeline reads
+		// the staged blobs back from there and cleans them up afterwards.
+		deps.StagingBlobConfig = exportBlob
+	case models.QueryEngineKustoLAW, models.QueryEngineKustoLake:
+		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dataStoreId: %w", err)
+		}
+		store, err := datastore.LoadExportDataStore(ctx, db, dataStoreID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if store.Sentinel == nil {
+			return nil, fmt.Errorf("Sentinel store %s missing workspace credentials", dataStoreID)
+		}
+		tier := firstNonEmpty(cfg.SentinelStorageTier(), store.Sentinel.StorageTier)
+		sentinelExec, err := query.NewSentinelExecutor(query.SentinelConfig{
+			WorkspaceID:   store.Sentinel.WorkspaceID,
+			WorkspaceName: store.Sentinel.WorkspaceName,
+			StorageTier:   tier,
+			TenantID:      store.Sentinel.TenantID,
+			ClientID:      store.Sentinel.ClientID,
+			ClientSecret:  store.Sentinel.ClientSecret,
+			QueryTimeout:  query.SentinelStreamOptionsForTier(tier).QueryTimeout,
+			MaxRetries:    query.SentinelMaxRetriesFromEnv(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		sentinelExec.SetLogger(log)
+		deps.RowStream = sentinelExec
+		// No staging: Sentinel has no server-side export, so rows are pulled over the query
+		// API and uploaded straight to the export destination — S3 or Azure Blob alike.
 	case models.QueryEngineSynapse:
 		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
 		if err != nil {
@@ -170,7 +233,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 			DataSourceName: dataSource,
 		})
 		synapseExec.SetLogger(log)
-		deps.Synapse = synapseExec
+		deps.RowStream = synapseExec
 		deps.StagingBlobConfig = exportBlob
 	default:
 		return nil, fmt.Errorf("unsupported query engine: %s", queryEngine)
@@ -188,19 +251,133 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func isExternalAthenaStore(store *datastore.ExportDataStore) bool {
+	if store == nil {
+		return false
+	}
+	switch store.Type {
+	case datastore.StoreTypeExternalStorage, datastore.StoreTypeDerivedDatastore:
+		return datastore.IsExternalAthenaProvider(store.ExternalSearchProvider, nil)
+	case datastore.StoreTypeDatabahnDestination:
+		return store.ExternalSearchProvider == datastore.ExternalProviderSecurityLake
+	default:
+		return false
+	}
+}
+
+// resolveAthenaClientConfig builds Athena client settings from store credentials, preferring
+// the region from the export config when present. The output location is always derived
+// locally — see athenaOutputLocationFor.
+func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destination.S3Config) (query.AthenaConfig, error) {
+	if staging == nil {
+		return query.AthenaConfig{}, fmt.Errorf("athena staging config is required")
+	}
+	region := strings.TrimSpace(staging.Region)
+	if cfg != nil && strings.TrimSpace(cfg.AthenaRegion()) != "" {
+		region = strings.TrimSpace(cfg.AthenaRegion())
+	}
+	if region == "" {
+		return query.AthenaConfig{}, fmt.Errorf("athena region is required")
+	}
+
+	outputLocation, err := athenaOutputLocationFor(staging)
+	if err != nil {
+		return query.AthenaConfig{}, err
+	}
+	// Validate at this assignment site, not only inside the builder: the URI is
+	// passed to the Athena client and interpolated into UNLOAD SQL, so it must
+	// be a canonical s3:// location for the staging bucket with no quotes or
+	// control characters before it leaves this function.
+	if err := validateAthenaOutputLocation(outputLocation, athenaOutputBucket.FindString(strings.TrimSpace(staging.Bucket))); err != nil {
+		return query.AthenaConfig{}, err
+	}
+
+	return query.AthenaConfig{
+		Region:          region,
+		Workgroup:       "primary",
+		OutputLocation:  outputLocation,
+		AuthType:        staging.AuthType,
+		AccessKeyID:     staging.AccessKeyID,
+		SecretAccessKey: staging.SecretAccessKey,
+		RoleArn:         staging.RoleArn,
+		ExternalID:      staging.ExternalID,
+	}, nil
+}
+
 // IsSupportedExportMatrix reports whether a query engine and export destination type can be wired together.
 func IsSupportedExportMatrix(queryEngine, destType string) bool {
+	dest := strings.ToUpper(destType)
 	switch strings.ToUpper(queryEngine) {
-	case models.QueryEngineAthena, models.QueryEngineSynapse:
+	// These engines never write through the export destination while the query runs: Athena
+	// and Synapse stage into their own storage, and Sentinel rows are encoded in the worker
+	// and uploaded client-side. The destination is only the write target, so any type the
+	// uploader supports works.
+	case models.QueryEngineAthena, models.QueryEngineSynapse, models.QueryEngineKustoLAW, models.QueryEngineKustoLake:
+		switch dest {
+		case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
+			return true
+		}
+		return false
+	case models.QueryEngineKustoADX:
+		// ADX .export writes into the export destination's own blob container,
+		// so Azure Blob is the only supported export destination.
+		return dest == models.DestTypeAzureBlob
 	default:
 		return false
 	}
-	switch strings.ToUpper(destType) {
-	case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
-		return true
-	default:
-		return false
+}
+
+// databahnAthenaOutputPrefix is the key Athena writes query results under, matching
+// destination.S3Config.AthenaOutputLocation and backend AWSConstants.ATHENA_OUTPUT_PATH.
+const databahnAthenaOutputPrefix = ".databahn_out"
+
+// athenaOutputBucket is AWS's bucket naming rule: 3-63 characters of lowercase
+// alphanumerics, dots and hyphens, starting and ending alphanumeric.
+var athenaOutputBucket = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$`)
+
+// athenaOutputLocation matches a canonical s3://<bucket>/<key> URI. The bucket
+// capture is AWS's naming rule; the optional key cannot contain whitespace,
+// quotes, backticks, or backslashes.
+var athenaOutputLocation = regexp.MustCompile(`^s3://([a-z0-9][a-z0-9.\-]{1,61}[a-z0-9])(/[^\s"'` + "`" + `\\]*)?$`)
+
+// athenaOutputLocationFor builds Athena's result URI from the staging bucket name.
+// searchExportConfig.athenaOutputLocation is not read. The URI is assembled from the
+// allowlisted bucket match via net/url so the original string never enters the client.
+func athenaOutputLocationFor(staging *destination.S3Config) (string, error) {
+	if staging == nil {
+		return "", fmt.Errorf("athena staging config is required")
 	}
+	safeBucket := athenaOutputBucket.FindString(strings.TrimSpace(staging.Bucket))
+	if safeBucket == "" {
+		return "", fmt.Errorf("athena staging bucket %q is not a valid S3 bucket name", staging.Bucket)
+	}
+	location := (&url.URL{Scheme: "s3", Host: safeBucket, Path: "/" + databahnAthenaOutputPrefix}).String()
+	if err := validateAthenaOutputLocation(location, safeBucket); err != nil {
+		return "", err
+	}
+	return location, nil
+}
+
+func validateAthenaOutputLocation(location, authorizedBucket string) error {
+	if strings.ContainsFunc(location, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return fmt.Errorf("athena output location contains control characters")
+	}
+	if strings.ContainsAny(location, `'"\`) {
+		return fmt.Errorf("athena output location contains quotes or escape characters")
+	}
+	match := athenaOutputLocation.FindStringSubmatch(location)
+	if match == nil {
+		return fmt.Errorf("athena output location %q is not a canonical s3://bucket/key URI", location)
+	}
+	if authorizedBucket == "" {
+		return fmt.Errorf("cannot authorize athena output location %q: staging bucket is not configured", location)
+	}
+	if match[1] != authorizedBucket {
+		return fmt.Errorf(
+			"athena output location %q targets bucket %q, which is not the authorized staging bucket %q",
+			location, match[1], authorizedBucket)
+	}
+	return nil
 }
 
 func awsConfigFromS3(ctx context.Context, cfg *destination.S3Config) (aws.Config, error) {

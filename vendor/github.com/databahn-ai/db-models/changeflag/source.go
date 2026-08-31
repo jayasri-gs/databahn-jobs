@@ -45,9 +45,10 @@ type FlagSource struct {
 }
 
 type TimeZoneConfiguration struct {
-	Enabled               bool   `json:"enabled"`
-	SourceTimeZone        string `json:"sourceTimeZone"`
-	NormalizationTimeZone string `json:"normalizationTimeZone"`
+	Enabled                    bool   `json:"enabled"`
+	SourceTimeZone             string `json:"sourceTimeZone"`
+	NormalizationTimeZone      string `json:"normalizationTimeZone"`
+	DeviceLevelOverrideEnabled bool   `json:"deviceLevelOverrideEnabled"`
 }
 
 // FlagSourceAdvancedConfig holds advanced configuration for the source

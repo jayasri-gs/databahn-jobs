@@ -14,6 +14,7 @@ import (
 	azsecrets "github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/databahn-ai/common-utils/aws"
 	"github.com/databahn-ai/common-utils/configuration"
+	"github.com/databahn-ai/common-utils/gcp"
 	"github.com/databahn-ai/common-utils/vault"
 	"github.com/databahn-ai/go-logging/logger"
 	"github.com/opensearch-project/opensearch-go/v2"
@@ -34,35 +35,40 @@ type Connection struct {
 	SkipTls    bool   `json:"skip_tls"`
 }
 
+// Swapped in tests to avoid external secret backend dependencies.
+var readOsDetailsFunc = readOsDetails
+
 // Connect create connection with opensearch
 func Connect(config configuration.ConfigReader) (*opensearch.Client, error) {
-	var err error
-	creds, err := readOsDetails(config)
+	credential, err := readOsDetailsFunc(config)
 	if err != nil {
-		logger.GetLogger().Error("error while reading opensearch credentials", zap.Error(err))
 		return nil, err
 	}
 
-	skipTls, err := strconv.ParseBool(config.GetString(configuration.OpenSearchSkipTls))
-	if err != nil {
-		skipTls = false
+	if !credential.OpenSearchEnableSsl {
+		credential.OpenSearchEnableSsl, err = strconv.ParseBool(config.GetString(configuration.OpenSearchSkipTls))
+		if err != nil {
+			credential.OpenSearchEnableSsl = false
+		}
 	}
-	logger.GetLogger().Info("creating connection with opensearch", zap.String("url", creds.OpenSearchUrl), zap.String("username", creds.OpenSearchUsername))
+
+	logger.GetLogger().Info("creating connection with opensearch", zap.String("url", credential.OpenSearchUrl), zap.String("username", credential.OpenSearchUsername))
 
 	return opensearch.NewClient(opensearch.Config{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: skipTls},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: credential.OpenSearchEnableSsl},
 		},
-		Addresses: strings.Split(creds.OpenSearchUrl, ","),
-		Username:  creds.OpenSearchUsername,
-		Password:  creds.OpenSearchPassword,
+		Addresses: strings.Split(credential.OpenSearchUrl, ","),
+		Username:  credential.OpenSearchUsername,
+		Password:  credential.OpenSearchPassword,
 	})
 }
 
-// GetConnection create connection with opensearch
+// GetConnection creates a connection with OpenSearch.
+// Deprecated: use Connect instead.
 func GetConnection(config configuration.ConfigReader) (*Credentials, error) {
 	var err error
-	creds, err := readOsDetails(config)
+	creds, err := readOsDetailsFunc(config)
 	if err != nil {
 		logger.GetLogger().Error("error while reading opensearch credentials", zap.Error(err))
 		return nil, err
@@ -109,6 +115,8 @@ func readOsDetails(config configuration.ConfigReader) (*Credentials, error) {
 		return readOsDetailsFromVault(config, secretName)
 	case configuration.SecretBackendAzure:
 		return readOsDetailsFromAzure(config, secretName)
+	case configuration.SecretBackendGCP:
+		return readOsDetailsFromGcp(config, secretName)
 	default:
 		return nil, errors.New("unsupported secret backend: " + secretBackend)
 	}
@@ -172,6 +180,26 @@ func readOsDetailsFromAzure(config configuration.ConfigReader, secretName string
 	err = json.Unmarshal([]byte(*resp.Value), &secretMap)
 	if err != nil {
 		logger.GetLogger().Error("failed to unmarshal Azure Key Vault secret value", zap.Error(err))
+		return nil, err
+	}
+	return parseOpenSearchCredentialsFromMap(secretMap)
+}
+
+func readOsDetailsFromGcp(config configuration.ConfigReader, secretName string) (*Credentials, error) {
+	projectId := config.GetString(configuration.GcpInfraProjectId)
+	if projectId == "" {
+		logger.GetLogger().Error("gcp infra project id is empty")
+		return nil, fmt.Errorf("missing config value %s", configuration.GcpInfraProjectId)
+	}
+	secretValue, err := gcp.ReadSecretByName(context.Background(), projectId, secretName)
+	if err != nil {
+		logger.GetLogger().Error("failed to get secret from GCP Secret Manager", zap.Error(err))
+		return nil, err
+	}
+	var secretMap map[string]interface{}
+	err = json.Unmarshal([]byte(secretValue), &secretMap)
+	if err != nil {
+		logger.GetLogger().Error("failed to unmarshal GCP Secret Manager secret value", zap.Error(err))
 		return nil, err
 	}
 	return parseOpenSearchCredentialsFromMap(secretMap)
