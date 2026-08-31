@@ -19,6 +19,8 @@ const (
 	// EngineSentinelLAW is the Sentinel analytics tier (Log Analytics workspace). The lake
 	// tier would be KUSTO_LAKE; it has no export transport yet.
 	EngineSentinelLAW = "KUSTO_LAW"
+	// EngineSentinelLake is the Sentinel data lake tier.
+	EngineSentinelLake = "KUSTO_LAKE"
 )
 
 type UnloadResult struct {

@@ -11,13 +11,14 @@ import (
 )
 
 const (
-	QueryEngineAthena   = "ATHENA"
-	QueryEngineSynapse  = "SYNAPSE"
-	QueryEngineKustoADX = "KUSTO_ADX"
-	QueryEngineKustoLAW = "KUSTO_LAW"
-	DestTypeS3          = "S3"
-	DestTypeS3Parquet   = "S3_PARQUET"
-	DestTypeAzureBlob   = "AZURE_BLOB"
+	QueryEngineAthena    = "ATHENA"
+	QueryEngineSynapse   = "SYNAPSE"
+	QueryEngineKustoADX  = "KUSTO_ADX"
+	QueryEngineKustoLAW  = "KUSTO_LAW"
+	QueryEngineKustoLake = "KUSTO_LAKE"
+	DestTypeS3           = "S3"
+	DestTypeS3Parquet    = "S3_PARQUET"
+	DestTypeAzureBlob    = "AZURE_BLOB"
 )
 
 type SearchExportReport struct {

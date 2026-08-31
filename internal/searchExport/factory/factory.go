@@ -169,7 +169,7 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		// .export stages into the export destination's own container; the pipeline reads
 		// the staged blobs back from there and cleans them up afterwards.
 		deps.StagingBlobConfig = exportBlob
-	case models.QueryEngineKustoLAW:
+	case models.QueryEngineKustoLAW, models.QueryEngineKustoLake:
 		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid dataStoreId: %w", err)
@@ -181,14 +181,16 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		if store.Sentinel == nil {
 			return nil, fmt.Errorf("Sentinel store %s missing workspace credentials", dataStoreID)
 		}
+		tier := firstNonEmpty(cfg.SentinelStorageTier(), store.Sentinel.StorageTier)
 		sentinelExec, err := query.NewSentinelExecutor(query.SentinelConfig{
-			WorkspaceID:  store.Sentinel.WorkspaceID,
-			StorageTier:  firstNonEmpty(cfg.SentinelStorageTier(), store.Sentinel.StorageTier),
-			TenantID:     store.Sentinel.TenantID,
-			ClientID:     store.Sentinel.ClientID,
-			ClientSecret: store.Sentinel.ClientSecret,
-			QueryTimeout: query.SentinelStreamOptionsFromEnv().QueryTimeout,
-			MaxRetries:   query.SentinelMaxRetriesFromEnv(),
+			WorkspaceID:   store.Sentinel.WorkspaceID,
+			WorkspaceName: store.Sentinel.WorkspaceName,
+			StorageTier:   tier,
+			TenantID:      store.Sentinel.TenantID,
+			ClientID:      store.Sentinel.ClientID,
+			ClientSecret:  store.Sentinel.ClientSecret,
+			QueryTimeout:  query.SentinelStreamOptionsForTier(tier).QueryTimeout,
+			MaxRetries:    query.SentinelMaxRetriesFromEnv(),
 		})
 		if err != nil {
 			return nil, err
@@ -305,7 +307,7 @@ func IsSupportedExportMatrix(queryEngine, destType string) bool {
 	// and Synapse stage into their own storage, and Sentinel rows are encoded in the worker
 	// and uploaded client-side. The destination is only the write target, so any type the
 	// uploader supports works.
-	case models.QueryEngineAthena, models.QueryEngineSynapse, models.QueryEngineKustoLAW:
+	case models.QueryEngineAthena, models.QueryEngineSynapse, models.QueryEngineKustoLAW, models.QueryEngineKustoLake:
 		switch dest {
 		case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
 			return true

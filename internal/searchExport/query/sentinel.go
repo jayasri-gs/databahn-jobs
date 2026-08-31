@@ -28,11 +28,14 @@ var errSentinelRowBudget = errors.New("sentinel row budget exhausted")
 
 // SentinelConfig holds everything needed to run KQL against a Microsoft Sentinel workspace.
 type SentinelConfig struct {
-	WorkspaceID  string
-	StorageTier  string
-	TenantID     string
-	ClientID     string
-	ClientSecret string
+	WorkspaceID string
+	// WorkspaceName is required for the lake tier only: its KQL API addresses the workspace
+	// as "workspaceName-workspaceId" rather than by GUID.
+	WorkspaceName string
+	StorageTier   string
+	TenantID      string
+	ClientID      string
+	ClientSecret  string
 
 	// Endpoint overrides the Azure public-cloud query host for sovereign-cloud deployments.
 	// Empty in production. It must name an approved Log Analytics host: the Entra scope
@@ -63,9 +66,6 @@ func NewSentinelExecutor(cfg SentinelConfig) (*SentinelExecutor, error) {
 	if strings.TrimSpace(cfg.WorkspaceID) == "" {
 		return nil, fmt.Errorf("workspace_id is required in connector configuration")
 	}
-	if err := validateLogAnalyticsEndpoint(cfg.Endpoint); err != nil {
-		return nil, err
-	}
 	if cfg.QueryTimeout <= 0 {
 		cfg.QueryTimeout = defaultSentinelQueryTimeout
 	}
@@ -74,12 +74,23 @@ func NewSentinelExecutor(cfg SentinelConfig) (*SentinelExecutor, error) {
 	tier := destination.NormalizeSentinelTier(cfg.StorageTier)
 	cfg.StorageTier = tier
 
+	if err := validateSentinelEndpoint(tier, cfg.Endpoint); err != nil {
+		return nil, err
+	}
+
 	e := &SentinelExecutor{cfg: cfg, log: log}
 	switch tier {
 	case SentinelTierAnalytics:
 		e.transport = newLogAnalyticsTransport(cfg, log)
 	case SentinelTierLake:
-		return nil, fmt.Errorf("Sentinel data lake export is not supported yet (storage_tier=LAKE); only the analytics tier can be exported")
+		database := (&destination.SentinelConfig{
+			WorkspaceID:   cfg.WorkspaceID,
+			WorkspaceName: cfg.WorkspaceName,
+		}).LakeDatabase()
+		if database == "" {
+			return nil, fmt.Errorf("workspace_name is required in connector configuration when storage_tier is LAKE")
+		}
+		e.transport = newSentinelLakeTransport(cfg, database, log)
 	default:
 		return nil, fmt.Errorf("unsupported Sentinel storage_tier: %s", cfg.StorageTier)
 	}
@@ -91,12 +102,20 @@ func (e *SentinelExecutor) SetLogger(log *zap.Logger) {
 		return
 	}
 	e.log = log
-	if t, ok := e.transport.(*logAnalyticsTransport); ok {
+	switch t := e.transport.(type) {
+	case *logAnalyticsTransport:
+		t.log = log
+	case *sentinelLakeTransport:
 		t.log = log
 	}
 }
 
-func (e *SentinelExecutor) Engine() string { return EngineSentinelLAW }
+func (e *SentinelExecutor) Engine() string {
+	if e.cfg.StorageTier == SentinelTierLake {
+		return EngineSentinelLake
+	}
+	return EngineSentinelLAW
+}
 
 func (e *SentinelExecutor) Connect(ctx context.Context) error {
 	if err := e.transport.Connect(ctx); err != nil {
@@ -223,11 +242,30 @@ var logAnalyticsHosts = map[string]bool{
 	"api.loganalytics.azure.cn": true, // China
 }
 
+// sentinelLakeHosts are the Sentinel data lake query endpoints an export may target.
+var sentinelLakeHosts = map[string]bool{
+	"api.securityplatform.microsoft.com": true,
+}
+
+// validateSentinelEndpoint picks the allowlist for the tier being queried. The two tiers use
+// different services, so a lake endpoint is not valid for analytics and vice versa.
+func validateSentinelEndpoint(tier, endpoint string) error {
+	if tier == SentinelTierLake {
+		return validateEndpointHost(endpoint, sentinelLakeHosts, "Sentinel data lake")
+	}
+	return validateLogAnalyticsEndpoint(endpoint)
+}
+
 // validateLogAnalyticsEndpoint constrains where the worker will send an Entra bearer token.
 //
 // The token is minted for the endpoint's own scope, so an unconstrained host would let a
 // crafted configuration collect it. An empty endpoint means the Azure public default.
 func validateLogAnalyticsEndpoint(endpoint string) error {
+	return validateEndpointHost(endpoint, logAnalyticsHosts, "Azure Monitor Logs")
+}
+
+// validateEndpointHost accepts an empty endpoint, meaning the tier's public-cloud default.
+func validateEndpointHost(endpoint string, allowed map[string]bool, service string) error {
 	trimmed := strings.TrimSpace(endpoint)
 	if trimmed == "" {
 		return nil
@@ -242,8 +280,8 @@ func validateLogAnalyticsEndpoint(endpoint string) error {
 	if parsed.User != nil {
 		return fmt.Errorf("sentinel endpoint must not embed credentials")
 	}
-	if !logAnalyticsHosts[strings.ToLower(parsed.Hostname())] {
-		return fmt.Errorf("sentinel endpoint host %q is not an Azure Monitor Logs endpoint", parsed.Hostname())
+	if !allowed[strings.ToLower(parsed.Hostname())] {
+		return fmt.Errorf("sentinel endpoint host %q is not a %s endpoint", parsed.Hostname(), service)
 	}
 	return nil
 }

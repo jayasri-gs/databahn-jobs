@@ -29,9 +29,14 @@ func TestIsSupportedExportMatrix(t *testing.T) {
 		}
 	}
 
-	// The Sentinel lake tier has no export transport in the worker yet.
-	if IsSupportedExportMatrix("KUSTO_LAKE", models.DestTypeAzureBlob) {
-		t.Fatal("KUSTO_LAKE should not be supported")
+	// Both Sentinel tiers encode rows in the worker, so both accept any uploader destination.
+	for _, dest := range []string{models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob} {
+		if !IsSupportedExportMatrix(models.QueryEngineKustoLake, dest) {
+			t.Fatalf("KUSTO_LAKE -> %s should be supported", dest)
+		}
+	}
+	if IsSupportedExportMatrix(models.QueryEngineKustoLake, "GCS") {
+		t.Fatal("unsupported destination should fail for the Sentinel lake tier")
 	}
 	if IsSupportedExportMatrix(models.QueryEngineKustoLAW, "GCS") {
 		t.Fatal("unsupported destination should fail for Sentinel")
