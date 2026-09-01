@@ -28,6 +28,11 @@ type AthenaConfig struct {
 	SecretAccessKey string
 	RoleArn         string
 	ExternalID      string
+
+	// NarrowTimestamps opts this executor into rewriting the export query so timestamp
+	// columns cannot trip UNLOAD's millisecond writer. Only sources known to expose
+	// microsecond timestamps set it -- see narrowTimestampsForUnload.
+	NarrowTimestamps bool
 }
 
 type AthenaExecutor struct {

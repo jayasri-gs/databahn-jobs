@@ -101,11 +101,15 @@ func wrapWithProjection(query, projection string) string {
 // order is the catalog's data columns then its partition keys, but an Iceberg table's
 // partitioning is hidden and its partition keys are not result columns at all.
 //
+// It runs only for sources that opt in via AthenaConfig.NarrowTimestamps. Every other Athena
+// source -- databahn storage, insights, external S3 -- exports correctly today, and its
+// timestamps are millisecond, so it keeps the untouched query and pays no metadata probe.
+//
 // It is best effort by design: every failure to determine a safe projection returns the query
 // unchanged, so a metadata problem degrades to today's behaviour instead of blocking an
 // export that would otherwise have worked.
 func (e *AthenaExecutor) narrowTimestampsForUnload(ctx context.Context, query, database string) string {
-	if e.client == nil {
+	if !e.cfg.NarrowTimestamps || e.client == nil {
 		return query
 	}
 	cols, err := e.queryColumnMetadata(ctx, query, database)

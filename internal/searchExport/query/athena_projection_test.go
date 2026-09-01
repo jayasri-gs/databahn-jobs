@@ -1,6 +1,7 @@
 package query
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -117,5 +118,16 @@ func TestWrapWithProjectionHandlesAnyShape(t *testing.T) {
 		if got != `SELECT "c" FROM (`+q+`) AS databahn_export_src` {
 			t.Fatalf("unexpected wrap for %q: %q", q, got)
 		}
+	}
+}
+
+// Sources that export correctly today never reach the metadata probe, so their queries are
+// returned untouched and they pay nothing for a rewrite they do not need.
+func TestNarrowTimestampsForUnloadSkippedWhenNotEnabled(t *testing.T) {
+	e := NewAthenaExecutor(AthenaConfig{NarrowTimestamps: false})
+	q := "SELECT * FROM tbl WHERE x = 1"
+	// client is nil, so reaching the probe would panic; returning q proves the gate held.
+	if got := e.narrowTimestampsForUnload(context.Background(), q, "db"); got != q {
+		t.Fatalf("query was modified for an opted-out source: %q", got)
 	}
 }

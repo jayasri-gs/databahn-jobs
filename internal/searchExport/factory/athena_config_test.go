@@ -60,3 +60,28 @@ func TestResolveAthenaClientConfig_fallsBackToStaging(t *testing.T) {
 		t.Fatalf("outputLocation = %q", got.OutputLocation)
 	}
 }
+
+// Security Lake is the only Athena source whose catalog exposes microsecond timestamps, so it
+// is the only one that opts into the UNLOAD timestamp rewrite.
+func TestResolveAthenaClientConfig_narrowsTimestampsForSecurityLakeOnly(t *testing.T) {
+	staging := &destination.S3Config{
+		AuthType: "role_based", RoleArn: "arn:aws:iam::123:role/store",
+		Region: "eu-north-1", Bucket: "sl-athena-out",
+	}
+	tests := map[string]bool{
+		"SECURITY_LAKE": true,
+		"security_lake": true,
+		"S3":            false,
+		"":              false,
+	}
+	for provider, want := range tests {
+		got, err := resolveAthenaClientConfig(
+			&models.SearchExportConfig{ExternalSearchProvider: provider}, staging)
+		if err != nil {
+			t.Fatalf("resolveAthenaClientConfig(%q): %v", provider, err)
+		}
+		if got.NarrowTimestamps != want {
+			t.Fatalf("provider %q: NarrowTimestamps = %v, want %v", provider, got.NarrowTimestamps, want)
+		}
+	}
+}
