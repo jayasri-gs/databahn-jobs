@@ -131,3 +131,46 @@ func TestNarrowTimestampsForUnloadSkippedWhenNotEnabled(t *testing.T) {
 		t.Fatalf("query was modified for an opted-out source: %q", got)
 	}
 }
+
+// One export asks for column metadata twice — once to decide on narrowing, once for the CSV
+// header — and each call is a real Athena execution, so the second must be served from memory.
+func TestColumnMetadataCacheHit(t *testing.T) {
+	e := NewAthenaExecutor(AthenaConfig{})
+	key := columnMetadataCacheKey("SELECT * FROM t", "db")
+	e.storeColumnMetadata(key, []athenatypes.ColumnInfo{col("time_dt", "timestamp")})
+
+	got, ok := e.cachedColumnMetadata(key)
+	if !ok {
+		t.Fatal("stored metadata should be served from the cache")
+	}
+	if len(got) != 1 || aws.ToString(got[0].Name) != "time_dt" {
+		t.Fatalf("cached metadata = %+v", got)
+	}
+}
+
+// A different query must miss, so the CSV header and the projection can never be built from
+// another query's columns and fall out of step with the exported data.
+func TestColumnMetadataCacheKeyedOnQueryAndDatabase(t *testing.T) {
+	e := NewAthenaExecutor(AthenaConfig{})
+	e.storeColumnMetadata(columnMetadataCacheKey("SELECT * FROM t", "db"),
+		[]athenatypes.ColumnInfo{col("time_dt", "timestamp")})
+
+	for _, miss := range []struct{ query, database string }{
+		{"SELECT * FROM other", "db"},
+		{"SELECT * FROM t", "other_db"},
+	} {
+		if _, ok := e.cachedColumnMetadata(columnMetadataCacheKey(miss.query, miss.database)); ok {
+			t.Fatalf("%q/%q must not hit the cache", miss.database, miss.query)
+		}
+	}
+}
+
+// An empty result is still an answer; caching it stops a second probe for the same export.
+func TestColumnMetadataCacheStoresEmptyResult(t *testing.T) {
+	e := NewAthenaExecutor(AthenaConfig{})
+	key := columnMetadataCacheKey("SELECT * FROM t", "db")
+	e.storeColumnMetadata(key, nil)
+	if _, ok := e.cachedColumnMetadata(key); !ok {
+		t.Fatal("an empty metadata result should still be cached")
+	}
+}
