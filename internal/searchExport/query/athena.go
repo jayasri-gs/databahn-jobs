@@ -137,6 +137,9 @@ func (e *AthenaExecutor) NewStagingReader(tempDir string) (unload.StagingReader,
 }
 
 func (e *AthenaExecutor) ExecuteUnloadAsync(ctx context.Context, query, database, s3OutputPath string, opts UnloadOptions) (string, error) {
+	// UNLOAD writes through Athena's millisecond-only Hive sink, so a timestamp(6) result
+	// column fails the statement outright. See narrowTimestampsForUnload.
+	query = e.narrowTimestampsForUnload(ctx, query, database)
 	unloadQuery, err := buildUnloadSQL(query, s3OutputPath, opts)
 	if err != nil {
 		return "", err
