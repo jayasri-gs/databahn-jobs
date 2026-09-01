@@ -16,6 +16,12 @@ func TestIsSupportedExportMatrix(t *testing.T) {
 		{models.QueryEngineAthena, models.DestTypeAzureBlob},
 		{models.QueryEngineSynapse, models.DestTypeS3},
 		{models.QueryEngineSynapse, models.DestTypeAzureBlob},
+		{models.QueryEngineKustoADX, models.DestTypeAzureBlob},
+		// Sentinel encodes rows in the worker and uploads client-side, so every
+		// destination the uploader supports works.
+		{models.QueryEngineKustoLAW, models.DestTypeS3},
+		{models.QueryEngineKustoLAW, models.DestTypeS3Parquet},
+		{models.QueryEngineKustoLAW, models.DestTypeAzureBlob},
 	}
 	for _, tc := range valid {
 		if !IsSupportedExportMatrix(tc.engine, tc.dest) {
@@ -23,11 +29,32 @@ func TestIsSupportedExportMatrix(t *testing.T) {
 		}
 	}
 
-	if IsSupportedExportMatrix("KUSTO_LAW", models.DestTypeS3) {
-		t.Fatal("kql engine should not be supported")
+	// Both Sentinel tiers encode rows in the worker, so both accept any uploader destination.
+	for _, dest := range []string{models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob} {
+		if !IsSupportedExportMatrix(models.QueryEngineKustoLake, dest) {
+			t.Fatalf("KUSTO_LAKE -> %s should be supported", dest)
+		}
+	}
+	if IsSupportedExportMatrix(models.QueryEngineKustoLake, "GCS") {
+		t.Fatal("unsupported destination should fail for the Sentinel lake tier")
+	}
+	if IsSupportedExportMatrix(models.QueryEngineKustoLAW, "GCS") {
+		t.Fatal("unsupported destination should fail for Sentinel")
 	}
 	if IsSupportedExportMatrix(models.QueryEngineAthena, "GCS") {
 		t.Fatal("unsupported destination should fail")
+	}
+	// ADX .export stages into the destination's own blob container, so S3 is out.
+	for _, dest := range []string{models.DestTypeS3, models.DestTypeS3Parquet} {
+		if IsSupportedExportMatrix(models.QueryEngineKustoADX, dest) {
+			t.Fatalf("ADX export to %s should not be supported", dest)
+		}
+	}
+	if !IsSupportedExportMatrix("kusto_adx", "azure_blob") {
+		t.Fatal("engine and destination matching should be case-insensitive")
+	}
+	if !IsSupportedExportMatrix("kusto_law", "s3") {
+		t.Fatal("Sentinel matrix should be case-insensitive")
 	}
 }
 

@@ -38,6 +38,7 @@ func loadDestinationConfigReader() {
 }
 
 func readOpenSearchConfigs() {
+	appConfigLoader.Do(loadAppConfigReader)
 	creds, err := configuration.ReadOpenSearchSecrets(context.Background(), appConfigReader)
 	if err != nil {
 		logger.GetLogger().Error("error while reading opensearch secret", zap.Error(err))

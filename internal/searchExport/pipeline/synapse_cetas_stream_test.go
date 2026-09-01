@@ -40,10 +40,10 @@ func TestPipelineNew_SetsCETASExecWhenStagingConfigProvided(t *testing.T) {
 		ConnectionString: "AccountName=test;AccountKey=dGVzdA==",
 		Container:        "exports",
 	}
-	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, "report-1", "export", &models.SearchExportConfig{
+	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, testReportID, "export", &models.SearchExportConfig{
 		Query:  "SELECT col1 FROM t",
 		Format: "csv",
-	}, nil, mock, nil, stagingCfg, nil)
+	}, Deps{RowStream: mock, StagingBlob: stagingCfg}, nil)
 
 	if p.cetasExec == nil {
 		t.Fatal("expected cetasExec to be set when synapse implements CETASExecutor and stagingBlobCfg != nil")
@@ -55,10 +55,10 @@ func TestPipelineNew_SetsCETASExecWhenStagingConfigProvided(t *testing.T) {
 
 func TestPipelineNew_NoCETASExecWhenNoStagingConfig(t *testing.T) {
 	mock := &mockCETASExecutor{}
-	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, "report-1", "export", &models.SearchExportConfig{
+	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, testReportID, "export", &models.SearchExportConfig{
 		Query:  "SELECT col1 FROM t",
 		Format: "csv",
-	}, nil, mock, nil, nil, nil)
+	}, Deps{RowStream: mock}, nil)
 
 	if p.cetasExec != nil {
 		t.Fatal("cetasExec should be nil when stagingBlobCfg is nil")
@@ -70,10 +70,10 @@ func TestPipelineNew_NoCETASExecForJDBCOnlyMock(t *testing.T) {
 	// Even with a staging config, cetasExec should be nil → falls back to JDBC.
 	mock := &mockSynapseStream{rows: [][]interface{}{{"a"}}}
 	stagingCfg := &destination.AzureBlobConfig{Container: "exports"}
-	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, "report-1", "export", &models.SearchExportConfig{
+	p := New(PipelineConfig{MaxSegmentSizeMB: 1}, testReportID, "export", &models.SearchExportConfig{
 		Query:  "SELECT col1 FROM t",
 		Format: "csv",
-	}, nil, mock, nil, stagingCfg, nil)
+	}, Deps{RowStream: mock, StagingBlob: stagingCfg}, nil)
 
 	if p.cetasExec != nil {
 		t.Fatal("cetasExec should be nil for executor that does not implement CETASExecutor")

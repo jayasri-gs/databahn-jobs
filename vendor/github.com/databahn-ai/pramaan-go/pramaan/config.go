@@ -75,6 +75,14 @@ topic_aggregation_mapping:
   AzureEventHub: db.destination.aggregation.azureeventhub
 staging:
   transform: db.staging.transform
+  transform_raw: db.staging.transform.raw
+  transform_json: db.staging.transform.json
+  transform_sntl: db.staging.transform.sentinel
+  transform_ocsf: db.staging.transform.ocsf
+  transform_othr: db.staging.transform.other
+  transform_cstm: db.staging.transform.custom
+  transform_code: db.staging.transform.code
+  enrichment: db.staging.enrich
   Sampling: db.staging.sampling
   Suppression: db.staging.suppression
   aggregation: db.staging.aggregation
@@ -82,7 +90,8 @@ staging:
   enrich: db.staging.enrich
   preprocessing: db.staging.preprocessing
   normalization: db.staging.norm
-  sensitive: db.staging.sensitive`
+  sensitive: db.staging.sensitive
+  dtzn: db.staging.device.tz.norm`
 
 const scaleConfFile = `
 schemaless-normalization-service:

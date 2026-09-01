@@ -15,6 +15,12 @@ const (
 
 	EngineAthena  = "ATHENA"
 	EngineSynapse = "SYNAPSE"
+	EngineADX     = "KUSTO_ADX"
+	// EngineSentinelLAW is the Sentinel analytics tier (Log Analytics workspace). The lake
+	// tier would be KUSTO_LAKE; it has no export transport yet.
+	EngineSentinelLAW = "KUSTO_LAW"
+	// EngineSentinelLake is the Sentinel data lake tier.
+	EngineSentinelLake = "KUSTO_LAKE"
 )
 
 type UnloadResult struct {
@@ -57,3 +63,11 @@ type RowStreamExecutor interface {
 
 // QueryExecutor is an alias kept for Athena UNLOAD wiring.
 type QueryExecutor = UnloadExecutor
+
+// Compile-time assertions that each executor satisfies the interface it is wired through.
+var (
+	_ UnloadExecutor    = (*AthenaExecutor)(nil)
+	_ UnloadExecutor    = (*ADXExecutor)(nil)
+	_ RowStreamExecutor = (*SynapseExecutor)(nil)
+	_ RowStreamExecutor = (*SentinelExecutor)(nil)
+)
