@@ -11,6 +11,10 @@ import (
 )
 
 const (
+	// ProviderSecurityLake is the externalSearchProvider of an AWS Security Lake source,
+	// stamped for both external stores and pipeline AWS_SECURITY_LAKE destinations.
+	ProviderSecurityLake = "SECURITY_LAKE"
+
 	QueryEngineAthena    = "ATHENA"
 	QueryEngineSynapse   = "SYNAPSE"
 	QueryEngineKustoADX  = "KUSTO_ADX"

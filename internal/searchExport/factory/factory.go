@@ -268,6 +268,13 @@ func isExternalAthenaStore(store *datastore.ExportDataStore) bool {
 // resolveAthenaClientConfig builds Athena client settings from store credentials, preferring
 // the region from the export config when present. The output location is always derived
 // locally — see athenaOutputLocationFor.
+// isSecurityLakeProvider reports whether the export reads from AWS Security Lake, whether the
+// store is external or a pipeline AWS_SECURITY_LAKE destination -- both stamp the same provider.
+func isSecurityLakeProvider(cfg *models.SearchExportConfig) bool {
+	return cfg != nil &&
+		strings.EqualFold(strings.TrimSpace(cfg.ExternalSearchProvider), models.ProviderSecurityLake)
+}
+
 func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destination.S3Config) (query.AthenaConfig, error) {
 	if staging == nil {
 		return query.AthenaConfig{}, fmt.Errorf("athena staging config is required")
@@ -301,6 +308,10 @@ func resolveAthenaClientConfig(cfg *models.SearchExportConfig, staging *destinat
 		SecretAccessKey: staging.SecretAccessKey,
 		RoleArn:         staging.RoleArn,
 		ExternalID:      staging.ExternalID,
+		// Security Lake's OCSF catalog is the only Athena source known to expose
+		// microsecond timestamps, which UNLOAD rejects. Every other Athena source
+		// exports correctly as-is and is deliberately left on the untouched path.
+		NarrowTimestamps: isSecurityLakeProvider(cfg),
 	}, nil
 }
 
