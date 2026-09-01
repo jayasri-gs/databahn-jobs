@@ -241,6 +241,23 @@ func (e *AthenaExecutor) waitForCompletion(ctx context.Context, queryID string) 
 
 // GetQueryColumns runs a zero-row version of the query to read column names from result metadata.
 func (e *AthenaExecutor) GetQueryColumns(ctx context.Context, query, database string) ([]string, error) {
+	cols, err := e.queryColumnMetadata(ctx, query, database)
+	if err != nil {
+		return nil, err
+	}
+	columns := make([]string, 0, len(cols))
+	for _, col := range cols {
+		if col.Name != nil {
+			columns = append(columns, *col.Name)
+		}
+	}
+	return columns, nil
+}
+
+// queryColumnMetadata runs a zero-row version of the query and returns its result column
+// metadata: names, in output order, with their Athena types. Both the CSV header and the
+// UNLOAD timestamp narrowing are derived from this one source so they cannot disagree.
+func (e *AthenaExecutor) queryColumnMetadata(ctx context.Context, query, database string) ([]athenatypes.ColumnInfo, error) {
 	metaQuery := fmt.Sprintf("SELECT * FROM (%s) AS export_src LIMIT 0", query)
 
 	startInput := &athena.StartQueryExecutionInput{
@@ -276,14 +293,7 @@ func (e *AthenaExecutor) GetQueryColumns(ctx context.Context, query, database st
 	if resultOutput.ResultSet == nil || resultOutput.ResultSet.ResultSetMetadata == nil {
 		return nil, nil
 	}
-
-	columns := make([]string, 0, len(resultOutput.ResultSet.ResultSetMetadata.ColumnInfo))
-	for _, col := range resultOutput.ResultSet.ResultSetMetadata.ColumnInfo {
-		if col.Name != nil {
-			columns = append(columns, *col.Name)
-		}
-	}
-	return columns, nil
+	return resultOutput.ResultSet.ResultSetMetadata.ColumnInfo, nil
 }
 
 func (e *AthenaExecutor) GetAWSConfig() interface{} {

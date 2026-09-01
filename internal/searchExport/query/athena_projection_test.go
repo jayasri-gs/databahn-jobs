@@ -7,8 +7,8 @@ import (
 	athenatypes "github.com/aws/aws-sdk-go-v2/service/athena/types"
 )
 
-func col(name, typ string) athenatypes.Column {
-	return athenatypes.Column{Name: aws.String(name), Type: aws.String(typ)}
+func col(name, typ string) athenatypes.ColumnInfo {
+	return athenatypes.ColumnInfo{Name: aws.String(name), Type: aws.String(typ)}
 }
 
 func TestIsNarrowableTimestamp(t *testing.T) {
@@ -33,12 +33,11 @@ func TestIsNarrowableTimestamp(t *testing.T) {
 }
 
 func TestTimestampSafeProjection(t *testing.T) {
-	cols := []athenatypes.Column{
+	got, needsCast := timestampSafeProjection([]athenatypes.ColumnInfo{
 		col("time_dt", "timestamp"),
-		col("src_endpoint", "struct<ip:string>"),
-		col("severity_id", "int"),
-	}
-	got, needsCast := timestampSafeProjection(cols)
+		col("src_endpoint", "row(ip varchar)"),
+		col("severity_id", "integer"),
+	})
 	if !needsCast {
 		t.Fatal("expected a cast to be required")
 	}
@@ -48,11 +47,22 @@ func TestTimestampSafeProjection(t *testing.T) {
 	}
 }
 
-// Without a timestamp column there is nothing to fix, and the query must be left byte-identical
+// Column order is the result order, because the header is built from the same metadata and
+// the two must line up in the CSV.
+func TestTimestampSafeProjectionPreservesColumnOrder(t *testing.T) {
+	got, _ := timestampSafeProjection([]athenatypes.ColumnInfo{
+		col("a", "varchar"), col("t", "timestamp"), col("z", "bigint"),
+	})
+	want := `"a", CAST("t" AS timestamp(3)) AS "t", "z"`
+	if got != want {
+		t.Fatalf("projection = %q, want %q", got, want)
+	}
+}
+
+// Without a timestamp column there is nothing to fix, and the query must be left untouched
 // rather than rewritten into an equivalent that only adds risk.
 func TestTimestampSafeProjectionNoTimestampColumns(t *testing.T) {
-	_, needsCast := timestampSafeProjection([]athenatypes.Column{col("a", "string"), col("b", "int")})
-	if needsCast {
+	if _, needsCast := timestampSafeProjection([]athenatypes.ColumnInfo{col("a", "varchar")}); needsCast {
 		t.Fatal("no timestamp column should mean no rewrite")
 	}
 	if _, needsCast := timestampSafeProjection(nil); needsCast {
@@ -60,76 +70,52 @@ func TestTimestampSafeProjectionNoTimestampColumns(t *testing.T) {
 	}
 }
 
-// A column name carrying a double quote cannot be quoted safely, so the whole projection is
-// abandoned rather than emitting a statement an attacker could shape.
+// A duplicate output name cannot be referenced unambiguously, so projecting by name would
+// change which column is exported. Abandon the rewrite instead.
+func TestTimestampSafeProjectionRejectsDuplicateNames(t *testing.T) {
+	_, needsCast := timestampSafeProjection([]athenatypes.ColumnInfo{
+		col("id", "timestamp"), col("id", "varchar"),
+	})
+	if needsCast {
+		t.Fatal("duplicate output names must abandon the projection")
+	}
+}
+
+// A name carrying a double quote cannot be quoted safely, so the projection is abandoned
+// rather than emitting a statement the name could break out of.
 func TestTimestampSafeProjectionRejectsUnquotableName(t *testing.T) {
-	if _, needsCast := timestampSafeProjection([]athenatypes.Column{col(`bad"name`, "timestamp")}); needsCast {
-		t.Fatal(`a column name containing a double quote must abandon the projection`)
+	if _, needsCast := timestampSafeProjection([]athenatypes.ColumnInfo{col(`bad"name`, "timestamp")}); needsCast {
+		t.Fatal("a column name containing a double quote must abandon the projection")
+	}
+	if _, needsCast := timestampSafeProjection([]athenatypes.ColumnInfo{col("  ", "timestamp")}); needsCast {
+		t.Fatal("a blank column name must abandon the projection")
 	}
 }
 
 // The query that failed in preprod: Security Lake OCSF, time_dt exposed as timestamp(6).
-func TestRewriteSelectStarPreservesPredicateAndLimit(t *testing.T) {
+// The original query is nested verbatim, so its predicate and LIMIT keep their meaning.
+func TestWrapWithProjectionNestsOriginalQuery(t *testing.T) {
 	q := "SELECT * FROM amazon_security_lake_table_eu_north_1_route53_2_0 " +
-		"WHERE time_dt >= from_unixtime(1772377558) AND time_dt < from_unixtime(1788275159) LIMIT 100"
-	got, ok := rewriteSelectStar(q, `CAST("time_dt" AS timestamp(3)) AS "time_dt", "srcaddr"`)
-	if !ok {
-		t.Fatal("expected the generated export shape to be rewritten")
-	}
-	want := `SELECT CAST("time_dt" AS timestamp(3)) AS "time_dt", "srcaddr" ` +
-		"FROM amazon_security_lake_table_eu_north_1_route53_2_0 " +
-		"WHERE time_dt >= from_unixtime(1772377558) AND time_dt < from_unixtime(1788275159) LIMIT 100"
+		"WHERE time_dt >= from_unixtime(1772377558) LIMIT 100"
+	got := wrapWithProjection(q, `CAST("time_dt" AS timestamp(3)) AS "time_dt", "srcaddr"`)
+	want := `SELECT CAST("time_dt" AS timestamp(3)) AS "time_dt", "srcaddr" FROM (` + q +
+		`) AS databahn_export_src`
 	if got != want {
-		t.Fatalf("rewritten = %q, want %q", got, want)
+		t.Fatalf("wrapped = %q, want %q", got, want)
 	}
 }
 
-func TestSelectStarTable(t *testing.T) {
-	tests := map[string]string{
-		"SELECT * FROM vpc_flow_search LIMIT 10": "vpc_flow_search",
-		`SELECT * FROM "db"."tbl" WHERE x = 1`:   "tbl",
-		"select  *  from db.tbl":                 "tbl",
-		"SELECT * FROM tbl":                      "tbl",
-	}
-	for q, want := range tests {
-		got, ok := selectStarTable(q)
-		if !ok || got != want {
-			t.Fatalf("selectStarTable(%q) = %q,%v want %q", q, got, ok, want)
-		}
-	}
-}
-
-// Anything other than a plain select-star over one table is left alone: the projection is
-// built from the table's columns, which are only the result columns in that one shape.
-// The join and alias cases matter most — there the rewrite would silently drop the other
-// relation's columns from the export rather than fail loudly.
-func TestSelectStarTableRejectsOtherShapes(t *testing.T) {
+// Wrapping is shape-agnostic: joins and explicit select lists nest just as well, which is why
+// the projection is driven by result metadata rather than by parsing the query.
+func TestWrapWithProjectionHandlesAnyShape(t *testing.T) {
 	for _, q := range []string{
-		"SELECT time_dt, srcaddr FROM tbl",
-		"SELECT * FROM a JOIN b ON a.id = b.id",
-		"SELECT * FROM a, b WHERE a.id = b.id",
-		"SELECT * FROM tbl AS t WHERE t.x = 1",
-		"SELECT * FROM tbl t",
-		"SELECT count(*) FROM tbl",
+		"SELECT a.t, b.x FROM a JOIN b ON a.id = b.id",
 		"WITH x AS (SELECT * FROM t) SELECT * FROM x",
+		"SELECT count(*) AS c FROM tbl",
 	} {
-		if _, ok := selectStarTable(q); ok {
-			t.Fatalf("query must not be rewritten: %q", q)
-		}
-	}
-}
-
-// The clause keywords that may legitimately follow the table are still rewritten.
-func TestSelectStarTableAcceptsClauseKeywords(t *testing.T) {
-	for _, q := range []string{
-		"SELECT * FROM tbl",
-		"SELECT * FROM tbl;",
-		"SELECT * FROM tbl WHERE x = 1",
-		"SELECT * FROM tbl ORDER BY x LIMIT 5",
-		"SELECT * FROM tbl LIMIT 100",
-	} {
-		if _, ok := selectStarTable(q); !ok {
-			t.Fatalf("query should be rewritten: %q", q)
+		got := wrapWithProjection(q, `"c"`)
+		if got != `SELECT "c" FROM (`+q+`) AS databahn_export_src` {
+			t.Fatalf("unexpected wrap for %q: %q", q, got)
 		}
 	}
 }
