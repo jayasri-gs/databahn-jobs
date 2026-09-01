@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"text/template"
 	"time"
 
@@ -154,7 +155,7 @@ func processTenant(
 			TenantId: tenantId,
 			Days:     days,
 			Kind:     kindForDays(days),
-			Entries:  toBatchEntries(batch, today),
+			Entries:  toBatchEntries(ctx, db, batch, today),
 			Targets:  databahnTargets,
 		}
 
@@ -294,14 +295,17 @@ type NotificationBatch struct {
 
 // NotificationBatchEntry is a single-secret line item in a batch email.
 type NotificationBatchEntry struct {
-	SecretId     uuid.UUID
-	Name         string
-	Scope        string
-	Vendor       string
-	Device       string
-	ExpiryDate   string
-	DaysLeft     int
-	IsExpired    bool
+	SecretId           uuid.UUID
+	Name               string
+	Scope              string
+	Vendor             string
+	Device             string
+	ExpiryDate         string
+	DaysLeft           int
+	IsExpired          bool
+	LinkedSources      []string
+	LinkedCollectors   []string
+	LinkedDestinations []string
 }
 
 func groupByTenant(secretsList []secrets.Secret) map[uuid.UUID][]secrets.Secret {
@@ -323,7 +327,7 @@ func toDatabahnTargets(tenantId uuid.UUID, targets []entities.Targets) []*notifi
 	return out
 }
 
-func toBatchEntries(entries []expiryDispatchEntry, today time.Time) []NotificationBatchEntry {
+func toBatchEntries(ctx context.Context, db *gorm.DB, entries []expiryDispatchEntry, today time.Time) []NotificationBatchEntry {
 	out := make([]NotificationBatchEntry, 0, len(entries))
 	for _, e := range entries {
 		expiry := ""
@@ -334,15 +338,29 @@ func toBatchEntries(entries []expiryDispatchEntry, today time.Time) []Notificati
 			hours := e.secret.ExpiryDate.UTC().Sub(today).Hours()
 			daysLeft = int(hours / 24)
 		}
+		// Best-effort lookup — a DB error here should not block the notification.
+		var linkedSources, linkedCollectors, linkedDests []string
+		if linked, lErr := secrets.FetchLinkedEntities(ctx, db, e.secret.Id); lErr == nil {
+			linkedSources = linked.Sources
+			linkedCollectors = linked.Collectors
+			linkedDests = linked.Destinations
+		} else {
+			logger.GetLogger().Warn("failed to load linked log sources / collectors / destinations",
+				zap.Error(lErr),
+				zap.String("secret", e.secret.Id.String()))
+		}
 		out = append(out, NotificationBatchEntry{
-			SecretId:   e.secret.Id,
-			Name:       e.secret.Name,
-			Scope:      e.secret.Scope,
-			Vendor:     e.secret.Vendor,
-			Device:     e.secret.Device,
-			ExpiryDate: expiry,
-			DaysLeft:   daysLeft,
-			IsExpired:  isExpired,
+			SecretId:           e.secret.Id,
+			Name:               e.secret.Name,
+			Scope:              e.secret.Scope,
+			Vendor:             e.secret.Vendor,
+			Device:             e.secret.Device,
+			ExpiryDate:         expiry,
+			DaysLeft:           daysLeft,
+			IsExpired:          isExpired,
+			LinkedSources:      linkedSources,
+			LinkedCollectors:   linkedCollectors,
+			LinkedDestinations: linkedDests,
 		})
 	}
 	return out
@@ -454,10 +472,10 @@ func renderCredentialExpiryTemplate(batch NotificationBatch) (string, error) {
 // the CREDENTIAL notifications module name so notifications-for-alerts does not
 // pick these up and double-email (see alertFunctionalityMatchesModuleName).
 const (
-	credentialFunctionality        = "credential_expiry"
-	credentialFunctionalityType    = "credential_expiry_checker"
-	credentialProductAlertAction   = "Rotate the credential or extend its expiry via the Secrets Management page."
-	credentialProductAlertTemplate = "Credential '%s' (%s) %s. Expiry date: %s (UTC)."
+	credentialFunctionality      = "credential_expiry"
+	credentialFunctionalityType  = "credential_expiry_checker"
+	credentialProductAlertAction = "Rotate the credential or extend its expiry via the Secrets Management page. " +
+		"To change who receives these alerts, update the credential module targets under Notifications."
 )
 
 type productChannel struct {
@@ -480,6 +498,42 @@ func (p *productChannel) Send(_ context.Context, batch NotificationBatch) error 
 		alerts = append(alerts, buildCredentialExpiryProductAlert(batch, e, now))
 	}
 	return p.mgr.SendAlerts(alerts)
+}
+
+// buildCredentialExpiryProductMessage assembles the human-readable body shown in
+// the Alerts UI. Structure mirrors the email so operators see the same context in
+// either channel — vendor/device, scope, expiry, and the list of log sources and
+// destinations that will break if the credential is not rotated in time.
+//
+// When there are no linked entities we still emit the credential summary; the
+// notification is triggered upstream only for linked secrets so the empty case is
+// defensive.
+func buildCredentialExpiryProductMessage(entry NotificationBatchEntry, statusLabel string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Credential '%s' %s.", entry.Name, statusLabel)
+	if entry.Vendor != "" {
+		vendor := entry.Vendor
+		if entry.Device != "" {
+			vendor = vendor + " / " + entry.Device
+		}
+		fmt.Fprintf(&b, " Vendor/device: %s.", vendor)
+	}
+	if entry.Scope != "" {
+		fmt.Fprintf(&b, " Scope: %s.", entry.Scope)
+	}
+	if entry.ExpiryDate != "" {
+		fmt.Fprintf(&b, " Expiry date: %s (UTC).", entry.ExpiryDate)
+	}
+	if len(entry.LinkedSources) > 0 {
+		fmt.Fprintf(&b, " Log sources: %s.", strings.Join(entry.LinkedSources, ", "))
+	}
+	if len(entry.LinkedCollectors) > 0 {
+		fmt.Fprintf(&b, " Collectors: %s.", strings.Join(entry.LinkedCollectors, ", "))
+	}
+	if len(entry.LinkedDestinations) > 0 {
+		fmt.Fprintf(&b, " Destinations: %s.", strings.Join(entry.LinkedDestinations, ", "))
+	}
+	return b.String()
 }
 
 // buildCredentialExpiryProductAlert constructs an alerts_async.Alert directly so we
@@ -505,7 +559,7 @@ func buildCredentialExpiryProductAlert(
 	entityIdStr := entry.SecretId.String()
 
 	title := fmt.Sprintf("Credential '%s' %s", entry.Name, statusLabel)
-	message := fmt.Sprintf(credentialProductAlertTemplate, entry.Name, entry.Scope, statusLabel, entry.ExpiryDate)
+	message := buildCredentialExpiryProductMessage(entry, statusLabel)
 
 	// buildId equivalent — see alerts_async/builder.go buildId.
 	idInput := fmt.Sprintf(

@@ -94,3 +94,77 @@ func UpdateNotificationTriggers(ctx context.Context, db *gorm.DB, secretId uuid.
 		Where("id = ?", secretId).
 		Update("notification_triggers", triggers).Error
 }
+
+// LinkedEntities lists the log sources, collectors, and destinations that reference
+// a secret via configuration.secretId. Log sources are split into Sources vs Collectors
+// based on the owning secret's scope so operators can see which pipelines will break
+// when the credential expires.
+type LinkedEntities struct {
+	Sources      []string
+	Collectors   []string
+	Destinations []string
+}
+
+// FetchLinkedEntities returns the names of log sources, collectors, and destinations
+// that use the given secretId in their configuration. Log sources are split into
+// Sources vs Collectors based on the secret's scope (COLLECTOR-scoped secrets are
+// attached to pull-mechanism log sources which we surface as "Collectors"). Results
+// are ordered by name for stable rendering in emails and product alerts.
+func FetchLinkedEntities(ctx context.Context, db *gorm.DB, secretId uuid.UUID) (LinkedEntities, error) {
+	var out LinkedEntities
+	if db == nil {
+		return out, errors.New("nil db")
+	}
+
+	type row struct {
+		Name string `gorm:"column:name"`
+	}
+	type scopedRow struct {
+		Name  string `gorm:"column:name"`
+		Scope string `gorm:"column:scope"`
+	}
+
+	var logSources []scopedRow
+	if err := db.WithContext(ctx).
+		Raw(`
+			SELECT ls.name, s.scope
+			FROM log_source ls
+			JOIN secrets s ON s.id::text = json_extract_path_text(ls.configuration::json, 'secretId')
+			WHERE ls.configuration IS NOT NULL
+			  AND s.id = ?
+			ORDER BY ls.name
+		`, secretId).
+		Scan(&logSources).Error; err != nil {
+		return out, err
+	}
+	for _, r := range logSources {
+		if r.Name == "" {
+			continue
+		}
+		if r.Scope == "COLLECTOR" {
+			out.Collectors = append(out.Collectors, r.Name)
+		} else {
+			out.Sources = append(out.Sources, r.Name)
+		}
+	}
+
+	var dests []row
+	if err := db.WithContext(ctx).
+		Raw(`
+			SELECT d.name
+			FROM destination d
+			WHERE d.configuration IS NOT NULL
+			  AND json_extract_path_text(d.configuration::json, 'secretId') = ?::text
+			ORDER BY d.name
+		`, secretId.String()).
+		Scan(&dests).Error; err != nil {
+		return out, err
+	}
+	for _, r := range dests {
+		if r.Name != "" {
+			out.Destinations = append(out.Destinations, r.Name)
+		}
+	}
+
+	return out, nil
+}
