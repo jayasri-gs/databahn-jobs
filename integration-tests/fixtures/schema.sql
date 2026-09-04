@@ -103,3 +103,34 @@ CREATE TABLE IF NOT EXISTS import_request (
 
 CREATE INDEX IF NOT EXISTS idx_import_request_tenant_created ON import_request (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_import_request_tenant_status ON import_request (tenant_id, status);
+
+CREATE TABLE IF NOT EXISTS change_flag_acks (
+    id UUID PRIMARY KEY,
+    action VARCHAR(255),
+    entity_id VARCHAR(255),
+    entity_type VARCHAR(255),
+    entity_version VARCHAR(255),
+    error TEXT,
+    process_status VARCHAR(255),
+    request_id VARCHAR(255),
+    status VARCHAR(255),
+    tenant_id VARCHAR(255),
+    timestamp TIMESTAMP WITH TIME ZONE,
+    service_name VARCHAR(255)
+);
+
+CREATE INDEX IF NOT EXISTS idx_change_flag_acks_process_status_and_timestamp
+    ON change_flag_acks (process_status, timestamp);
+
+CREATE TABLE IF NOT EXISTS change_flag_requests (
+    request_id VARCHAR(255) PRIMARY KEY,
+    action VARCHAR(255),
+    entity_id VARCHAR(255),
+    entity_type VARCHAR(255),
+    is_processed BOOLEAN,
+    tenant_id VARCHAR(255),
+    timestamp TIMESTAMP WITH TIME ZONE,
+    body TEXT,
+    data_plane_id VARCHAR(255),
+    entity_name VARCHAR(255)
+);
