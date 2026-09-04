@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,6 +29,11 @@ type AthenaConfig struct {
 	SecretAccessKey string
 	RoleArn         string
 	ExternalID      string
+
+	// NarrowTimestamps opts this executor into rewriting the export query so timestamp
+	// columns cannot trip UNLOAD's millisecond writer. Only sources known to expose
+	// microsecond timestamps set it -- see narrowTimestampsForUnload.
+	NarrowTimestamps bool
 }
 
 type AthenaExecutor struct {
@@ -35,6 +41,14 @@ type AthenaExecutor struct {
 	client    *athena.Client
 	awsConfig aws.Config
 	log       *zap.Logger
+
+	// Column metadata costs a real Athena execution, and one export asks for it twice: once
+	// to decide whether timestamps need narrowing, once to build the CSV header. An executor
+	// serves a single export, so memoising the last answer collapses that to one query.
+	colMetaMu     sync.Mutex
+	colMetaKey    string
+	colMeta       []athenatypes.ColumnInfo
+	colMetaCached bool
 }
 
 func NewAthenaExecutor(cfg AthenaConfig) *AthenaExecutor {
@@ -137,6 +151,9 @@ func (e *AthenaExecutor) NewStagingReader(tempDir string) (unload.StagingReader,
 }
 
 func (e *AthenaExecutor) ExecuteUnloadAsync(ctx context.Context, query, database, s3OutputPath string, opts UnloadOptions) (string, error) {
+	// UNLOAD writes through Athena's millisecond-only Hive sink, so a timestamp(6) result
+	// column fails the statement outright. See narrowTimestampsForUnload.
+	query = e.narrowTimestampsForUnload(ctx, query, database)
 	unloadQuery, err := buildUnloadSQL(query, s3OutputPath, opts)
 	if err != nil {
 		return "", err
@@ -238,6 +255,32 @@ func (e *AthenaExecutor) waitForCompletion(ctx context.Context, queryID string) 
 
 // GetQueryColumns runs a zero-row version of the query to read column names from result metadata.
 func (e *AthenaExecutor) GetQueryColumns(ctx context.Context, query, database string) ([]string, error) {
+	cols, err := e.queryColumnMetadata(ctx, query, database)
+	if err != nil {
+		return nil, err
+	}
+	columns := make([]string, 0, len(cols))
+	for _, col := range cols {
+		if col.Name != nil {
+			columns = append(columns, *col.Name)
+		}
+	}
+	return columns, nil
+}
+
+// queryColumnMetadata runs a zero-row version of the query and returns its result column
+// metadata: names, in output order, with their Athena types. Both the CSV header and the
+// UNLOAD timestamp narrowing are derived from this one source so they cannot disagree.
+//
+// The result is memoised per (database, query): the two callers pass the same export query,
+// so without this a Security Lake CSV export would run the probe twice. Failures are not
+// cached, leaving a transient error retryable by the next caller.
+func (e *AthenaExecutor) queryColumnMetadata(ctx context.Context, query, database string) ([]athenatypes.ColumnInfo, error) {
+	cacheKey := columnMetadataCacheKey(query, database)
+	if cols, ok := e.cachedColumnMetadata(cacheKey); ok {
+		return cols, nil
+	}
+
 	metaQuery := fmt.Sprintf("SELECT * FROM (%s) AS export_src LIMIT 0", query)
 
 	startInput := &athena.StartQueryExecutionInput{
@@ -270,17 +313,35 @@ func (e *AthenaExecutor) GetQueryColumns(ctx context.Context, query, database st
 		return nil, fmt.Errorf("failed to get column metadata: %w", err)
 	}
 
-	if resultOutput.ResultSet == nil || resultOutput.ResultSet.ResultSetMetadata == nil {
-		return nil, nil
+	var cols []athenatypes.ColumnInfo
+	if resultOutput.ResultSet != nil && resultOutput.ResultSet.ResultSetMetadata != nil {
+		cols = resultOutput.ResultSet.ResultSetMetadata.ColumnInfo
 	}
+	e.storeColumnMetadata(cacheKey, cols)
+	return cols, nil
+}
 
-	columns := make([]string, 0, len(resultOutput.ResultSet.ResultSetMetadata.ColumnInfo))
-	for _, col := range resultOutput.ResultSet.ResultSetMetadata.ColumnInfo {
-		if col.Name != nil {
-			columns = append(columns, *col.Name)
-		}
+// columnMetadataCacheKey pairs the query with its database. The NUL separator keeps a database
+// name ending in query text from colliding with a different pair.
+func columnMetadataCacheKey(query, database string) string {
+	return database + "\x00" + query
+}
+
+// cachedColumnMetadata returns the memoised metadata for key, if it is the one held. The lock
+// is not held across the Athena call, so a miss costs only the map-free comparison here.
+func (e *AthenaExecutor) cachedColumnMetadata(key string) ([]athenatypes.ColumnInfo, bool) {
+	e.colMetaMu.Lock()
+	defer e.colMetaMu.Unlock()
+	if e.colMetaCached && e.colMetaKey == key {
+		return e.colMeta, true
 	}
-	return columns, nil
+	return nil, false
+}
+
+func (e *AthenaExecutor) storeColumnMetadata(key string, cols []athenatypes.ColumnInfo) {
+	e.colMetaMu.Lock()
+	defer e.colMetaMu.Unlock()
+	e.colMetaKey, e.colMeta, e.colMetaCached = key, cols, true
 }
 
 func (e *AthenaExecutor) GetAWSConfig() interface{} {
