@@ -8,21 +8,21 @@ import (
 	"go.uber.org/zap"
 )
 
-func markAckError(ack []db.ChangeFlagAck, batchSize int) {
-	markAcksByIDs(ack, batchSize, db.MarkAcksError)
+func markAckError(ack []db.ChangeFlagAck, batchSize int) error {
+	return markAcksByIDs(ack, batchSize, db.MarkAcksError)
 }
 
-func markAckSuppressed(ack []db.ChangeFlagAck, batchSize int) {
-	markAcksByIDs(ack, batchSize, db.MarkAcksSuppressed)
+func markAckSuppressed(ack []db.ChangeFlagAck, batchSize int) error {
+	return markAcksByIDs(ack, batchSize, db.MarkAcksSuppressed)
 }
 
-func markAckProcessed(successfulAck []db.ChangeFlagAck, batchSize int) {
-	markAcksByIDs(successfulAck, batchSize, db.MarkAcksProcessed)
+func markAckProcessed(successfulAck []db.ChangeFlagAck, batchSize int) error {
+	return markAcksByIDs(successfulAck, batchSize, db.MarkAcksProcessed)
 }
 
-func markAcksByIDs(acks []db.ChangeFlagAck, batchSize int, markFn func([]string) error) {
+func markAcksByIDs(acks []db.ChangeFlagAck, batchSize int, markFn func([]string) error) error {
 	if len(acks) == 0 {
-		return
+		return nil
 	}
 	if batchSize <= 0 {
 		batchSize = getQueryBatchSize()
@@ -33,6 +33,7 @@ func markAcksByIDs(acks []db.ChangeFlagAck, batchSize int, markFn func([]string)
 		ackIds[i] = a.Id
 	}
 
+	var markErr error
 	for start := 0; start < len(ackIds); start += batchSize {
 		end := start + batchSize
 		if end > len(ackIds) {
@@ -40,8 +41,10 @@ func markAcksByIDs(acks []db.ChangeFlagAck, batchSize int, markFn func([]string)
 		}
 		if err := markFn(ackIds[start:end]); err != nil {
 			logger.GetLogger().Error("error while marking acks", zap.Error(err))
+			markErr = err
 		}
 	}
+	return markErr
 }
 
 func getStatusStringFromInt(status int) string {

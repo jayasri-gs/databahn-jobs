@@ -65,6 +65,12 @@ func (c *entityUpdateCollector) flush(batchSize int) (map[string]struct{}, map[s
 
 			err := executeEntityStatusBatchUpdate(key.table, key.status, key.guardKind, entityIDs)
 			if err != nil {
+				if retryErr := executeEntityStatusBatchUpdate(key.table, key.status, key.guardKind, entityIDs); retryErr == nil {
+					for _, item := range batch {
+						successfulReqIds[item.requestID] = struct{}{}
+					}
+					continue
+				}
 				logger.GetLogger().Error("error while batch updating entity status, falling back to single updates",
 					zap.Error(err), zap.String("table", key.table), zap.String("status", key.status))
 				for _, item := range batch {

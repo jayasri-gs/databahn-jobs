@@ -52,6 +52,27 @@ func TestGetDistinctEntityIdsToProcessFirstPage(t *testing.T) {
 	}
 }
 
+func TestGetDistinctEntityIdsToProcessNegativeLimitUsesDefault(t *testing.T) {
+	_, mock := dbtest.MockPostgres(t)
+
+	olderThan := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(`SELECT DISTINCT entity_id FROM "change_flag_acks"`).
+		WithArgs(constants.StatusPending, constants.StatusErrored, olderThan, defaultEntityPageLimit).
+		WillReturnRows(sqlmock.NewRows([]string{"entity_id"}).AddRow("entity-a"))
+
+	ids, err := GetDistinctEntityIdsToProcess(olderThan, nil, "", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != "entity-a" {
+		t.Fatalf("unexpected ids: %v", ids)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGetChangeFlagsByEntityIdsEmpty(t *testing.T) {
 	acks, err := GetChangeFlagsByEntityIds(nil, time.Now(), nil)
 	if err != nil {

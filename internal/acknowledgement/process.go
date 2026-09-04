@@ -130,7 +130,8 @@ func processAckPage(acks []db.ChangeFlagAck, queryBatchSize, entityUpdateBatchSi
 		return err
 	}
 
-	latestEntityIdToRequestId, suppressedReqIds := getLatestEntityToRequestId(entityIdToChangeFlags)
+	latestEntityIdToRequestId, suppressedReqIds := getLatestEntityToRequestId(
+		entityIdToChangeFlags, mapOfEntityIdToRequestIdToAck)
 
 	successfulReqIds, failedReqIds, unsupportedSuppressedReqIds := startProcessing(
 		mapOfEntityIdToRequestIdToAck, latestEntityIdToRequestId, entityUpdateBatchSize)
@@ -138,7 +139,9 @@ func processAckPage(acks []db.ChangeFlagAck, queryBatchSize, entityUpdateBatchSi
 		suppressedReqIds[reqId] = struct{}{}
 	}
 
-	markAllAcks(mapOfEntityIdToRequestIdToAck, successfulReqIds, failedReqIds, suppressedReqIds, queryBatchSize)
+	if err := markAllAcks(mapOfEntityIdToRequestIdToAck, successfulReqIds, failedReqIds, suppressedReqIds, queryBatchSize); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -247,7 +250,7 @@ func getRelevantAcknowledgement(acks []db.ChangeFlagAck) db.ChangeFlagAck {
 }
 
 func markAllAcks(ack map[string]map[string][]db.ChangeFlagAck, successful map[string]struct{},
-	failed map[string]struct{}, suppressed map[string]struct{}, queryBatchSize int) {
+	failed map[string]struct{}, suppressed map[string]struct{}, queryBatchSize int) error {
 	var successfulAck, failedAck, suppressedAck []db.ChangeFlagAck
 
 	for _, requestIdToAckMap := range ack {
@@ -266,28 +269,57 @@ func markAllAcks(ack map[string]map[string][]db.ChangeFlagAck, successful map[st
 
 	logger.GetLogger().Debug("process status of acknowledgements", zap.Int("successful", len(successfulAck)),
 		zap.Int("failed", len(failedAck)), zap.Int("suppressed", len(suppressedAck)))
-	markAckProcessed(successfulAck, queryBatchSize)
-	markAckError(failedAck, queryBatchSize)
-	markAckSuppressed(suppressedAck, queryBatchSize)
+	if err := markAckProcessed(successfulAck, queryBatchSize); err != nil {
+		return err
+	}
+	if err := markAckError(failedAck, queryBatchSize); err != nil {
+		return err
+	}
+	if err := markAckSuppressed(suppressedAck, queryBatchSize); err != nil {
+		return err
+	}
+	return nil
 }
 
-func getLatestEntityToRequestId(entityIdToChangeFlags map[string][]db.ChangeFlagRequest) (map[string]string, map[string]struct{}) {
+func getLatestEntityToRequestId(
+	entityIdToChangeFlags map[string][]db.ChangeFlagRequest,
+	entityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck,
+) (map[string]string, map[string]struct{}) {
 	latestEntityIdToRequestId := make(map[string]string)
 
 	for entityId, changeFlags := range entityIdToChangeFlags {
-		latestRequest := changeFlags[0]
+		requestIdToAck, ok := entityIdToRequestIdToAck[entityId]
+		if !ok {
+			continue
+		}
+		var latestRequest db.ChangeFlagRequest
+		found := false
 		for _, cf := range changeFlags {
-			if cf.Timestamp > latestRequest.Timestamp {
+			if _, hasAck := requestIdToAck[cf.RequestId]; !hasAck {
+				continue
+			}
+			if !found || cf.Timestamp > latestRequest.Timestamp {
 				latestRequest = cf
+				found = true
 			}
 		}
-		latestEntityIdToRequestId[entityId] = latestRequest.RequestId
+		if found {
+			latestEntityIdToRequestId[entityId] = latestRequest.RequestId
+		}
 	}
 
 	suppressedRequestIds := make(map[string]struct{})
 	for entityId, cf := range entityIdToChangeFlags {
+		requestIdToAck, ok := entityIdToRequestIdToAck[entityId]
+		if !ok {
+			continue
+		}
+		latestRequestID := latestEntityIdToRequestId[entityId]
 		for _, kk := range cf {
-			if latestEntityIdToRequestId[entityId] != kk.RequestId {
+			if _, hasAck := requestIdToAck[kk.RequestId]; !hasAck {
+				continue
+			}
+			if latestRequestID != kk.RequestId {
 				suppressedRequestIds[kk.RequestId] = struct{}{}
 			}
 		}

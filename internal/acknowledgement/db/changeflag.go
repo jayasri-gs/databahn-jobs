@@ -22,7 +22,10 @@ type ChangeFlagRequest struct {
 
 func GetChangeFlagRequest(cfRequestIds []string) ([]ChangeFlagRequest, error) {
 	var records []ChangeFlagRequest
-	err := config.GetDB().Table(constants.TableChangeFlagRequest).Where("entity_id IN (?)", cfRequestIds).Find(&records).Error
+	err := config.GetDB().Table(constants.TableChangeFlagRequest).
+		Select("request_id", "entity_id", "timestamp").
+		Where("entity_id IN (?)", cfRequestIds).
+		Find(&records).Error
 	if err != nil {
 		logger.GetLogger().Error("error while getting change flags", zap.Error(err))
 		return nil, err

@@ -159,8 +159,8 @@ func SeedAckProcessorSuppressionFixture(ctx context.Context, db *gorm.DB) (*AckP
 		return nil, fmt.Errorf("insert log_source: %w", err)
 	}
 
-	oldRequestID := "req-old"
-	newRequestID := "req-new"
+	oldRequestID := fmt.Sprintf("req-old-%s", sourceID.String()[:8])
+	newRequestID := fmt.Sprintf("req-new-%s", sourceID.String()[:8])
 	oldAckID := uuid.New()
 	newAckID := uuid.New()
 

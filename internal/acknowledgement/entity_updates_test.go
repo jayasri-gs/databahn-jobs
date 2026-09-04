@@ -105,6 +105,12 @@ func TestEntityUpdateCollectorFlushBatchFallback(t *testing.T) {
 	mock.ExpectRollback()
 
 	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "log_source" SET "status"=$1 WHERE id IN ($2,$3) AND status NOT IN ($4,$5)`)).
+		WithArgs("ACTIVE", "entity-1", "entity-2", "ACTIVE", "DELETED").
+		WillReturnError(errors.New("batch failed"))
+	mock.ExpectRollback()
+
+	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "log_source" SET "status"=$1 WHERE id = $2 AND status NOT IN ($3,$4)`)).
 		WithArgs("ACTIVE", "entity-1", "ACTIVE", "DELETED").
 		WillReturnResult(sqlmock.NewResult(0, 1))

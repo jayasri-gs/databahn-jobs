@@ -185,8 +185,17 @@ func TestGetLatestEntityToRequestId(t *testing.T) {
 			{RequestId: "req-only", Timestamp: "2"},
 		},
 	}
+	entityIdToRequestIdToAck := map[string]map[string][]db.ChangeFlagAck{
+		"entity-a": {
+			"req-old": {{RequestId: "req-old"}},
+			"req-new": {{RequestId: "req-new"}},
+		},
+		"entity-b": {
+			"req-only": {{RequestId: "req-only"}},
+		},
+	}
 
-	latest, suppressed := getLatestEntityToRequestId(entityIdToChangeFlags)
+	latest, suppressed := getLatestEntityToRequestId(entityIdToChangeFlags, entityIdToRequestIdToAck)
 	if latest["entity-a"] != "req-new" {
 		t.Fatalf("expected req-new, got %s", latest["entity-a"])
 	}
@@ -198,6 +207,29 @@ func TestGetLatestEntityToRequestId(t *testing.T) {
 	}
 	if _, ok := suppressed["req-new"]; ok {
 		t.Fatalf("did not expect req-new to be suppressed")
+	}
+}
+
+func TestGetLatestEntityToRequestIdIgnoresRequestsWithoutAck(t *testing.T) {
+	entityIdToChangeFlags := map[string][]db.ChangeFlagRequest{
+		"entity-a": {
+			{RequestId: "req-old", Timestamp: "1"},
+			{RequestId: "req-new", Timestamp: "3"},
+			{RequestId: "req-outside-window", Timestamp: "99"},
+		},
+	}
+	entityIdToRequestIdToAck := map[string]map[string][]db.ChangeFlagAck{
+		"entity-a": {
+			"req-old": {{RequestId: "req-old"}},
+		},
+	}
+
+	latest, suppressed := getLatestEntityToRequestId(entityIdToChangeFlags, entityIdToRequestIdToAck)
+	if latest["entity-a"] != "req-old" {
+		t.Fatalf("expected req-old, got %s", latest["entity-a"])
+	}
+	if _, ok := suppressed["req-old"]; ok {
+		t.Fatalf("did not expect req-old to be suppressed")
 	}
 }
 
@@ -332,12 +364,14 @@ func TestMarkAllAcksGroupsByRequestStatus(t *testing.T) {
 		},
 	}
 
-	markAllAcks(ackMap,
+	if err := markAllAcks(ackMap,
 		map[string]struct{}{"req-success": {}},
 		map[string]struct{}{"req-failed": {}},
 		map[string]struct{}{"req-suppressed": {}},
 		50,
-	)
+	); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

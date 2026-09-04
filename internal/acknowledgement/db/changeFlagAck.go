@@ -25,6 +25,21 @@ type ChangeFlagAck struct {
 	ProcessStatus string `json:"process_status"`
 }
 
+const (
+	defaultEntityPageLimit = 100
+	maxEntityPageLimit     = 10000
+)
+
+func normalizeEntityPageLimit(limit int) int {
+	if limit <= 0 {
+		return defaultEntityPageLimit
+	}
+	if limit > maxEntityPageLimit {
+		return maxEntityPageLimit
+	}
+	return limit
+}
+
 func ackProcessBaseQuery(timestampOlderThan time.Time, timestampNewerThan *time.Time) *gorm.DB {
 	query := config.GetDB().Table(constants.TableChangeFlagAck).
 		Where("process_status IN (?,?) AND timestamp < ?", constants.StatusPending, constants.StatusErrored, timestampOlderThan)
@@ -36,6 +51,7 @@ func ackProcessBaseQuery(timestampOlderThan time.Time, timestampNewerThan *time.
 
 func GetDistinctEntityIdsToProcess(timestampOlderThan time.Time, timestampNewerThan *time.Time, afterEntityID string, limit int) ([]string, error) {
 	var entityIds []string
+	limit = normalizeEntityPageLimit(limit)
 	query := ackProcessBaseQuery(timestampOlderThan, timestampNewerThan).Select("DISTINCT entity_id")
 	if afterEntityID != "" {
 		query = query.Where("entity_id > ?", afterEntityID)
