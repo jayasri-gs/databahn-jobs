@@ -9,13 +9,9 @@ import (
 	"time"
 
 	ackPkg "github.com/databahn-ai/common-utils/ack"
-	utilConst "github.com/databahn-ai/common-utils/constants"
 	"github.com/databahn-ai/common-utils/utils"
-	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
-	ackConst "github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
 	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/db"
 	"github.com/databahn-ai/databahn-jobs/internal/common"
-	"github.com/databahn-ai/databahn-jobs/internal/config"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
@@ -29,16 +25,16 @@ var errSuppressUnsupportedEntityType = errors.New("unsupported ack entity type s
 
 /*
 Flow:
-1. Get all acknowledgements older than a certain time
-2. Prepare a map of [entityId][requestId][]acks
-3. Get all change flags by entity id
+1. Page distinct entity ids using cursor pagination
+2. For each page load acknowledgements and prepare map of [entityId][requestId][]acks
+3. Get change flags by entity id
 4. Get latest cf request for each entity keeping track of suppressed request ids
 5. Start processing
 	5.1. Get relevant acknowledgement for the latest request id
-	5.2. Update status
+	5.2. Batch update entity status
 	5.3  Capture failed and successful updates
-6. Mark all acknowledgements processing status : suppressed, processed, error
-
+6. Mark acknowledgements processing status : suppressed, processed, error
+7. Repeat until no entities remain, then delete old processed records
 */
 
 func ProcessAck() common.JobResult {
@@ -54,42 +50,61 @@ func ProcessAck() common.JobResult {
 		return common.NewJobResultFromErrors(jobErrors)
 	}
 
-	// get all records from acknowledgement to be processed
-	acks, err := db.GetAllChangeFlagsToBeProcessed(t, lookbackStart)
+	queryBatchSize := getQueryBatchSize()
+	entityPageSize := getEntityPageSize()
+	entityUpdateBatchSize := getEntityUpdateBatchSize()
+
+	lastEntityID := ""
+	totalPages := 0
+	entitiesProcessed := 0
+	acksProcessed := 0
+
+	fetchEntityIds := func(afterEntityID string, limit int) ([]string, error) {
+		return db.GetDistinctEntityIdsToProcess(t, lookbackStart, afterEntityID, limit)
+	}
+
+	totalPages, err = forEachEntityPage(entityPageSize, fetchEntityIds, func(entityIds []string, pageNum int) error {
+		logger.GetLogger().Debug("processing acknowledgement entity page",
+			zap.Int("page", pageNum),
+			zap.Int("entity_count", len(entityIds)),
+			zap.String("last_entity_id", lastEntityID))
+
+		acks, err := db.GetChangeFlagsByEntityIds(entityIds, t, lookbackStart)
+		if err != nil {
+			return err
+		}
+		entitiesProcessed += len(entityIds)
+		acksProcessed += len(acks)
+		logger.GetLogger().Debug("acknowledgements in page", zap.Int("count", len(acks)))
+
+		if err := processAckPage(acks, queryBatchSize, entityUpdateBatchSize); err != nil {
+			return err
+		}
+
+		logger.GetLogger().Info("acknowledgement processing progress",
+			zap.Int("page", pageNum),
+			zap.Int("entities_in_page", len(entityIds)),
+			zap.Int("acks_in_page", len(acks)),
+			zap.Int("entities_processed", entitiesProcessed),
+			zap.Int("acks_processed", acksProcessed))
+
+		lastEntityID = entityIds[len(entityIds)-1]
+		return nil
+	})
 	if err != nil {
-		errorMsg := fmt.Sprintf("error while getting change flags to be processed: %v", err)
+		errorMsg := fmt.Sprintf("error while processing acknowledgement pages: %v", err)
 		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-		logger.GetLogger().Error("error while getting change flags to be processed", zap.Error(err))
+		logger.GetLogger().Error("error while processing acknowledgement pages", zap.Error(err))
 		return common.NewJobResultFromErrors(jobErrors)
 	}
-	logger.GetLogger().Debug("acknowledgements to be processed", zap.Int("count", len(acks)))
 
-	// prepare map of [entityId][requestId][]acks
-	mapOfEntityIdToRequestIdToAck := prepareMapOfEntityIdToRequestIdToAck(acks)
-	logger.GetLogger().Debug("number of entities to be processed", zap.Int("count", len(mapOfEntityIdToRequestIdToAck)))
-
-	// get all change flags for entities
-	entityIdToChangeFlags, err := getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck)
-	if err != nil {
-		errorMsg := fmt.Sprintf("error while getting change flags: %v", err)
-		jobErrors = append(jobErrors, common.JobError{Message: errorMsg})
-		logger.GetLogger().Error("error while getting change flags", zap.Error(err))
-		return common.NewJobResultFromErrors(jobErrors)
+	if totalPages > 0 {
+		logger.GetLogger().Info("acknowledgement processing finished paging",
+			zap.Int("pages", totalPages),
+			zap.Int("entities_processed", entitiesProcessed),
+			zap.Int("acks_processed", acksProcessed))
 	}
 
-	// get latest cf request for each entity and collect suppressed request ids
-	latestEntityIdToRequestId, suppressedReqIds := getLatestEntityToRequestId(entityIdToChangeFlags)
-
-	// process acknowledgements and update status while collecting successful, failed and suppressed update status
-	successfulReqIds, failedReqIds, unsupportedSuppressedReqIds := startProcessing(mapOfEntityIdToRequestIdToAck, latestEntityIdToRequestId)
-	for reqId := range unsupportedSuppressedReqIds {
-		suppressedReqIds[reqId] = struct{}{}
-	}
-
-	// mark acknowledgements as suppressed, processed and errored accordingly
-	markAllAcks(mapOfEntityIdToRequestIdToAck, successfulReqIds, failedReqIds, suppressedReqIds)
-
-	// delete processed records older than certain time (an hour )
 	err = db.DeleteRecords(t.Add(-1 * time.Hour))
 	if err != nil {
 		errorMsg := fmt.Sprintf("error while deleting old records: %v", err)
@@ -100,10 +115,34 @@ func ProcessAck() common.JobResult {
 	if len(jobErrors) == 0 {
 		logger.GetLogger().Info("successfully completed acknowledgement processing")
 		return common.NewJobResultSuccess()
-	} else {
-		logger.GetLogger().Info("acknowledgement processing completed with errors", zap.Int("error_count", len(jobErrors)))
-		return common.NewJobResultFromErrors(jobErrors)
 	}
+
+	logger.GetLogger().Info("acknowledgement processing completed with errors", zap.Int("error_count", len(jobErrors)))
+	return common.NewJobResultFromErrors(jobErrors)
+}
+
+func processAckPage(acks []db.ChangeFlagAck, queryBatchSize, entityUpdateBatchSize int) error {
+	mapOfEntityIdToRequestIdToAck := prepareMapOfEntityIdToRequestIdToAck(acks)
+	logger.GetLogger().Debug("number of entities in page", zap.Int("count", len(mapOfEntityIdToRequestIdToAck)))
+
+	entityIdToChangeFlags, err := getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck, queryBatchSize)
+	if err != nil {
+		return err
+	}
+
+	latestEntityIdToRequestId, suppressedReqIds := getLatestEntityToRequestId(
+		entityIdToChangeFlags, mapOfEntityIdToRequestIdToAck)
+
+	successfulReqIds, failedReqIds, unsupportedSuppressedReqIds := startProcessing(
+		mapOfEntityIdToRequestIdToAck, latestEntityIdToRequestId, entityUpdateBatchSize)
+	for reqId := range unsupportedSuppressedReqIds {
+		suppressedReqIds[reqId] = struct{}{}
+	}
+
+	if err := markAllAcks(mapOfEntityIdToRequestIdToAck, successfulReqIds, failedReqIds, suppressedReqIds, queryBatchSize); err != nil {
+		return err
+	}
+	return nil
 }
 
 func getAckLookbackStart(now time.Time) (*time.Time, error) {
@@ -146,10 +185,12 @@ func parseAckLookbackDuration(rawDuration string) (time.Duration, error) {
 }
 
 func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck,
-	latestEntityIdToRequestId map[string]string) (map[string]struct{}, map[string]struct{}, map[string]struct{}) {
+	latestEntityIdToRequestId map[string]string, entityUpdateBatchSize int) (map[string]struct{}, map[string]struct{}, map[string]struct{}) {
 	failedReqIds := make(map[string]struct{})
 	successfulReqIds := make(map[string]struct{})
 	suppressedReqIds := make(map[string]struct{})
+	collector := newEntityUpdateCollector()
+
 	for entityId, requestIdToAck := range mapOfEntityIdToRequestIdToAck {
 		latestReqId := latestEntityIdToRequestId[entityId]
 		if latestReqId == "" {
@@ -157,9 +198,8 @@ func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.Ch
 			continue
 		}
 
-		// loop over all acknowledgements for given entity and latest requestId
 		acknowledgement := getRelevantAcknowledgement(requestIdToAck[latestReqId])
-		err := updateStatus(acknowledgement)
+		spec, err := entityUpdateSpecForAck(acknowledgement)
 		if errors.Is(err, errSuppressUnsupportedEntityType) {
 			logger.GetLogger().Info("suppressing unsupported acknowledgement entity type",
 				zap.String("entityId", acknowledgement.EntityId), zap.String("type", acknowledgement.EntityType))
@@ -167,18 +207,26 @@ func startProcessing(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.Ch
 			continue
 		}
 		if err != nil {
-			logger.GetLogger().Error("error while updating status", zap.Error(err),
+			logger.GetLogger().Error("error while resolving entity update", zap.Error(err),
 				zap.String("entityId", acknowledgement.EntityId), zap.String("type", acknowledgement.EntityType))
 			failedReqIds[acknowledgement.RequestId] = struct{}{}
-		} else {
-			successfulReqIds[acknowledgement.RequestId] = struct{}{}
+			continue
 		}
+
+		collector.add(spec, acknowledgement.EntityId, acknowledgement.RequestId)
 	}
+
+	batchSuccessful, batchFailed := collector.flush(entityUpdateBatchSize)
+	for reqId := range batchSuccessful {
+		successfulReqIds[reqId] = struct{}{}
+	}
+	for reqId := range batchFailed {
+		failedReqIds[reqId] = struct{}{}
+	}
+
 	return successfulReqIds, failedReqIds, suppressedReqIds
 }
 
-// gets the relevant acknowledgement for the latest request id
-// failed OR latest one
 func getRelevantAcknowledgement(acks []db.ChangeFlagAck) db.ChangeFlagAck {
 	errorAckCount := 0
 	if len(acks) == 0 {
@@ -202,10 +250,9 @@ func getRelevantAcknowledgement(acks []db.ChangeFlagAck) db.ChangeFlagAck {
 }
 
 func markAllAcks(ack map[string]map[string][]db.ChangeFlagAck, successful map[string]struct{},
-	failed map[string]struct{}, suppressed map[string]struct{}) {
+	failed map[string]struct{}, suppressed map[string]struct{}, queryBatchSize int) error {
 	var successfulAck, failedAck, suppressedAck []db.ChangeFlagAck
 
-	// collect all acknowledgements for each status by given requestIds
 	for _, requestIdToAckMap := range ack {
 		for reqId, acks := range requestIdToAckMap {
 			if _, ok := successful[reqId]; ok {
@@ -222,30 +269,57 @@ func markAllAcks(ack map[string]map[string][]db.ChangeFlagAck, successful map[st
 
 	logger.GetLogger().Debug("process status of acknowledgements", zap.Int("successful", len(successfulAck)),
 		zap.Int("failed", len(failedAck)), zap.Int("suppressed", len(suppressedAck)))
-	markAckProcessed(successfulAck)
-	markAckError(failedAck)
-	markAckSuppressed(suppressedAck)
+	if err := markAckProcessed(successfulAck, queryBatchSize); err != nil {
+		return err
+	}
+	if err := markAckError(failedAck, queryBatchSize); err != nil {
+		return err
+	}
+	if err := markAckSuppressed(suppressedAck, queryBatchSize); err != nil {
+		return err
+	}
+	return nil
 }
 
-func getLatestEntityToRequestId(entityIdToChangeFlags map[string][]db.ChangeFlagRequest) (map[string]string, map[string]struct{}) {
+func getLatestEntityToRequestId(
+	entityIdToChangeFlags map[string][]db.ChangeFlagRequest,
+	entityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck,
+) (map[string]string, map[string]struct{}) {
 	latestEntityIdToRequestId := make(map[string]string)
 
-	// get latest cf for each entity
 	for entityId, changeFlags := range entityIdToChangeFlags {
-		latestRequest := changeFlags[0]
+		requestIdToAck, ok := entityIdToRequestIdToAck[entityId]
+		if !ok {
+			continue
+		}
+		var latestRequest db.ChangeFlagRequest
+		found := false
 		for _, cf := range changeFlags {
-			if cf.Timestamp > latestRequest.Timestamp {
+			if _, hasAck := requestIdToAck[cf.RequestId]; !hasAck {
+				continue
+			}
+			if !found || cf.Timestamp > latestRequest.Timestamp {
 				latestRequest = cf
+				found = true
 			}
 		}
-		latestEntityIdToRequestId[entityId] = latestRequest.RequestId
+		if found {
+			latestEntityIdToRequestId[entityId] = latestRequest.RequestId
+		}
 	}
 
-	// collect all ignored change flags
 	suppressedRequestIds := make(map[string]struct{})
 	for entityId, cf := range entityIdToChangeFlags {
+		requestIdToAck, ok := entityIdToRequestIdToAck[entityId]
+		if !ok {
+			continue
+		}
+		latestRequestID := latestEntityIdToRequestId[entityId]
 		for _, kk := range cf {
-			if latestEntityIdToRequestId[entityId] != kk.RequestId {
+			if _, hasAck := requestIdToAck[kk.RequestId]; !hasAck {
+				continue
+			}
+			if latestRequestID != kk.RequestId {
 				suppressedRequestIds[kk.RequestId] = struct{}{}
 			}
 		}
@@ -255,33 +329,33 @@ func getLatestEntityToRequestId(entityIdToChangeFlags map[string][]db.ChangeFlag
 	return latestEntityIdToRequestId, suppressedRequestIds
 }
 
-func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck) (map[string][]db.ChangeFlagRequest, error) {
-	var changeFlags []db.ChangeFlagRequest
-	var entities []string
+func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[string][]db.ChangeFlagAck, queryBatchSize int) (map[string][]db.ChangeFlagRequest, error) {
+	if len(mapOfEntityIdToRequestIdToAck) == 0 {
+		return map[string][]db.ChangeFlagRequest{}, nil
+	}
 
-	// prepare all entity ids
-	for entityId, _ := range mapOfEntityIdToRequestIdToAck {
+	var changeFlags []db.ChangeFlagRequest
+	entities := make([]string, 0, len(mapOfEntityIdToRequestIdToAck))
+	for entityId := range mapOfEntityIdToRequestIdToAck {
 		entities = append(entities, entityId)
 	}
 
-	// prepare queries in batches
-	batches := len(entities) / ackConst.QueryBatchSize
-	for i := 0; i < batches; i++ {
-		cf, err := db.GetChangeFlagRequest(entities[i*ackConst.QueryBatchSize : (i+1)*ackConst.QueryBatchSize])
+	if queryBatchSize <= 0 {
+		queryBatchSize = getQueryBatchSize()
+	}
+
+	for start := 0; start < len(entities); start += queryBatchSize {
+		end := start + queryBatchSize
+		if end > len(entities) {
+			end = len(entities)
+		}
+		cf, err := db.GetChangeFlagRequest(entities[start:end])
 		if err != nil {
 			return nil, err
 		}
 		changeFlags = append(changeFlags, cf...)
 	}
 
-	// get remaining records from batches
-	remaining, err1 := db.GetChangeFlagRequest(entities[batches*ackConst.QueryBatchSize:])
-	if err1 != nil {
-		return nil, err1
-	}
-	changeFlags = append(changeFlags, remaining...)
-
-	// create map of entityId to change flag requests
 	entityIdToChangeFlags := make(map[string][]db.ChangeFlagRequest)
 	for _, cfAck := range changeFlags {
 		entityIdToChangeFlags[cfAck.EntityId] = append(entityIdToChangeFlags[cfAck.EntityId], cfAck)
@@ -292,208 +366,19 @@ func getChangeFlagsForEntities(mapOfEntityIdToRequestIdToAck map[string]map[stri
 func prepareMapOfEntityIdToRequestIdToAck(acks []db.ChangeFlagAck) map[string]map[string][]db.ChangeFlagAck {
 	mapOfEntityIdToRequestIdToAck := make(map[string]map[string][]db.ChangeFlagAck)
 	for _, ack := range acks {
-		// if entity id is not present in the map, create a new map
 		if _, ok := mapOfEntityIdToRequestIdToAck[ack.EntityId]; !ok {
 			mapOfEntityIdToRequestIdToAck[ack.EntityId] = make(map[string][]db.ChangeFlagAck)
-			mapOfEntityIdToRequestIdToAck[ack.EntityId][ack.RequestId] = append(mapOfEntityIdToRequestIdToAck[ack.EntityId][ack.RequestId], ack)
-		} else {
-			mapOfEntityIdToRequestIdToAck[ack.EntityId][ack.RequestId] = append(mapOfEntityIdToRequestIdToAck[ack.EntityId][ack.RequestId], ack)
 		}
+		mapOfEntityIdToRequestIdToAck[ack.EntityId][ack.RequestId] = append(mapOfEntityIdToRequestIdToAck[ack.EntityId][ack.RequestId], ack)
 	}
 	return mapOfEntityIdToRequestIdToAck
 }
 
 func updateStatus(ack db.ChangeFlagAck) error {
-	// handle destination cf separately
-	if strings.HasPrefix(ack.EntityType, "destination_") {
-		return updateDestination(ack)
-	}
-
-	switch ack.EntityType {
-	case utilConst.EntityLookup:
-		err := handleLookup(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntityInsightsRule:
-		err := handleInsightRule(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntityRule:
-		err := handleRule(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntitySource:
-		err := handleSource(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntityEnrichment:
-		err := handleEnrichment(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntityTransformer:
-		err := handleTransformer(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntityRouteProcessor:
-		err := handleRouteProcessor(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntitySensitiveData:
-		err := handleSensitiveData(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntityGlobalDestination:
-		err := handleGlobalDestination(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntityCustomNormalization:
-		err := handleCustomNormalization(ack)
-		if err != nil {
-			return err
-		}
-	case utilConst.EntityPipeline, utilConst.EntityDataReplay, "data-replay", "aif_workflow", utilConst.EntityAlertConfig:
-		return errSuppressUnsupportedEntityType
-	default:
-		return errors.New("Ack does not support entity type:" + ack.EntityType)
-	}
-	return nil
-}
-
-func updateDestination(ack db.ChangeFlagAck) error {
-	statusV2 := getStatusString(ack)
-	err := config.GetDB().Table("destination").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
-		Update("status", statusV2).Error
+	spec, err := entityUpdateSpecForAck(ack)
 	if err != nil {
-		logger.GetLogger().Error("error while updating destination status", zap.Error(err))
 		return err
 	}
-	logger.GetLogger().Debug("destination status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
-	return nil
+	return executeEntityStatusSingleUpdate(spec.table, spec.status, spec.guardKind, ack.EntityId)
 }
 
-func handleTransformer(ack db.ChangeFlagAck) error {
-	statusV2 := getStatusString(ack)
-	err := config.GetDB().Table("data_transformation").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
-		Update("status", statusV2).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating transformer status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("transformer status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
-	return nil
-}
-
-func handleRouteProcessor(ack db.ChangeFlagAck) error {
-	statusV2 := getStatusString(ack)
-	err := config.GetDB().Table("route_processor").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
-		Update("status", statusV2).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating route processor status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("route processor  status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
-	return nil
-}
-
-func handleSensitiveData(ack db.ChangeFlagAck) error {
-	statusV2 := getStatusString(ack)
-	err := config.GetDB().Table("sensitive_data_config").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
-		Update("status", statusV2).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating sensitive data config status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("sensitive data config status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
-	return nil
-}
-
-func handleEnrichment(ack db.ChangeFlagAck) error {
-	enrichmentStatus := getStatusString(ack)
-	err := config.GetDB().Table("enrichment").Where("id = ? AND status not in (?,?)", ack.EntityId, enrichmentStatus, constants.StatusDeleted).
-		Update("status", enrichmentStatus).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating enrichment status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("enrichment status updated", zap.String("entityId", ack.EntityId), zap.String("status", enrichmentStatus))
-	return nil
-}
-
-func handleSource(ack db.ChangeFlagAck) error {
-	sourceStatusV2 := getStatusString(ack)
-	err := config.GetDB().Table("log_source").Where("id = ? AND status not in (?,?)", ack.EntityId, sourceStatusV2, constants.StatusDeleted).
-		Update("status", sourceStatusV2).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating source status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("source status updated", zap.String("entityId", ack.EntityId), zap.String("status", sourceStatusV2))
-	return nil
-}
-
-func handleLookup(ack db.ChangeFlagAck) error {
-	lookupStatus := getStatusString(ack)
-	err := config.GetDB().Table("lookup").Where("id = ? AND status != ?", ack.EntityId, lookupStatus).Update("status", lookupStatus).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating lookup status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("lookup status updated", zap.String("entityId", ack.EntityId), zap.String("status", lookupStatus))
-	return nil
-}
-
-func handleInsightRule(ack db.ChangeFlagAck) error {
-	status := getStatusString(ack)
-	err := config.GetDB().Table("insights_rule").Where("id = ? AND status != ?", ack.EntityId, status).Update("status", status).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating insights_rule status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("insights_rule status updated", zap.String("entityId", ack.EntityId), zap.String("status", status))
-	return nil
-}
-
-func handleRule(ack db.ChangeFlagAck) error {
-	ruleStatusV2 := getStatusString(ack)
-	err := config.GetDB().Table("vc_rule").Where("id = ? and status not in (?,?)", ack.EntityId, ruleStatusV2, constants.StatusDeleted).
-		Update("status", ruleStatusV2).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating rule status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("rule status updated", zap.String("entityId", ack.EntityId), zap.String("status", ruleStatusV2))
-	return nil
-}
-
-func handleGlobalDestination(ack db.ChangeFlagAck) error {
-	StatusV2 := getStatusString(ack)
-	err := config.GetDB().Table("global_destination_config").Where("id = ? and status not in (?,?)", ack.EntityId, StatusV2, constants.StatusDeleted).
-		Update("status", StatusV2).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating global destination status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("global destination status updated", zap.String("entityId", ack.EntityId), zap.String("status", StatusV2))
-	return nil
-}
-
-func handleCustomNormalization(ack db.ChangeFlagAck) error {
-	statusV2 := getStatusString(ack)
-	err := config.GetDB().Table("custom_normalization").Where("id = ? AND status not in (?,?)", ack.EntityId, statusV2, constants.StatusDeleted).
-		Update("status", statusV2).Error
-	if err != nil {
-		logger.GetLogger().Error("error while updating custom normalization status", zap.Error(err))
-		return err
-	}
-	logger.GetLogger().Debug("custom normalization status updated", zap.String("entityId", ack.EntityId), zap.String("status", statusV2))
-	return nil
-}

@@ -3,53 +3,48 @@ package acknowledgement
 import (
 	ackPkg "github.com/databahn-ai/common-utils/ack"
 	utilConst "github.com/databahn-ai/common-utils/constants"
-	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/constants"
-
 	"github.com/databahn-ai/databahn-jobs/internal/acknowledgement/db"
 	"github.com/databahn-ai/go-logging/logger"
 	"go.uber.org/zap"
 )
 
-func markAckError(ack []db.ChangeFlagAck) {
-	ackIds := make([]string, len(ack))
-	for i, a := range ack {
-		ackIds[i] = a.Id
-	}
-	numBatches := len(ackIds) / constants.QueryBatchSize
-	for i := 0; i < numBatches; i++ {
-		err := db.MarkAcksError(ackIds[i*constants.QueryBatchSize : (i+1)*constants.QueryBatchSize])
-		if err != nil {
-			logger.GetLogger().Error("error while marking acks errored", zap.Error(err))
-		}
-	}
-
-	if len(ackIds)%constants.QueryBatchSize != 0 {
-		err := db.MarkAcksError(ackIds[numBatches*constants.QueryBatchSize:])
-		if err != nil {
-			logger.GetLogger().Error("error while marking acks errored", zap.Error(err))
-		}
-	}
+func markAckError(ack []db.ChangeFlagAck, batchSize int) error {
+	return markAcksByIDs(ack, batchSize, db.MarkAcksError)
 }
 
-func markAckSuppressed(ack []db.ChangeFlagAck) {
-	ackIds := make([]string, len(ack))
-	for i, a := range ack {
-		ackIds[i] = a.Id
+func markAckSuppressed(ack []db.ChangeFlagAck, batchSize int) error {
+	return markAcksByIDs(ack, batchSize, db.MarkAcksSuppressed)
+}
+
+func markAckProcessed(successfulAck []db.ChangeFlagAck, batchSize int) error {
+	return markAcksByIDs(successfulAck, batchSize, db.MarkAcksProcessed)
+}
+
+func markAcksByIDs(acks []db.ChangeFlagAck, batchSize int, markFn func([]string) error) error {
+	if len(acks) == 0 {
+		return nil
 	}
-	numBatches := len(ackIds) / constants.QueryBatchSize
-	for i := 0; i < numBatches; i++ {
-		err := db.MarkAcksSuppressed(ackIds[i*constants.QueryBatchSize : (i+1)*constants.QueryBatchSize])
-		if err != nil {
-			logger.GetLogger().Error("error while marking acks suppressed", zap.Error(err))
-		}
+	if batchSize <= 0 {
+		batchSize = getQueryBatchSize()
 	}
 
-	if len(ackIds)%constants.QueryBatchSize != 0 {
-		err := db.MarkAcksSuppressed(ackIds[numBatches*constants.QueryBatchSize:])
-		if err != nil {
-			logger.GetLogger().Error("error while marking acks suppressed", zap.Error(err))
+	ackIds := make([]string, len(acks))
+	for i, a := range acks {
+		ackIds[i] = a.Id
+	}
+
+	var markErr error
+	for start := 0; start < len(ackIds); start += batchSize {
+		end := start + batchSize
+		if end > len(ackIds) {
+			end = len(ackIds)
+		}
+		if err := markFn(ackIds[start:end]); err != nil {
+			logger.GetLogger().Error("error while marking acks", zap.Error(err))
+			markErr = err
 		}
 	}
+	return markErr
 }
 
 func getStatusStringFromInt(status int) string {
@@ -66,27 +61,6 @@ func getStatusStringFromInt(status int) string {
 		logger.GetLogger().Error("unknown status", zap.Int("status", status))
 	}
 	return ""
-}
-
-func markAckProcessed(successfulAck []db.ChangeFlagAck) {
-	ackIds := make([]string, len(successfulAck))
-	for i, a := range successfulAck {
-		ackIds[i] = a.Id
-	}
-	numBatches := len(ackIds) / constants.QueryBatchSize
-	for i := 0; i < numBatches; i++ {
-		err := db.MarkAcksProcessed(ackIds[i*constants.QueryBatchSize : (i+1)*constants.QueryBatchSize])
-		if err != nil {
-			logger.GetLogger().Error("error while marking acks processed", zap.Error(err))
-		}
-	}
-
-	if len(ackIds)%constants.QueryBatchSize != 0 {
-		err := db.MarkAcksProcessed(ackIds[numBatches*constants.QueryBatchSize:])
-		if err != nil {
-			logger.GetLogger().Error("error while marking acks processed", zap.Error(err))
-		}
-	}
 }
 
 func getStatusInt(ack db.ChangeFlagAck) int {
