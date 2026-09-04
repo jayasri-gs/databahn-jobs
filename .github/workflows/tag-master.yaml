@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - DB-29138-credential-manager-impl
 
 jobs:
   tag:
