@@ -30,6 +30,8 @@ type Secret struct {
 
 func (Secret) TableName() string { return "secrets" }
 
+const errNilDB = "nil db"
+
 // LookaheadDays defines the widest threshold + a small buffer. Rows whose expiry
 // falls outside this window will not be picked up by the job.
 const LookaheadDays = 16
@@ -45,7 +47,7 @@ const LookaheadDays = 16
 // run concurrently and CRUD writers are not blocked by the job.
 func FetchDueCredentials(ctx context.Context, db *gorm.DB) ([]Secret, error) {
 	if db == nil {
-		return nil, errors.New("nil db")
+		return nil, errors.New(errNilDB)
 	}
 	var results []Secret
 	err := db.WithContext(ctx).
@@ -87,7 +89,7 @@ func FetchDueCredentials(ctx context.Context, db *gorm.DB) ([]Secret, error) {
 // Callers should invoke this inside the same transaction that fetched the row with FOR UPDATE.
 func UpdateNotificationTriggers(ctx context.Context, db *gorm.DB, secretId uuid.UUID, triggers datatypes.JSON) error {
 	if db == nil {
-		return errors.New("nil db")
+		return errors.New(errNilDB)
 	}
 	return db.WithContext(ctx).
 		Table("secrets").
@@ -113,7 +115,7 @@ type LinkedEntities struct {
 func FetchLinkedEntities(ctx context.Context, db *gorm.DB, secretId uuid.UUID) (LinkedEntities, error) {
 	var out LinkedEntities
 	if db == nil {
-		return out, errors.New("nil db")
+		return out, errors.New(errNilDB)
 	}
 
 	type row struct {

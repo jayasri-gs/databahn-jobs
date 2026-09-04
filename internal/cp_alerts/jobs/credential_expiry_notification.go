@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"text/template"
+	"html/template"
 	"time"
 
 	notification_common "github.com/databahn-ai/common-utils/notification"
