@@ -130,6 +130,8 @@ func RunJob(ctx context.Context, jobName string, input model.Message) {
 		result = searchExport.GenerateSearchExport(ctx)
 	case common.IMPORT_REQUEST_PROCESSOR:
 		result = importrequest.ProcessImportRequests(ctx)
+	case common.CREDENTIAL_EXPIRY_NOTIFICATION:
+		result = cp_jobs.SendCredentialExpiryNotifications(ctx)
 
 	default:
 		logger.GetLogger().Panic("unknown job", zap.String("jobName", jobName))

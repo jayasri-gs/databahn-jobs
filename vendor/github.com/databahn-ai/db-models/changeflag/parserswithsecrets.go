@@ -30,6 +30,13 @@ var FilterSelectAllDest = FilterSelectAll[FlagDestination]
 var FilterSelectAllSource = FilterSelectAll[FlagSource]
 var FilterSelectAllRouteProcessor = FilterSelectAll[FlagRouteProcessor]
 
+func secretVersionOf(ws WithSecret) string {
+	if v, ok := ws.(WithSecretVersion); ok {
+		return v.GetSecretVersion()
+	}
+	return ""
+}
+
 func ParseDestinationFlag(configReader configuration.ConfigReader, changeFlag flagUtil.ChangeFlag,
 	filter func(dest FlagDestination) bool) (*ParsedChangeFlags[FlagDestination], error) {
 	return parseChangeFlag[FlagDestination](configReader, changeFlag, filter, parseDestination, validateDestination)
@@ -75,7 +82,11 @@ func parseChangeFlag[T WithSecret](configReader configuration.ConfigReader, chan
 				zap.String("tenantId", changeFlag.TenantId))
 			secretIdsByTenant := make(map[string][]string)
 			secretIdsByTenant[changeFlag.TenantId] = []string{secretId}
-			secrets, err := LoadSecrets(configReader, secretIdsByTenant)
+			var secretVersions map[string]string
+			if version := secretVersionOf(parsedChangeFlag); version != "" {
+				secretVersions = map[string]string{secretId: version}
+			}
+			secrets, err := LoadSecretsWithVersions(configReader, secretIdsByTenant, secretVersions)
 			if err != nil {
 				log.Debug("changeflag parseChangeFlag: LoadSecrets failed",
 					zap.String("entityId", changeFlag.EntityId),
@@ -174,21 +185,32 @@ func parseFlagsWithSecrets[T WithSecret](configReader configuration.ConfigReader
 			zap.Int("parsedWithoutSecretSoFar", len(parsedCfList)))
 	} else {
 		secretIdsByTenant := make(map[string][]string)
+		secretVersions := make(map[string]string)
 		for secretId, cf := range secretIdToChangeFlag {
 			secretIdsByTenant[cf.TenantId] = append(secretIdsByTenant[cf.TenantId], secretId)
+			if pcf, ok := secretIdToParsedChangeFlag[secretId]; ok {
+				if version := secretVersionOf(pcf); version != "" {
+					secretVersions[secretId] = version
+				}
+			}
 		}
 
 		log.Debug("changeflag parseFlagsWithSecrets: collected secret refs",
 			zap.Int("uniqueSecretIds", len(secretIdToChangeFlag)),
 			zap.Int("parsedWithoutSecret", len(parsedCfList)),
-			zap.Int("tenantsWithSecrets", len(secretIdsByTenant)))
+			zap.Int("tenantsWithSecrets", len(secretIdsByTenant)),
+			zap.Int("secretVersionsCount", len(secretVersions)))
 		for tid, ids := range secretIdsByTenant {
 			log.Debug("changeflag parseFlagsWithSecrets: tenant secret id list",
 				zap.String("tenantId", tid),
 				zap.Int("count", len(ids)))
 		}
 
-		secrets, err := LoadSecrets(configReader, secretIdsByTenant)
+		var versionsArg map[string]string
+		if len(secretVersions) > 0 {
+			versionsArg = secretVersions
+		}
+		secrets, err := LoadSecretsWithVersions(configReader, secretIdsByTenant, versionsArg)
 		if err != nil {
 			log.Debug("changeflag parseFlagsWithSecrets: LoadSecrets failed",
 				zap.Error(err))

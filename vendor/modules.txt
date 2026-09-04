@@ -470,7 +470,7 @@ github.com/databahn-ai/common-utils/redis
 github.com/databahn-ai/common-utils/svc
 github.com/databahn-ai/common-utils/utils
 github.com/databahn-ai/common-utils/vault
-# github.com/databahn-ai/db-models v0.277.0
+# github.com/databahn-ai/db-models v0.282.0
 ## explicit; go 1.25.0
 github.com/databahn-ai/db-models/alerts_async
 github.com/databahn-ai/db-models/alerts_common

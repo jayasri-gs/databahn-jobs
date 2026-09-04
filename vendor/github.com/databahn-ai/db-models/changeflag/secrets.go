@@ -19,6 +19,11 @@ type WithSecret interface {
 	AddConfig(extraConfig map[string]string)
 }
 
+// WithSecretVersion is optional; types that support versioned secret caching implement it.
+type WithSecretVersion interface {
+	GetSecretVersion() string
+}
+
 var client *http.Client
 var dpBaseUrl string
 
@@ -55,11 +60,24 @@ type secretsResponse struct {
 }
 
 type secretsRequest struct {
-	SecretIds []string `json:"secretIds"`
-	TenantId  string   `json:"tenantId"`
+	SecretIds      []string          `json:"secretIds"`
+	TenantId       string            `json:"tenantId"`
+	SecretVersions map[string]string `json:"secretVersions,omitempty"`
 }
 
+// LoadSecrets fetches secrets from the data-plane controller for the given secret IDs.
+// Pass nil for secretVersions to retain legacy id-only caching behavior on the DP.
 func LoadSecrets(configReader configuration.ConfigReader, secretIdsByTenant map[string][]string) ([]*Secrets, error) {
+	return LoadSecretsWithVersions(configReader, secretIdsByTenant, nil)
+}
+
+// LoadSecretsWithVersions fetches secrets and optionally sends per-id versions so the DP
+// can use versioned cache keys (longer TTL). secretVersions maps secretId -> version string.
+func LoadSecretsWithVersions(
+	configReader configuration.ConfigReader,
+	secretIdsByTenant map[string][]string,
+	secretVersions map[string]string,
+) ([]*Secrets, error) {
 	log := logger.GetLogger()
 
 	totalSecretRefs := 0
@@ -91,9 +109,10 @@ func LoadSecrets(configReader configuration.ConfigReader, secretIdsByTenant map[
 	}
 	log.Debug("changeflag LoadSecrets: starting batch fetch",
 		zap.Int("tenantCount", tenantCount),
-		zap.Int("totalSecretIdReferences", totalSecretRefs))
+		zap.Int("totalSecretIdReferences", totalSecretRefs),
+		zap.Int("secretVersionsCount", len(secretVersions)))
 
-	searchRequests := batchSecretIds(secretIdsByTenant, 20)
+	searchRequests := batchSecretIds(secretIdsByTenant, secretVersions, 20)
 	if len(searchRequests) == 0 {
 		log.Debug("changeflag LoadSecrets: skipping data plane secret fetch",
 			zap.String("reason", "batching produced no requests"),
@@ -106,7 +125,8 @@ func LoadSecrets(configReader configuration.ConfigReader, secretIdsByTenant map[
 		log.Debug("changeflag LoadSecrets: batch detail",
 			zap.Int("batchIndex", i),
 			zap.String("tenantId", req.TenantId),
-			zap.Int("secretIdsInBatch", len(req.SecretIds)))
+			zap.Int("secretIdsInBatch", len(req.SecretIds)),
+			zap.Int("versionsInBatch", len(req.SecretVersions)))
 	}
 
 	var secrets []*Secrets
@@ -330,7 +350,11 @@ func loadRemoteSecrets(request secretsRequest) (*secretsResponse, error) {
 	return nil, lastErr
 }
 
-func batchSecretIds(secretIdsByTenantId map[string][]string, batchSize int) []secretsRequest {
+func batchSecretIds(
+	secretIdsByTenantId map[string][]string,
+	secretVersions map[string]string,
+	batchSize int,
+) []secretsRequest {
 	log := logger.GetLogger()
 	log.Debug("changeflag batchSecretIds: start",
 		zap.Int("batchSize", batchSize),
@@ -344,6 +368,7 @@ func batchSecretIds(secretIdsByTenantId map[string][]string, batchSize int) []se
 			if end > n {
 				end = n
 			}
+			ids := secretIds[i:end]
 			log.Debug("changeflag batchSecretIds: slice",
 				zap.String("tenantId", tenantId),
 				zap.Int("tenantSecretTotal", n),
@@ -351,10 +376,22 @@ func batchSecretIds(secretIdsByTenantId map[string][]string, batchSize int) []se
 				zap.Int("rangeStart", i),
 				zap.Int("rangeEnd", end),
 				zap.Int("sliceLen", end-i))
-			batches = append(batches, secretsRequest{
-				SecretIds: secretIds[i:end],
+			req := secretsRequest{
+				SecretIds: ids,
 				TenantId:  tenantId,
-			})
+			}
+			if len(secretVersions) > 0 {
+				versions := make(map[string]string)
+				for _, id := range ids {
+					if v, ok := secretVersions[id]; ok && v != "" {
+						versions[id] = v
+					}
+				}
+				if len(versions) > 0 {
+					req.SecretVersions = versions
+				}
+			}
+			batches = append(batches, req)
 			batchNum++
 		}
 	}
