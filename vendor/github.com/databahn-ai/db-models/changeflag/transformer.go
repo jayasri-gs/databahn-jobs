@@ -28,6 +28,7 @@ const (
 	JsonExtraction     TransformationOpType = "JSON_EXTRACT"
 	XmlExtraction      TransformationOpType = "XML_EXTRACT"
 	KeyValueExtraction TransformationOpType = "KEY_VALUE_EXTRACT"
+	KeyValueEncode     TransformationOpType = "KEY_VALUE_ENCODE"
 	CsvExtraction      TransformationOpType = "CSV_EXTRACT"
 
 	StringLength           TransformationOpType = "STRING_LENGTH"
@@ -145,6 +146,7 @@ type TransformationOperator struct {
 	JsonExtractionConfig           *JsonExtractionConfig         `json:"jsonExtractionConfig,omitempty"`
 	XmlExtractionConfig            *XmlExtractionConfig          `json:"xmlExtractionConfig,omitempty"`
 	ParseKeyValueConfig            *ParseKeyValueConfig          `json:"parseKeyValueConfig,omitempty"`
+	KeyValueEncodeConfig           *KeyValueEncodeConfig         `json:"keyValueEncodeConfig,omitempty"`
 	ParseCsvConfig                 *ParseCsvConfig               `json:"parseCsvConfig,omitempty"`
 	ConstantReplaceConfig          *ConstantReplaceConfig        `json:"constantReplaceConfig,omitempty"`
 	SplitOperatorConfig            *SplitOperatorConfig          `json:"splitOperatorConfig,omitempty"`
@@ -310,6 +312,12 @@ type ParseKeyValueConfig struct {
 	Key               string `json:"key"`
 	KeyValueDelimiter string `json:"keyValueDelimiter"`
 	FieldDelimiter    string `json:"fieldDelimiter"`
+}
+
+type KeyValueEncodeConfig struct {
+	Attributes        []string `json:"attributes"`
+	KeyValueDelimiter string   `json:"keyValueDelimiter"`
+	FieldDelimiter    string   `json:"fieldDelimiter"`
 }
 
 type ParseCsvConfig struct {
