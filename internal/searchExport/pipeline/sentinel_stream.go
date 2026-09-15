@@ -11,19 +11,23 @@ import (
 
 // runSentinelStreamExport pulls one Sentinel result set over the query API, encodes it, and
 // uploads it to the export destination.
+func (p *Pipeline) runSentinelStreamExport(ctx context.Context, destBucket string, exec query.RowStreamExecutor) (*PipelineResult, error) {
+	return p.runQueryAPIStreamExport(ctx, destBucket, exec, query.SentinelStreamOptionsForTier(exec.Engine()))
+}
+
+// runQueryAPIStreamExport pulls one row-stream result set over an HTTP query API, encodes it,
+// and uploads it to the export destination.
 //
 // Simpler than the Synapse row-stream path: there is no partition filter to apply and no
-// cursor to carry, because the KQL arrives fully planned from backend-service and the
-// request plan lives in query.PlanSentinelQueries. Columns arrive with the response schema
-// rather than from a preflight query.
-func (p *Pipeline) runSentinelStreamExport(ctx context.Context, destBucket string, exec query.RowStreamExecutor) (*PipelineResult, error) {
-	p.log.Info("Running Sentinel query-API stream export")
+// cursor to carry, because the query arrives fully planned from backend-service. Columns
+// arrive with the response schema rather than from a preflight query.
+func (p *Pipeline) runQueryAPIStreamExport(ctx context.Context, destBucket string, exec query.RowStreamExecutor, opts query.StreamRowsOptions) (*PipelineResult, error) {
+	p.log.Info("Running query-API stream export", zap.String("engine", exec.Engine()))
 
 	if err := exec.ValidateExportQuery(ctx, p.request.Query); err != nil {
 		return nil, err
 	}
 
-	opts := query.SentinelStreamOptionsForTier(exec.Engine())
 	var columns []string
 	opts.OnColumns = func(cols []string) error {
 		columns = cols
@@ -51,10 +55,11 @@ func (p *Pipeline) runSentinelStreamExport(ctx context.Context, destBucket strin
 		})
 	if err != nil {
 		_ = p.uploader.Abort(ctx)
-		return nil, fmt.Errorf("sentinel stream export: %w", err)
+		return nil, fmt.Errorf("query-API stream export (%s): %w", exec.Engine(), err)
 	}
 
-	p.log.Info("Sentinel export streamed",
+	p.log.Info("Query-API export streamed",
+		zap.String("engine", exec.Engine()),
 		zap.Int64("totalRows", totalRows),
 		zap.Int64("totalBytes", totalBytes),
 		zap.Duration("elapsed", time.Since(started)))

@@ -17,6 +17,7 @@ const (
 	QueryEngineKustoADX  = "KUSTO_ADX"
 	QueryEngineKustoLAW  = "KUSTO_LAW"
 	QueryEngineKustoLake = "KUSTO_LAKE"
+	QueryEngineSPL       = "SPL"
 
 	StoreTypeDatabahnDestination = "DATABAHN_DESTINATION"
 	StoreTypeDatabahnInsights    = "DATABAHN_INSIGHTS"
@@ -31,11 +32,13 @@ const (
 	DestTypeAzureDataExplorer    = "AZURE_DATA_EXPLORER"
 	DestTypeAzureSentinel        = "AZURE_SENTINEL"
 	DestTypeAzureSentinelLake    = "AZURE_SENTINEL_DATA_LAKE"
+	DestTypeSplunkHEC            = "SPLUNK_HEC"
 	ExternalProviderS3           = "S3"
 	ExternalProviderSecurityLake = "SECURITY_LAKE"
 	ExternalProviderAzureBlob    = "AZURE_BLOB"
 	ExternalProviderADX          = "AZURE_DATA_EXPLORER"
 	ExternalProviderSentinel     = "AZURE_SENTINEL"
+	ExternalProviderSplunk       = "SPLUNK"
 )
 
 type ExportDataStore struct {
@@ -49,6 +52,7 @@ type ExportDataStore struct {
 	SynapseSQL             *SynapseSQLConfig
 	ADX                    *destination.ADXConfig
 	Sentinel               *destination.SentinelConfig
+	Splunk                 *destination.SplunkConfig
 }
 
 type SynapseSQLConfig struct {
@@ -66,8 +70,9 @@ type dataStoreRow struct {
 }
 
 type dataStoreConfiguration struct {
-	AzureSynapseConfiguration            *synapseSQLConfigJSON    `json:"azureSynapseConfiguration"`
-	ExternalSearchDataStoreConfiguration *externalStoreConfigJSON `json:"externalSearchDataStoreConfiguration"`
+	AzureSynapseConfiguration            *synapseSQLConfigJSON                  `json:"azureSynapseConfiguration"`
+	ExternalSearchDataStoreConfiguration *externalStoreConfigJSON               `json:"externalSearchDataStoreConfiguration"`
+	SplunkSearchConfiguration            *destination.SplunkSearchConfiguration `json:"splunkSearchConfiguration"`
 }
 
 type synapseSQLConfigJSON struct {
@@ -101,6 +106,8 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider, storageTier 
 			// A pipeline Sentinel store has no connectorConfig of its own, so the
 			// destination type is what separates the two tiers.
 			return QueryEngineKustoLake
+		case DestTypeSplunkHEC:
+			return QueryEngineSPL
 		}
 	case StoreTypeDatabahnInsights, StoreTypeDatabahnStorage:
 		return QueryEngineAthena
@@ -119,6 +126,8 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider, storageTier 
 				return QueryEngineKustoLake
 			}
 			return QueryEngineKustoLAW
+		case ExternalProviderSplunk:
+			return QueryEngineSPL
 		}
 	}
 	return ""
@@ -129,6 +138,11 @@ func DeriveQueryEngine(storeType, linkedDestType, externalProvider, storageTier 
 // transport must cover both.
 func IsSentinelEngine(queryEngine string) bool {
 	return queryEngine == QueryEngineKustoLAW || queryEngine == QueryEngineKustoLake
+}
+
+// IsSplunkEngine reports whether an engine is the Splunk SPL export engine.
+func IsSplunkEngine(queryEngine string) bool {
+	return queryEngine == QueryEngineSPL
 }
 
 // IsExternalAthenaProvider reports whether the store uses Athena over an external/derived sink.
@@ -232,6 +246,15 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 			}
 			result.Sentinel = sentinelCfg
 			result.ExternalSearchProvider = ExternalProviderSentinel
+		case DestTypeSplunkHEC:
+			splunkCfg, err := destination.LoadPipelineSplunkConfig(
+				ctx, db, *row.DestinationID, dataStoreID, tenantID, storeCfg.SplunkSearchConfiguration,
+			)
+			if err != nil {
+				return nil, err
+			}
+			result.Splunk = splunkCfg
+			result.ExternalSearchProvider = ExternalProviderSplunk
 		case StoreTypeDatabahnStorage:
 			stagingCfg, err := destination.LoadDatabahnStorageStagingConfig(ctx, db, *row.DestinationID, tenantID)
 			if err != nil {
@@ -273,6 +296,14 @@ func LoadExportDataStore(ctx context.Context, db *gorm.DB, dataStoreID, tenantID
 			return nil, err
 		}
 		result.Sentinel = sentinelCfg
+	}
+
+	if IsSplunkEngine(result.QueryEngine) && result.Splunk == nil {
+		splunkCfg, err := loadSplunkConfig(ctx, db, dataStoreID, tenantID, secretID, connector)
+		if err != nil {
+			return nil, err
+		}
+		result.Splunk = splunkCfg
 	}
 
 	if storeType == StoreTypeDatabahnInsights && result.StagingS3 == nil {
@@ -341,6 +372,34 @@ func loadADXConfig(
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("ADX store %s: %w", dataStoreID, err)
+	}
+	return cfg, nil
+}
+
+// loadSplunkConfig resolves Splunk search-head credentials for an EXTERNAL_STORAGE store,
+// overlaying splunk_search_token from Secrets Manager when the store references one.
+// Pipeline (DATABAHN_DESTINATION) Splunk stores take their credentials from the linked
+// destination and splunkSearchConfiguration instead — see destination.LoadPipelineSplunkConfig.
+func loadSplunkConfig(
+	ctx context.Context,
+	db *gorm.DB,
+	dataStoreID, tenantID uuid.UUID,
+	secretID string,
+	connector map[string]string,
+) (*destination.SplunkConfig, error) {
+	cfg := destination.SplunkConfigFromExternalConnector(connector)
+	if cfg == nil {
+		return nil, fmt.Errorf("Splunk store %s has empty connectorConfig", dataStoreID)
+	}
+	if secretID != "" {
+		overrides, err := destination.ResolveCredentialOverrides(ctx, db, secretID, dataStoreID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve Splunk store secret: %w", err)
+		}
+		destination.ApplySplunkCredentialOverrides(cfg, overrides)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("Splunk store %s: %w", dataStoreID, err)
 	}
 	return cfg, nil
 }

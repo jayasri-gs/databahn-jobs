@@ -21,6 +21,8 @@ const (
 	EngineSentinelLAW = "KUSTO_LAW"
 	// EngineSentinelLake is the Sentinel data lake tier.
 	EngineSentinelLake = "KUSTO_LAKE"
+	// EngineSplunk is the Splunk SPL export engine.
+	EngineSplunk = "SPL"
 )
 
 type UnloadResult struct {
@@ -70,4 +72,5 @@ var (
 	_ UnloadExecutor    = (*ADXExecutor)(nil)
 	_ RowStreamExecutor = (*SynapseExecutor)(nil)
 	_ RowStreamExecutor = (*SentinelExecutor)(nil)
+	_ RowStreamExecutor = (*SplunkExecutor)(nil)
 )

@@ -20,6 +20,7 @@ const (
 	QueryEngineKustoADX  = "KUSTO_ADX"
 	QueryEngineKustoLAW  = "KUSTO_LAW"
 	QueryEngineKustoLake = "KUSTO_LAKE"
+	QueryEngineSplunk    = "SPL"
 	DestTypeS3           = "S3"
 	DestTypeS3Parquet    = "S3_PARQUET"
 	DestTypeAzureBlob    = "AZURE_BLOB"
@@ -74,6 +75,10 @@ type SearchExportConfig struct {
 	// they are what a future chunked export needs to insert a per-window time filter.
 	Sentinel *SentinelExportConfig `json:"sentinel,omitempty"`
 
+	// Splunk-only source details. Index / TimeColumn are unread by the worker today;
+	// they are what a future chunked export needs to insert per-window filters.
+	Splunk *SplunkExportConfig `json:"splunk,omitempty"`
+
 	// Runtime fields — written by jobs worker, ignored by backend-service
 	AthenaExecutionID  string     `json:"athenaExecutionId,omitempty"`
 	ExecutionStartedAt *time.Time `json:"executionStartedAt,omitempty"`
@@ -88,6 +93,11 @@ type SentinelExportConfig struct {
 	StorageTier   string `json:"storageTier,omitempty"`
 	KqlTable      string `json:"kqlTable,omitempty"`
 	KqlTimeColumn string `json:"kqlTimeColumn,omitempty"`
+}
+
+type SplunkExportConfig struct {
+	Index      string `json:"index,omitempty"`
+	TimeColumn string `json:"timeColumn,omitempty"`
 }
 
 func (c *SearchExportConfig) AthenaRegion() string {

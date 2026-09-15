@@ -204,6 +204,35 @@ func NewExportDeps(ctx context.Context, db *gorm.DB, cfg *models.SearchExportCon
 		deps.RowStream = sentinelExec
 		// No staging: Sentinel has no server-side export, so rows are pulled over the query
 		// API and uploaded straight to the export destination — S3 or Azure Blob alike.
+	case models.QueryEngineSplunk:
+		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid dataStoreId: %w", err)
+		}
+		store, err := datastore.LoadExportDataStore(ctx, db, dataStoreID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		if store.Splunk == nil {
+			return nil, fmt.Errorf("Splunk store %s missing search credentials", dataStoreID)
+		}
+		splunkExec, err := query.NewSplunkExecutor(query.SplunkConfig{
+			Host:              store.Splunk.Host,
+			Port:              store.Splunk.Port,
+			Scheme:            store.Splunk.Scheme,
+			Token:             store.Splunk.Token,
+			SSLCertValidation: store.Splunk.SSLCertValidation,
+			Index:             store.Splunk.Index,
+			QueryTimeout:      query.SplunkStreamOptionsFromEnv().QueryTimeout,
+			MaxRetries:        query.SplunkMaxRetriesFromEnv(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		splunkExec.SetLogger(log)
+		deps.RowStream = splunkExec
+		// No staging: Splunk has no server-side export, so rows are pulled over the search
+		// export API and uploaded straight to the export destination — S3 or Azure Blob alike.
 	case models.QueryEngineSynapse:
 		dataStoreID, err := uuid.Parse(cfg.DataStoreID)
 		if err != nil {
@@ -323,7 +352,7 @@ func IsSupportedExportMatrix(queryEngine, destType string) bool {
 	// and Synapse stage into their own storage, and Sentinel rows are encoded in the worker
 	// and uploaded client-side. The destination is only the write target, so any type the
 	// uploader supports works.
-	case models.QueryEngineAthena, models.QueryEngineSynapse, models.QueryEngineKustoLAW, models.QueryEngineKustoLake:
+	case models.QueryEngineAthena, models.QueryEngineSynapse, models.QueryEngineKustoLAW, models.QueryEngineKustoLake, models.QueryEngineSplunk:
 		switch dest {
 		case models.DestTypeS3, models.DestTypeS3Parquet, models.DestTypeAzureBlob:
 			return true

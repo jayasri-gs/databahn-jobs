@@ -122,3 +122,43 @@ func SentinelMaxRetriesFromEnv() int {
 	}
 	return retries
 }
+
+const (
+	defaultSplunkMaxRows         = 1_000_000
+	defaultSplunkQueryTimeoutMin = 30
+	defaultSplunkMaxRetries      = 3
+
+	// maxSplunkRetries bounds the retry budget. Each throttled attempt waits up to 60s, so
+	// an unbounded count read from the environment would park the job indefinitely.
+	maxSplunkRetries = 10
+)
+
+// SplunkStreamOptionsFromEnv builds the row-stream options for a Splunk export.
+//
+// MaxRows is a defensive backstop, not the real limit: backend-service caps the query with
+// | head sized to MAX_EXPORT_ROWS. This only stops a stream that somehow exceeds it.
+func SplunkStreamOptionsFromEnv() StreamRowsOptions {
+	minutes := utils.GetEnvInt("SEARCH_EXPORT_SPLUNK_QUERY_TIMEOUT_MINUTES", defaultSplunkQueryTimeoutMin)
+	if minutes < 1 {
+		minutes = defaultSplunkQueryTimeoutMin
+	}
+	return StreamRowsOptions{
+		MaxRows:       int64(utils.GetEnvInt("SEARCH_EXPORT_SPLUNK_MAX_ROWS", defaultSplunkMaxRows)),
+		QueryTimeout:  time.Duration(minutes) * time.Minute,
+		ProgressEvery: synapseProgressInterval,
+		SkipPreflight: true,
+	}
+}
+
+// SplunkMaxRetriesFromEnv is the retry budget for throttled Splunk export requests,
+// clamped so a misconfigured environment cannot stall the job.
+func SplunkMaxRetriesFromEnv() int {
+	retries := utils.GetEnvInt("SEARCH_EXPORT_SPLUNK_MAX_RETRIES", defaultSplunkMaxRetries)
+	if retries < 0 {
+		return 0
+	}
+	if retries > maxSplunkRetries {
+		return maxSplunkRetries
+	}
+	return retries
+}

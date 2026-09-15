@@ -108,7 +108,13 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onQueryStart func
 		defer p.rowStream.Close()
 		switch p.rowStream.Engine() {
 		case query.EngineSentinelLAW, query.EngineSentinelLake:
-			return p.runSentinelStreamExport(ctx, destBucket, p.rowStream)
+			return p.runQueryAPIStreamExport(
+				ctx, destBucket, p.rowStream, query.SentinelStreamOptionsForTier(p.rowStream.Engine()),
+			)
+		case query.EngineSplunk:
+			return p.runQueryAPIStreamExport(
+				ctx, destBucket, p.rowStream, query.SplunkStreamOptionsFromEnv(),
+			)
 		}
 		if p.cetasExec != nil && p.stagingBlobCfg != nil {
 			return p.runSynapseCETASExport(ctx, destBucket, p.cetasExec, p.stagingBlobCfg)
@@ -160,10 +166,10 @@ func (p *Pipeline) Run(ctx context.Context, destBucket string, onQueryStart func
 }
 
 // ResumeRun picks up a stale PROCESSING job. Row-stream exports always restart from
-// scratch: neither Synapse nor Sentinel has an execution ID or status API — a Synapse
-// query runs synchronously over JDBC and dies with the connection, and Log Analytics runs
-// the query inside the HTTP request. Athena and ADX exports reattach to the execution
-// recorded in the DB when it is still running or already succeeded.
+// scratch: Synapse, Sentinel, and Splunk have no resumable execution ID — a Synapse query
+// runs synchronously over JDBC and dies with the connection, and Sentinel/Splunk run the
+// query inside the HTTP request. Athena and ADX exports reattach to the execution recorded
+// in the DB when it is still running or already succeeded.
 // The upload to the final destination always restarts from the beginning.
 func (p *Pipeline) ResumeRun(ctx context.Context, destBucket, queryExecutionID string, onQueryStart func(executionID string) error) (*PipelineResult, error) {
 	if p.rowStream != nil || queryExecutionID == "" {
